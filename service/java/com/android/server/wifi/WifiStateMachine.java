@@ -5490,8 +5490,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         try {
-            mNwService.wifiFirmwareReload(mInterfaceName, "AP");
-            if (DBG) Log.d(TAG, "Firmware reloaded in AP mode");
+            if (!SystemProperties.getBoolean("ro.disableWifiApFirmwareReload", false)) {
+                mNwService.wifiFirmwareReload(mInterfaceName, "AP");
+                if (DBG) Log.d(TAG, "Firmware reloaded in AP mode");
+            }
         } catch (Exception e) {
             Log.e(TAG, "Failed to reload AP firmware " + e);
         }
