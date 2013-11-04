@@ -1135,6 +1135,8 @@ public class WifiNative {
         return doBooleanCommand("ANQP_GET " + bssid + " " + subtypes);
     }
 
+    public native static boolean setMode(int mode);
+
     /* WIFI HAL support */
 
     private static final String TAG = "WifiNative-HAL";
