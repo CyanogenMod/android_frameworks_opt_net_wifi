@@ -1788,6 +1788,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
      */
     public void setSupplicantRunning(boolean enable) {
         if (enable) {
+            WifiNative.setApMode(false);
             sendMessage(CMD_START_SUPPLICANT);
         } else {
             mDisconnectDelayDuration = -1;
@@ -1815,6 +1816,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
      */
     public void setHostApRunning(WifiConfiguration wifiConfig, boolean enable) {
         if (enable) {
+            WifiNative.setApMode(true);
             sendMessage(CMD_START_AP, wifiConfig);
         } else {
             sendMessage(CMD_STOP_AP);
