@@ -290,10 +290,23 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         mClientHandler = new ClientHandler(wifiThread.getLooper());
         mWifiStateMachineHandler = new WifiStateMachineHandler(wifiThread.getLooper());
         mWifiController = new WifiController(mContext, this, wifiThread.getLooper());
-        mWifiController.start();
 
         mBatchedScanSupported = mContext.getResources().getBoolean(
                 R.bool.config_wifi_batched_scan_supported);
+    }
+
+
+    /**
+     * Check if Wi-Fi needs to be enabled and start
+     * if needed
+     *
+     * This function is used only at boot time
+     */
+    public void checkAndStartWifi() {
+        /* Check if wi-fi needs to be enabled */
+        boolean wifiEnabled = mSettingsStore.isWifiToggleEnabled();
+        Slog.i(TAG, "WifiService starting up with Wi-Fi " +
+                (wifiEnabled ? "enabled" : "disabled"));
 
         registerForScanModeChange();
         mContext.registerReceiver(
@@ -311,20 +324,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         // can result in race conditions when apps toggle wifi in the background
         // without active user involvement. Always receive broadcasts.
         registerForBroadcasts();
-    }
 
-
-    /**
-     * Check if Wi-Fi needs to be enabled and start
-     * if needed
-     *
-     * This function is used only at boot time
-     */
-    public void checkAndStartWifi() {
-        /* Check if wi-fi needs to be enabled */
-        boolean wifiEnabled = mSettingsStore.isWifiToggleEnabled();
-        Slog.i(TAG, "WifiService starting up with Wi-Fi " +
-                (wifiEnabled ? "enabled" : "disabled"));
+        mWifiController.start();
 
         // If we are already disabled (could be due to airplane mode), avoid changing persist
         // state here
@@ -332,7 +333,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
         mWifiWatchdogStateMachine = WifiWatchdogStateMachine.
                makeWifiWatchdogStateMachine(mContext);
-
     }
 
     /**
