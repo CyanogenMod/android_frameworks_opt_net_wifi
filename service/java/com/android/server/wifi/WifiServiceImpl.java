@@ -69,7 +69,6 @@ import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
-import com.android.server.SystemService;
 import com.android.server.am.BatteryStatsService;
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -400,6 +399,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceChangePermission();
         if (mBatchedScanSupported == false) return;
         mWifiStateMachine.requestBatchedScanPoll();
+    }
+
+    public String getWpsNfcConfigurationToken(int netId) {
+        enforceChangePermission();
+        return mWifiStateMachine.syncGetWpsNfcConfigurationToken(netId);
     }
 
     /**

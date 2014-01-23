@@ -1458,6 +1458,14 @@ public class WifiStateMachine extends StateMachine {
     }
 
     /**
+     * Retrieves a WPS-NFC configuration token for the specified network
+     * @return a hex string representation of the WPS-NFC configuration token
+     */
+    public String syncGetWpsNfcConfigurationToken(int netId) {
+        return mWifiNative.getNfcWpsConfigurationToken(netId);
+    }
+
+    /**
      * Blacklist a BSSID. This will avoid the AP if there are
      * alternate APs to connect
      *

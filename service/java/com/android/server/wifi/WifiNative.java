@@ -979,4 +979,8 @@ public class WifiNative {
         // Note: optional feature on the driver. It is ok for this to fail.
         doBooleanCommand("DRIVER MIRACAST " + mode);
     }
+
+    public String getNfcWpsConfigurationToken(int netId) {
+        return doStringCommand("WPS_NFC_CONFIG_TOKEN WPS " + netId);
+    }
 }
