@@ -2011,11 +2011,12 @@ public class WifiStateMachine extends StateMachine {
     }
 
     /*
-     * Fetch RSSI and linkspeed on current connection
+     * Fetch RSSI, linkspeed, and frequency on current connection
      */
-    private void fetchRssiAndLinkSpeedNative() {
+    private void fetchRssiLinkSpeedAndFrequencyNative() {
         int newRssi = -1;
         int newLinkSpeed = -1;
+        int newFrequency = -1;
 
         String signalPoll = mWifiNative.signalPoll();
 
@@ -2029,6 +2030,8 @@ public class WifiStateMachine extends StateMachine {
                         newRssi = Integer.parseInt(prop[1]);
                     } else if (prop[0].equals("LINKSPEED")) {
                         newLinkSpeed = Integer.parseInt(prop[1]);
+                    } else if (prop[0].equals("FREQUENCY")) {
+                        newFrequency = Integer.parseInt(prop[1]);
                     }
                 } catch (NumberFormatException e) {
                     //Ignore, defaults on rssi and linkspeed are assigned
@@ -2063,6 +2066,9 @@ public class WifiStateMachine extends StateMachine {
 
         if (newLinkSpeed != -1) {
             mWifiInfo.setLinkSpeed(newLinkSpeed);
+        }
+        if (newFrequency > 0) {
+            mWifiInfo.setFrequency(newFrequency);
         }
     }
 
@@ -2276,12 +2282,15 @@ public class WifiStateMachine extends StateMachine {
         }
 
         /* Reset data structures */
+        // TODO: use a WifiInfo.reset(), although it would require moving the
+        // MIN_RSSI to WifiInfo.
         mWifiInfo.setInetAddress(null);
         mWifiInfo.setBSSID(null);
         mWifiInfo.setSSID(null);
         mWifiInfo.setNetworkId(WifiConfiguration.INVALID_NETWORK_ID);
         mWifiInfo.setRssi(MIN_RSSI);
         mWifiInfo.setLinkSpeed(-1);
+        mWifiInfo.setFrequency(-1);
         mWifiInfo.setMeteredHint(false);
 
         setNetworkDetailedState(DetailedState.DISCONNECTED);
@@ -3700,7 +3709,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
                         // Get Info and continue polling
-                        fetchRssiAndLinkSpeedNative();
+                        fetchRssiLinkSpeedAndFrequencyNative();
                         sendMessageDelayed(obtainMessage(CMD_RSSI_POLL,
                                 mRssiPollToken, 0), POLL_RSSI_INTERVAL_MSECS);
                     } else {
@@ -3712,14 +3721,14 @@ public class WifiStateMachine extends StateMachine {
                     mRssiPollToken++;
                     if (mEnableRssiPolling) {
                         // first poll
-                        fetchRssiAndLinkSpeedNative();
+                        fetchRssiLinkSpeedAndFrequencyNative();
                         sendMessageDelayed(obtainMessage(CMD_RSSI_POLL,
                                 mRssiPollToken, 0), POLL_RSSI_INTERVAL_MSECS);
                     }
                     break;
                 case WifiManager.RSSI_PKTCNT_FETCH:
                     RssiPacketCountInfo info = new RssiPacketCountInfo();
-                    fetchRssiAndLinkSpeedNative();
+                    fetchRssiLinkSpeedAndFrequencyNative();
                     info.rssi = mWifiInfo.getRssi();
                     fetchPktcntNative(info);
                     replyToMessage(message, WifiManager.RSSI_PKTCNT_FETCH_SUCCEEDED, info);
