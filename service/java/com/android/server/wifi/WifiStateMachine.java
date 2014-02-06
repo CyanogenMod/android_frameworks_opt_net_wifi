@@ -56,6 +56,8 @@ import android.net.wifi.BatchedScanResult;
 import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.RssiPacketCountInfo;
 import android.net.wifi.ScanResult;
+import android.net.wifi.ScanSettings;
+import android.net.wifi.WifiChannel;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
@@ -71,6 +73,8 @@ import android.os.IBinder;
 import android.os.INetworkManagementService;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.Parcel;
+import android.os.Parcelable;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
@@ -88,7 +92,6 @@ import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
-
 import com.android.server.net.BaseNetworkObserver;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
@@ -96,8 +99,10 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Queue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Iterator;
@@ -163,9 +168,17 @@ public class WifiStateMachine extends StateMachine {
     * In SCAN_ONLY_WIFI_OFF_MODE, the STA can only scan for access points with wifi toggle being off
     */
     private int mOperationalMode = CONNECT_MODE;
-    private boolean mScanResultIsPending = false;
+    private boolean mIsScanOngoing = false;
+    private boolean mIsFullScanOngoing = false;
+    private final Queue<Message> mBufferedScanMsg = new LinkedList<Message>();
     private WorkSource mScanWorkSource = null;
     private static final int UNKNOWN_SCAN_SOURCE = -1;
+    private static final int SCAN_REQUEST_BUFFER_MAX_SIZE = 10;
+    private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
+    private static final String CUSTOMIZED_SCAN_WORKSOURCE = "customized_scan_worksource";
+    private static final String BATCHED_SETTING = "batched_settings";
+    private static final String BATCHED_WORKSOURCE = "batched_worksource";
+
     /* Tracks if state machine has received any screen state change broadcast yet.
      * We can miss one of these at boot.
      */
@@ -354,8 +367,10 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_CLEAR_BLACKLIST                  = BASE + 57;
     /* Save configuration */
     static final int CMD_SAVE_CONFIG                      = BASE + 58;
-    /* Get configured networks*/
+    /* Get configured networks */
     static final int CMD_GET_CONFIGURED_NETWORKS          = BASE + 59;
+    /* Get available frequencies */
+    static final int CMD_GET_CAPABILITY_FREQ              = BASE + 60;
 
     /* Supplicant commands after driver start*/
     /* Initiate a scan */
@@ -720,8 +735,7 @@ public class WifiStateMachine extends StateMachine {
                 new BroadcastReceiver() {
                     @Override
                     public void onReceive(Context context, Intent intent) {
-                        final WorkSource workSource = null;
-                        startScan(UNKNOWN_SCAN_SOURCE, workSource);
+                        startScan(UNKNOWN_SCAN_SOURCE, null, null);
                     }
                 },
                 new IntentFilter(ACTION_START_SCAN));
@@ -840,23 +854,54 @@ public class WifiStateMachine extends StateMachine {
         return result;
     }
 
+    public List<WifiChannel> syncGetChannelList(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_CAPABILITY_FREQ);
+        List<WifiChannel> list = null;
+        if (resultMsg.obj != null) {
+            list = new ArrayList<WifiChannel>();
+            String freqs = (String) resultMsg.obj;
+            String[] lines = freqs.split("\n");
+            for (String line : lines)
+                if (line.contains("MHz")) {
+                    // line format: " 52 = 5260 MHz (NO_IBSS) (DFS)"
+                    WifiChannel c = new WifiChannel();
+                    String[] prop = line.split(" ");
+                    if (prop.length < 5) continue;
+                    try {
+                        c.channelNum = Integer.parseInt(prop[1]);
+                        c.freqMHz = Integer.parseInt(prop[3]);
+                    } catch (NumberFormatException e) { }
+                    c.isDFS = line.contains("(DFS)");
+                    list.add(c);
+                } else if (line.contains("Mode[B] Channels:")) {
+                    // B channels are the same as G channels, skipped
+                    break;
+                }
+        }
+        resultMsg.recycle();
+        return (list != null && list.size() > 0) ? list : null;
+    }
+
+
     /**
-     * Initiate a wifi scan.  If workSource is not null, blame is given to it,
-     * otherwise blame is given to callingUid.
+     * Initiate a wifi scan. If workSource is not null, blame is given to it, otherwise blame is
+     * given to callingUid.
      *
-     * @param callingUid The uid initiating the wifi scan.  Blame will be given
-     *                   here unless workSource is specified.
+     * @param callingUid The uid initiating the wifi scan. Blame will be given here unless
+     *                   workSource is specified.
      * @param workSource If not null, blame is given to workSource.
+     * @param settings Scan settings, see {@link ScanSettings}.
      */
-    public void startScan(int callingUid, WorkSource workSource) {
-        sendMessage(CMD_START_SCAN, callingUid, 0, workSource);
+    public void startScan(int callingUid, ScanSettings settings, WorkSource workSource) {
+        Bundle bundle = new Bundle();
+        bundle.putParcelable(CUSTOMIZED_SCAN_SETTING, settings);
+        bundle.putParcelable(CUSTOMIZED_SCAN_WORKSOURCE, workSource);
+        sendMessage(CMD_START_SCAN, callingUid, 0, bundle);
     }
 
     /**
      * start or stop batched scanning using the given settings
      */
-    private static final String BATCHED_SETTING = "batched_settings";
-    private static final String BATCHED_WORKSOURCE = "batched_worksource";
     public void setBatchedScanSettings(BatchedScanSettings settings, int callingUid, int csph,
             WorkSource workSource) {
         Bundle bundle = new Bundle();
@@ -1230,9 +1275,70 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
-    private void startScanNative(int type) {
-        mWifiNative.scan(type);
-        mScanResultIsPending = true;
+    private void handleScanRequest(int type, Message message) {
+        // unbundle parameters
+        Bundle bundle = (Bundle) message.obj;
+        ScanSettings settings = bundle.getParcelable(CUSTOMIZED_SCAN_SETTING);
+        WorkSource workSource = bundle.getParcelable(CUSTOMIZED_SCAN_WORKSOURCE);
+
+        // parse scan settings
+        String freqs = null;
+        if (settings != null && settings.channelSet != null) {
+            StringBuilder sb = new StringBuilder();
+            boolean first = true;
+            for (WifiChannel channel : settings.channelSet) {
+                if (!first) sb.append(','); else first = false;
+                sb.append(channel.freqMHz);
+            }
+            freqs = sb.toString();
+        }
+
+        // call wifi native to start the scan
+        if (startScanNative(type, freqs)) {
+            // only count battery consumption if scan request is accepted
+            noteScanStart(message.arg1, workSource);
+            // a full scan covers everything, clearing scan request buffer
+            if (freqs == null)
+                mBufferedScanMsg.clear();
+            return;
+        }
+
+        // if reach here, scan request is rejected
+
+        if (!mIsScanOngoing) {
+            // if rejection is NOT due to ongoing scan (e.g. bad scan parameters),
+            // discard this request and pop up the next one
+            if (mBufferedScanMsg.size() > 0)
+                sendMessage(mBufferedScanMsg.remove());
+        } else if (!mIsFullScanOngoing) {
+            // if rejection is due to an ongoing scan, and the ongoing one is NOT a full scan,
+            // buffer the scan request to make sure specified channels will be scanned eventually
+            if (freqs == null)
+                mBufferedScanMsg.clear();
+            if (mBufferedScanMsg.size() < SCAN_REQUEST_BUFFER_MAX_SIZE) {
+                Message msg = obtainMessage(CMD_START_SCAN, message.arg1, 0, bundle);
+                mBufferedScanMsg.add(msg);
+            } else {
+                // if too many requests in buffer, combine them into a single full scan
+                bundle = new Bundle();
+                bundle.putParcelable(CUSTOMIZED_SCAN_SETTING, null);
+                bundle.putParcelable(CUSTOMIZED_SCAN_WORKSOURCE, workSource);
+                Message msg = obtainMessage(CMD_START_SCAN, message.arg1, 0, bundle);
+                mBufferedScanMsg.clear();
+                mBufferedScanMsg.add(msg);
+            }
+        }
+    }
+
+
+    /** return true iff scan request is accepted */
+    private boolean startScanNative(int type, String freqs) {
+        if (mWifiNative.scan(type, freqs)) {
+            mIsScanOngoing = true;
+            mIsFullScanOngoing = (freqs == null);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -2488,6 +2594,9 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_SAVE_CONFIG:
                     replyToMessage(message, message.what, FAILURE);
                     break;
+                case CMD_GET_CAPABILITY_FREQ:
+                    replyToMessage(message, message.what, null);
+                    break;
                 case CMD_GET_CONFIGURED_NETWORKS:
                     replyToMessage(message, message.what, (List<WifiConfiguration>) null);
                     break;
@@ -2851,14 +2960,21 @@ public class WifiStateMachine extends StateMachine {
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                     setScanResults();
                     sendScanResultsAvailableBroadcast();
-                    mScanResultIsPending = false;
+                    mIsScanOngoing = false;
+                    mIsFullScanOngoing = false;
+                    if (mBufferedScanMsg.size() > 0)
+                        sendMessage(mBufferedScanMsg.remove());
                     break;
                 case CMD_PING_SUPPLICANT:
                     boolean ok = mWifiNative.ping();
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
-                    /* Cannot start soft AP while in client mode */
+                case CMD_GET_CAPABILITY_FREQ:
+                    String freqs = mWifiNative.getFreqCapability();
+                    replyToMessage(message, message.what, freqs);
+                    break;
                 case CMD_START_AP:
+                    /* Cannot start soft AP while in client mode */
                     loge("Failed to start soft AP with a running supplicant");
                     setWifiApState(WIFI_AP_STATE_FAILED);
                     break;
@@ -3085,8 +3201,7 @@ public class WifiStateMachine extends StateMachine {
         public boolean processMessage(Message message) {
             switch(message.what) {
                 case CMD_START_SCAN:
-                    noteScanStart(message.arg1, (WorkSource) message.obj);
-                    startScanNative(WifiNative.SCAN_WITH_CONNECTION_SETUP);
+                    handleScanRequest(WifiNative.SCAN_WITH_CONNECTION_SETUP, message);
                     break;
                 case CMD_SET_BATCHED_SCAN:
                     if (recordBatchedScanSettings(message.arg1, message.arg2,
@@ -3116,8 +3231,8 @@ public class WifiStateMachine extends StateMachine {
                         mFrequencyBand.set(band);
                         // flush old data - like scan results
                         mWifiNative.bssFlush();
-                        //Fetch the latest scan results when frequency band is set
-                        startScanNative(WifiNative.SCAN_WITH_CONNECTION_SETUP);
+                        // fetch the latest scan results when frequency band is set
+                        startScanNative(WifiNative.SCAN_WITH_CONNECTION_SETUP, null);
                     } else {
                         loge("Failed to set frequency band " + band);
                     }
@@ -3237,6 +3352,7 @@ public class WifiStateMachine extends StateMachine {
             intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_DISABLED);
             mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
             noteScanEnd(); // wrap up any pending request.
+            mBufferedScanMsg.clear();
 
             mLastSetCountryCode = null;
         }
@@ -3384,8 +3500,7 @@ public class WifiStateMachine extends StateMachine {
                 // Handle scan. All the connection related commands are
                 // handled only in ConnectModeState
                 case CMD_START_SCAN:
-                    noteScanStart(message.arg1, (WorkSource) message.obj);
-                    startScanNative(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP);
+                    handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                     break;
                 default:
                     return NOT_HANDLED;
@@ -3662,8 +3777,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_START_SCAN:
                     /* Do not attempt to connect when we are already connected */
-                    noteScanStart(message.arg1, (WorkSource) message.obj);
-                    startScanNative(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP);
+                    handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                     break;
                     /* Ignore connection to same network */
                 case WifiManager.CONNECT_NETWORK:
@@ -3954,7 +4068,7 @@ public class WifiStateMachine extends StateMachine {
                  * scan results will not be returned until background scanning is
                  * cleared
                  */
-                if (!mScanResultIsPending) {
+                if (!mIsScanOngoing) {
                     mWifiNative.enableBackgroundScan(true);
                 }
             } else {
@@ -3979,7 +4093,7 @@ public class WifiStateMachine extends StateMachine {
                     if (mP2pConnected.get()) break;
                     if (message.arg1 == mPeriodicScanToken &&
                             mWifiConfigStore.getConfiguredNetworks().size() == 0) {
-                        sendMessage(CMD_START_SCAN, UNKNOWN_SCAN_SOURCE, 0, (WorkSource) null);
+                        startScan(UNKNOWN_SCAN_SOURCE, null, null);
                         sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
                                     ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
                     }
@@ -4035,7 +4149,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                     /* Re-enable background scan when a pending scan result is received */
-                    if (mEnableBackgroundScan && mScanResultIsPending) {
+                    if (mEnableBackgroundScan && mIsScanOngoing) {
                         mWifiNative.enableBackgroundScan(true);
                     }
                     /* Handled in parent state */
