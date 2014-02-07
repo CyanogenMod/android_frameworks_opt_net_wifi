@@ -1086,14 +1086,9 @@ public class WifiNative {
         doBooleanCommand("DRIVER MIRACAST " + mode);
     }
 
-    public String getNfcWpsConfigurationToken(int netId) {
-        return doStringCommand("WPS_NFC_CONFIG_TOKEN WPS " + netId);
-    }
-
     public boolean fetchAnqp(String bssid, String subtypes) {
         return doBooleanCommand("ANQP_GET " + bssid + " " + subtypes);
     }
-
 
     /* WIFI HAL support */
 
@@ -1424,4 +1419,29 @@ public class WifiNative {
         }
         return null;
     }
+
+
+    /*
+     * NFC-related calls
+     */
+    public String getNfcWpsConfigurationToken(int netId) {
+        return doStringCommand("WPS_NFC_CONFIG_TOKEN WPS " + netId);
+    }
+
+    public String getNfcHandoverRequest() {
+        return doStringCommand("NFC_GET_HANDOVER_REQ NDEF P2P-CR");
+    }
+
+    public String getNfcHandoverSelect() {
+        return doStringCommand("NFC_GET_HANDOVER_SEL NDEF P2P-CR");
+    }
+
+    public boolean initiatorReportNfcHandover(String selectMessage) {
+        return doBooleanCommand("NFC_REPORT_HANDOVER INIT P2P 00 " + selectMessage);
+    }
+
+    public boolean responderReportNfcHandover(String requestMessage) {
+        return doBooleanCommand("NFC_REPORT_HANDOVER RESP P2P " + requestMessage + " 00");
+    }
+
 }
