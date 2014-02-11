@@ -23,12 +23,10 @@ import com.android.server.SystemService;
 public final class WifiP2pService extends SystemService {
 
     private static final String TAG = "WifiService";
-    WifiP2pServiceImpl mImpl;
+    final WifiP2pServiceImpl mImpl;
 
-    public WifiP2pService() { }
-
-    @Override
-    public void onCreate(Context context) {
+    public WifiP2pService(Context context) {
+        super(context);
         mImpl = new WifiP2pServiceImpl(context);
     }
 

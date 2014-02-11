@@ -23,12 +23,10 @@ import com.android.server.SystemService;
 public final class WifiService extends SystemService {
 
     private static final String TAG = "WifiService";
-    WifiServiceImpl mImpl;
+    final WifiServiceImpl mImpl;
 
-    public WifiService() { }
-
-    @Override
-    public void onCreate(Context context) {
+    public WifiService(Context context) {
+        super(context);
         mImpl = new WifiServiceImpl(context);
     }
 
