@@ -34,6 +34,8 @@ import android.net.wifi.IWifiManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.BatchedScanResult;
 import android.net.wifi.BatchedScanSettings;
+import android.net.wifi.ScanSettings;
+import android.net.wifi.WifiChannel;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.ProxySettings;
 import android.net.wifi.WifiInfo;
@@ -58,7 +60,6 @@ import java.io.FileDescriptor;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
-
 import java.lang.Override;
 import java.net.InetAddress;
 import java.net.Inet4Address;
@@ -70,6 +71,7 @@ import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
+
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
 import static com.android.server.wifi.WifiController.CMD_EMERGENCY_MODE_CHANGED;
@@ -349,19 +351,44 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
-     * see {@link android.net.wifi.WifiManager#startScan()}
-     *
-     * <p>If workSource is null, all blame is given to the calling uid.
+     * see {@link android.net.wifi.WifiManager#getChannelList}
      */
-    public void startScan(WorkSource workSource) {
+    public List<WifiChannel> getChannelList() {
+        enforceAccessPermission();
+        if (mWifiStateMachineChannel != null) {
+            return mWifiStateMachine.syncGetChannelList(mWifiStateMachineChannel);
+        } else {
+            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
+            return null;
+        }
+    }
+
+    /**
+     * see {@link android.net.wifi.WifiManager#startScan}
+     * and {@link android.net.wifi.WifiManager#startCustomizedScan}
+     *
+     * @param settings If null, use default parameter, i.e. full scan.
+     * @param workSource If null, all blame is given to the calling uid.
+     */
+    public void startScan(ScanSettings settings, WorkSource workSource) {
         enforceChangePermission();
+        if (settings != null) {
+            // TODO: should be removed once the startCustomizedScan API is opened up
+            mContext.enforceCallingOrSelfPermission(android.Manifest.permission.LOCATION_HARDWARE,
+                    "LocationHardware");
+            settings = new ScanSettings(settings);
+            if (!settings.isValid()) {
+                Slog.e(TAG, "invalid scan setting");
+                return;
+            }
+        }
         if (workSource != null) {
             enforceWorkSourcePermission();
             // WifiManager currently doesn't use names, so need to clear names out of the
             // supplied WorkSource to allow future WorkSource combining.
             workSource.clearNames();
         }
-        mWifiStateMachine.startScan(Binder.getCallingUid(), workSource);
+        mWifiStateMachine.startScan(Binder.getCallingUid(), settings, workSource);
     }
 
     private class BatchedScanRequest extends DeathRecipient {

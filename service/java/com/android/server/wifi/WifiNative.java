@@ -191,11 +191,17 @@ public class WifiNative {
         return (pong != null && pong.equals("PONG"));
     }
 
-    public boolean scan(int type) {
+    public String getFreqCapability() {
+        return doStringCommand("GET_CAPABILITY freq");
+    }
+
+    public boolean scan(int type, String freqList) {
         if (type == SCAN_WITHOUT_CONNECTION_SETUP) {
-            return doBooleanCommand("SCAN TYPE=ONLY");
+            if (freqList == null) return doBooleanCommand("SCAN TYPE=ONLY");
+            else return doBooleanCommand("SCAN TYPE=ONLY freq=" + freqList);
         } else if (type == SCAN_WITH_CONNECTION_SETUP) {
-            return doBooleanCommand("SCAN");
+            if (freqList == null) return doBooleanCommand("SCAN");
+            else return doBooleanCommand("SCAN freq=" + freqList);
         } else {
             throw new IllegalArgumentException("Invalid scan type");
         }
