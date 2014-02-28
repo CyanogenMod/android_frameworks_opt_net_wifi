@@ -29,6 +29,29 @@ LOCAL_MODULE := wifi-service
 
 include $(BUILD_JAVA_LIBRARY)
 
+# Make the HAL library
+# ============================================================
+include $(CLEAR_VARS)
+
+LOCAL_REQUIRED_MODULES :=
+
+LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
+LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
+LOCAL_CPPFLAGS += -Wno-conversion-null
+
+LOCAL_C_INCLUDES += \
+	external/libnl-headers \
+
+LOCAL_SRC_FILES := \
+	lib/wifi_hal.cpp \
+	lib/common.cpp \
+	lib/cpp_bindings.cpp \
+	lib/gscan.cpp 
+
+LOCAL_MODULE := libwifi-hal
+
+include $(BUILD_STATIC_LIBRARY)
+
 # Make the JNI part
 # ============================================================
 include $(CLEAR_VARS)
@@ -43,7 +66,9 @@ LOCAL_C_INCLUDES += \
 	$(JNI_H_INCLUDE) \
 	$(call include-path-for, libhardware)/hardware \
 	$(call include-path-for, libhardware_legacy)/hardware_legacy \
-	libcore/include
+	libcore/include \
+	$(LOCAL_PATH)/lib
+
 
 LOCAL_SHARED_LIBRARIES += \
 	libnativehelper \
@@ -51,7 +76,9 @@ LOCAL_SHARED_LIBRARIES += \
 	libutils \
 	libhardware \
 	libhardware_legacy \
-	libandroid_runtime
+	libandroid_runtime 
+
+LOCAL_STATIC_LIBRARIES += libwifi-hal libnl_2
 
 LOCAL_SRC_FILES := jni/com_android_server_wifi_WifiNative.cpp
 LOCAL_MODULE := libwifi-service
