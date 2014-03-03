@@ -2771,6 +2771,7 @@ public class WifiStateMachine extends StateMachine {
                     mLastSignalLevel = -1;
 
                     mWifiInfo.setMacAddress(mWifiNative.getMacAddress());
+                    mWifiNative.enableSaveConfig();
                     mWifiConfigStore.loadAndEnableAllNetworks();
                     initializeWpsDetails();
 
