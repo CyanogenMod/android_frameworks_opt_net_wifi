@@ -898,7 +898,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public void setCountryCode(String countryCode, boolean persist) {
         Slog.i(TAG, "WifiService trying to set country code to " + countryCode +
                 " with persist set to " + persist);
-        enforceChangePermission();
+        enforceConnectivityInternalPermission();
         final long token = Binder.clearCallingIdentity();
         try {
             mWifiStateMachine.setCountryCode(countryCode, persist);
