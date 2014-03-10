@@ -86,6 +86,12 @@ public class WifiNative {
 
     private native void closeSupplicantConnectionNative();
 
+    public native static boolean startHalNative();
+
+    public native static void stopHalNative();
+
+    public native static void waitForHalEventNative();
+
     /**
      * Wait for the supplicant to send an event, returning the event string.
      * @return the event string sent by the supplicant.
@@ -429,14 +435,14 @@ public class WifiNative {
         return doBooleanCommand("DRIVER SETBAND " + band);
     }
 
-   /**
-     * Sets the bluetooth coexistence mode.
-     *
-     * @param mode One of {@link #BLUETOOTH_COEXISTENCE_MODE_DISABLED},
-     *            {@link #BLUETOOTH_COEXISTENCE_MODE_ENABLED}, or
-     *            {@link #BLUETOOTH_COEXISTENCE_MODE_SENSE}.
-     * @return Whether the mode was successfully set.
-     */
+    /**
+      * Sets the bluetooth coexistence mode.
+      *
+      * @param mode One of {@link #BLUETOOTH_COEXISTENCE_MODE_DISABLED},
+      *            {@link #BLUETOOTH_COEXISTENCE_MODE_ENABLED}, or
+      *            {@link #BLUETOOTH_COEXISTENCE_MODE_SENSE}.
+      * @return Whether the mode was successfully set.
+      */
     public boolean setBluetoothCoexistenceMode(int mode) {
         return doBooleanCommand("DRIVER BTCOEXMODE " + mode);
     }
@@ -988,5 +994,24 @@ public class WifiNative {
 
     public String getNfcWpsConfigurationToken(int netId) {
         return doStringCommand("WPS_NFC_CONFIG_TOKEN WPS " + netId);
+    }
+
+
+    private class MonitorThread extends Thread {
+        public void run() {
+            waitForHalEventNative();
+        }
+    }
+
+    public void startHal() {
+        if (startHalNative()) {
+            new MonitorThread().start();
+        } else {
+            Log.i(mTAG, "Could not start hal");
+        }
+    }
+
+    public void stopHal() {
+        stopHalNative();
     }
 }

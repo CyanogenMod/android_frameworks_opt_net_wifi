@@ -24,6 +24,7 @@
 #include <utils/String16.h>
 
 #include "wifi.h"
+#include "wifi_hal.h"
 
 #define REPLY_BUF_SIZE 4096 // wpa_supplicant's maximum size.
 #define EVENT_BUF_SIZE 2048
@@ -140,6 +141,33 @@ static jstring android_net_wifi_doStringCommand(JNIEnv* env, jobject, jstring ja
     return doStringCommand(env,javaCommand);
 }
 
+static wifi_handle halHandle;
+static jboolean android_net_wifi_startHal(JNIEnv* env, jobject) {
+    ALOGD("In wifi start Hal");
+    if (halHandle == NULL) {
+        wifi_error res = wifi_initialize(&halHandle);
+        return res == WIFI_SUCCESS;
+    }
+    else
+        return false;
+}
+
+void android_net_wifi_hal_cleaned_up_handler(wifi_handle handle) {
+    ALOGD("In wifi cleaned up handler");
+    halHandle = NULL;
+}
+
+static void android_net_wifi_stopHal(JNIEnv* env, jobject) {
+    ALOGD("In wifi stop Hal");
+    wifi_cleanup(halHandle, android_net_wifi_hal_cleaned_up_handler);
+}
+
+static void android_net_wifi_waitForHalEvents(JNIEnv* env, jobject) {
+    ALOGD("In wifi waitForHalEvents");
+    wifi_event_loop(halHandle);
+}
+
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -161,6 +189,9 @@ static JNINativeMethod gWifiMethods[] = {
     { "doIntCommandNative", "(Ljava/lang/String;)I", (void*)android_net_wifi_doIntCommand },
     { "doStringCommandNative", "(Ljava/lang/String;)Ljava/lang/String;",
             (void*) android_net_wifi_doStringCommand },
+    { "startHalNative", "()Z", (void*) android_net_wifi_startHal },
+    { "stopHalNative", "()V", (void*) android_net_wifi_stopHal },
+    { "waitForHalEventNative", "()V", (void*) android_net_wifi_waitForHalEvents },
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
