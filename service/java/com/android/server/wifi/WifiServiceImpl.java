@@ -24,6 +24,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.pm.UserInfo;
 import android.database.ContentObserver;
 import android.net.DhcpInfo;
 import android.net.DhcpResults;
@@ -49,6 +50,7 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.os.SystemProperties;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.os.WorkSource;
 import android.os.AsyncTask;
 import android.provider.Settings;
@@ -459,7 +461,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public List<BatchedScanResult> getBatchedScanResults(String callingPackage) {
         enforceAccessPermission();
         if (mBatchedScanSupported == false) return new ArrayList<BatchedScanResult>();
-        int userId = UserHandle.getCallingUserId();
         int uid = Binder.getCallingUid();
         long ident = Binder.clearCallingIdentity();
         try {
@@ -467,17 +468,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<BatchedScanResult>();
             }
-            int currentUser = ActivityManager.getCurrentUser();
-            if (userId != currentUser) {
+            if (!isCurrentOrRelatedUser()) {
                 return new ArrayList<BatchedScanResult>();
-            } else {
-                return mWifiStateMachine.syncGetBatchedScanResultsList();
             }
+            return mWifiStateMachine.syncGetBatchedScanResultsList();
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
     }
-
 
     public void stopBatchedScan(BatchedScanSettings settings) {
         enforceChangePermission();
@@ -858,15 +856,31 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<ScanResult>();
             }
-            int currentUser = ActivityManager.getCurrentUser();
-            if (userId != currentUser) {
+            if (!isCurrentOrRelatedUser()) {
                 return new ArrayList<ScanResult>();
-            } else {
-                return mWifiStateMachine.syncGetScanResultsList();
             }
+            return mWifiStateMachine.syncGetScanResultsList();
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
+    }
+
+    /**
+     * Returns true if the calling user is the current one or one related to it.
+     */
+    private boolean isCurrentOrRelatedUser() {
+        int userId = UserHandle.getCallingUserId();
+        int currentUser = ActivityManager.getCurrentUser();
+        if (userId == currentUser) {
+            return true;
+        }
+        List<UserInfo> relatedUsers = UserManager.get(mContext).getRelatedUsers(currentUser);
+        for (UserInfo relatedUser : relatedUsers) {
+            if (userId == relatedUser.id) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
