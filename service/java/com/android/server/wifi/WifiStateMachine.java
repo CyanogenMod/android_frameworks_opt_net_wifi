@@ -253,6 +253,10 @@ public class WifiStateMachine extends StateMachine {
     private DhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
 
+    // Delay in switching to null country code (non-null has no delay)
+    private final int COUNTRY_CODE_DELAY_MS = 15000;
+    private final AtomicInteger mCountryCodeSequence = new AtomicInteger();
+
     private class InterfaceObserver extends BaseNetworkObserver {
         private WifiStateMachine mWifiStateMachine;
 
@@ -1647,14 +1651,15 @@ public class WifiStateMachine extends StateMachine {
      * @param persist {@code true} if the setting should be remembered.
      */
     public void setCountryCode(String countryCode, boolean persist) {
-        if (persist) {
-            mPersistedCountryCode = countryCode;
-            Settings.Global.putString(mContext.getContentResolver(),
-                    Settings.Global.WIFI_COUNTRY_CODE,
-                    countryCode);
+        // if it's a country code, apply immediately,
+        // if it's empty, delay it in case it's a momentary dropout
+        int countryCodeSequence = mCountryCodeSequence.incrementAndGet();
+        if (TextUtils.isEmpty(countryCode)) {
+            sendMessageDelayed(CMD_SET_COUNTRY_CODE, countryCodeSequence, persist ? 1 : 0,
+                    countryCode, COUNTRY_CODE_DELAY_MS);
+        } else {
+            sendMessage(CMD_SET_COUNTRY_CODE, countryCodeSequence, persist ? 1 : 0, countryCode);
         }
-        sendMessage(CMD_SET_COUNTRY_CODE, countryCode);
-        mWifiP2pChannel.sendMessage(WifiP2pServiceImpl.SET_COUNTRY_CODE, countryCode);
     }
 
     /**
@@ -2633,7 +2638,9 @@ public class WifiStateMachine extends StateMachine {
                         // to the driver happened between mPersistedCountryCode getting set
                         // and now, so simply persisting it here would mean we have sent
                         // nothing to the driver.  Send the cmd so it might be set now.
-                        sendMessageAtFrontOfQueue(CMD_SET_COUNTRY_CODE, countryCode);
+                        int sequenceNum = mCountryCodeSequence.incrementAndGet();
+                        sendMessageAtFrontOfQueue(CMD_SET_COUNTRY_CODE,
+                                sequenceNum, 0, countryCode);
                     }
                     break;
                 case CMD_SET_BATCHED_SCAN:
@@ -3221,18 +3228,29 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_SET_COUNTRY_CODE:
                     String country = (String) message.obj;
+                    final boolean persist = (message.arg2 == 1);
+                    final int sequence = message.arg1;
+                    if (sequence != mCountryCodeSequence.get()) {
+                        if (DBG) log("set country code ignored due to sequnce num");
+                        break;
+                    }
                     if (DBG) log("set country code " + country);
-                    if (country != null) {
-                        country = country.toUpperCase(Locale.ROOT);
-                        if (mLastSetCountryCode == null
-                                || country.equals(mLastSetCountryCode) == false) {
-                            if (mWifiNative.setCountryCode(country)) {
-                                mLastSetCountryCode = country;
-                            } else {
-                                loge("Failed to set country code " + country);
-                            }
+                    if (persist) {
+                        mPersistedCountryCode = country;
+                        Settings.Global.putString(mContext.getContentResolver(),
+                                Settings.Global.WIFI_COUNTRY_CODE,
+                                country);
+                    }
+                    country = country.toUpperCase(Locale.ROOT);
+                    if (mLastSetCountryCode == null
+                            || country.equals(mLastSetCountryCode) == false) {
+                        if (mWifiNative.setCountryCode(country)) {
+                            mLastSetCountryCode = country;
+                        } else {
+                            loge("Failed to set country code " + country);
                         }
                     }
+                    mWifiP2pChannel.sendMessage(WifiP2pServiceImpl.SET_COUNTRY_CODE, country);
                     break;
                 case CMD_SET_FREQUENCY_BAND:
                     int band =  message.arg1;
