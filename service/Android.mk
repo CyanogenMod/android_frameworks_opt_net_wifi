@@ -14,6 +14,8 @@
 
 LOCAL_PATH := $(call my-dir)
 
+ifneq ($(TARGET_BUILD_PDK), true)
+
 include $(CLEAR_VARS)
 
 LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/java
@@ -84,3 +86,5 @@ LOCAL_SRC_FILES := jni/com_android_server_wifi_WifiNative.cpp
 LOCAL_MODULE := libwifi-service
 
 include $(BUILD_SHARED_LIBRARY)
+
+endif
