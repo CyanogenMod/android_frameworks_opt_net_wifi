@@ -22,7 +22,7 @@ import com.android.server.SystemService;
 
 public final class WifiP2pService extends SystemService {
 
-    private static final String TAG = "WifiService";
+    private static final String TAG = "WifiP2pService";
     final WifiP2pServiceImpl mImpl;
 
     public WifiP2pService(Context context) {
@@ -32,7 +32,7 @@ public final class WifiP2pService extends SystemService {
 
     @Override
     public void onStart() {
-        Log.i(TAG, "Registering " + Context.WIFI_SERVICE);
+        Log.i(TAG, "Registering " + Context.WIFI_P2P_SERVICE);
         publishBinderService(Context.WIFI_P2P_SERVICE, mImpl);
     }
 
