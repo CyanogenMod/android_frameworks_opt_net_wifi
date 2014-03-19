@@ -28,31 +28,31 @@ import android.content.pm.UserInfo;
 import android.database.ContentObserver;
 import android.net.DhcpInfo;
 import android.net.DhcpResults;
+import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
-import android.net.wifi.IWifiManager;
-import android.net.wifi.ScanResult;
 import android.net.wifi.BatchedScanResult;
 import android.net.wifi.BatchedScanSettings;
+import android.net.wifi.IWifiManager;
+import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
 import android.net.wifi.WifiChannel;
 import android.net.wifi.WifiConfiguration;
-import android.net.wifi.WifiConfiguration.ProxySettings;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Handler;
-import android.os.Messenger;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Message;
+import android.os.Messenger;
 import android.os.RemoteException;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.WorkSource;
-import android.os.AsyncTask;
 import android.provider.Settings;
 import android.util.Slog;
 
@@ -180,7 +180,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     if (config != null && config.isValid()) {
                         // This is restricted because there is no UI for the user to
                         // monitor/control PAC.
-                        if (config.proxySettings != ProxySettings.PAC) {
+                        if (config.getProxySettings() != ProxySettings.PAC) {
                             if (DBG) Slog.d(TAG, "Connect with config" + config);
                             mWifiStateMachine.sendMessage(Message.obtain(msg));
                         } else {
@@ -766,7 +766,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
-        if (config.proxySettings == ProxySettings.PAC) {
+        if (config.getProxySettings() == ProxySettings.PAC) {
             enforceConnectivityInternalPermission();
         }
         if (config.isValid()) {
