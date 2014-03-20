@@ -14,7 +14,9 @@
 #include <netlink/object-api.h>
 #include <netlink/netlink.h>
 #include <netlink/socket.h>
-#include <netlink-types.h>
+#include <netlink/attr.h>
+#include <netlink/handlers.h>
+#include <netlink/msg.h>
 
 #include <linux/nl80211.h>
 
@@ -52,15 +54,8 @@ static wifi_error wifi_init_interfaces(wifi_handle handle);
 
 void wifi_socket_set_local_port(struct nl_sock *sock, uint32_t port)
 {
-	uint32_t pid = getpid() & 0x3FFFFF;
-
-	if (port == 0) {
-		sock->s_flags &= ~NL_OWN_PORT;
-	} else {
-		sock->s_flags |= NL_OWN_PORT;
-	}
-
-	sock->s_local.nl_pid = pid + (port << 22);
+    uint32_t pid = getpid() & 0x3FFFFF;
+    nl_socket_set_local_port(sock, pid + (port << 22));
 }
 
 static nl_sock * wifi_create_nl_socket(int port)
@@ -74,12 +69,9 @@ static nl_sock * wifi_create_nl_socket(int port)
 
     wifi_socket_set_local_port(sock, port);
 
-    struct sockaddr_nl *addr_nl = &(sock->s_local);
-    ALOGI("socket address is %d:%d:%d:%d",
-        addr_nl->nl_family, addr_nl->nl_pad, addr_nl->nl_pid, addr_nl->nl_groups);
-
+    struct sockaddr_nl *addr_nl = NULL;
     struct sockaddr *addr = NULL;
-    ALOGI("sizeof(sockaddr) = %d, sizeof(sockaddr_nl) = %d", sizeof(*addr), sizeof(*addr_nl));
+    ALOGI("sizeof(sockaddr) = %zu, sizeof(sockaddr_nl) = %zu", sizeof(*addr), sizeof(*addr_nl));
 
     // ALOGI("Connecting socket");
     if (nl_connect(sock, NETLINK_GENERIC)) {
@@ -131,7 +123,6 @@ wifi_error wifi_initialize(wifi_handle *handle)
         return WIFI_ERROR_UNKNOWN;
     }
 
-    ALOGI("cb->refcnt = %d", cb->cb_refcnt);
     nl_cb_set(cb, NL_CB_VALID, NL_CB_CUSTOM, internal_valid_message_handler, info);
     nl_cb_put(cb);
 

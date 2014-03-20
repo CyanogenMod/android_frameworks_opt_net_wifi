@@ -42,7 +42,7 @@ LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
 LOCAL_CPPFLAGS += -Wno-conversion-null
 
 LOCAL_C_INCLUDES += \
-	external/libnl-headers \
+	external/libnl/include
 
 LOCAL_SRC_FILES := \
 	lib/wifi_hal.cpp \
@@ -71,16 +71,16 @@ LOCAL_C_INCLUDES += \
 	libcore/include \
 	$(LOCAL_PATH)/lib
 
-
 LOCAL_SHARED_LIBRARIES += \
 	libnativehelper \
 	libcutils \
 	libutils \
 	libhardware \
 	libhardware_legacy \
-	libandroid_runtime 
+	libandroid_runtime  \
+	libnl
 
-LOCAL_STATIC_LIBRARIES += libwifi-hal libnl_2
+LOCAL_STATIC_LIBRARIES += libwifi-hal
 
 LOCAL_SRC_FILES := jni/com_android_server_wifi_WifiNative.cpp
 LOCAL_MODULE := libwifi-service
