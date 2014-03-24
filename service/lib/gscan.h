@@ -68,10 +68,10 @@ typedef struct {
 
 typedef struct {
     int period;                         // base timer period
-    int num_buckets;                    // maximum 8
-    wifi_scan_bucket_spec buckets[];
     int max_ap_per_scan;
     int report_threshold;               // in %, when buffer is this much full, wake up AP
+    int num_buckets;                    // maximum 8
+    wifi_scan_bucket_spec buckets[];
 } wifi_scan_cmd_params;
 
 wifi_error wifi_start_gscan(wifi_request_id id, wifi_interface_handle iface,

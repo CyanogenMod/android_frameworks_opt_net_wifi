@@ -155,6 +155,7 @@ public:
     int set_iface_id(int ifindex) {
         return put_u32(NL80211_ATTR_IFINDEX, ifindex);
     }
+
 };
 
 class WifiCommand
@@ -164,12 +165,22 @@ protected:
     WifiRequest mMsg;
     Condition mCondition;
     wifi_request_id mId;
+    interface_info *mIfaceInfo;
 public:
     WifiCommand(wifi_handle handle, wifi_request_id id)
-            : mMsg(((hal_info *)handle)->nl80211_family_id), mId(id)
+            : mMsg(getHalInfo(handle)->nl80211_family_id), mId(id)
     {
-        mInfo = (hal_info *)handle;
-        ALOGV("WifiCommand %p created", this);
+        mIfaceInfo = NULL;
+        mInfo = getHalInfo(handle);
+        ALOGV("WifiCommand %p created, mInfo = %p, mIfaceInfo = %p", this, mInfo, mIfaceInfo);
+    }
+
+    WifiCommand(wifi_interface_handle iface, wifi_request_id id)
+            : mMsg(getHalInfo(iface)->nl80211_family_id), mId(id)
+    {
+        mIfaceInfo = getIfaceInfo(iface);
+        mInfo = getHalInfo(iface);
+        ALOGV("WifiCommand %p created, mInfo = %p, mIfaceInfo = %p", this, mInfo, mIfaceInfo);
     }
 
     virtual ~WifiCommand() {
@@ -191,6 +202,9 @@ public:
     int requestVendorEvent(uint32_t id, int subcmd);
 
 protected:
+    wifi_handle wifiHandle() {
+        return getWifiHandle(mInfo);
+    }
 
     /* Override this method to parse reply and dig out data; save it in the object */
     virtual int handleResponse(WifiEvent reply) {
@@ -205,19 +219,19 @@ protected:
     }
 
     int registerHandler(int cmd) {
-        return wifi_register_handler(mInfo, cmd, &event_handler, this);
+        return wifi_register_handler(wifiHandle(), cmd, &event_handler, this);
     }
 
     void unregisterHandler(int cmd) {
-        wifi_unregister_handler(mInfo, cmd);
+        wifi_unregister_handler(wifiHandle(), cmd);
     }
 
     int registerVendorHandler(uint32_t id, int subcmd) {
-        return wifi_register_vendor_handler(mInfo, id, subcmd, &event_handler, this);
+        return wifi_register_vendor_handler(wifiHandle(), id, subcmd, &event_handler, this);
     }
 
     void unregisterVendorHandler(uint32_t id, int subcmd) {
-        wifi_unregister_vendor_handler(mInfo, id, subcmd);
+        wifi_unregister_vendor_handler(wifiHandle(), id, subcmd);
     }
 
 private:
@@ -228,6 +242,8 @@ private:
     static int event_handler(struct nl_msg *msg, void *arg);
 
     /* Other event handlers */
+    static int valid_handler(struct nl_msg *msg, void *arg);
+
     static int ack_handler(struct nl_msg *msg, void *arg);
 
     static int finish_handler(struct nl_msg *msg, void *arg);
