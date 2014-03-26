@@ -780,7 +780,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     deferMessage(message);
                     break;
                 case DISABLE_P2P_TIMED_OUT:
-                    if (mGroupCreatingTimeoutIndex == message.arg1) {
+                    if (mDisableP2pTimeoutIndex == message.arg1) {
                         loge("P2p disable timed out");
                         transitionTo(mP2pDisabledState);
                     }
