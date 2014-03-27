@@ -463,6 +463,10 @@ public class WifiNative {
         }
     }
 
+    public void enableSaveConfig() {
+        doBooleanCommand("SET update_config 1");
+    }
+
     public boolean saveConfig() {
         return doBooleanCommand("SAVE_CONFIG");
     }
