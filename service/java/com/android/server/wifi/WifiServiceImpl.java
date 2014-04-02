@@ -468,7 +468,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<BatchedScanResult>();
             }
-            if (!isCurrentOrRelatedUser()) {
+            if (!isCurrentProfile()) {
                 return new ArrayList<BatchedScanResult>();
             }
             return mWifiStateMachine.syncGetBatchedScanResultsList();
@@ -856,7 +856,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<ScanResult>();
             }
-            if (!isCurrentOrRelatedUser()) {
+            if (!isCurrentProfile()) {
                 return new ArrayList<ScanResult>();
             }
             return mWifiStateMachine.syncGetScanResultsList();
@@ -866,17 +866,18 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
-     * Returns true if the calling user is the current one or one related to it.
+     * Returns true if the calling user is the current one or a profile of the
+     * current user..
      */
-    private boolean isCurrentOrRelatedUser() {
+    private boolean isCurrentProfile() {
         int userId = UserHandle.getCallingUserId();
         int currentUser = ActivityManager.getCurrentUser();
         if (userId == currentUser) {
             return true;
         }
-        List<UserInfo> relatedUsers = UserManager.get(mContext).getRelatedUsers(currentUser);
-        for (UserInfo relatedUser : relatedUsers) {
-            if (userId == relatedUser.id) {
+        List<UserInfo> profiles = UserManager.get(mContext).getProfiles(currentUser);
+        for (UserInfo user : profiles) {
+            if (userId == user.id) {
                 return true;
             }
         }
