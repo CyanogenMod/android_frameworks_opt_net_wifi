@@ -179,13 +179,13 @@ void printScanCapabilities(wifi_gscan_capabilities capabilities)
 /* commands and events                          */
 /* -------------------------------------------  */
 
-static void onScanResults(wifi_request_id id, unsigned num_results, wifi_scan_result *results) {
+static void onScanResults(wifi_request_id id, unsigned num_results) {
 
     printf("Received scan results\n");
 
-    for (unsigned i = 0; i < num_results; i++) {
+    /*for (unsigned i = 0; i < num_results; i++) {
         printScanResult(results[i]);
-    }
+    }*/
 }
 
 static int scanCmdId;
@@ -207,7 +207,7 @@ static bool startScan() {
 
     wifi_scan_result_handler handler;
     memset(&handler, 0, sizeof(handler));
-    handler.on_scan_results = &onScanResults;
+    handler.on_scan_results_available = &onScanResults;
 
     scanCmdId = getNewCmdId();
 
