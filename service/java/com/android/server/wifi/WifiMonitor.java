@@ -93,6 +93,13 @@ public class WifiMonitor {
     private static final String WPS_OVERLAP_STR = "WPS-OVERLAP-DETECTED";
     private static final String WPS_TIMEOUT_STR = "WPS-TIMEOUT";
 
+    /* Hotspot 2.0 ANQP query events */
+    private static final String GAS_QUERY_PREFIX_STR = "GAS-QUERY-";
+    private static final String GAS_QUERY_START_STR = "GAS-QUERY-START";
+    private static final String GAS_QUERY_DONE_STR = "GAS-QUERY-DONE";
+    private static final String RX_HS20_ANQP_ICON_STR = "RX-HS20-ANQP-ICON";
+    private static final int RX_HS20_ANQP_ICON_STR_LEN = RX_HS20_ANQP_ICON_STR.length();
+
     /**
      * Names of events from wpa_supplicant (minus the prefix). In the
      * format descriptions, * &quot;<code>x</code>&quot;
@@ -358,6 +365,11 @@ public class WifiMonitor {
     /* Indicates assoc reject event */
     public static final int ASSOCIATION_REJECTION_EVENT          = BASE + 43;
 
+    /* hotspot 2.0 ANQP events */
+    public static final int GAS_QUERY_START_EVENT                = BASE + 51;
+    public static final int GAS_QUERY_DONE_EVENT                 = BASE + 52;
+    public static final int RX_HS20_ANQP_ICON_EVENT              = BASE + 53;
+
     /**
      * This indicates a read error on the monitor socket conenction
      */
@@ -371,6 +383,7 @@ public class WifiMonitor {
     private final String mInterfaceName;
     private final WifiNative mWifiNative;
     private final StateMachine mStateMachine;
+    private StateMachine mStateMachine2;
     private boolean mMonitoring;
 
     // This is a global counter, since it's not monitor specific. However, the existing
@@ -385,14 +398,20 @@ public class WifiMonitor {
     // This variable is always accessed and modified under a WifiMonitorSingleton lock.
     private static int sRecvErrors;
 
-    public WifiMonitor(StateMachine wifiStateMachine, WifiNative wifiNative) {
+    public WifiMonitor(StateMachine stateMachine, WifiNative wifiNative) {
         if (DBG) Log.d(TAG, "Creating WifiMonitor");
         mWifiNative = wifiNative;
         mInterfaceName = wifiNative.mInterfaceName;
-        mStateMachine = wifiStateMachine;
+        mStateMachine = stateMachine;
+        mStateMachine2 = null;
         mMonitoring = false;
 
         WifiMonitorSingleton.sInstance.registerInterfaceMonitor(mInterfaceName, this);
+    }
+
+    // TODO: temporary hack, should be handle by supplicant manager (new component in future)
+    public void setStateMachine2(StateMachine stateMachine) {
+        mStateMachine2 = stateMachine;
     }
 
     public void startMonitoring() {
@@ -611,6 +630,12 @@ public class WifiMonitor {
                 handleP2pEvents(eventStr);
             } else if (eventStr.startsWith(HOST_AP_EVENT_PREFIX_STR)) {
                 handleHostApEvents(eventStr);
+            } else if (eventStr.startsWith(GAS_QUERY_PREFIX_STR)) {
+                handleGasQueryEvents(eventStr);
+            } else if (eventStr.startsWith(RX_HS20_ANQP_ICON_STR)) {
+                if (mStateMachine2 != null)
+                    mStateMachine2.sendMessage(RX_HS20_ANQP_ICON_EVENT,
+                            eventStr.substring(RX_HS20_ANQP_ICON_STR_LEN + 1));
             }
             else {
                 if (DBG) Log.w(TAG, "couldn't identify event type - " + eventStr);
@@ -891,6 +916,38 @@ public class WifiMonitor {
             /* AP-STA-DISCONNECTED 42:fc:89:a8:96:09 p2p_dev_addr=02:90:4c:a0:92:54 */
         } else if (tokens[0].equals(AP_STA_DISCONNECTED_STR)) {
             mStateMachine.sendMessage(AP_STA_DISCONNECTED_EVENT, new WifiP2pDevice(dataString));
+        }
+    }
+
+    /**
+     * Handle ANQP events
+     */
+    private void handleGasQueryEvents(String dataString) {
+        // hs20
+        if (mStateMachine2 == null) return;
+        if (dataString.startsWith(GAS_QUERY_START_STR)) {
+            mStateMachine2.sendMessage(GAS_QUERY_START_EVENT);
+        } else if (dataString.startsWith(GAS_QUERY_DONE_STR)) {
+            String[] dataTokens = dataString.split(" ");
+            String bssid = null;
+            int success = 0;
+            for (String token : dataTokens) {
+                String[] nameValue = token.split("=");
+                if (nameValue.length != 2) {
+                    continue;
+                }
+                if (nameValue[0].equals("addr")) {
+                    bssid = nameValue[1];
+                    continue;
+                }
+                if (nameValue[0].equals("result"))  {
+                    success = nameValue[1].equals("SUCCESS") ? 1 : 0;
+                    continue;
+                }
+            }
+            mStateMachine2.sendMessage(GAS_QUERY_DONE_EVENT, success, 0, bssid);
+        } else {
+            if (DBG) Log.d(TAG, "Unknown handled GAS query event");
         }
     }
 

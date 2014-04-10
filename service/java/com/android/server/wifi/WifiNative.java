@@ -322,6 +322,39 @@ public class WifiNative {
     }
 
     /**
+     * Format of result:
+     * id=1016
+     * bssid=00:03:7f:40:84:10
+     * freq=2462
+     * beacon_int=200
+     * capabilities=0x0431
+     * qual=0
+     * noise=0
+     * level=-46
+     * tsf=0000002669008476
+     * age=5
+     * ie=00105143412d485332302d52322d54455354010882848b960c12182403010b0706555...
+     * flags=[WPA2-EAP-CCMP][ESS][P2P][HS20]
+     * ssid=QCA-HS20-R2-TEST
+     * p2p_device_name=
+     * p2p_config_methods=0x0
+     * anqp_venue_name=02083d656e6757692d466920416c6c69616e63650a3239383920436f...
+     * anqp_network_auth_type=010000
+     * anqp_roaming_consortium=03506f9a05001bc504bd
+     * anqp_ip_addr_type_availability=0c
+     * anqp_nai_realm=0200300000246d61696c2e6578616d706c652e636f6d3b636973636f2...
+     * anqp_3gpp=000600040132f465
+     * anqp_domain_name=0b65786d61706c652e636f6d
+     * hs20_operator_friendly_name=11656e6757692d466920416c6c69616e63650e636869...
+     * hs20_wan_metrics=01c40900008001000000000a00
+     * hs20_connection_capability=0100000006140001061600000650000106bb010106bb0...
+     * hs20_osu_providers_list=0b5143412d4f53552d425353010901310015656e6757692d...
+     */
+    public String scanResult(String bssid) {
+        return doStringCommand("BSS " + bssid);
+    }
+
+    /**
      * Format of command
      * DRIVER WLS_BATCHING SET SCANFREQ=x MSCAN=r BESTN=y CHANNEL=<z, w, t> RTT=s
      * where x is an ascii representation of an integer number of seconds between scans
@@ -1023,6 +1056,10 @@ public class WifiNative {
 
     public String getNfcWpsConfigurationToken(int netId) {
         return doStringCommand("WPS_NFC_CONFIG_TOKEN WPS " + netId);
+    }
+
+    public boolean fetchAnqp(String bssid, String subtypes) {
+        return doBooleanCommand("ANQP_GET " + bssid + " " + subtypes);
     }
 
 

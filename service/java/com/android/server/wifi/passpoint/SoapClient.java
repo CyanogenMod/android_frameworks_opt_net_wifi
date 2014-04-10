@@ -14,26 +14,11 @@
  * limitations under the License.
  */
 
-package com.android.server.wifi.hotspot;
-
-import android.content.Context;
-import android.net.wifi.hotspot.IWifiHotspotManager;
-import android.util.Log;
+package com.android.server.wifi.passpoint;
 
 /**
  * TODO: doc
- * @hide
  */
-public final class WifiHotspotServiceImpl extends IWifiHotspotManager.Stub {
-    private static final String TAG = "WifiHotspotService";
-    private static final boolean DBG = false;
+public class SoapClient implements PasspointClient.SoapClient {
 
-    public WifiHotspotServiceImpl(Context context) {
-        // TODO
-    }
-
-    public void test() {
-        Log.d(TAG, "test()");
-    }
 }
-

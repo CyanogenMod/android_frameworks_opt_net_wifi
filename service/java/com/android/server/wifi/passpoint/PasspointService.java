@@ -14,26 +14,27 @@
  * limitations under the License.
  */
 
-package com.android.server.wifi.hotspot;
+package com.android.server.wifi.passpoint;
 
 import android.content.Context;
 import android.util.Log;
 import com.android.server.SystemService;
 
-public final class WifiHotspotService extends SystemService {
+public final class PasspointService extends SystemService {
 
-    private static final String TAG = "WifiHotspotService";
-    final WifiHotspotServiceImpl mImpl;
+    private static final String TAG = "PasspointService";
+    final PasspointServiceImpl mImpl;
 
-    public WifiHotspotService(Context context) {
+    public PasspointService(Context context) {
         super(context);
-        mImpl = new WifiHotspotServiceImpl(context);
+        Log.i(TAG, "Creating " + Context.WIFI_PASSPOINT_SERVICE);
+        mImpl = new PasspointServiceImpl(getContext());
     }
 
     @Override
     public void onStart() {
-        Log.i(TAG, "Registering " + Context.WIFI_HOTSPOT_SERVICE);
-        publishBinderService(Context.WIFI_HOTSPOT_SERVICE, mImpl);
+        Log.i(TAG, "Registering " + Context.WIFI_PASSPOINT_SERVICE);
+        publishBinderService(Context.WIFI_PASSPOINT_SERVICE, mImpl);
     }
 
     @Override

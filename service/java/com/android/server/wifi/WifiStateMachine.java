@@ -71,6 +71,7 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
+import android.net.wifi.passpoint.PasspointManager;
 import android.os.BatteryStats;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -134,7 +135,7 @@ import java.net.Inet6Address;
 public class WifiStateMachine extends StateMachine {
 
     private static final String NETWORKTYPE = "WIFI";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false;
     private static final boolean mLogMessages = false;
 
@@ -345,8 +346,13 @@ public class WifiStateMachine extends StateMachine {
     // Channel for sending replies.
     private AsyncChannel mReplyChannel = new AsyncChannel();
 
+    private PasspointManager mPasspointManager;
     private WifiP2pServiceImpl mWifiP2pServiceImpl;
-    //Used to initiate a connection with WifiP2pService
+
+    // Used to initiate a connection with PasspointService
+    private AsyncChannel mPasspointChannel;
+
+    // Used to initiate a connection with WifiP2pService
     private AsyncChannel mWifiP2pChannel;
     private AsyncChannel mWifiApConfigChannel;
 
@@ -474,6 +480,9 @@ public class WifiStateMachine extends StateMachine {
     /* Commands from/to the SupplicantStateTracker */
     /* Reset the supplicant state tracker */
     static final int CMD_RESET_SUPPLICANT_STATE           = BASE + 111;
+
+    /* Passpoint commands */
+    public static final int CMD_REGISTER_PASSPOINT        = BASE + 121;
 
     /* P2p commands */
     /* We are ok with no response here since we wont do much with it anyway */
@@ -745,6 +754,8 @@ public class WifiStateMachine extends StateMachine {
 
         IBinder s = ServiceManager.getService(Context.WIFI_P2P_SERVICE);
         mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s);
+        mPasspointManager =
+                (PasspointManager) mContext.getSystemService(Context.WIFI_PASSPOINT_SERVICE);
 
         mNetworkInfo.setIsAvailable(false);
         mLastBssid = null;
@@ -3152,6 +3163,14 @@ public class WifiStateMachine extends StateMachine {
                 mWifiP2pChannel = new AsyncChannel();
                 mWifiP2pChannel.connect(mContext, getHandler(),
                     mWifiP2pServiceImpl.getP2pStateMachineMessenger());
+            }
+
+            // STOPSHIP: temp solution, should use supplicant manager instead
+            if (mPasspointChannel == null) {
+                mPasspointChannel = new AsyncChannel();
+                mPasspointChannel.connectSync(mContext, getHandler(),
+                        mPasspointManager.getMessenger());
+                mPasspointChannel.sendMessage(CMD_REGISTER_PASSPOINT, mWifiMonitor);
             }
 
             if (mWifiApConfigChannel == null) {
