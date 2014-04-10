@@ -339,7 +339,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         if (wifiEnabled) setWifiEnabled(wifiEnabled);
 
         mWifiWatchdogStateMachine = WifiWatchdogStateMachine.
-               makeWifiWatchdogStateMachine(mContext);
+               makeWifiWatchdogStateMachine(mContext, mWifiStateMachine.getMessenger());
     }
 
     /**
@@ -1160,12 +1160,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return new Messenger(mClientHandler);
     }
 
-    /** Get a reference to WifiStateMachine handler for AsyncChannel communication */
-    public Messenger getWifiStateMachineMessenger() {
-        enforceAccessPermission();
-        enforceChangePermission();
-        return mWifiStateMachine.getMessenger();
-    }
 
     /**
      * Get the IP and proxy configuration file

@@ -30,6 +30,7 @@ import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Message;
+import android.os.Messenger;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.LruCache;
@@ -301,13 +302,13 @@ public class WifiWatchdogStateMachine extends StateMachine {
      *                         /---------\
      *                       (all other states)
      */
-    private WifiWatchdogStateMachine(Context context) {
+    private WifiWatchdogStateMachine(Context context, Messenger dstMessenger) {
         super("WifiWatchdogStateMachine");
         mContext = context;
         mContentResolver = context.getContentResolver();
         mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        mWsmChannel.connectSync(mContext, getHandler(),
-                mWifiManager.getWifiStateMachineMessenger());
+
+        mWsmChannel.connectSync(mContext, getHandler(), dstMessenger);
 
         setupNetworkReceiver();
 
@@ -334,7 +335,7 @@ public class WifiWatchdogStateMachine extends StateMachine {
         updateSettings();
     }
 
-    public static WifiWatchdogStateMachine makeWifiWatchdogStateMachine(Context context) {
+    public static WifiWatchdogStateMachine makeWifiWatchdogStateMachine(Context context, Messenger dstMessenger) {
         ContentResolver contentResolver = context.getContentResolver();
 
         ConnectivityManager cm = (ConnectivityManager) context.getSystemService(
@@ -346,7 +347,7 @@ public class WifiWatchdogStateMachine extends StateMachine {
         // watchdog in an enabled state
         putSettingsGlobalBoolean(contentResolver, Settings.Global.WIFI_WATCHDOG_ON, true);
 
-        WifiWatchdogStateMachine wwsm = new WifiWatchdogStateMachine(context);
+        WifiWatchdogStateMachine wwsm = new WifiWatchdogStateMachine(context, dstMessenger);
         wwsm.start();
         return wwsm;
     }
