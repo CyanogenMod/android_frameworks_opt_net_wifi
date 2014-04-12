@@ -49,8 +49,11 @@ import android.net.wifi.p2p.nsd.WifiP2pServiceRequest;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Binder;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.INetworkManagementService;
+import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
@@ -309,6 +312,52 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         }
     }
 
+    /**
+     * Handles client connections
+     */
+    private class ClientHandler extends Handler {
+
+        ClientHandler(android.os.Looper looper) {
+            super(looper);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+              case WifiP2pManager.SET_DEVICE_NAME:
+              case WifiP2pManager.SET_WFD_INFO:
+              case WifiP2pManager.DISCOVER_PEERS:
+              case WifiP2pManager.STOP_DISCOVERY:
+              case WifiP2pManager.CONNECT:
+              case WifiP2pManager.CANCEL_CONNECT:
+              case WifiP2pManager.CREATE_GROUP:
+              case WifiP2pManager.REMOVE_GROUP:
+              case WifiP2pManager.START_LISTEN:
+              case WifiP2pManager.STOP_LISTEN:
+              case WifiP2pManager.SET_CHANNEL:
+              case WifiP2pManager.START_WPS:
+              case WifiP2pManager.ADD_LOCAL_SERVICE:
+              case WifiP2pManager.REMOVE_LOCAL_SERVICE:
+              case WifiP2pManager.CLEAR_LOCAL_SERVICES:
+              case WifiP2pManager.DISCOVER_SERVICES:
+              case WifiP2pManager.ADD_SERVICE_REQUEST:
+              case WifiP2pManager.REMOVE_SERVICE_REQUEST:
+              case WifiP2pManager.CLEAR_SERVICE_REQUESTS:
+              case WifiP2pManager.REQUEST_PEERS:
+              case WifiP2pManager.REQUEST_CONNECTION_INFO:
+              case WifiP2pManager.REQUEST_GROUP_INFO:
+              case WifiP2pManager.DELETE_PERSISTENT_GROUP:
+              case WifiP2pManager.REQUEST_PERSISTENT_GROUP_INFO:
+                mP2pStateMachine.sendMessage(Message.obtain(msg));
+                break;
+              default:
+                Slog.d(TAG, "ClientHandler.handleMessage ignoring msg=" + msg);
+                break;
+            }
+        }
+    }
+    private ClientHandler mClientHandler;
+
     public WifiP2pServiceImpl(Context context) {
         mContext = context;
 
@@ -322,7 +371,11 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         mThisDevice.primaryDeviceType = mContext.getResources().getString(
                 com.android.internal.R.string.config_wifi_p2p_device_type);
 
-        mP2pStateMachine = new P2pStateMachine(TAG, mP2pSupported);
+        HandlerThread wifiP2pThread = new HandlerThread("WifiP2pService");
+        wifiP2pThread.start();
+        mClientHandler = new ClientHandler(wifiP2pThread.getLooper());
+
+        mP2pStateMachine = new P2pStateMachine(TAG, wifiP2pThread.getLooper(), mP2pSupported);
         mP2pStateMachine.start();
     }
 
@@ -352,6 +405,18 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
      * an AsyncChannel communication with WifiP2pService
      */
     public Messenger getMessenger() {
+        enforceAccessPermission();
+        enforceChangePermission();
+        return new Messenger(mClientHandler);
+    }
+
+    /**
+     * Get a reference to handler. This is used by a WifiStateMachine to establish
+     * an AsyncChannel communication with P2pStateMachine
+     * @hide
+     */
+    public Messenger getP2pStateMachineMessenger() {
+        enforceConnectivityInternalPermission();
         enforceAccessPermission();
         enforceChangePermission();
         return new Messenger(mP2pStateMachine.getHandler());
@@ -451,8 +516,8 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         // Saved WifiP2pGroup from invitation request
         private WifiP2pGroup mSavedP2pGroup;
 
-        P2pStateMachine(String name, boolean p2pSupported) {
-            super(name);
+        P2pStateMachine(String name, Looper looper, boolean p2pSupported) {
+            super(name, looper);
 
             addState(mDefaultState);
                 addState(mP2pNotSupportedState, mDefaultState);
