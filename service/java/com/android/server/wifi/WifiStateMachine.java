@@ -43,13 +43,17 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
+import static android.net.ConnectivityServiceProtocol.NetworkFactoryProtocol;
 import android.net.DhcpResults;
 import android.net.DhcpStateMachine;
 import android.net.InterfaceConfiguration;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
+import android.net.NetworkAgent;
+import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkInfo.DetailedState;
+import android.net.NetworkRequest;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.wifi.BatchedScanResult;
@@ -280,6 +284,7 @@ public class WifiStateMachine extends StateMachine {
     private DhcpResults mDhcpResults;
     private WifiInfo mWifiInfo;
     private NetworkInfo mNetworkInfo;
+    private NetworkCapabilities mNetworkCapabilities;
     private SupplicantStateTracker mSupplicantStateTracker;
     private DhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
@@ -344,6 +349,11 @@ public class WifiStateMachine extends StateMachine {
     //Used to initiate a connection with WifiP2pService
     private AsyncChannel mWifiP2pChannel;
     private AsyncChannel mWifiApConfigChannel;
+
+    private NetworkAgent mNetworkAgent;
+
+    // Used to filter out requests we couldn't possibly satisfy.
+    private final NetworkCapabilities mNetworkCapabilitiesFilter = new NetworkCapabilities();
 
     /* The base for wifi message types */
     static final int BASE = Protocol.BASE_WIFI;
@@ -775,6 +785,34 @@ public class WifiStateMachine extends StateMachine {
         mFrameworkAutoJoin.set(Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.WIFI_ENHANCED_AUTO_JOIN, 1) == 1);
 
+        mNetworkCapabilitiesFilter.addTransportType(NetworkCapabilities.TRANSPORT_WIFI);
+        mNetworkCapabilitiesFilter.addNetworkCapability(
+                NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        mNetworkCapabilitiesFilter.addNetworkCapability(
+                NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED);
+        mNetworkCapabilitiesFilter.setLinkUpstreamBandwidthKbps(1024 * 1024);
+        mNetworkCapabilitiesFilter.setLinkDownstreamBandwidthKbps(1024 * 1024);
+        // TODO - needs to be a bit more dynamic
+        mNetworkCapabilities = new NetworkCapabilities(mNetworkCapabilitiesFilter);
+
+        mNetworkAgent = new NetworkAgent(getHandler().getLooper(), mContext,
+                "WifiNetworkAgent") {
+            protected void connect() {
+                if (DBG) log("WifiNetworkAgent Starting wifi");
+                setDriverStart(true);
+                reconnectCommand();
+            }
+            protected void disconnect() {
+                if (DBG) log("WifiNetworkAgent Stopping Wifi");
+                setDriverStart(false);
+            }
+        };
+        // TODO - this needs to be dynamic - do when we integrate with wifi selection change.
+        mNetworkAgent.sendNetworkCapabilities(mNetworkCapabilities);
+        // TODO - this is a const value to mimic old behavior - cell is using 50, wifi trumps it.
+        // This will be replaced by constants from the NetworkScore class post integration.
+        // For now, be better than the 50 in DcTracker.java
+        mNetworkAgent.sendNetworkScore(60);
 
         mContext.registerReceiver(
             new BroadcastReceiver() {
@@ -2454,6 +2492,7 @@ public class WifiStateMachine extends StateMachine {
                         + " old: " + mLinkProperties + "new: " + newLp);
             }
             mLinkProperties = newLp;
+            mNetworkAgent.sendLinkProperties(mLinkProperties);
             if (getNetworkDetailedState() == DetailedState.CONNECTED) {
                 sendLinkConfigurationChangedBroadcast();
             }
@@ -2478,8 +2517,8 @@ public class WifiStateMachine extends StateMachine {
 
             // Now clear the merged link properties.
             mLinkProperties.clear();
+            mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
-
 
      /**
       * try to update default route MAC address.
@@ -2589,6 +2628,7 @@ public class WifiStateMachine extends StateMachine {
 
         if (state != mNetworkInfo.getDetailedState()) {
             mNetworkInfo.setDetailedState(state, null, mWifiInfo.getSSID());
+            mNetworkAgent.sendNetworkInfo(mNetworkInfo);
         }
     }
 
@@ -2891,18 +2931,28 @@ public class WifiStateMachine extends StateMachine {
             logStateAndMessage(message, getClass().getSimpleName());
 
             switch (message.what) {
-                case AsyncChannel.CMD_CHANNEL_HALF_CONNECTED:
-                    if (message.arg1 == AsyncChannel.STATUS_SUCCESSFUL) {
-                        mWifiP2pChannel.sendMessage(AsyncChannel.CMD_CHANNEL_FULL_CONNECTION);
+                case AsyncChannel.CMD_CHANNEL_HALF_CONNECTED: {
+                    AsyncChannel ac = (AsyncChannel) message.obj;
+                    if (ac == mWifiP2pChannel) {
+                        if (message.arg1 == AsyncChannel.STATUS_SUCCESSFUL) {
+                            mWifiP2pChannel.sendMessage(AsyncChannel.CMD_CHANNEL_FULL_CONNECTION);
+                        } else {
+                            loge("WifiP2pService connection failure, error=" + message.arg1);
+                        }
                     } else {
-                        loge("WifiP2pService connection failure, error=" + message.arg1);
+                        loge("got HALF_CONNECTED for unknown channel");
                     }
                     break;
-                case AsyncChannel.CMD_CHANNEL_DISCONNECTED:
-                    loge("WifiP2pService channel lost, message.arg1 =" + message.arg1);
-                    //TODO: Re-establish connection to state machine after a delay
-                    //mWifiP2pChannel.connect(mContext, getHandler(), mWifiP2pManager.getMessenger());
+                }
+                case AsyncChannel.CMD_CHANNEL_DISCONNECTED: {
+                    AsyncChannel ac = (AsyncChannel) message.obj;
+                    if (ac == mWifiP2pChannel) {
+                        loge("WifiP2pService channel lost, message.arg1 =" + message.arg1);
+                        //TODO: Re-establish connection to state machine after a delay
+                        //mWifiP2pChannel.connect(mContext, getHandler(), mWifiP2pManager.getMessenger());
+                    }
                     break;
+                }
                 case CMD_BLUETOOTH_ADAPTER_STATE_CHANGE:
                     mBluetoothConnectionActive = (message.arg1 !=
                             BluetoothAdapter.STATE_DISCONNECTED);
@@ -2948,6 +2998,11 @@ public class WifiStateMachine extends StateMachine {
                         sendMessageAtFrontOfQueue(CMD_SET_COUNTRY_CODE,
                                 sequenceNum, 0, countryCode);
                     }
+
+                    checkAndSetConnectivityInstance();
+                    mCm.registerNetworkFactory(new Messenger(getHandler()));
+                    // let network requests drive this - TODO refactor for smoother startup
+                    disconnectCommand();
                     break;
                 case CMD_SET_BATCHED_SCAN:
                     recordBatchedScanSettings(message.arg1, message.arg2, (Bundle)message.obj);
@@ -2958,6 +3013,22 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_START_NEXT_BATCHED_SCAN:
                     startNextBatchedScan();
                     break;
+                case NetworkFactoryProtocol.CMD_REQUEST_NETWORK: {
+                    NetworkRequest netRequest = (NetworkRequest)message.obj;
+                    int score = message.arg1;
+                    NetworkCapabilities netCap = netRequest.networkCapabilities;
+                    if (netCap.satisfiedByNetworkCapabilities(mNetworkCapabilitiesFilter)) {
+                        mNetworkAgent.addNetworkRequest(netRequest, score);
+                    } else {
+                        if (DBG) log("Wifi can't satisfy request " + netRequest);
+                    }
+                    break;
+                }
+                case NetworkFactoryProtocol.CMD_CANCEL_REQUEST: {
+                    NetworkRequest netRequest = (NetworkRequest)message.obj;
+                    mNetworkAgent.removeNetworkRequest(netRequest);
+                    break;
+                }
                     /* Discard */
                 case CMD_START_SCAN:
                 case CMD_START_SUPPLICANT:
@@ -3253,6 +3324,7 @@ public class WifiStateMachine extends StateMachine {
         public void enter() {
             /* Wifi is available as long as we have a connection to supplicant */
             mNetworkInfo.setIsAvailable(true);
+            if (mNetworkAgent != null) mNetworkAgent.sendNetworkInfo(mNetworkInfo);
 
             int defaultInterval = mContext.getResources().getInteger(
                     R.integer.config_wifi_supplicant_scan_interval);
@@ -3325,6 +3397,7 @@ public class WifiStateMachine extends StateMachine {
         @Override
         public void exit() {
             mNetworkInfo.setIsAvailable(false);
+            mNetworkAgent.sendNetworkInfo(mNetworkInfo);
         }
     }
 
@@ -4691,6 +4764,14 @@ public class WifiStateMachine extends StateMachine {
     class ConnectedState extends State {
         @Override
         public void enter() {
+            // Verify we should be here.  There were some conditions at boot time that
+            // caused us to end here, but those races should be resolved.  Left in
+            // as a belt-and-suspenders measure.  TODO - remove if not longer hit.
+            if (mNetworkAgent.isConnectionRequested() == false) {
+                loge("Wifi hit ConnectedState when it should not be connecting");
+                sendMessage(CMD_STOP_DRIVER);
+            }
+
             String address;
             updateDefaultRouteMacAddress(1000);
             if (DBG) {
