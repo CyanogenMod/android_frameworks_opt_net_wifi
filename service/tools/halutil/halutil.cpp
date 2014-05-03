@@ -697,6 +697,50 @@ void readTestOptions(int argc, char *argv[]){
    }
 }
 
+wifi_iface_stat link_stat;
+void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
+         int num_radios, wifi_radio_stat *radio_stat)
+{
+    memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
+}
+
+void printLinkStats(wifi_iface_stat link_stat)
+{
+    printMsg("printing link layer statistics:\n");
+    printMsg("beacon_rx = %d\n", link_stat.beacon_rx);
+    printMsg("AC_BE:\n");
+    printMsg("txmpdu = %d\n", link_stat.ac[WIFI_AC_BE].tx_mpdu);
+    printMsg("rxmpdu = %d\n", link_stat.ac[WIFI_AC_BE].rx_mpdu);
+    printMsg("mpdu_lost = %d\n", link_stat.ac[WIFI_AC_BE].mpdu_lost);
+    printMsg("retries = %d\n", link_stat.ac[WIFI_AC_BE].retries);
+    printMsg("AC_BK:\n");
+    printMsg("txmpdu = %d\n", link_stat.ac[WIFI_AC_BK].tx_mpdu);
+    printMsg("rxmpdu = %d\n", link_stat.ac[WIFI_AC_BK].rx_mpdu);
+    printMsg("mpdu_lost = %d\n", link_stat.ac[WIFI_AC_BK].mpdu_lost);
+    printMsg("AC_VI:\n");
+    printMsg("txmpdu = %d\n", link_stat.ac[WIFI_AC_VI].tx_mpdu);
+    printMsg("rxmpdu = %d\n", link_stat.ac[WIFI_AC_VI].rx_mpdu);
+    printMsg("mpdu_lost = %d\n", link_stat.ac[WIFI_AC_VI].mpdu_lost);
+    printMsg("AC_VO:\n");
+    printMsg("txmpdu = %d\n", link_stat.ac[WIFI_AC_VO].tx_mpdu);
+    printMsg("rxmpdu = %d\n", link_stat.ac[WIFI_AC_VO].rx_mpdu);
+    printMsg("mpdu_lost = %d\n", link_stat.ac[WIFI_AC_VO].mpdu_lost);
+}
+
+void getLinkStats(void)
+{
+    wifi_stats_result_handler handler;
+    memset(&handler, 0, sizeof(handler));
+    handler.on_link_stats_results = &onLinkStatsResults;
+
+    int result = wifi_get_link_stats(0, wlan0Handle, handler);
+    if (result < 0) {
+        printMsg("failed to get link statistics - %d\n", result);
+    } else {
+        printLinkStats(link_stat);
+    }
+}
+
 int main(int argc, char *argv[]) {
 
     pthread_mutex_init(&printMutex, NULL);
@@ -733,6 +777,7 @@ int main(int argc, char *argv[]) {
         printf(" -low_th          Low threshold for hotlist APs\n");
         printf(" -hight_th        High threshold for hotlist APs\n");
         printf(" -hotlist_bssids  BSSIDs for hotlist test\n");
+        printf(" -stats  	  print link layer statistics\n");
         goto cleanup;
     }
 
@@ -747,6 +792,8 @@ int main(int argc, char *argv[]) {
     }else if(strcmp(argv[1], "-h") == 0) {
         readTestOptions(argc, argv);
         testHotlistAPs();
+    }else if (strcmp(argv[1], "-stats") == 0) {
+	getLinkStats();
     }
 
 cleanup:
