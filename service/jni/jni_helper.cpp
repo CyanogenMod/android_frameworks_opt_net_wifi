@@ -47,6 +47,34 @@ void throwException( JNIEnv *env, const char *message, int line )
     (env)->ThrowNew(exClass, message);
 }
 
+jboolean getBoolField(JNIEnv *env, jobject obj, const char *name)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    jfieldID field = (env)->GetFieldID(cls, name, "Z");
+    if (field == 0) {
+        THROW(env, "Error in accessing field");
+        return 0;
+    }
+
+    jboolean value = (env)->GetBooleanField(obj, field);
+    env->DeleteLocalRef(cls);
+    return value;
+}
+
+jint getIntField(JNIEnv *env, jobject obj, const char *name)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    jfieldID field = (env)->GetFieldID(cls, name, "I");
+    if (field == 0) {
+        THROW(env, "Error in accessing field");
+        return 0;
+    }
+
+    jint value = (env)->GetIntField(obj, field);
+    env->DeleteLocalRef(cls);
+    return value;
+}
+
 jlong getLongField(JNIEnv *env, jobject obj, const char *name)
 {
     jclass cls = (env)->GetObjectClass(obj);
@@ -57,6 +85,21 @@ jlong getLongField(JNIEnv *env, jobject obj, const char *name)
     }
 
     jlong value = (env)->GetLongField(obj, field);
+    env->DeleteLocalRef(cls);
+    return value;
+}
+
+jobject getObjectField(JNIEnv *env, jobject obj, const char *name, const char *type)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    jfieldID field = (env)->GetFieldID(cls, name, type);
+    if (field == 0) {
+        THROW(env, "Error in accessing field");
+        return 0;
+    }
+
+    jobject value = (env)->GetObjectField(obj, field);
+    env->DeleteLocalRef(cls);
     return value;
 }
 
@@ -78,7 +121,32 @@ jlong getLongArrayField(JNIEnv *env, jobject obj, const char *name, int index)
 
     jlong value = elem[index];
     (env)->ReleaseLongArrayElements(array, elem, 0);
+
+    env->DeleteLocalRef(array);
+    env->DeleteLocalRef(cls);
+
     return value;
+}
+
+jobject getObjectArrayField(JNIEnv *env, jobject obj, const char *name, const char *type, int index)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    jfieldID field = (env)->GetFieldID(cls, name, type);
+    if (field == 0) {
+        THROW(env, "Error in accessing field definition");
+        return 0;
+    }
+
+    jobjectArray array = (jobjectArray)(env)->GetObjectField(obj, field);
+    jobject elem = (env)->GetObjectArrayElement(array, index);
+    if (elem == NULL) {
+        THROW(env, "Error in accessing index element");
+        return 0;
+    }
+
+    env->DeleteLocalRef(array);
+    env->DeleteLocalRef(cls);
+    return elem;
 }
 
 void setIntField(JNIEnv *env, jobject obj, const char *name, jint value)
@@ -96,6 +164,7 @@ void setIntField(JNIEnv *env, jobject obj, const char *name, jint value)
     }
 
     (env)->SetIntField(obj, field, value);
+    env->DeleteLocalRef(cls);
 }
 
 void setLongField(JNIEnv *env, jobject obj, const char *name, jlong value)
@@ -113,6 +182,7 @@ void setLongField(JNIEnv *env, jobject obj, const char *name, jlong value)
     }
 
     (env)->SetLongField(obj, field, value);
+    env->DeleteLocalRef(cls);
 }
 
 void setLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray value)
@@ -135,6 +205,8 @@ void setLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray va
 
     (env)->SetObjectField(obj, field, value);
     ALOGD("array field set");
+
+    env->DeleteLocalRef(cls);
 }
 
 void setLongArrayElement(JNIEnv *env, jobject obj, const char *name, int index, jlong value)
@@ -170,7 +242,9 @@ void setLongArrayElement(JNIEnv *env, jobject obj, const char *name, int index, 
     }
 
     elem[index] = value;
-    (env)->ReleaseLongArrayElements(array, elem, 0);
+    env->ReleaseLongArrayElements(array, elem, 0);
+    env->DeleteLocalRef(array);
+    env->DeleteLocalRef(cls);
 }
 
 void setObjectField(JNIEnv *env, jobject obj, const char *name, const char *type, jobject value)
@@ -188,11 +262,11 @@ void setObjectField(JNIEnv *env, jobject obj, const char *name, const char *type
     }
 
     (env)->SetObjectField(obj, field, value);
+    env->DeleteLocalRef(cls);
 }
 
 void setStringField(JNIEnv *env, jobject obj, const char *name, const char *value)
 {
-
     jstring str = env->NewStringUTF(value);
 
     if (str == NULL) {
@@ -201,6 +275,7 @@ void setStringField(JNIEnv *env, jobject obj, const char *name, const char *valu
     }
 
     setObjectField(env, obj, name, "Ljava/lang/String;", str);
+    env->DeleteLocalRef(str);
 }
 
 void reportEvent(JNIEnv *env, jobject obj, const char *method, const char *signature, ...)
@@ -222,6 +297,8 @@ void reportEvent(JNIEnv *env, jobject obj, const char *method, const char *signa
 
     env->CallVoidMethodV(obj, methodID, params);
     va_end(params);
+
+    env->DeleteLocalRef(cls);
 }
 
 jobject createObject(JNIEnv *env, const char *className)
@@ -243,6 +320,7 @@ jobject createObject(JNIEnv *env, const char *className)
         return NULL;
     }
 
+    env->DeleteLocalRef(cls);
     return obj;
 }
 

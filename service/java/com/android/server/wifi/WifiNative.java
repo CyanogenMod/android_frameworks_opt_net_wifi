@@ -17,6 +17,8 @@
 package com.android.server.wifi;
 
 import android.net.wifi.BatchedScanSettings;
+import android.net.wifi.ScanResult;
+import android.net.wifi.WifiScanner;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
@@ -1022,24 +1024,27 @@ public class WifiNative {
 
     private long mWifiHalHandle;                        /* used by JNI to save wifi_handle */
     private long[] mWifiIfaceHandles;                   /* used by JNI to save interface handles */
+    private int mWlan0Index;
+    private int mP2p0Index;
 
-    public native boolean startHalNative();
-
-    public native void stopHalNative();
-
-    public native void waitForHalEventNative();
+    private native boolean startHalNative();
+    private native void stopHalNative();
+    private native void waitForHalEventNative();
 
     private class MonitorThread extends Thread {
         public void run() {
+            Log.i(mTAG, "Waiting for HAL events");
             waitForHalEventNative();
         }
     }
 
-    public void startHal() {
+    public boolean startHal() {
         if (startHalNative()) {
             new MonitorThread().start();
+            return true;
         } else {
             Log.i(mTAG, "Could not start hal");
+            return false;
         }
     }
 
@@ -1050,7 +1055,17 @@ public class WifiNative {
     private native int getInterfacesNative();
 
     public int getInterfaces() {
-        return getInterfacesNative();
+        int num = getInterfacesNative();
+        for (int i = 0; i < num; i++) {
+            String name = getInterfaceNameNative(i);
+            Log.i(mTAG, "interface[" + i + "] = " + name);
+            if (name.equals("wlan0")) {
+                mWlan0Index = i;
+            } else if (name.equals("p2p0")) {
+                mP2p0Index = i;
+            }
+        }
+        return num;
     }
 
     private native String getInterfaceNameNative(int index);
@@ -1062,44 +1077,183 @@ public class WifiNative {
         }
     }
 
-    private native boolean startScanNative(int iface, int id);
-    private native boolean stopScanNative(int iface, int id);
-
-    public static class ScanResult {
-        public String SSID;
-        public String BSSID;
-        public String capabilities;
-        public int level;
-        public int frequency;
-        public long timestamp;
+    public static class ScanCapabilities {
+        public int  max_scan_cache_size;                 // in number of scan results??
+        public int  max_scan_buckets;
+        public int  max_ap_cache_per_scan;
+        public int  max_rssi_sample_size;
+        public int  max_scan_reporting_threshold;        // in number of scan results??
+        public int  max_hotlist_aps;
+        public int  max_significant_wifi_change_aps;
     }
 
-    void onScanResults(int id, ScanResult[] results) {
+    public boolean getScanCapabilities(ScanCapabilities capabilities) {
+        return getScanCapabilitiesNative(mWlan0Index, capabilities);
+    }
 
-        /* !! This gets called on a different thread !! */
+    private native boolean getScanCapabilitiesNative(int iface, ScanCapabilities capabilities);
 
-        for (int i = 0; i < results.length; i++) {
-            Log.i(mTAG, "results[" + i + "].ssid = " + results[i].SSID);
-        }
+    private native boolean startScanNative(int iface, int id, ScanSettings settings);
+    private native boolean stopScanNative(int iface, int id);
+    private native ScanResult[] getScanResultsNative(int iface, boolean flush);
+
+    public static class ChannelSettings {
+        int frequency;
+        int dwell_time_ms;
+        boolean passive;
+    }
+
+    public static class BucketSettings {
+        int bucket;
+        int band;
+        int period_ms;
+        int report_events;
+        int num_channels;
+        ChannelSettings channels[] = new ChannelSettings[8];
+    }
+
+    public static class ScanSettings {
+        int base_period_ms;
+        int max_ap_per_scan;
+        int report_threshold;
+        int num_buckets;
+        BucketSettings buckets[] = new BucketSettings[8];
+    }
+
+    public interface ScanEventHandler {
+        void onScanResultsAvailable();
+        void onFullScanResult(ScanResult result, WifiScanner.InformationElement elems[]);
+    }
+
+    void onScanResultsAvailable(int id) {
+        mScanEventHandler.onScanResultsAvailable();
+    }
+
+    void onFullScanResult(int id, ScanResult result, WifiScanner.InformationElement elems[]) {
+        mScanEventHandler.onFullScanResult(result, elems);
     }
 
     private int mScanCmdId = 0;
+    private ScanEventHandler mScanEventHandler;
 
-    public boolean startScan() {
+    public boolean startScan(ScanSettings settings, ScanEventHandler eventHandler) {
         synchronized (mLock) {
             if (mScanCmdId != 0) {
                 return false;
             } else {
                 mScanCmdId = getNewCmdIdLocked();
             }
-        }
 
-        return startScanNative(0, mScanCmdId);          // results are reported by onScanResults
+            mScanEventHandler = eventHandler;
+
+            if (startScanNative(mWlan0Index, mScanCmdId, settings) == false) {
+                mScanEventHandler = null;
+                return false;
+            }
+
+            return true;
+        }
     }
 
     public void stopScan() {
         synchronized (mLock) {
-            stopScanNative(0, mScanCmdId);
+            stopScanNative(mWlan0Index, mScanCmdId);
+            mScanEventHandler = null;
+            mScanCmdId = 0;
         }
     }
+
+    public ScanResult[] getScanResults() {
+        return getScanResultsNative(mWlan0Index, /* flush = */ false);
+    }
+
+    public interface HotlistEventHandler {
+        void onHotlistApFound(ScanResult[] result);
+    }
+
+    private int mHotlistCmdId = 0;
+    private HotlistEventHandler mHotlistEventHandler;
+
+    private native boolean setHotlistNative(int iface, int id,
+            WifiScanner.HotlistSettings settings);
+    private native boolean resetHotlistNative(int iface, int id);
+
+    boolean setHotlist(WifiScanner.HotlistSettings settings, HotlistEventHandler eventHandler) {
+        synchronized (mLock) {
+            if (mHotlistCmdId != 0) {
+                return false;
+            } else {
+                mHotlistCmdId = getNewCmdIdLocked();
+            }
+
+            mHotlistEventHandler = eventHandler;
+            if (setHotlistNative(mWlan0Index, mScanCmdId, settings) == false) {
+                mHotlistEventHandler = null;
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    void resetHotlist() {
+        synchronized (mLock) {
+            if (mHotlistCmdId != 0) {
+                resetHotlistNative(mWlan0Index, mHotlistCmdId);
+                mHotlistCmdId = 0;
+                mHotlistEventHandler = null;
+            }
+        }
+    }
+
+    void onHotlistApFound(int id, ScanResult[] results) {
+        mHotlistEventHandler.onHotlistApFound(results);
+    }
+
+    public interface SignificantWifiChangeEventHandler {
+        void onChangesFound(ScanResult[] result);
+    }
+
+    SignificantWifiChangeEventHandler mSignificantWifiChangeHandler;
+    int mSignificantWifiChangeCmdId;
+
+    private native boolean trackSignificantWifiChangeNative(
+            int iface, int id, WifiScanner.WifiChangeSettings settings);
+    private native boolean untrackSignificantWifiChangeNative(int iface, int id);
+
+    boolean trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings,
+                                       SignificantWifiChangeEventHandler handler) {
+        synchronized (mLock) {
+            if (mSignificantWifiChangeCmdId != 0) {
+                return false;
+            } else {
+                mSignificantWifiChangeCmdId = getNewCmdIdLocked();
+            }
+
+            mSignificantWifiChangeHandler = handler;
+            if (trackSignificantWifiChangeNative(mWlan0Index, mScanCmdId, settings) == false) {
+                mHotlistEventHandler = null;
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    void untrackSignificantWifiChange() {
+        synchronized (mLock) {
+            if (mSignificantWifiChangeCmdId != 0) {
+                untrackSignificantWifiChangeNative(mWlan0Index, mSignificantWifiChangeCmdId);
+                mSignificantWifiChangeCmdId = 0;
+                mSignificantWifiChangeHandler = null;
+            }
+        }
+    }
+
+    void onSignificantWifiChange(int id, ScanResult[] results) {
+        mSignificantWifiChangeHandler.onChangesFound(results);
+    }
+
+
+
 }

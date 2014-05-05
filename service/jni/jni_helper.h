@@ -4,8 +4,12 @@ namespace android {
 /* JNI Helpers for wifi_hal to WifiNative bridge implementation */
 
 void throwException( JNIEnv *env, const char *message, int line );
+jboolean  getBoolField(JNIEnv *env, jobject obj, const char *name);
+jint  getIntField(JNIEnv *env, jobject obj, const char *name);
 jlong getLongField(JNIEnv *env, jobject obj, const char *name);
+jobject getObjectField(JNIEnv *env, jobject obj, const char *name, const char *type);
 jlong getLongArrayField(JNIEnv *env, jobject obj, const char *name, int index);
+jobject getObjectArrayField(JNIEnv *env, jobject obj, const char *name, const char *type, int index);
 void setIntField(JNIEnv *env, jobject obj, const char *name, jint value);
 void setLongField(JNIEnv *env, jobject obj, const char *name, jlong value);
 void setLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray value);

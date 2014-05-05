@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 The Android Open Source Project
+ * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,34 +16,37 @@
 
 package com.android.server.wifi;
 
+
 import android.content.Context;
-import android.net.wifi.ScanResult;
-import android.net.wifi.WifiScanner;
 import android.util.Log;
+
 import com.android.server.SystemService;
 
-import java.util.List;
+public class WifiScanningService extends SystemService {
 
-public final class WifiService extends SystemService {
+    private static final String TAG = "WifiScanningService";
+    WifiScanningServiceImpl mImpl;
 
-    private static final String TAG = "WifiService";
-    final WifiServiceImpl mImpl;
-
-    public WifiService(Context context) {
-        super(context);
-        mImpl = new WifiServiceImpl(context);
+    public WifiScanningService() {
+        Log.i(TAG, "Creating " + Context.WIFI_SCANNING_SERVICE);
     }
 
     @Override
     public void onStart() {
-        Log.i(TAG, "Registering " + Context.WIFI_SERVICE);
-        publishBinderService(Context.WIFI_SERVICE, mImpl);
+        mImpl = new WifiScanningServiceImpl(getContext());
+
+        Log.i(TAG, "Starting " + Context.WIFI_SCANNING_SERVICE);
+        publishBinderService(Context.WIFI_SCANNING_SERVICE, mImpl);
     }
 
     @Override
     public void onBootPhase(int phase) {
         if (phase == SystemService.PHASE_SYSTEM_SERVICES_READY) {
-            mImpl.checkAndStartWifi();
+            Log.i(TAG, "Registering " + Context.WIFI_SCANNING_SERVICE);
+            if (mImpl == null) {
+                mImpl = new WifiScanningServiceImpl(getContext());
+            }
+            mImpl.startService(getContext());
         }
     }
 }
