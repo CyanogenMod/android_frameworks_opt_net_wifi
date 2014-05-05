@@ -98,6 +98,12 @@ final class WifiTrafficPoller {
         Message.obtain(mTrafficHandler, REMOVE_CLIENT, client).sendToTarget();
     }
 
+    boolean shouldSwitchNetwork(int networkDelta) {
+        if (networkDelta > 0)
+            return true;
+
+        return false;
+    }
 
     private class TrafficHandler extends Handler {
         public void handleMessage(Message msg) {

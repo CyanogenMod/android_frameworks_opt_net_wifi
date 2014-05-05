@@ -26,6 +26,7 @@ import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pProvDiscEvent;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Message;
+import android.os.SystemClock;
 import android.util.Log;
 
 import com.android.server.wifi.p2p.WifiP2pServiceImpl.P2pStatus;
@@ -60,7 +61,8 @@ public class WifiMonitor {
     private static final int DRIVER_STATE = 7;
     private static final int EAP_FAILURE  = 8;
     private static final int ASSOC_REJECT = 9;
-    private static final int UNKNOWN      = 10;
+    private static final int SSID_TEMP_DISABLED = 10;
+    private static final int UNKNOWN      = 11;
 
     /** All events coming from the supplicant start with this prefix */
     private static final String EVENT_PREFIX_STR = "CTRL-EVENT-";
@@ -160,6 +162,14 @@ public class WifiMonitor {
      * This indicates an assoc reject event
      */
     private static final String ASSOC_REJECT_STR = "ASSOC-REJECT";
+
+    /**
+     * This indicates auth or association failure bad enough so as network got disabled
+     * - WPA_PSK auth failure suspecting shared key mismatch
+     * - failed 3 Association
+     */
+    private static final String TEMP_DISABLED_STR = "SSID-TEMP-DISABLED";
+
 
     /**
      * Regex pattern for extracting an Ethernet-style MAC address from a string.
@@ -559,13 +569,24 @@ public class WifiMonitor {
         }
     }
 
+    private void logDbg(String debug) {
+        long now = SystemClock.elapsedRealtimeNanos();
+        String ts = String.format("[%,d us] ", now/1000);
+        Log.e(TAG, ts+debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
+
+    }
+
     /* @return true if the event was supplicant disconnection */
     private boolean dispatchEvent(String eventStr) {
+
+        if (DBG) logDbg("WifiMonitor dispatchEvent " + eventStr);
 
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
             if (eventStr.startsWith(WPA_EVENT_PREFIX_STR) &&
                     0 < eventStr.indexOf(PASSWORD_MAY_BE_INCORRECT_STR)) {
-                mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
+               // AUTHENTICATION_FAILURE_EVENT is sent thru SSID_TEMP_DISABLED message, this CTRL message contains the netId and ssid
+               // and sohuld be used instead of the wpa_supplicant log
+               // mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
             } else if (eventStr.startsWith(WPS_SUCCESS_STR)) {
                 mStateMachine.sendMessage(WPS_SUCCESS_EVENT);
             } else if (eventStr.startsWith(WPS_FAIL_STR)) {
@@ -615,6 +636,9 @@ public class WifiMonitor {
             event = EAP_FAILURE;
         else if (eventName.equals(ASSOC_REJECT_STR))
             event = ASSOC_REJECT;
+        else if (eventName.equals(TEMP_DISABLED_STR)) {
+            event = SSID_TEMP_DISABLED;
+        }
         else
             event = UNKNOWN;
 
@@ -633,7 +657,15 @@ public class WifiMonitor {
             }
         }
 
-        if (event == STATE_CHANGE) {
+        if (event == SSID_TEMP_DISABLED) {
+            String substr = null;
+            int ind = eventStr.indexOf(" ");
+            if (ind != -1) {
+                substr = eventStr.substring(ind + 1);
+            }
+            mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT, substr);
+
+        } else if (event == STATE_CHANGE) {
             handleSupplicantStateChange(eventData);
         } else if (event == DRIVER_STATE) {
             handleDriverEvent(eventData);
@@ -657,6 +689,7 @@ public class WifiMonitor {
             return true;
         } else if (event == EAP_FAILURE) {
             if (eventData.startsWith(EAP_AUTH_FAILURE_STR)) {
+                logDbg("WifiMonitor send auth failure (EAP_AUTH_FAILURE) ");
                 mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
             }
         } else if (event == ASSOC_REJECT) {

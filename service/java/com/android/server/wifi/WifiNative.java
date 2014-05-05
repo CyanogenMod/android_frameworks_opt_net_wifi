@@ -20,6 +20,7 @@ import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
 import android.util.LocalLog;
@@ -247,7 +248,15 @@ public class WifiNative {
         return doBooleanCommand("REMOVE_NETWORK " + netId);
     }
 
+
+    private void logDbg(String debug) {
+        long now = SystemClock.elapsedRealtimeNanos();
+        String ts = String.format("[%,d us] ", now/1000);
+        Log.e("WifiNative: ", ts+debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName()+" - "+ Thread.currentThread().getStackTrace()[6].getMethodName());
+
+    }
     public boolean enableNetwork(int netId, boolean disableOthers) {
+        if (DBG) logDbg("enableNetwork nid=" + Integer.toString(netId) + " disableOthers=" + disableOthers);
         if (disableOthers) {
             return doBooleanCommand("SELECT_NETWORK " + netId);
         } else {
@@ -256,18 +265,22 @@ public class WifiNative {
     }
 
     public boolean disableNetwork(int netId) {
+        if (DBG) logDbg("disableNetwork nid=" + Integer.toString(netId));
         return doBooleanCommand("DISABLE_NETWORK " + netId);
     }
 
     public boolean reconnect() {
+        if (DBG) logDbg("RECONNECT ");
         return doBooleanCommand("RECONNECT");
     }
 
     public boolean reassociate() {
+        if (DBG) logDbg("REASSOCIATE ");
         return doBooleanCommand("REASSOCIATE");
     }
 
     public boolean disconnect() {
+        if (DBG) logDbg("RECONNECT ");
         return doBooleanCommand("DISCONNECT");
     }
 
@@ -481,8 +494,10 @@ public class WifiNative {
     }
 
     public boolean setSuspendOptimizations(boolean enabled) {
-        if (mSuspendOptEnabled == enabled) return true;
+       // if (mSuspendOptEnabled == enabled) return true;
         mSuspendOptEnabled = enabled;
+
+        Log.e("native", "do suspend " + enabled);
         if (enabled) {
             return doBooleanCommand("DRIVER SETSUSPENDMODE 1");
         } else {
@@ -499,6 +514,14 @@ public class WifiNative {
             doBooleanCommand("SET pno 1");
         } else {
             doBooleanCommand("SET pno 0");
+        }
+    }
+
+    public void enableAutoConnect(boolean enable) {
+        if (enable) {
+            doBooleanCommand("STA_AUTOCONNECT 1");
+        } else {
+            doBooleanCommand("STA_AUTOCONNECT 0");
         }
     }
 

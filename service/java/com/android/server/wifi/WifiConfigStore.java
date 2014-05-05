@@ -36,11 +36,14 @@ import android.net.wifi.WifiManager;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
+import android.net.wifi.ScanResult;
+
 import android.os.Environment;
 import android.os.FileObserver;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Process;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.security.Credentials;
 import android.security.KeyChain;
@@ -67,11 +70,14 @@ import java.net.InetAddress;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.text.SimpleDateFormat;
+import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Date;
 
 /**
  * This class provides the API to manage configured
@@ -147,6 +153,9 @@ public class WifiConfigStore {
     private static final String ipConfigFile = Environment.getDataDirectory() +
             "/misc/wifi/ipconfig.txt";
 
+    private static final String networkHistoryConfigFile = Environment.getDataDirectory() +
+            "/misc/wifi/networkHistory.txt";
+
     private static final int IPCONFIG_FILE_VERSION = 2;
 
     /* IP and proxy configuration keys */
@@ -162,6 +171,23 @@ public class WifiConfigStore {
     private static final String EXCLUSION_LIST_KEY = "exclusionList";
     private static final String EOS = "eos";
 
+    /* Network History Keys */
+    private static final String SSID_KEY = "SSID:  ";
+    private static final String CONFIG_KEY = "CONFIG:  ";
+    private static final String CHOICE_KEY = "CHOICE:  ";
+    private static final String LINK_KEY = "LINK:  ";
+    private static final String BSSID_KEY = "BSSID:  ";
+    private static final String BSSID_KEY_END = "/BSSID:  ";
+    private static final String RSSI_KEY = "RSSI:  ";
+    private static final String FREQ_KEY = "FREQ:  ";
+    private static final String DATE_KEY = "DATE:  ";
+    private static final String MILLI_KEY = "MILLI:  ";
+    private static final String NETWORK_ID_KEY = "ID:  ";
+    private static final String PRIORITY_KEY = "PRIORITY:  ";
+    private static final String DEFAULT_GW_KEY = "DEFAULT_GW:  ";
+    private static final String AUTH_KEY = "AUTH:  ";
+    private static final String SEPARATOR_KEY = "\n";
+    private static final String STATUS_KEY = "AUTO_JOIN_STATUS:  ";
 
     /* Enterprise configuration keys */
     /**
@@ -245,13 +271,73 @@ public class WifiConfigStore {
     }
 
     /**
+     * Fetch the list of currently configured networks that were recently seen
+     *
+     * @return List of networks
+     */
+    List<WifiConfiguration> getRecentConfiguredNetworks(int milli, boolean copy) {
+        List<WifiConfiguration> networks = null;
+
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            // calculate the RSSI for scan results that are more recent than milli
+            config.setVisibility(milli);
+
+            if (config.visibility == null) {
+                continue;
+            }
+            if (config.visibility.rssi5 == WifiConfiguration.INVALID_RSSI &&
+                    config.visibility.rssi24 == WifiConfiguration.INVALID_RSSI) {
+                continue;
+            }
+            if (networks == null)
+                networks = new ArrayList<WifiConfiguration>();
+            if (copy) {
+                networks.add(new WifiConfiguration(config));
+            } else {
+                networks.add(config);
+            }
+        }
+        return networks;
+    }
+
+    /**
+     * get the Wificonfiguration for this netId
+     *
+     * @return Wificonfiguration
+     */
+
+    WifiConfiguration getWifiConfiguration(int netId) {
+        if (mConfiguredNetworks == null)
+            return null;
+        return mConfiguredNetworks.get(netId);
+    }
+
+
+    /**
+     * get the Wificonfiguration for this key
+     *
+     * @return Wificonfiguration
+     */
+
+    WifiConfiguration getWifiConfiguration(String key) {
+        if (key == null)
+            return null;
+        int hash = key.hashCode();
+        if (mNetworkIds == null)
+            return null;
+        int netId = mNetworkIds.get(hash);
+        return getWifiConfiguration(netId);
+    }
+
+    /**
      * enable all networks and save config. This will be a no-op if the list
      * of configured networks indicates all networks as being enabled
      */
     void enableAllNetworks() {
         boolean networkEnabledStateChanged = false;
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
-            if(config != null && config.status == Status.DISABLED) {
+            if(config != null && config.status == Status.DISABLED
+                    && (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED)) {
                 if(mWifiNative.enableNetwork(config.networkId, false)) {
                     networkEnabledStateChanged = true;
                     config.status = Status.ENABLED;
@@ -318,21 +404,42 @@ public class WifiConfigStore {
      * @return network update result
      */
     NetworkUpdateResult saveNetwork(WifiConfiguration config) {
-        if (VDBG) localLog("saveNetwork", config.networkId);
+
         // A new network cannot have null SSID
         if (config == null || (config.networkId == INVALID_NETWORK_ID &&
                 config.SSID == null)) {
             return new NetworkUpdateResult(INVALID_NETWORK_ID);
         }
-
+        if (VDBG) localLog("WifiConfigStore: saveNetwork netId", config.networkId);
+        if (VDBG) {
+            loge("WifiConfigStore saveNetwork, size=" + mConfiguredNetworks.size()
+                    + " SSID=" + config.SSID);
+        }
         boolean newNetwork = (config.networkId == INVALID_NETWORK_ID);
         NetworkUpdateResult result = addOrUpdateNetworkNative(config);
         int netId = result.getNetworkId();
+
+        if (VDBG) localLog("WifiConfigStore: saveNetwork got it back netId=", netId);
+
         /* enable a new network */
         if (newNetwork && netId != INVALID_NETWORK_ID) {
+            if (VDBG) localLog("WifiConfigStore: will enable netId=", netId);
+
             mWifiNative.enableNetwork(netId, false);
             mConfiguredNetworks.get(netId).status = Status.ENABLED;
         }
+
+        WifiConfiguration conf = mConfiguredNetworks.get(netId);
+        if (conf != null) {
+            if (conf.autoJoinStatus != WifiConfiguration.AUTO_JOIN_ENABLED) {
+                if (VDBG) localLog("WifiConfigStore: re-enabling: " + conf.SSID);
+
+                // reenable autojoin, since new information has been provided
+                conf.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
+                enableNetworkWithoutBroadcast(conf.networkId, false);
+            }
+        }
+
         mWifiNative.saveConfig();
         sendConfiguredNetworksChangedBroadcast(config, result.isNewNetwork() ?
                 WifiManager.CHANGE_REASON_ADDED : WifiManager.CHANGE_REASON_CONFIG_CHANGE);
@@ -419,15 +526,28 @@ public class WifiConfigStore {
     private void removeConfigAndSendBroadcastIfNeeded(int netId) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
+            if (VDBG) {
+                loge("removeNetwork " + Integer.toString(netId) + " key=" +
+                        config.configKey() + " config.id=" + Integer.toString(config.networkId));
+            }
+
             // Remove any associated keys
             if (config.enterpriseConfig != null) {
                 removeKeys(config.enterpriseConfig);
             }
             mConfiguredNetworks.remove(netId);
             mNetworkIds.remove(configKey(config));
+            if (VDBG) {
+                loge("removeNetwork -> num " + mConfiguredNetworks.size());
+                for (WifiConfiguration c : mConfiguredNetworks.values()) {
+                    loge(" has got " + c.configKey() + " id=" + Integer.toString(c.networkId));
+
+                }
+            }
 
             writeIpAndProxyConfigurations();
             sendConfiguredNetworksChangedBroadcast(config, WifiManager.CHANGE_REASON_REMOVED);
+            writeKnownNetworkHistory();
         }
     }
 
@@ -510,6 +630,15 @@ public class WifiConfigStore {
         boolean ret = mWifiNative.disableNetwork(netId);
         WifiConfiguration network = null;
         WifiConfiguration config = mConfiguredNetworks.get(netId);
+
+        if (VDBG) {
+            if (config != null) {
+                loge("disableNetwork netId=" + Integer.toString(netId)
+                        + " SSID=" + config.SSID
+                        + " disabled=" + (config.status == Status.DISABLED)
+                        + " reason=" + Integer.toString(config.disableReason));
+            }
+        }
         /* Only change the reason if the network was not previously disabled */
         if (config != null && config.status != Status.DISABLED) {
             config.status = Status.DISABLED;
@@ -589,6 +718,7 @@ public class WifiConfigStore {
 
     /**
      * Fetch the link properties for a given network id
+     *
      * @return LinkProperties for the given network id
      */
     LinkProperties getLinkProperties(int netId) {
@@ -610,6 +740,18 @@ public class WifiConfigStore {
             config.linkProperties = linkProperties;
         }
     }
+
+    /**
+     * set default GW MAC address
+     */
+    void setDefaultGwMacAddress(int netId, String macAddress) {
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        if (config != null) {
+            //update defaultGwMacAddress
+            config.defaultGwMacAddress = macAddress;
+        }
+    }
+
 
     /**
      * clear IP configuration for a given network id
@@ -728,6 +870,8 @@ public class WifiConfigStore {
         }
 
         readIpAndProxyConfigurations();
+        readNetworkHistory();
+
         sendConfiguredNetworksChangedBroadcast();
 
         if (VDBG) localLog("loadConfiguredNetworks loaded " + mNetworkIds.size() + " networks");
@@ -756,6 +900,64 @@ public class WifiConfigStore {
                 }
             }
         }
+    }
+
+    private String readNetworkVariableFromSupplicantFile(String ssid, String key) {
+        BufferedReader reader = null;
+        if (VDBG) loge("readNetworkVariableFromSupplicantFile ssid=[" + ssid + "] key=" + key);
+
+        String value = null;
+        try {
+            reader = new BufferedReader(new FileReader(SUPPLICANT_CONFIG_FILE));
+            boolean found = false;
+            boolean networkMatched = false;
+            for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                if (VDBG) loge(line);
+
+                if (line.matches("[ \\t]*network=\\{")) {
+                    found = true;
+                    networkMatched = false;
+                } else if (line.matches("[ \\t]*\\{")) {
+                    found = false;
+                    networkMatched = false;
+                }
+
+                if (found) {
+                    int index;
+                    if ((index = line.indexOf("ssid=")) >= 0) {
+                        String networkSSid = line.substring(index + 5);
+                        if (networkSSid.regionMatches(0, ssid, 0, ssid.length())) {
+                            networkMatched = true;
+                        } else {
+                            networkMatched = false;
+                        }
+                    }
+
+                    if (networkMatched) {
+                        if ((index = line.indexOf(key + "=")) >= 0) {
+
+                            value = line.substring(index + key.length() + 1);
+                            if (VDBG) loge("found key " + value);
+
+                        }
+                    }
+                }
+            }
+        } catch (FileNotFoundException e) {
+            if (VDBG) loge("Could not open " + SUPPLICANT_CONFIG_FILE + ", " + e);
+        } catch (IOException e) {
+            if (VDBG) loge("Could not read " + SUPPLICANT_CONFIG_FILE + ", " + e);
+        } finally {
+            try {
+                if (reader != null) {
+                    reader.close();
+                }
+            } catch (IOException e) {
+                // Just ignore the fact that we couldn't close
+            }
+        }
+
+        return value;
     }
 
     /* Mark all networks except specified netId as disabled */
@@ -796,13 +998,32 @@ public class WifiConfigStore {
 
     private void writeIpAndProxyConfigurations() {
 
+        if (VDBG) loge(" writeIpAndProxyConfigurations()");
+
         /* Make a copy */
         List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             networks.add(new WifiConfiguration(config));
         }
 
-        DelayedDiskWrite.write(networks);
+        DelayedDiskWrite.write(networks, DelayedDiskWrite.WRITE_IP_CONFIG);
+    }
+
+    public void writeKnownNetworkHistory() {
+
+        if (VDBG) {
+            loge(" writeKnownNetworkHistory() num networks:" +
+                    Integer.toString(mConfiguredNetworks.size()) );
+        }
+
+        /* Make a copy */
+        List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            networks.add(new WifiConfiguration(config));
+        }
+
+        DelayedDiskWrite.write(networks, DelayedDiskWrite.WRITE_NETWORK_HISTORY);
+
     }
 
     private static class DelayedDiskWrite {
@@ -813,9 +1034,12 @@ public class WifiConfigStore {
         private static int sWriteSequence = 0;
         private static final String TAG = "DelayedDiskWrite";
 
-        static void write (final List<WifiConfiguration> networks) {
+        static final int WRITE_IP_CONFIG = 0;
+        static final int WRITE_NETWORK_HISTORY = 1;
 
-            /* Do a delayed write to disk on a seperate handler thread */
+        static void write(final List<WifiConfiguration> networks, final int what) {
+
+            /* Do a delayed write to disk on a separate handler thread */
             synchronized (DelayedDiskWrite.class) {
                 if (++sWriteSequence == 1) {
                     sDiskWriteHandlerThread = new HandlerThread("WifiConfigThread");
@@ -825,71 +1049,82 @@ public class WifiConfigStore {
             }
 
             sDiskWriteHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        onWriteCalled(networks);
-                    }
-                });
+                @Override
+                public void run() {
+                    onWriteCalled(networks, what);
+                }
+            });
         }
 
-        private static void onWriteCalled(List<WifiConfiguration> networks) {
-
+        private static void onWriteCalled(List<WifiConfiguration> networks, int what) {
             DataOutputStream out = null;
             try {
+                String outfile;
+                if (what == WRITE_IP_CONFIG) {
+                    outfile = ipConfigFile;
+                } else {
+                    outfile = networkHistoryConfigFile;
+                }
+
                 out = new DataOutputStream(new BufferedOutputStream(
-                            new FileOutputStream(ipConfigFile)));
+                        new FileOutputStream(outfile)));
 
-                out.writeInt(IPCONFIG_FILE_VERSION);
+                if (what == WRITE_IP_CONFIG) {
 
-                for(WifiConfiguration config : networks) {
-                    boolean writeToFile = false;
+                    out.writeInt(IPCONFIG_FILE_VERSION);
 
-                    try {
-                        LinkProperties linkProperties = config.linkProperties;
-                        switch (config.ipAssignment) {
-                            case STATIC:
-                                out.writeUTF(IP_ASSIGNMENT_KEY);
-                                out.writeUTF(config.ipAssignment.toString());
-                                for (LinkAddress linkAddr : linkProperties.getLinkAddresses()) {
-                                    out.writeUTF(LINK_ADDRESS_KEY);
-                                    out.writeUTF(linkAddr.getAddress().getHostAddress());
-                                    out.writeInt(linkAddr.getNetworkPrefixLength());
-                                }
-                                for (RouteInfo route : linkProperties.getRoutes()) {
-                                    out.writeUTF(GATEWAY_KEY);
-                                    LinkAddress dest = route.getDestination();
-                                    if (dest != null) {
-                                        out.writeInt(1);
-                                        out.writeUTF(dest.getAddress().getHostAddress());
-                                        out.writeInt(dest.getNetworkPrefixLength());
-                                    } else {
-                                        out.writeInt(0);
+                    for(WifiConfiguration config : networks) {
+                        boolean writeToFile = false;
+
+                        if (config.ephemeral == true)
+                            continue;
+
+                        try {
+                            LinkProperties linkProperties = config.linkProperties;
+                            switch (config.ipAssignment) {
+                                case STATIC:
+                                    out.writeUTF(IP_ASSIGNMENT_KEY);
+                                    out.writeUTF(config.ipAssignment.toString());
+                                    for (LinkAddress linkAddr : linkProperties.getLinkAddresses()) {
+                                        out.writeUTF(LINK_ADDRESS_KEY);
+                                        out.writeUTF(linkAddr.getAddress().getHostAddress());
+                                        out.writeInt(linkAddr.getNetworkPrefixLength());
                                     }
-                                    if (route.getGateway() != null) {
-                                        out.writeInt(1);
-                                        out.writeUTF(route.getGateway().getHostAddress());
-                                    } else {
-                                        out.writeInt(0);
+                                    for (RouteInfo route : linkProperties.getRoutes()) {
+                                        out.writeUTF(GATEWAY_KEY);
+                                        LinkAddress dest = route.getDestination();
+                                        if (dest != null) {
+                                            out.writeInt(1);
+                                            out.writeUTF(dest.getAddress().getHostAddress());
+                                            out.writeInt(dest.getNetworkPrefixLength());
+                                        } else {
+                                            out.writeInt(0);
+                                        }
+                                        if (route.getGateway() != null) {
+                                            out.writeInt(1);
+                                            out.writeUTF(route.getGateway().getHostAddress());
+                                        } else {
+                                            out.writeInt(0);
+                                        }
                                     }
-                                }
-                                for (InetAddress inetAddr : linkProperties.getDnses()) {
-                                    out.writeUTF(DNS_KEY);
-                                    out.writeUTF(inetAddr.getHostAddress());
-                                }
-                                writeToFile = true;
-                                break;
-                            case DHCP:
-                                out.writeUTF(IP_ASSIGNMENT_KEY);
-                                out.writeUTF(config.ipAssignment.toString());
-                                writeToFile = true;
-                                break;
-                            case UNASSIGNED:
+                                    for (InetAddress inetAddr : linkProperties.getDnses()) {
+                                        out.writeUTF(DNS_KEY);
+                                        out.writeUTF(inetAddr.getHostAddress());
+                                    }
+                                    writeToFile = true;
+                                    break;
+                                case DHCP:
+                                    out.writeUTF(IP_ASSIGNMENT_KEY);
+                                    out.writeUTF(config.ipAssignment.toString());
+                                    writeToFile = true;
+                                    break;
+                                case UNASSIGNED:
                                 /* Ignore */
-                                break;
-                            default:
-                                loge("Ignore invalid ip assignment while writing");
-                                break;
-                        }
+                                    break;
+                                default:
+                                    loge("Ignore invalid ip assignment while writing");
+                                    break;
+                            }
 
                         switch (config.proxySettings) {
                             case STATIC:
@@ -920,19 +1155,112 @@ public class WifiConfigStore {
                                 break;
                             case UNASSIGNED:
                                 /* Ignore */
-                                break;
-                            default:
-                                loge("Ignthisore invalid proxy settings while writing");
-                                break;
+                                    break;
+                                default:
+                                    loge("Ignore invalid proxy settings while writing");
+                                    break;
+                            }
+                            if (writeToFile) {
+                                out.writeUTF(ID_KEY);
+                                out.writeInt(configKey(config));
+                            }
+                        } catch (NullPointerException e) {
+                            loge("Failure in writing " + config.linkProperties + e);
                         }
-                        if (writeToFile) {
-                            out.writeUTF(ID_KEY);
-                            out.writeInt(configKey(config));
-                        }
-                    } catch (NullPointerException e) {
-                        loge("Failure in writing " + config.linkProperties + e);
+                        out.writeUTF(EOS);
                     }
-                    out.writeUTF(EOS);
+                } else {
+
+                    for (WifiConfiguration config : networks) {
+                        //loge("onWriteCalled write SSID: " + config.SSID);
+                       /* if (config.linkProperties != null)
+                            loge(" lp " + config.linkProperties.toString());
+                        else
+                            loge("attempt config w/o lp");
+                        */
+
+                        if (DBG) {
+                            loge("saving network history: " + config.SSID  + " gw: " +
+                                    config.defaultGwMacAddress + " autojoin status: " +
+                                    config.autoJoinStatus + " ephemeral=" + config.ephemeral);
+                        }
+                        if (config.ephemeral == true)
+                            continue;
+
+                        out.writeChars(CONFIG_KEY);
+                        out.writeChars(config.configKey());
+                        out.writeChars(SEPARATOR_KEY);
+
+                        out.writeChars(SSID_KEY);
+                        out.writeChars(config.SSID);
+                        out.writeChars(SEPARATOR_KEY);
+
+                        out.writeChars(PRIORITY_KEY);
+                        out.writeChars(Integer.toString(config.priority));
+                        out.writeChars(SEPARATOR_KEY);
+                        out.writeChars(STATUS_KEY);
+                        out.writeChars(Integer.toString(config.autoJoinStatus));
+                        out.writeChars(SEPARATOR_KEY);
+                        out.writeChars(NETWORK_ID_KEY);
+                        out.writeChars(Integer.toString(config.networkId));
+                        out.writeChars(SEPARATOR_KEY);
+
+                        String allowedKeyManagementString =
+                                makeString(config.allowedKeyManagement,
+                                        WifiConfiguration.KeyMgmt.strings);
+                        out.writeChars(AUTH_KEY);
+                        out.writeChars(allowedKeyManagementString);
+                        out.writeChars(SEPARATOR_KEY);
+
+                        if (config.connectChoices != null) {
+                            for (String key : config.connectChoices.keySet()) {
+                                out.writeChars(CHOICE_KEY);
+                                out.writeChars(key);
+                                out.writeChars(SEPARATOR_KEY);
+                            }
+                        }
+                        if (config.linkedConfigurations != null) {
+                            for (String key : config.linkedConfigurations.keySet()) {
+                                out.writeChars(LINK_KEY);
+                                out.writeChars(key);
+                                out.writeChars(SEPARATOR_KEY);
+                            }
+                        }
+
+                        if (config.linkProperties != null) {
+                            String macAddress = config.defaultGwMacAddress;
+                            if (macAddress != null) {
+                                out.writeChars(DEFAULT_GW_KEY);
+                                out.writeChars(macAddress);
+                                out.writeChars(SEPARATOR_KEY);
+                            }
+                        }
+
+                        if (config.scanResultCache != null) {
+                            for (ScanResult result : config.scanResultCache.values()) {
+                                out.writeChars(BSSID_KEY);
+                                out.writeChars(result.BSSID);
+                                out.writeChars(SEPARATOR_KEY);
+
+                                out.writeChars(FREQ_KEY);
+                                out.writeChars(Integer.toString(result.frequency));
+                                out.writeChars(SEPARATOR_KEY);
+
+                                out.writeChars(RSSI_KEY);
+                                out.writeChars(Integer.toString(result.level));
+                                out.writeChars(SEPARATOR_KEY);
+
+                                if (result.seen != 0) {
+                                    out.writeChars(MILLI_KEY);
+                                    out.writeChars(Long.toString(result.seen));
+                                    out.writeChars(SEPARATOR_KEY);
+                                }
+                                out.writeChars(BSSID_KEY_END);
+                                out.writeChars(SEPARATOR_KEY);
+                            }
+                        }
+                        out.writeChars(SEPARATOR_KEY);
+                    }
                 }
 
             } catch (IOException e) {
@@ -959,6 +1287,146 @@ public class WifiConfigStore {
             Log.e(TAG, s);
         }
     }
+
+
+    private void readNetworkHistory() {
+        DataInputStream in = null;
+        try {
+            in = new DataInputStream(new BufferedInputStream(new FileInputStream(
+                    networkHistoryConfigFile)));
+            WifiConfiguration config = null;
+            while (true) {
+                int id = -1;
+                String key = in.readUTF();
+
+                String bssid = null;
+                String ssid = null;
+
+                int freq = 0;
+                long seen = 0;
+                int rssi = -128;
+                String caps = null;
+                if (key.startsWith(CONFIG_KEY)) {
+
+                    if (config != null) {
+                        config = null;
+                    }
+                    String configKey = key.replace(CONFIG_KEY, "");
+                    config = mConfiguredNetworks.get(mNetworkIds.get(configKey.hashCode()));
+                    ssid = null;
+                    bssid = null;
+                    freq = 0;
+                    seen = 0;
+                    rssi = -128;
+                    caps = null;
+
+                } else if (config != null) {
+                    if (key.startsWith(SSID_KEY)) {
+                        ssid = key.replace(SSID_KEY, "");
+                        if (config.SSID != ssid) {
+                            loge("Error parsing network history file");
+                            config = null; //error
+                            ssid = null;
+                        }
+                    }
+
+                    if (key.startsWith(DEFAULT_GW_KEY)) {
+                        String gateway = key.replace(DEFAULT_GW_KEY, "");
+                        config.defaultGwMacAddress = gateway;
+
+                    }
+
+                    if (key.startsWith(STATUS_KEY)) {
+                        String status = key.replace(STATUS_KEY, "");
+                        config.autoJoinStatus = Integer.getInteger(status);
+                    }
+
+                    if (key.startsWith(CHOICE_KEY)) {
+                        String configKey = key.replace(CHOICE_KEY, "");
+                        if (config.connectChoices == null) {
+                            config.connectChoices = new HashMap<String, Integer>();
+                        }
+                        if (config.connectChoices != null) {
+                            config.connectChoices.put(configKey, -1);
+                        }
+                    }
+
+                    if (key.startsWith(LINK_KEY)) {
+                        String configKey = key.replace(LINK_KEY, "");
+                        if (config.linkedConfigurations == null) {
+                            config.linkedConfigurations = new HashMap<String, Integer>();
+                        }
+                        if (config.linkedConfigurations != null) {
+                            config.linkedConfigurations.put(configKey, -1);
+                        }
+                    }
+
+                    if (key.startsWith(BSSID_KEY)) {
+                        if (key.startsWith(BSSID_KEY)) {
+                            bssid = key.replace(BSSID_KEY, "");
+                            freq = 0;
+                            seen = 0;
+                            rssi = -127;
+                            caps = "";
+                        }
+
+                        if (key.startsWith(RSSI_KEY)) {
+                            String lvl = key.replace(RSSI_KEY, "");
+                            rssi = Integer.getInteger(lvl);
+                        }
+                        if (key.startsWith(FREQ_KEY)) {
+                            String lvl = key.replace(FREQ_KEY, "");
+                            freq = Integer.getInteger(lvl);
+                        }
+                        if (key.startsWith(DATE_KEY)) {
+                        /*
+                         * when reading the configuration from file we don't update the date
+                         * so as to avoid reading back stale or non-sensical data that would
+                         * depend on network time.
+                         * The date of a WifiConfiguration should only come from actual scan result.
+                         *
+                        String s = key.replace(FREQ_KEY, "");
+                        seen = Integer.getInteger(s);
+                        */
+                        }
+
+                        if (key.startsWith(BSSID_KEY_END)) {
+
+                            if ((bssid != null) && (ssid != null)) {
+
+                                if (config.scanResultCache == null) {
+                                    config.scanResultCache = new HashMap<String, ScanResult>();
+                                }
+
+                                WifiSsid wssid = WifiSsid.createFromAsciiEncoded(ssid);
+                                ScanResult result = new ScanResult(wssid, bssid,
+                                        caps, rssi, freq, (long) 0);
+                                result.seen = seen;
+                                config.scanResultCache.put(bssid, result);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (EOFException ignore) {
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (Exception e) {
+                }
+            }
+        } catch (IOException e) {
+            loge("Error parsing configuration" + e);
+        }
+
+        if(in!=null) {
+            try {
+                in.close();
+            } catch (Exception e) {
+            }
+        }
+    }
+
 
     private void readIpAndProxyConfigurations() {
 
@@ -1121,6 +1589,8 @@ public class WifiConfigStore {
                 if (netId < 0) {
                     loge("Failed to add a network!");
                     return new NetworkUpdateResult(INVALID_NETWORK_ID);
+                } else {
+                    loge("addOrUpdateNetworkNative created netId=" + netId);
                 }
             }
         }
@@ -1340,6 +1810,8 @@ public class WifiConfigStore {
             currentConfig.networkId = netId;
         }
 
+        if (DBG) loge("will read network variables netId=" + Integer.toString(netId));
+
         readNetworkVariables(currentConfig);
 
         mConfiguredNetworks.put(netId, currentConfig);
@@ -1351,6 +1823,222 @@ public class WifiConfigStore {
         return result;
     }
 
+
+    public void linkConfiguration(WifiConfiguration config) {
+        for (WifiConfiguration link : mConfiguredNetworks.values()) {
+            boolean doLink = false;
+
+            if (link.configKey().equals(config.configKey())) {
+                continue;
+            }
+
+            if (config.defaultGwMacAddress != null && link.defaultGwMacAddress != null) {
+                //if both default GW are known, compare based on RSSI only if the GW is equal
+                if (config.defaultGwMacAddress.equals(link.defaultGwMacAddress)) {
+
+                    if (VDBG) {
+                        loge("linkConfiguration link due to same gw" + link.SSID +
+                                " and " + config.SSID + " GW " + config.defaultGwMacAddress);
+                    }
+                    doLink = true;
+                }
+            } else {
+                if ((config.scanResultCache != null) && (config.scanResultCache.size() <= 5)
+                        && (link.scanResultCache != null) && (link.scanResultCache.size() <= 5)) {
+                    String abssid = "";
+                    String bbssid = "";
+                    for (String key : config.scanResultCache.keySet()) {
+                        abssid = key;
+                    }
+                    for (String key : link.scanResultCache.keySet()) {
+                        bbssid = key;
+                    }
+                    if (VDBG) {
+                        loge("linkConfiguration link due to DBDC BSSID match " + link.SSID +
+                                " and " + config.SSID + " bssida " + abssid + " bssidb " + bbssid);
+                    }
+                    if (abssid.regionMatches(true, 0, bbssid, 0, 16)) {
+                        //if first 16 ascii characters of BSSID matches, we assume this is a DBDC
+                        doLink = true;
+                    }
+                }
+            }
+
+            if (doLink) {
+                if (VDBG)
+                    loge("linkConfiguration: will link " + link.SSID + " and " + config.SSID);
+                if (link.linkedConfigurations == null) {
+                    link.linkedConfigurations = new HashMap<String, Integer>();
+                }
+                if (config.linkedConfigurations == null) {
+                    config.linkedConfigurations = new HashMap<String, Integer>();
+                }
+                link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
+
+                config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
+
+            } else {
+                //todo if they are linked, break the link
+            }
+        }
+    }
+
+    /*
+     * We try to link a scan result with a WifiConfiguration for which SSID and ket management dont match,
+     * for instance, we try identify the 5GHz SSID of a DBDC AP, even though we know only of the 2.4GHz
+     *
+     * Obviously, this function is not optimal since it is used to compare every scan
+     * result with every Saved WifiConfiguration, with a string.equals operation.
+     * As a speed up, might be better to implement the mConfiguredNetworks store as a
+     * <String, WifiConfiguration> object instead of a <Integer, WifiConfiguration> object
+     * so as to speed this up. Also to prevent the tiny probability of hash collision.
+     *
+     */
+    public WifiConfiguration associateWithConfiguration(ScanResult result) {
+        String configKey = configKeyFroscanResult(result);
+        if (configKey == null) {
+            if (DBG) loge("associateWithConfiguration(): no config key " );
+
+            return null;
+        }
+
+        //need to compare with quoted string
+        String SSID = "\"" + result.SSID + "\"";
+
+        WifiConfiguration config = null;
+        for (WifiConfiguration link : mConfiguredNetworks.values()) {
+            boolean doLink = false;
+
+
+            if (configKey.equals(link.configKey())) {
+                if (VDBG) loge("associateWithConfiguration(): found it!!! " + configKey );
+
+                return link; //found it exactly
+            }
+
+
+            if ((link.scanResultCache != null) && (link.scanResultCache.size() <= 5)) {
+                String bssid = "";
+                for (String key : link.scanResultCache.keySet()) {
+                    bssid = key;
+                }
+
+
+                if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
+                        && SSID.regionMatches(false, 0, link.SSID, 0, 3)) {
+                    // if first 16 ascii characters of BSSID matches, and first 3
+                    // characters of SSID match, we assume this is a home setup
+                    // and thus we will try to transfer the password from the known
+                    // BSSID/SSID to the recently found BSSID/SSID
+
+                    //if (VDBG)
+                    //    loge("associateWithConfiguration OK " );
+
+                    doLink = true;
+                }
+            }
+
+
+            if (doLink) {
+                //try to make a non verified WifiConfiguration
+
+                if (VDBG) {
+                    loge("associateWithConfiguration: will create " +
+                            result.SSID + " and associate it with: " + link.SSID);
+                }
+
+                config = wifiConfigurationFromScanResult(result);
+                if (config != null) {
+                    if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
+                            config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
+
+                        //transfer the credentials
+
+                        String psk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
+                        if (psk != null) {
+
+
+                            config.preSharedKey = psk;
+                            if (VDBG) {
+                                if (config.preSharedKey != null)
+                                    loge(" transfer PSK : " + config.preSharedKey);
+                            }
+
+                            //link configurations
+                            if (link.linkedConfigurations == null) {
+                                link.linkedConfigurations = new HashMap<String, Integer>();
+                            }
+                            if (config.linkedConfigurations == null) {
+                                config.linkedConfigurations = new HashMap<String, Integer>();
+                            }
+                            link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
+                            config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
+                        } else {
+                            config = null;
+                        }
+                    }
+
+                }
+
+            } else {
+                //todo if they are linked, break the link
+            }
+
+        }
+        return config;
+    }
+
+
+    public WifiConfiguration updateSavedNetworkHistory(ScanResult scanResult) {
+        WifiConfiguration found = null;
+        if (scanResult == null)
+            return found;
+
+        //first step, look for this scan Result by SSID + Key Management
+
+        String key = configKeyFroscanResult(scanResult);
+        int hash = key.hashCode();
+
+        Integer netId = mNetworkIds.get(hash);
+
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        if (config != null) {
+           if (config.scanResultCache == null) {
+                config.scanResultCache = new HashMap<String, ScanResult>();
+           }
+           if (config.scanResultCache == null) {
+                return null;
+           }
+
+            //add the scan result to this WifiConfiguration
+           config.scanResultCache.put(scanResult.BSSID, scanResult);
+
+            mConfiguredNetworks.put(netId, config);
+
+            linkConfiguration(config);
+
+            found = config;
+        }
+
+        if (VDBG) {
+            config = mConfiguredNetworks.get(netId);
+            if (config != null) {
+
+                if (config.scanResultCache != null) {
+                    loge("                    tested " + scanResult.SSID + " " +
+                            scanResult.BSSID + " key : " + key + " num: " +
+                            Integer.toString(config.scanResultCache.size()));
+                } else {
+                    loge("                    tested " + scanResult.SSID + " " +
+                            scanResult.BSSID + " key : " + key);
+                }
+            }
+
+        }
+        return found;
+
+    }
+
     /* Compare current and new configuration and write to file on change */
     private NetworkUpdateResult writeIpAndProxyConfigurationsOnChange(
             WifiConfiguration currentConfig,
@@ -1358,6 +2046,12 @@ public class WifiConfigStore {
         boolean ipChanged = false;
         boolean proxyChanged = false;
         LinkProperties linkProperties = null;
+
+        if (VDBG) {
+            loge("writeIpAndProxyConfigurationsOnChange: " + currentConfig.SSID + " -> " +
+                    newConfig.SSID + " path: " + ipConfigFile);
+        }
+
 
         switch (newConfig.ipAssignment) {
             case STATIC:
@@ -1687,20 +2381,71 @@ public class WifiConfigStore {
         return -1;
     }
 
+
+    /* return the config key string based on a scan result */
+
+    public String configKeyFroscanResult(ScanResult result) {
+
+        String key = "\"" + result.SSID + "\"";
+
+
+        if (result.capabilities.contains("WEP")) {
+            key = key + "-WEP";
+        }
+
+        if (result.capabilities.contains("PSK")) {
+            key = key + "-" + KeyMgmt.strings[KeyMgmt.WPA_PSK];
+        }
+
+        if (result.capabilities.contains("EAP")) {
+            key = key + "-" + KeyMgmt.strings[KeyMgmt.WPA_EAP];
+        }
+
+        return key;
+
+    }
+
+    /* return the allowed key management based on a scan result */
+
+    public WifiConfiguration wifiConfigurationFromScanResult(ScanResult result) {
+
+        WifiConfiguration config = new WifiConfiguration();
+
+        config.SSID = "\"" + result.SSID + "\"";
+
+        if (VDBG) {
+            loge("WifiConfiguration from scan results " +
+                    config.SSID + " cap " + result.capabilities);
+        }
+        if (result.capabilities.contains("WEP")) {
+            config.allowedKeyManagement.set(KeyMgmt.NONE);
+            config.allowedAuthAlgorithms.set(WifiConfiguration.AuthAlgorithm.OPEN); //?
+            config.allowedAuthAlgorithms.set(WifiConfiguration.AuthAlgorithm.SHARED);
+        }
+
+        if (result.capabilities.contains("PSK")) {
+            config.allowedKeyManagement.set(KeyMgmt.WPA_PSK);
+        }
+
+        if (result.capabilities.contains("EAP")) {
+            //this is probably wrong, as we don't have a way to enter the enterprise config
+            config.allowedKeyManagement.set(KeyMgmt.WPA_EAP);
+            config.allowedKeyManagement.set(KeyMgmt.IEEE8021X);
+        }
+
+        config.scanResultCache = new HashMap<String, ScanResult>();
+        if (config.scanResultCache == null)
+            return null;
+        config.scanResultCache.put(result.BSSID, result);
+
+        return config;
+
+    }
+
+
     /* Returns a unique for a given configuration */
     private static int configKey(WifiConfiguration config) {
-        String key;
-
-        if (config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-            key = config.SSID + KeyMgmt.strings[KeyMgmt.WPA_PSK];
-        } else if (config.allowedKeyManagement.get(KeyMgmt.WPA_EAP) ||
-                config.allowedKeyManagement.get(KeyMgmt.IEEE8021X)) {
-            key = config.SSID + KeyMgmt.strings[KeyMgmt.WPA_EAP];
-        } else if (config.wepKeys[0] != null) {
-            key = config.SSID + "WEP";
-        } else {
-            key = config.SSID + KeyMgmt.strings[KeyMgmt.NONE];
-        }
+        String key = config.configKey();
 
         return key.hashCode();
     }
@@ -1726,7 +2471,12 @@ public class WifiConfigStore {
     }
 
     private void loge(String s) {
-        Log.e(TAG, s);
+        long now = SystemClock.elapsedRealtimeNanos();
+        String ts = String.format("[%,d us] ", now/1000);
+        Log.e(TAG, ts+s+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
+                +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName()
+                +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
+                +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
     }
 
     private void log(String s) {
@@ -1827,6 +2577,16 @@ public class WifiConfigStore {
         */
 
         return false;
+    }
+
+    void handleAuthenticationFailure(int netId) {
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        if (config != null) {
+            loge("Authentication failure for  " + config.configKey() +
+                    " had autoJoinstatus=" + Integer.toString(config.autoJoinStatus));
+            disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
+            config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE;
+        }
     }
 
     boolean installKeys(WifiEnterpriseConfig config, String name) {

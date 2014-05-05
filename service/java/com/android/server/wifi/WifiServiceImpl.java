@@ -92,7 +92,7 @@ import static com.android.server.wifi.WifiController.CMD_WIFI_TOGGLED;
  */
 public final class WifiServiceImpl extends IWifiManager.Stub {
     private static final String TAG = "WifiService";
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
 
     final WifiStateMachine mWifiStateMachine;
 
@@ -173,6 +173,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 case WifiManager.SAVE_NETWORK: {
                     WifiConfiguration config = (WifiConfiguration) msg.obj;
                     int networkId = msg.arg1;
+                    if (msg.what == WifiManager.SAVE_NETWORK)
+                        Slog.e("WiFiServiceImpl " , "SAVE"  + " nid=" + Integer.toString(networkId));
+                    if (msg.what == WifiManager.CONNECT_NETWORK)
+                        Slog.e("WiFiServiceImpl " , "CONNECT " + " nid=" + Integer.toString(networkId));
                     if (config != null && config.isValid()) {
                         // This is restricted because there is no UI for the user to
                         // monitor/control PAC.
@@ -279,13 +283,13 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
         mInterfaceName =  SystemProperties.get("wifi.interface", "wlan0");
 
-        mWifiStateMachine = new WifiStateMachine(mContext, mInterfaceName);
+        mTrafficPoller = new WifiTrafficPoller(mContext, mInterfaceName);
+        mWifiStateMachine = new WifiStateMachine(mContext, mInterfaceName, mTrafficPoller);
         mWifiStateMachine.enableRssiPolling(true);
         mBatteryStats = BatteryStatsService.getService();
         mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
 
         mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);
-        mTrafficPoller = new WifiTrafficPoller(mContext, mInterfaceName);
         mSettingsStore = new WifiSettingsStore(mContext);
 
         HandlerThread wifiThread = new HandlerThread("WifiService");

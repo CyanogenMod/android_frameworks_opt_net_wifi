@@ -73,6 +73,10 @@ class SupplicantStateTracker extends StateMachine {
     private State mCompletedState = new CompletedState();
     private State mDormantState = new DormantState();
 
+    public String getSupplicantStateName() {
+        return getCurrentState().getName();
+    }
+
     public SupplicantStateTracker(Context c, WifiStateMachine wsm, WifiConfigStore wcs, Handler t) {
         super(TAG, t.getLooper());
 
@@ -96,6 +100,12 @@ class SupplicantStateTracker extends StateMachine {
     }
 
     private void handleNetworkConnectionFailure(int netId, int disableReason) {
+        if (DBG) {
+            Log.d(TAG, "handleNetworkConnectionFailure netId=" + Integer.toString(netId)
+                    + " reason " + Integer.toString(disableReason)
+                    + " mNetworksDisabledDuringConnect=" + mNetworksDisabledDuringConnect);
+        }
+
         /* If other networks disabled during connection, enable them */
         if (mNetworksDisabledDuringConnect) {
             mWifiConfigStore.enableAllNetworks();
