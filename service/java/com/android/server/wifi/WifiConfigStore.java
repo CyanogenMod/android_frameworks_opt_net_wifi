@@ -22,7 +22,7 @@ import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.NetworkUtils;
 import android.net.NetworkInfo.DetailedState;
-import android.net.ProxyProperties;
+import android.net.ProxyInfo;
 import android.net.RouteInfo;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.IpAssignment;
@@ -619,7 +619,7 @@ public class WifiConfigStore {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null && config.linkProperties != null) {
             // Clear everything except proxy
-            ProxyProperties proxy = config.linkProperties.getHttpProxy();
+            ProxyInfo proxy = config.linkProperties.getHttpProxy();
             config.linkProperties.clear();
             config.linkProperties.setHttpProxy(proxy);
         }
@@ -629,12 +629,12 @@ public class WifiConfigStore {
     /**
      * Fetch the proxy properties for a given network id
      * @param network id
-     * @return ProxyProperties for the network id
+     * @return ProxyInfo for the network id
      */
-    ProxyProperties getProxyProperties(int netId) {
+    ProxyInfo getProxyProperties(int netId) {
         LinkProperties linkProperties = getLinkProperties(netId);
         if (linkProperties != null) {
-            return new ProxyProperties(linkProperties.getHttpProxy());
+            return new ProxyInfo(linkProperties.getHttpProxy());
         }
         return null;
     }
@@ -893,7 +893,7 @@ public class WifiConfigStore {
 
                         switch (config.proxySettings) {
                             case STATIC:
-                                ProxyProperties proxyProperties = linkProperties.getHttpProxy();
+                                ProxyInfo proxyProperties = linkProperties.getHttpProxy();
                                 String exclusionList = proxyProperties.getExclusionList();
                                 out.writeUTF(PROXY_SETTINGS_KEY);
                                 out.writeUTF(config.proxySettings.toString());
@@ -906,7 +906,7 @@ public class WifiConfigStore {
                                 writeToFile = true;
                                 break;
                             case PAC:
-                                ProxyProperties proxyPacProperties = linkProperties.getHttpProxy();
+                                ProxyInfo proxyPacProperties = linkProperties.getHttpProxy();
                                 out.writeUTF(PROXY_SETTINGS_KEY);
                                 out.writeUTF(config.proxySettings.toString());
                                 out.writeUTF(PROXY_PAC_FILE);
@@ -1061,14 +1061,14 @@ public class WifiConfigStore {
                         switch (proxySettings) {
                             case STATIC:
                                 config.proxySettings = proxySettings;
-                                ProxyProperties proxyProperties =
-                                    new ProxyProperties(proxyHost, proxyPort, exclusionList);
+                                ProxyInfo proxyProperties =
+                                    new ProxyInfo(proxyHost, proxyPort, exclusionList);
                                 linkProperties.setHttpProxy(proxyProperties);
                                 break;
                             case PAC:
                                 config.proxySettings = proxySettings;
-                                ProxyProperties proxyPacProperties = 
-                                        new ProxyProperties(pacFileUrl);
+                                ProxyInfo proxyPacProperties = 
+                                        new ProxyInfo(pacFileUrl);
                                 linkProperties.setHttpProxy(proxyPacProperties);
                                 break;
                             case NONE:
@@ -1401,8 +1401,8 @@ public class WifiConfigStore {
         switch (newConfig.proxySettings) {
             case STATIC:
             case PAC:
-                ProxyProperties newHttpProxy = newConfig.linkProperties.getHttpProxy();
-                ProxyProperties currentHttpProxy = currentConfig.linkProperties.getHttpProxy();
+                ProxyInfo newHttpProxy = newConfig.linkProperties.getHttpProxy();
+                ProxyInfo currentHttpProxy = currentConfig.linkProperties.getHttpProxy();
 
                 if (newHttpProxy != null) {
                     proxyChanged = !newHttpProxy.equals(currentHttpProxy);
