@@ -894,7 +894,7 @@ public class WifiConfigStore {
                         switch (config.proxySettings) {
                             case STATIC:
                                 ProxyInfo proxyProperties = linkProperties.getHttpProxy();
-                                String exclusionList = proxyProperties.getExclusionList();
+                                String exclusionList = proxyProperties.getExclusionListAsString();
                                 out.writeUTF(PROXY_SETTINGS_KEY);
                                 out.writeUTF(config.proxySettings.toString());
                                 out.writeUTF(PROXY_HOST_KEY);
@@ -910,7 +910,7 @@ public class WifiConfigStore {
                                 out.writeUTF(PROXY_SETTINGS_KEY);
                                 out.writeUTF(config.proxySettings.toString());
                                 out.writeUTF(PROXY_PAC_FILE);
-                                out.writeUTF(proxyPacProperties.getPacFileUrl());
+                                out.writeUTF(proxyPacProperties.getPacFileUrl().toString());
                                 writeToFile = true;
                                 break;
                             case NONE:
