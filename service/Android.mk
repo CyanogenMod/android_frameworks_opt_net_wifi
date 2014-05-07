@@ -82,9 +82,47 @@ LOCAL_SHARED_LIBRARIES += \
 
 LOCAL_STATIC_LIBRARIES += libwifi-hal
 
-LOCAL_SRC_FILES := jni/com_android_server_wifi_WifiNative.cpp
+LOCAL_SRC_FILES := \
+	jni/com_android_server_wifi_WifiNative.cpp \
+	jni/jni_helper.cpp
+
 LOCAL_MODULE := libwifi-service
 
 include $(BUILD_SHARED_LIBRARY)
 
-endif
+# Build the halutil
+# ============================================================
+
+include $(CLEAR_VARS)
+
+LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
+
+LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
+LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
+LOCAL_CPPFLAGS += -Wno-conversion-null
+
+LOCAL_C_INCLUDES += \
+	libcore/include \
+	$(LOCAL_PATH)/lib
+
+LOCAL_SHARES_LIBRARIES += \
+	libcutils \
+	libutils \
+	libandroid_runtime
+
+LOCAL_STATIC_LIBRARIES := libwifi-hal libnl_2
+
+LOCAL_SHARED_LIBRARIES += \
+	libnativehelper \
+	libcutils \
+	libutils \
+	libhardware \
+	libhardware_legacy
+
+LOCAL_SRC_FILES := \
+	tools/halutil/halutil.cpp
+
+LOCAL_MODULE := halutil
+
+include $(BUILD_EXECUTABLE)
+

@@ -81,7 +81,7 @@ static nl_sock * wifi_create_nl_socket(int port)
     }
 
     // ALOGI("Making socket nonblocking");
-	if (nl_socket_set_nonblocking(sock)) {
+    if (nl_socket_set_nonblocking(sock)) {
         ALOGE("Could make socket non-blocking");
         nl_socket_free(sock);
         return NULL;
@@ -252,9 +252,8 @@ void wifi_event_loop(wifi_handle handle)
     do {
         int timeout = -1;                   /* Infinite timeout */
         pfd.revents = 0;
-        ALOGI("Polling socket");
+        //ALOGI("Polling socket");
         int result = poll(&pfd, 1, -1);
-        ALOGI("Poll result = %0x", result);
         if (result < 0) {
             ALOGE("Error polling socket");
         } else if (pfd.revents & (POLLIN | POLLHUP | POLLERR)) {
@@ -281,29 +280,35 @@ static int internal_valid_message_handler(nl_msg *msg, void *arg)
         return NL_SKIP;
     }
 
-	int cmd = event.get_cmd();
-	uint32_t vendor_id = 0;
+    int cmd = event.get_cmd();
+    uint32_t vendor_id = 0;
+    uint32_t subcmd = 0;
 
-	if (cmd == NL80211_CMD_VENDOR) {
+    if (cmd == NL80211_CMD_VENDOR) {
         vendor_id = event.get_u32(NL80211_ATTR_VENDOR_ID);
-        // subcmd = event.get_u32(NL80211_ATTR_VENDOR_SUBCMD);
-	}
+        subcmd = event.get_u32(NL80211_ATTR_VENDOR_SUBCMD);
+        ALOGI("event received %s, vendor_id = 0x%0x, subcmd = 0x%0x",
+                event.get_cmdString(), vendor_id, subcmd);
+    } else {
+        ALOGI("event received %s", event.get_cmdString());
+    }
 
-	ALOGI("event received %d, vendor_id = 0x%0x", cmd, vendor_id);
+    ALOGI("event received %s, vendor_id = 0x%0x", event.get_cmdString(), vendor_id);
+    event.log();
 
-	for (int i = 0; i < info->num_event_cb; i++) {
-	    if (cmd == info->event_cb[i].nl_cmd) {
-	        if (cmd == NL80211_CMD_VENDOR && vendor_id != info->event_cb[i].vendor_id) {
-	            /* event for a different vendor, ignore it */
-	            continue;
-	        }
+    for (int i = 0; i < info->num_event_cb; i++) {
+        if (cmd == info->event_cb[i].nl_cmd) {
+            if (cmd == NL80211_CMD_VENDOR && vendor_id != info->event_cb[i].vendor_id) {
+                /* event for a different vendor, ignore it */
+                continue;
+            }
 
-	        cb_info *cbi = &(info->event_cb[i]);
-	        return (*(cbi->cb_func))(msg, cbi->cb_arg);
-	    }
-	}
+            cb_info *cbi = &(info->event_cb[i]);
+            return (*(cbi->cb_func))(msg, cbi->cb_arg);
+        }
+    }
 
-	return NL_OK;
+    return NL_OK;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -447,6 +452,7 @@ wifi_error wifi_init_interfaces(wifi_handle handle)
                 free(ifinfo);
                 continue;
             }
+            ifinfo->handle = handle;
             info->interfaces[i] = ifinfo;
             i++;
         }
