@@ -1,3 +1,4 @@
+#include <stdint.h>
 
 #include "wifi_hal.h"
 
@@ -7,7 +8,6 @@
 #include <inttypes.h>
 #include <sys/socket.h>
 #include <linux/if.h>
-
 
 #define EVENT_BUF_SIZE 2048
 
@@ -163,6 +163,17 @@ void printScanResult(wifi_scan_result result) {
     printf("rtt_sd = %lld\n", result.rtt_sd);
 }
 
+void printScanCapabilities(wifi_gscan_capabilities capabilities)
+{
+    printf("max_scan_cache_size = %d\n", capabilities.max_scan_cache_size);
+    printf("max_scan_buckets = %d\n", capabilities.max_scan_buckets);
+    printf("max_ap_cache_per_scan = %d\n", capabilities.max_ap_cache_per_scan);
+    printf("max_rssi_sample_size = %d\n", capabilities.max_rssi_sample_size);
+    printf("max_scan_reporting_threshold = %d\n", capabilities.max_scan_reporting_threshold);
+    printf("max_hotlist_aps = %d\n", capabilities.max_hotlist_aps);
+    printf("max_significant_wifi_change_aps = %d\n", capabilities.max_significant_wifi_change_aps);
+}
+
 
 /* -------------------------------------------  */
 /* commands and events                          */
@@ -180,6 +191,16 @@ static void onScanResults(wifi_request_id id, unsigned num_results, wifi_scan_re
 static int scanCmdId;
 
 static bool startScan() {
+
+    /* Get capabilties */
+    wifi_gscan_capabilities capabilities;
+    int result = wifi_get_gscan_capabilities(wlan0Handle, &capabilities);
+    if (result < 0) {
+        printf("failed to get scan capabilities - %d\n", result);
+        printf("trying scan anyway ..\n");
+    } else {
+        printScanCapabilities(capabilities);
+    }
 
     wifi_scan_cmd_params params;
     memset(&params, 0, sizeof(params));

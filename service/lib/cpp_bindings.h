@@ -34,6 +34,22 @@ public:
         return mHeader->cmd;
     }
 
+    int get_vendor_id() {
+        return get_u32(NL80211_ATTR_VENDOR_ID);
+    }
+
+    int get_vendor_subcmd() {
+        return get_u32(NL80211_ATTR_VENDOR_SUBCMD);
+    }
+
+    nlattr *get_vendor_data() {
+        return (nlattr *)get_data(NL80211_ATTR_VENDOR_DATA);
+    }
+
+    int get_vendor_data_len() {
+        return get_len(NL80211_ATTR_VENDOR_DATA);
+    }
+
     const char *get_cmdString();
 
     nlattr ** attributes() {
@@ -60,7 +76,7 @@ public:
         return nla_get_u64(mAttributes[attribute]);
     }
 
-    int len(int attribute) {
+    int get_len(int attribute) {
         return nla_len(mAttributes[attribute]);
     }
 
@@ -86,6 +102,27 @@ public:
     }
     struct nlattr *get() {
         return pos;
+    }
+    uint16_t get_type() {
+        return pos->nla_type;
+    }
+    uint8_t get_u8() {
+        return nla_get_u8(pos);
+    }
+    uint16_t get_u16() {
+        return nla_get_u16(pos);
+    }
+    uint32_t get_u32() {
+        return nla_get_u32(pos);
+    }
+    uint64_t get_u64() {
+        return nla_get_u64(pos);
+    }
+    void* get_data() {
+        return nla_data(pos);
+    }
+    int get_len() {
+        return nla_len(pos);
     }
 };
 
@@ -117,11 +154,8 @@ public:
 
     /* Command assembly helpers */
     int create(int family, uint8_t cmd, int flags, int hdrlen);
-    int create(uint8_t cmd, int flags, int hdrlen) {
-        return create(mFamily, cmd, flags, hdrlen);
-    }
     int create(uint8_t cmd) {
-        return create(cmd, 0, 0);
+        return create(mFamily, cmd, 0, 0);
     }
 
     int create(uint32_t id, int subcmd);
@@ -172,7 +206,7 @@ public:
     {
         mIfaceInfo = NULL;
         mInfo = getHalInfo(handle);
-        ALOGV("WifiCommand %p created, mInfo = %p, mIfaceInfo = %p", this, mInfo, mIfaceInfo);
+        // ALOGD("WifiCommand %p created, mInfo = %p, mIfaceInfo = %p", this, mInfo, mIfaceInfo);
     }
 
     WifiCommand(wifi_interface_handle iface, wifi_request_id id)
@@ -180,18 +214,23 @@ public:
     {
         mIfaceInfo = getIfaceInfo(iface);
         mInfo = getHalInfo(iface);
-        ALOGV("WifiCommand %p created, mInfo = %p, mIfaceInfo = %p", this, mInfo, mIfaceInfo);
+        // ALOGD("WifiCommand %p created, mInfo = %p, mIfaceInfo = %p", this, mInfo, mIfaceInfo);
     }
 
     virtual ~WifiCommand() {
-        ALOGV("WifiCommand %p destroyed", this);
+        // ALOGD("WifiCommand %p destroyed", this);
     }
 
     wifi_request_id id() {
         return mId;
     }
 
-    virtual int create() = 0;
+    virtual int create() {
+        /* by default there is no way to cancel */
+        ALOGD("WifiCommand %p can't be created", this);
+        return WIFI_ERROR_NOT_SUPPORTED;
+    }
+
     virtual int cancel() {
         /* by default there is no way to cancel */
         return WIFI_ERROR_NOT_SUPPORTED;
@@ -200,6 +239,7 @@ public:
     int requestResponse();
     int requestEvent(int cmd);
     int requestVendorEvent(uint32_t id, int subcmd);
+    int requestResponse(WifiRequest& request);
 
 protected:
     wifi_handle wifiHandle() {
@@ -207,14 +247,14 @@ protected:
     }
 
     /* Override this method to parse reply and dig out data; save it in the object */
-    virtual int handleResponse(WifiEvent reply) {
+    virtual int handleResponse(WifiEvent& reply) {
         ALOGI("skipping a response");
         return NL_SKIP;
     }
 
     /* Override this method to parse event and dig out data; save it in the object */
-    virtual int handleEvent(WifiEvent event) {
-        ALOGI("got an event");
+    virtual int handleEvent(WifiEvent& event) {
+        ALOGI("skipping an event");
         return NL_SKIP;
     }
 

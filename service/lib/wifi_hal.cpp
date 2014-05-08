@@ -69,10 +69,6 @@ static nl_sock * wifi_create_nl_socket(int port)
 
     wifi_socket_set_local_port(sock, port);
 
-    struct sockaddr_nl *addr_nl = NULL;
-    struct sockaddr *addr = NULL;
-    ALOGI("sizeof(sockaddr) = %zu, sizeof(sockaddr_nl) = %zu", sizeof(*addr), sizeof(*addr_nl));
-
     // ALOGI("Connecting socket");
     if (nl_connect(sock, NETLINK_GENERIC)) {
         ALOGE("Could not connect handle");
@@ -123,6 +119,7 @@ wifi_error wifi_initialize(wifi_handle *handle)
         return WIFI_ERROR_UNKNOWN;
     }
 
+    // ALOGI("cb->refcnt = %d", cb->cb_refcnt);
     nl_cb_set(cb, NL_CB_VALID, NL_CB_CUSTOM, internal_valid_message_handler, info);
     nl_cb_put(cb);
 
@@ -148,7 +145,7 @@ wifi_error wifi_initialize(wifi_handle *handle)
 		return WIFI_ERROR_UNKNOWN;
     }
 
-    *handle = info;
+    *handle = (wifi_handle) info;
 
     wifi_add_membership(*handle, "scan");
     wifi_add_membership(*handle, "mlme");
@@ -164,7 +161,7 @@ wifi_error wifi_initialize(wifi_handle *handle)
 
 static int wifi_add_membership(wifi_handle handle, const char *group)
 {
-    hal_info *info = (hal_info *)handle;
+    hal_info *info = getHalInfo(handle);
 
     int id = wifi_get_multicast_id(handle, "nl80211", group);
     if (id < 0) {
@@ -183,7 +180,7 @@ static int wifi_add_membership(wifi_handle handle, const char *group)
 
 static void internal_cleaned_up_handler(wifi_handle handle)
 {
-    hal_info *info = (hal_info *)handle;
+    hal_info *info = getHalInfo(handle);
     wifi_cleaned_up_handler cleaned_up_handler = info->cleaned_up_handler;
 
     if (info->cmd_sock != 0) {
@@ -201,7 +198,7 @@ static void internal_cleaned_up_handler(wifi_handle handle)
 
 void wifi_cleanup(wifi_handle handle, wifi_cleaned_up_handler handler)
 {
-    hal_info *info = (hal_info *)handle;
+    hal_info *info = getHalInfo(handle);
     info->cleaned_up_handler = handler;
     info->clean_up = true;
 
@@ -210,7 +207,7 @@ void wifi_cleanup(wifi_handle handle, wifi_cleaned_up_handler handler)
 
 static int internal_pollin_handler(wifi_handle handle)
 {
-    hal_info *info = (hal_info *)handle;
+    hal_info *info = getHalInfo(handle);
     struct nl_cb *cb = nl_socket_get_cb(info->event_sock);
     int res = nl_recvmsgs(info->event_sock, cb);
     nl_cb_put(cb);
@@ -234,7 +231,7 @@ static void internal_event_handler(wifi_handle handle, int events)
 /* Run event handler */
 void wifi_event_loop(wifi_handle handle)
 {
-    hal_info *info = (hal_info *)handle;
+    hal_info *info = getHalInfo(handle);
     if (info->in_event_loop) {
         return;
     } else {
@@ -271,7 +268,7 @@ void wifi_event_loop(wifi_handle handle)
 static int internal_valid_message_handler(nl_msg *msg, void *arg)
 {
     wifi_handle handle = (wifi_handle)arg;
-    hal_info *info = (hal_info *)handle;
+    hal_info *info = getHalInfo(handle);
 
     WifiEvent event(msg);
     int res = event.parse();
@@ -349,7 +346,7 @@ public:
         return ret;
     }
 
-    virtual int handleResponse(WifiEvent reply) {
+    virtual int handleResponse(WifiEvent& reply) {
 
         // ALOGI("handling reponse in %s", __func__);
 
@@ -377,6 +374,7 @@ public:
 
             char *grpName = (char *)nla_data(tb2[CTRL_ATTR_MCAST_GRP_NAME]);
             int grpNameLen = nla_len(tb2[CTRL_ATTR_MCAST_GRP_NAME]);
+
             // ALOGI("Found group name %s", grpName);
 
             if (strncmp(grpName, mGroup, grpNameLen) != 0)
