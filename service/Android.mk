@@ -16,21 +16,6 @@ LOCAL_PATH := $(call my-dir)
 
 ifneq ($(TARGET_BUILD_PDK), true)
 
-include $(CLEAR_VARS)
-
-LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/java
-LOCAL_SRC_FILES := $(call all-java-files-under, java) \
-	$(call all-Iaidl-files-under, java) \
-	$(call all-logtags-files-under, java)
-
-LOCAL_JNI_SHARED_LIBRARIES := libandroid_runtime
-LOCAL_JAVA_LIBRARIES := services
-LOCAL_REQUIRED_MODULES := services
-LOCAL_MODULE_TAGS :=
-LOCAL_MODULE := wifi-service
-
-include $(BUILD_JAVA_LIBRARY)
-
 # Make the HAL library
 # ============================================================
 include $(CLEAR_VARS)
@@ -54,6 +39,35 @@ LOCAL_MODULE := libwifi-hal
 
 include $(BUILD_STATIC_LIBRARY)
 
+# Build the halutil
+# ============================================================
+
+include $(CLEAR_VARS)
+
+LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
+
+LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
+LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
+LOCAL_CPPFLAGS += -Wno-conversion-null
+
+LOCAL_C_INCLUDES += \
+	libcore/include \
+	$(LOCAL_PATH)/lib
+
+LOCAL_SHARED_LIBRARIES += \
+	libcutils \
+	libnl \
+	libandroid_runtime
+
+LOCAL_STATIC_LIBRARIES += libwifi-hal libc libutils
+
+LOCAL_SRC_FILES := \
+	tools/halutil/halutil.cpp
+
+LOCAL_MODULE := halutil
+
+include $(BUILD_EXECUTABLE)
+
 # Make the JNI part
 # ============================================================
 include $(CLEAR_VARS)
@@ -71,16 +85,16 @@ LOCAL_C_INCLUDES += \
 	libcore/include \
 	$(LOCAL_PATH)/lib
 
+
 LOCAL_SHARED_LIBRARIES += \
 	libnativehelper \
 	libcutils \
 	libutils \
 	libhardware \
 	libhardware_legacy \
-	libandroid_runtime  \
-	libnl
+	libandroid_runtime
 
-LOCAL_STATIC_LIBRARIES += libwifi-hal
+LOCAL_STATIC_LIBRARIES += libwifi-hal libnl_2
 
 LOCAL_SRC_FILES := \
 	jni/com_android_server_wifi_WifiNative.cpp \
@@ -90,39 +104,22 @@ LOCAL_MODULE := libwifi-service
 
 include $(BUILD_SHARED_LIBRARY)
 
-# Build the halutil
+# Build the java code
 # ============================================================
 
 include $(CLEAR_VARS)
 
-LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
+LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/java
+LOCAL_SRC_FILES := $(call all-java-files-under, java) \
+	$(call all-Iaidl-files-under, java) \
+	$(call all-logtags-files-under, java)
 
-LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
-LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
-LOCAL_CPPFLAGS += -Wno-conversion-null
+LOCAL_JNI_SHARED_LIBRARIES := libandroid_runtime
+LOCAL_JAVA_LIBRARIES := services
+LOCAL_REQUIRED_MODULES := services
+LOCAL_MODULE_TAGS :=
+LOCAL_MODULE := wifi-service
 
-LOCAL_C_INCLUDES += \
-	libcore/include \
-	$(LOCAL_PATH)/lib
+include $(BUILD_JAVA_LIBRARY)
 
-LOCAL_SHARES_LIBRARIES += \
-	libcutils \
-	libutils \
-	libandroid_runtime
-
-LOCAL_STATIC_LIBRARIES := libwifi-hal libnl_2
-
-LOCAL_SHARED_LIBRARIES += \
-	libnativehelper \
-	libcutils \
-	libutils \
-	libhardware \
-	libhardware_legacy
-
-LOCAL_SRC_FILES := \
-	tools/halutil/halutil.cpp
-
-LOCAL_MODULE := halutil
-
-include $(BUILD_EXECUTABLE)
-
+endif

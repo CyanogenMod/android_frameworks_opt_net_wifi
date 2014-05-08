@@ -7,6 +7,7 @@
 #define LOG_TAG  "WifiHAL"
 
 #include <utils/Log.h>
+#include "nl80211_copy.h"
 
 #define SOCKET_BUFFER_SIZE      (32768U)
 #define RECV_BUF_SIZE           (4096)
@@ -21,13 +22,6 @@
 
 const uint32_t GOOGLE_OUI = 0x001A11;
 /* TODO: define vendor OUI here */
-
-/* TODO: remove these definitions after updating the NL80211 header file */
-#define NL80211_CMD_VENDOR            60
-#define NL80211_ATTR_VENDOR_ID       195
-#define NL80211_ATTR_VENDOR_SUBCMD   196
-#define NL80211_ATTR_VENDOR_DATA     197
-#define NL80211_ATTR_VENDOR_EVENTS   198
 
 
 /*
@@ -126,6 +120,12 @@ hal_info *getHalInfo(wifi_handle handle);
 hal_info *getHalInfo(wifi_interface_handle handle);
 wifi_handle getWifiHandle(hal_info *info);
 wifi_interface_handle getIfaceHandle(interface_info *info);
+
+
+// some common macros
+
+#define min(x, y)       ((x) < (y) ? (x) : (y))
+#define max(x, y)       ((x) > (y) ? (x) : (y))
 
 #endif
 
