@@ -325,7 +325,10 @@ public class WifiConfigStore {
         int hash = key.hashCode();
         if (mNetworkIds == null)
             return null;
-        int netId = mNetworkIds.get(hash);
+        Integer n = mNetworkIds.get(hash);
+        if (n == null)
+            return null;
+        int netId = n.intValue();
         return getWifiConfiguration(netId);
     }
 
@@ -404,6 +407,7 @@ public class WifiConfigStore {
      * @return network update result
      */
     NetworkUpdateResult saveNetwork(WifiConfiguration config) {
+        WifiConfiguration conf;
 
         // A new network cannot have null SSID
         if (config == null || (config.networkId == INVALID_NETWORK_ID &&
@@ -426,10 +430,12 @@ public class WifiConfigStore {
             if (VDBG) localLog("WifiConfigStore: will enable netId=", netId);
 
             mWifiNative.enableNetwork(netId, false);
-            mConfiguredNetworks.get(netId).status = Status.ENABLED;
+            conf = mConfiguredNetworks.get(netId);
+            if (conf != null)
+                conf.status = Status.ENABLED;
         }
 
-        WifiConfiguration conf = mConfiguredNetworks.get(netId);
+        conf = mConfiguredNetworks.get(netId);
         if (conf != null) {
             if (conf.autoJoinStatus != WifiConfiguration.AUTO_JOIN_ENABLED) {
                 if (VDBG) localLog("WifiConfigStore: re-enabling: " + conf.SSID);
@@ -498,9 +504,12 @@ public class WifiConfigStore {
         if (VDBG) localLog("addOrUpdateNetwork", config.networkId);
         NetworkUpdateResult result = addOrUpdateNetworkNative(config);
         if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
-            sendConfiguredNetworksChangedBroadcast(mConfiguredNetworks.get(result.getNetworkId()),
+            WifiConfiguration conf = mConfiguredNetworks.get(result.getNetworkId());
+            if (conf != null) {
+                sendConfiguredNetworksChangedBroadcast(conf,
                     result.isNewNetwork ? WifiManager.CHANGE_REASON_ADDED :
                             WifiManager.CHANGE_REASON_CONFIG_CHANGE);
+            }
         }
         return result.getNetworkId();
     }
@@ -1312,7 +1321,12 @@ public class WifiConfigStore {
                         config = null;
                     }
                     String configKey = key.replace(CONFIG_KEY, "");
-                    config = mConfiguredNetworks.get(mNetworkIds.get(configKey.hashCode()));
+                    // get the networkId for that config Key
+                    Integer n = mNetworkIds.get(configKey.hashCode());
+                    // skip reading that configuration data
+                    // since we don't have a corresponding network ID
+                    if (n == null) continue;
+                    config = mConfiguredNetworks.get(n);
                     ssid = null;
                     bssid = null;
                     freq = 0;
@@ -1505,9 +1519,9 @@ public class WifiConfigStore {
                 } while (true);
 
                 if (id != -1) {
-                    WifiConfiguration config = mConfiguredNetworks.get(
-                            mNetworkIds.get(id));
-
+                    WifiConfiguration config = null;
+                    Integer n = mNetworkIds.get(id);
+                    if (n != null) config = mConfiguredNetworks.get(n);
                     if (config == null) {
                         loge("configuration found for missing network, ignored");
                     } else {
@@ -1895,10 +1909,9 @@ public class WifiConfigStore {
      *
      */
     public WifiConfiguration associateWithConfiguration(ScanResult result) {
-        String configKey = configKeyFroscanResult(result);
+        String configKey = configKeyFromScanResult(result);
         if (configKey == null) {
             if (DBG) loge("associateWithConfiguration(): no config key " );
-
             return null;
         }
 
@@ -1909,20 +1922,16 @@ public class WifiConfigStore {
         for (WifiConfiguration link : mConfiguredNetworks.values()) {
             boolean doLink = false;
 
-
             if (configKey.equals(link.configKey())) {
                 if (VDBG) loge("associateWithConfiguration(): found it!!! " + configKey );
-
                 return link; //found it exactly
             }
-
 
             if ((link.scanResultCache != null) && (link.scanResultCache.size() <= 5)) {
                 String bssid = "";
                 for (String key : link.scanResultCache.keySet()) {
                     bssid = key;
                 }
-
 
                 if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
                         && SSID.regionMatches(false, 0, link.SSID, 0, 3)) {
@@ -1933,20 +1942,16 @@ public class WifiConfigStore {
 
                     //if (VDBG)
                     //    loge("associateWithConfiguration OK " );
-
                     doLink = true;
                 }
             }
 
-
             if (doLink) {
                 //try to make a non verified WifiConfiguration
-
                 if (VDBG) {
                     loge("associateWithConfiguration: will create " +
                             result.SSID + " and associate it with: " + link.SSID);
                 }
-
                 config = wifiConfigurationFromScanResult(result);
                 if (config != null) {
                     if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
@@ -1977,13 +1982,10 @@ public class WifiConfigStore {
                             config = null;
                         }
                     }
-
                 }
-
             } else {
                 //todo if they are linked, break the link
             }
-
         }
         return config;
     }
@@ -1995,12 +1997,11 @@ public class WifiConfigStore {
             return found;
 
         //first step, look for this scan Result by SSID + Key Management
-
-        String key = configKeyFroscanResult(scanResult);
+        String key = configKeyFromScanResult(scanResult);
         int hash = key.hashCode();
 
         Integer netId = mNetworkIds.get(hash);
-
+        if (netId == null) return null;
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
            if (config.scanResultCache == null) {
@@ -2009,21 +2010,16 @@ public class WifiConfigStore {
            if (config.scanResultCache == null) {
                 return null;
            }
-
-            //add the scan result to this WifiConfiguration
+           //add the scan result to this WifiConfiguration
            config.scanResultCache.put(scanResult.BSSID, scanResult);
-
-            mConfiguredNetworks.put(netId, config);
-
-            linkConfiguration(config);
-
-            found = config;
+           mConfiguredNetworks.put(netId, config);
+           linkConfiguration(config);
+           found = config;
         }
 
         if (VDBG) {
             config = mConfiguredNetworks.get(netId);
             if (config != null) {
-
                 if (config.scanResultCache != null) {
                     loge("                    tested " + scanResult.SSID + " " +
                             scanResult.BSSID + " key : " + key + " num: " +
@@ -2033,7 +2029,6 @@ public class WifiConfigStore {
                             scanResult.BSSID + " key : " + key);
                 }
             }
-
         }
         return found;
 
@@ -2384,10 +2379,8 @@ public class WifiConfigStore {
 
     /* return the config key string based on a scan result */
 
-    public String configKeyFroscanResult(ScanResult result) {
-
+    public String configKeyFromScanResult(ScanResult result) {
         String key = "\"" + result.SSID + "\"";
-
 
         if (result.capabilities.contains("WEP")) {
             key = key + "-WEP";
@@ -2402,13 +2395,11 @@ public class WifiConfigStore {
         }
 
         return key;
-
     }
 
     /* return the allowed key management based on a scan result */
 
     public WifiConfiguration wifiConfigurationFromScanResult(ScanResult result) {
-
         WifiConfiguration config = new WifiConfiguration();
 
         config.SSID = "\"" + result.SSID + "\"";
@@ -2439,14 +2430,12 @@ public class WifiConfigStore {
         config.scanResultCache.put(result.BSSID, result);
 
         return config;
-
     }
 
 
     /* Returns a unique for a given configuration */
     private static int configKey(WifiConfiguration config) {
         String key = config.configKey();
-
         return key.hashCode();
     }
 
