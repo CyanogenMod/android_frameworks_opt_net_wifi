@@ -16,8 +16,9 @@ LOCAL_PATH := $(call my-dir)
 
 ifneq ($(TARGET_BUILD_PDK), true)
 
-# Make the HAL library
+# Make HAL stub library
 # ============================================================
+
 include $(CLEAR_VARS)
 
 LOCAL_REQUIRED_MODULES :=
@@ -27,19 +28,29 @@ LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
 LOCAL_CPPFLAGS += -Wno-conversion-null
 
 LOCAL_C_INCLUDES += \
-	external/libnl/include
+	external/libnl-headers \
+	$(call include-path-for, libhardware_legacy)/hardware_legacy
 
 LOCAL_SRC_FILES := \
-	lib/wifi_hal.cpp \
-	lib/common.cpp \
-	lib/cpp_bindings.cpp \
-	lib/gscan.cpp 
+	lib/wifi_hal.cpp
 
 LOCAL_MODULE := libwifi-hal
 
 include $(BUILD_STATIC_LIBRARY)
 
-# Build the halutil
+# set correct hal library path
+# ============================================================
+LIB_WIFI_HAL := libwifi-hal
+
+ifeq ($(BOARD_WLAN_DEVICE), bcmdhd)
+  LIB_WIFI_HAL := libwifi-hal-bcm
+else ifeq ($(BOARD_WLAN_DEVICE), qcwcn)
+  LIB_WIFI_HAL := libwifi-hal-qcom
+else ifeq ($(BOARD_WLAN_DEVICE), mrvl)
+  LIB_WIFI_HAL := libwifi-hal-mrvl
+endif
+
+# Build the HalUtil
 # ============================================================
 
 include $(CLEAR_VARS)
@@ -51,15 +62,16 @@ LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
 LOCAL_CPPFLAGS += -Wno-conversion-null
 
 LOCAL_C_INCLUDES += \
-	libcore/include \
-	$(LOCAL_PATH)/lib
+	$(call include-path-for, libhardware)/hardware \
+	$(call include-path-for, libhardware_legacy)/hardware_legacy \
+	libcore/include
 
 LOCAL_SHARED_LIBRARIES += \
 	libcutils \
 	libnl \
 	libandroid_runtime
 
-LOCAL_STATIC_LIBRARIES += libwifi-hal libc libutils
+LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL) libc libutils
 
 LOCAL_SRC_FILES := \
 	tools/halutil/halutil.cpp
@@ -82,9 +94,7 @@ LOCAL_C_INCLUDES += \
 	$(JNI_H_INCLUDE) \
 	$(call include-path-for, libhardware)/hardware \
 	$(call include-path-for, libhardware_legacy)/hardware_legacy \
-	libcore/include \
-	$(LOCAL_PATH)/lib
-
+	libcore/include
 
 LOCAL_SHARED_LIBRARIES += \
 	libnativehelper \
@@ -94,7 +104,7 @@ LOCAL_SHARED_LIBRARIES += \
 	libhardware_legacy \
 	libandroid_runtime
 
-LOCAL_STATIC_LIBRARIES += libwifi-hal libnl_2
+LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL) libnl_2
 
 LOCAL_SRC_FILES := \
 	jni/com_android_server_wifi_WifiNative.cpp \
