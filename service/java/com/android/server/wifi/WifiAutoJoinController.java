@@ -277,7 +277,7 @@ public class WifiAutoJoinController {
             }
         }
 
-        List<WifiConfiguration> networks =  mWifiConfigStore.getRecentConfiguredNetworks(12000, true);
+        List<WifiConfiguration> networks =  mWifiConfigStore.getRecentConfiguredNetworks(12000, false);
         if (networks == null)
             return;
 
