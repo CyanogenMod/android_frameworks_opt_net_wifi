@@ -4257,17 +4257,15 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_AUTO_CONNECT:
-                        /* Work Around: wpa_supplicant can get in a bad state where it returns a non
+                    /* Work Around: wpa_supplicant can get in a bad state where it returns a non
                      * associated status thus the STATUS command but somehow-someplace still thinks
                      * it is associated and thus will ignore select/reconnect command with
                      * following message:
                      * "Already associated with the selected network - do nothing"
                      *
-                    * Hence, sends a disconnect first.
-                     *
+                     * Hence, sends a disconnect to supplicant first.
                      */
-                                        mWifiNative.disconnect();
-
+                    mWifiNative.disconnect();
 
                     /* connect command coming from auto-join */
                     config = (WifiConfiguration) message.obj;
@@ -4290,9 +4288,7 @@ public class WifiStateMachine extends StateMachine {
                         netId = result.getNetworkId();
                         loge("CMD_AUTO_CONNECT did save config -> "
                                 + " nid=" + Integer.toString(netId));
-
                     }
-
 
                     mLastConnectAttempt = mWifiConfigStore.getWifiConfiguration(netId);
 
@@ -4309,7 +4305,6 @@ public class WifiStateMachine extends StateMachine {
                                 WifiManager.ERROR);
                         break;
                     }
-
                     break;
                 case WifiManager.CONNECT_NETWORK:
                     /* The connect message can contain a network id passed as arg1 on message or
