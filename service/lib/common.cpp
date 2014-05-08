@@ -5,6 +5,36 @@
 #include "wifi_hal.h"
 #include "common.h"
 
+interface_info *getIfaceInfo(wifi_interface_handle handle)
+{
+    return (interface_info *)handle;
+}
+
+wifi_handle getWifiHandle(wifi_interface_handle handle)
+{
+    return getIfaceInfo(handle)->handle;
+}
+
+hal_info *getHalInfo(wifi_handle handle)
+{
+    return (hal_info *)handle;
+}
+
+hal_info *getHalInfo(wifi_interface_handle handle)
+{
+    return getHalInfo(getWifiHandle(handle));
+}
+
+wifi_handle getWifiHandle(hal_info *info)
+{
+    return (wifi_handle)info;
+}
+
+wifi_interface_handle getIfaceHandle(interface_info *info)
+{
+    return (wifi_interface_handle)info;
+}
+
 wifi_error wifi_register_handler(wifi_handle handle, int cmd, nl_recvmsg_msg_cb_t func, void *arg)
 {
     hal_info *info = (hal_info *)handle;

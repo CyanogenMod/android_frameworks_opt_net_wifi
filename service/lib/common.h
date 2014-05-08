@@ -120,6 +120,12 @@ wifi_error wifi_register_cmd(wifi_handle handle, int id, WifiCommand *cmd);
 WifiCommand *wifi_unregister_cmd(wifi_handle handle, int id);
 void wifi_unregister_cmd(wifi_handle handle, WifiCommand *cmd);
 
+interface_info *getIfaceInfo(wifi_interface_handle);
+wifi_handle getWifiHandle(wifi_interface_handle handle);
+hal_info *getHalInfo(wifi_handle handle);
+hal_info *getHalInfo(wifi_interface_handle handle);
+wifi_handle getWifiHandle(hal_info *info);
+wifi_interface_handle getIfaceHandle(interface_info *info);
 
 #endif
 

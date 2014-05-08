@@ -1,22 +1,91 @@
 
-#include <stdlib.h>
-#include <pthread.h>
-
 #include "wifi_hal.h"
 
 #define LOG_TAG  "WifiHAL"
 
 #include <utils/Log.h>
 #include <inttypes.h>
+#include <sys/socket.h>
+#include <linux/if.h>
+
 
 #define EVENT_BUF_SIZE 2048
 
 static wifi_handle halHandle;
 static wifi_interface_handle *ifaceHandles;
+static wifi_interface_handle wlan0Handle;
+static wifi_interface_handle p2p0Handle;
 static int numIfaceHandles;
 static int cmdId = 0;
+static int ioctl_sock = 0;
+
+int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
+{
+	struct ifreq ifr;
+	int ret;
+
+    printf("setting interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
+
+	if (sock < 0) {
+		printf("Bad socket: %d\n", sock);
+		return -1;
+	}
+
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+    printf("reading old value\n");
+
+	if (ioctl(sock, SIOCGIFFLAGS, &ifr) != 0) {
+		ret = errno ? -errno : -999;
+		printf("Could not read interface %s flags: %d\n", ifname, errno);
+		return ret;
+	} else {
+        printf("writing new value\n");
+	}
+
+	if (dev_up) {
+		if (ifr.ifr_flags & IFF_UP) {
+            printf("interface %s is already up\n", ifname);
+			return 0;
+	    }
+		ifr.ifr_flags |= IFF_UP;
+	} else {
+		if (!(ifr.ifr_flags & IFF_UP)) {
+            printf("interface %s is already down\n", ifname);
+			return 0;
+		}
+		ifr.ifr_flags &= ~IFF_UP;
+	}
+
+
+	if (ioctl(sock, SIOCSIFFLAGS, &ifr) != 0) {
+		printf("Could not set interface %s flags \n", ifname);
+		return ret;
+	} else {
+		printf("set interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
+	}
+
+    printf("Done\n");
+	return 0;
+}
+
 
 static int init() {
+
+    ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
+    if (ioctl_sock < 0) {
+		printf("Bad socket: %d\n", ioctl_sock);
+        return errno;
+    } else {
+		printf("Good socket: %d\n", ioctl_sock);
+    }
+
+    int ret = linux_set_iface_flags(ioctl_sock, "wlan0", 1);
+    if (ret < 0) {
+        return ret;
+    }
+
     wifi_error res = wifi_initialize(&halHandle);
     if (res < 0) {
         return res;
@@ -30,7 +99,13 @@ static int init() {
     char buf[EVENT_BUF_SIZE];
     for (int i = 0; i < numIfaceHandles; i++) {
         if (wifi_get_iface_name(ifaceHandles[i], buf, sizeof(buf)) == WIFI_SUCCESS) {
-            printf("found interface %s\n", buf);
+            if (strcmp(buf, "wlan0") == 0) {
+                printf("found interface %s\n", buf);
+                wlan0Handle = ifaceHandles[i];
+            } else if (strcmp(buf, "p2p0") == 0) {
+                printf("found interface %s\n", buf);
+                p2p0Handle = ifaceHandles[i];
+            }
         }
     }
 
@@ -115,7 +190,7 @@ static bool startScan() {
 
     scanCmdId = getNewCmdId();
 
-    return wifi_start_gscan(scanCmdId, ifaceHandles[0], params, handler) == WIFI_SUCCESS;
+    return wifi_start_gscan(scanCmdId, wlan0Handle, params, handler) == WIFI_SUCCESS;
 }
 
 static void stopScan() {
@@ -134,7 +209,7 @@ void testScan() {
     if (!startScan()) {
         printf("failed to start scan!!\n");
     } else {
-        sleep(2);
+        sleep(40);
         stopScan();
         printf("stopped scan\n");
     }
@@ -142,13 +217,11 @@ void testScan() {
 
 int main(int argc, char *argv[]) {
 
-    printf("successfully initialized HAL\n");
-
     if (init() != 0) {
         printf("could not initiate HAL");
         return -1;
     } else {
-        printf("successfully initialized HAL\n");
+        printf("successfully initialized HAL; wlan0 = %p\n", wlan0Handle);
     }
 
     pthread_t tid;

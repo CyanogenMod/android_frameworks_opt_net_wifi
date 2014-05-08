@@ -21,14 +21,17 @@ typedef unsigned char u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
-typedef void * wifi_handle;
 typedef int wifi_request_id;
 typedef int wifi_channel;                       // indicates channel frequency in MHz
 typedef int wifi_rssi;
 typedef byte mac_addr[6];
 typedef int64_t wifi_timestamp;                 // In microseconds (us)
 typedef int64_t wifi_timespan;                  // In nanoseconds  (ns)
-typedef void * wifi_interface_handle;
+
+struct wifi_info;
+typedef wifi_info *wifi_handle;
+struct wifi_interface_info;
+typedef wifi_interface_info *wifi_interface_handle;
 
 /* Initialize/Cleanup */
 

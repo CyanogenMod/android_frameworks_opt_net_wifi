@@ -296,6 +296,7 @@ static int internal_valid_message_handler(nl_msg *msg, void *arg)
     ALOGI("event received %s, vendor_id = 0x%0x", event.get_cmdString(), vendor_id);
     event.log();
 
+    bool dispatched = false;
     for (int i = 0; i < info->num_event_cb; i++) {
         if (cmd == info->event_cb[i].nl_cmd) {
             if (cmd == NL80211_CMD_VENDOR && vendor_id != info->event_cb[i].vendor_id) {
@@ -304,8 +305,13 @@ static int internal_valid_message_handler(nl_msg *msg, void *arg)
             }
 
             cb_info *cbi = &(info->event_cb[i]);
-            return (*(cbi->cb_func))(msg, cbi->cb_arg);
+            (*(cbi->cb_func))(msg, cbi->cb_arg);
+            dispatched = true;
         }
+    }
+
+    if (!dispatched) {
+        ALOGI("event ignored!!");
     }
 
     return NL_OK;
