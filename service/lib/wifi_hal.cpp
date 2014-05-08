@@ -66,6 +66,11 @@ wifi_error wifi_get_cached_results(wifi_interface_handle iface, byte flush,
     return WIFI_ERROR_UNINITIALIZED;
 }
 
+wifi_error wifi_get_cached_gscan_results(wifi_interface_handle iface, byte flush,
+        wifi_scan_result *results, int *num) {
+    return WIFI_ERROR_UNINITIALIZED;
+}
+
 wifi_error wifi_set_bssid_hotlist(wifi_request_id id, wifi_interface_handle iface,
         wifi_bssid_hotlist_params params, wifi_hotlist_ap_found_handler handler) {
     return WIFI_ERROR_UNINITIALIZED;
@@ -76,11 +81,16 @@ wifi_error wifi_reset_bssid_hotlist(wifi_request_id id, wifi_interface_handle if
 }
 
 wifi_error wifi_set_significant_change_handler(wifi_request_id id, wifi_interface_handle iface,
-        wifi_significant_change_handler handler) {
+        wifi_significant_change_params params, wifi_significant_change_handler handler) {
     return WIFI_ERROR_UNINITIALIZED;
 }
 
 wifi_error wifi_reset_significant_change_handler(wifi_request_id id, wifi_interface_handle iface) {
+    return WIFI_ERROR_UNINITIALIZED;
+}
+
+wifi_error wifi_get_gscan_capabilities(wifi_interface_handle handle,
+        wifi_gscan_capabilities *capabilities) {
     return WIFI_ERROR_UNINITIALIZED;
 }
 
