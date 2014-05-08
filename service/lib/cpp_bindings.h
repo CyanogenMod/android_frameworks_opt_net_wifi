@@ -15,10 +15,14 @@ private:
 public:
     WifiEvent(nl_msg *msg) {
         mMsg = msg;
+        mHeader = NULL;
+        memset(mAttributes, 0, sizeof(mAttributes));
     }
     ~WifiEvent() {
         /* don't destroy mMsg; it doesn't belong to us */
     }
+
+    void log();
 
     int parse();
 
@@ -29,6 +33,8 @@ public:
     int get_cmd() {
         return mHeader->cmd;
     }
+
+    const char *get_cmdString();
 
     nlattr ** attributes() {
         return mAttributes;

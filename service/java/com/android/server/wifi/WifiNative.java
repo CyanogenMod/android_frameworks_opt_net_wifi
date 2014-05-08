@@ -87,12 +87,6 @@ public class WifiNative {
 
     private native void closeSupplicantConnectionNative();
 
-    public native static boolean startHalNative();
-
-    public native static void stopHalNative();
-
-    public native static void waitForHalEventNative();
-
     /**
      * Wait for the supplicant to send an event, returning the event string.
      * @return the event string sent by the supplicant.
@@ -1024,6 +1018,17 @@ public class WifiNative {
     }
 
 
+    /* WIFI HAL support */
+
+    private long mWifiHalHandle;                        /* used by JNI to save wifi_handle */
+    private long[] mWifiIfaceHandles;                   /* used by JNI to save interface handles */
+
+    public native boolean startHalNative();
+
+    public native void stopHalNative();
+
+    public native void waitForHalEventNative();
+
     private class MonitorThread extends Thread {
         public void run() {
             waitForHalEventNative();
@@ -1040,5 +1045,61 @@ public class WifiNative {
 
     public void stopHal() {
         stopHalNative();
+    }
+
+    private native int getInterfacesNative();
+
+    public int getInterfaces() {
+        return getInterfacesNative();
+    }
+
+    private native String getInterfaceNameNative(int index);
+
+    public void printInterfaceNames() {
+        for (int i = 0; i < mWifiIfaceHandles.length; i++) {
+            String name = getInterfaceNameNative(i);
+            Log.i(mTAG, "interface[" + i + "] = " + name);
+        }
+    }
+
+    private native boolean startScanNative(int iface, int id);
+    private native boolean stopScanNative(int iface, int id);
+
+    public static class ScanResult {
+        public String SSID;
+        public String BSSID;
+        public String capabilities;
+        public int level;
+        public int frequency;
+        public long timestamp;
+    }
+
+    void onScanResults(int id, ScanResult[] results) {
+
+        /* !! This gets called on a different thread !! */
+
+        for (int i = 0; i < results.length; i++) {
+            Log.i(mTAG, "results[" + i + "].ssid = " + results[i].SSID);
+        }
+    }
+
+    private int mScanCmdId = 0;
+
+    public boolean startScan() {
+        synchronized (mLock) {
+            if (mScanCmdId != 0) {
+                return false;
+            } else {
+                mScanCmdId = getNewCmdIdLocked();
+            }
+        }
+
+        return startScanNative(0, mScanCmdId);          // results are reported by onScanResults
+    }
+
+    public void stopScan() {
+        synchronized (mLock) {
+            stopScanNative(0, mScanCmdId);
+        }
     }
 }
