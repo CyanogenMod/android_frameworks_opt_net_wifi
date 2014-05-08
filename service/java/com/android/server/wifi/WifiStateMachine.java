@@ -66,7 +66,7 @@ import android.net.wifi.WifiSsid;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
-import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.p2p.IWifiP2pManager;
 import android.os.BatteryStats;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -339,7 +339,7 @@ public class WifiStateMachine extends StateMachine {
     // Channel for sending replies.
     private AsyncChannel mReplyChannel = new AsyncChannel();
 
-    private WifiP2pManager mWifiP2pManager;
+    private WifiP2pServiceImpl mWifiP2pServiceImpl;
     //Used to initiate a connection with WifiP2pService
     private AsyncChannel mWifiP2pChannel;
     private AsyncChannel mWifiApConfigChannel;
@@ -734,7 +734,8 @@ public class WifiStateMachine extends StateMachine {
         mLinkProperties = new LinkProperties();
         mNetlinkLinkProperties = new LinkProperties();
 
-        mWifiP2pManager = (WifiP2pManager) mContext.getSystemService(Context.WIFI_P2P_SERVICE);
+        IBinder s = ServiceManager.getService(Context.WIFI_P2P_SERVICE);
+        mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s);
 
         mNetworkInfo.setIsAvailable(false);
         mLastBssid = null;
@@ -3078,7 +3079,8 @@ public class WifiStateMachine extends StateMachine {
 
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
-                mWifiP2pChannel.connect(mContext, getHandler(), mWifiP2pManager.getMessenger());
+                mWifiP2pChannel.connect(mContext, getHandler(),
+                    mWifiP2pServiceImpl.getP2pStateMachineMessenger());
             }
 
             if (mWifiApConfigChannel == null) {
