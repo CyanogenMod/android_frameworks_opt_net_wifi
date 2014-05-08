@@ -102,9 +102,10 @@ LOCAL_SHARED_LIBRARIES += \
 	libutils \
 	libhardware \
 	libhardware_legacy \
-	libandroid_runtime
+	libandroid_runtime \
+    libnl
 
-LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL) libnl_2
+LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
 LOCAL_SRC_FILES := \
 	jni/com_android_server_wifi_WifiNative.cpp \

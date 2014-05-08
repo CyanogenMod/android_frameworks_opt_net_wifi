@@ -27,7 +27,8 @@ public class WifiScanningService extends SystemService {
     private static final String TAG = "WifiScanningService";
     WifiScanningServiceImpl mImpl;
 
-    public WifiScanningService() {
+    public WifiScanningService(Context context) {
+        super(context);
         Log.i(TAG, "Creating " + Context.WIFI_SCANNING_SERVICE);
     }
 
