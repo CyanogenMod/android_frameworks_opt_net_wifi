@@ -15,7 +15,7 @@ typedef enum {
     WIFI_BAND_ABG_WITH_DFS,             // 2.4 GHz + 5 GHz with DFS
 } wifi_band;
 
-wifi_error wifi_get_valid_channels(wifi_handle handle,
+wifi_error wifi_get_valid_channels(wifi_interface_handle handle,
         int band, int size, wifi_channel *channels, int *num);
 
 typedef struct {
@@ -28,7 +28,7 @@ typedef struct {
     int max_significant_wifi_change_aps;
 } wifi_gscan_capabilities;
 
-wifi_error wifi_get_gscan_capabilities(wifi_handle handle,
+wifi_error wifi_get_gscan_capabilities(wifi_interface_handle handle,
         wifi_gscan_capabilities *capabilities);
 
 typedef struct {
@@ -57,13 +57,12 @@ typedef struct {
 typedef struct {
     int bucket;                         // bucket index, 0 based
     wifi_band band;                     // when UNSPECIFIED, use channel list
-    int num_channels;
-    wifi_scan_channel_spec channels[8]; // channels to scan; these may include DFS channels
     int period;                         // desired period, in millisecond; if this is too
                                         // low, the firmware should choose to generate results as
                                         // fast as it can instead of failing the command
     byte report_events;                 // 1 => report events after each scan
-
+    int num_channels;
+    wifi_scan_channel_spec channels[8]; // channels to scan; these may include DFS channels
 } wifi_scan_bucket_spec;
 
 typedef struct {

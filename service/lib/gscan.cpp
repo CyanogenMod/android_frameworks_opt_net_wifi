@@ -31,8 +31,11 @@
 /* TODO: define vendor subcommands */
 typedef enum {
 
-    GSCAN_SUBCMD_START_GSCAN = ANDROID_NL80211_SUBCMD_GSCAN_RANGE_START,
+    GSCAN_SUBCMD_GET_CAPABILITIES = ANDROID_NL80211_SUBCMD_GSCAN_RANGE_START,
+
+    GSCAN_SUBCMD_START_GSCAN,
     GSCAN_SUBCMD_STOP_GSCAN,
+    GSCAN_SUBCMD_SET_CONFIG,
     GSCAN_SUBCMD_GSCAN_RESULTS,
 
     GSCAN_SUBCMD_SET_HOTLIST,
@@ -48,9 +51,12 @@ typedef enum {
 } GSCAN_SUB_COMMAND;
 
 typedef enum {
-    GSCAN_ATTRIBUTE_SCAN_CHANNELS = 10,
-    GSCAN_ATTRIBUTE_SCAN_SINGLE_SHOT,
-    GSCAN_ATTRIBUTE_SCAN_FREQUENCY,
+    GSCAN_ATTRIBUTE_NUM_BUCKETS = 10,
+    GSCAN_ATTRIBUTE_BUCKETS,
+    GSCAN_ATTRIBUTE_BUCKET_ID,
+    GSCAN_ATTRIBUTE_BUCKET_PERIOD,
+    GSCAN_ATTRIBUTE_BUCKET_NUM_CHANNELS,
+    GSCAN_ATTRIBUTE_BUCKET_CHANNELS,
 
     /* remaining reserved for additional attributes */
 
@@ -64,6 +70,60 @@ typedef enum {
     GSCAN_ATTRIBUTE_MAX
 
 } GSCAN_ATTRIBUTE;
+
+/////////////////////////////////////////////////////////////////////////////
+
+class GetCapabilitiesCommand : public WifiCommand
+{
+    wifi_gscan_capabilities *mCapabilities;
+public:
+    GetCapabilitiesCommand(wifi_interface_handle iface, wifi_gscan_capabilities *capabitlites)
+        : WifiCommand(iface, 0), mCapabilities(capabitlites)
+    {
+        memset(mCapabilities, 0, sizeof(*mCapabilities));
+    }
+
+    virtual int create() {
+        ALOGD("Creating message to get scan capablities; iface = %d", mIfaceInfo->id);
+
+        int ret = mMsg.create(NL80211_CMD_VENDOR, GSCAN_SUBCMD_GET_CAPABILITIES);
+        if (ret < 0) {
+            return ret;
+        }
+
+        mMsg.put_u32(NL80211_ATTR_IFINDEX, mIfaceInfo->id);
+        return ret;
+    }
+
+protected:
+    virtual int handleResponse(WifiEvent& reply) {
+        if (reply.get_cmd() != NL80211_CMD_VENDOR) {
+            ALOGD("Ignoring reply with cmd = %d", reply.get_cmd());
+            return NL_SKIP;
+        }
+
+        int id = reply.get_vendor_id();
+        int subcmd = reply.get_vendor_subcmd();
+        nlattr *data = reply.get_vendor_data();
+        int len = reply.get_vendor_data_len();
+
+        if (len == sizeof(*mCapabilities)) {
+            memcpy(mCapabilities, data, len);
+        } else {
+            ALOGE("Invalid reply length");
+        }
+
+        return NL_OK;
+    }
+};
+
+
+wifi_error wifi_get_gscan_capabilities(wifi_interface_handle handle,
+        wifi_gscan_capabilities *capabilities)
+{
+    GetCapabilitiesCommand command(handle, capabilities);
+    return (wifi_error) command.requestResponse();
+}
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -88,38 +148,59 @@ public:
         }
     }
 
-    virtual int create() {
-        ALOGD("Creating message to scan; iface = %d", mIfaceInfo->id);
-
-        int ret = mMsg.create(NL80211_CMD_TRIGGER_SCAN, 0, 0);
-        if (ret < 0) {
-            return ret;
+    int createSetupRequest(WifiRequest& request) {
+        int result = request.create(NL80211_CMD_VENDOR, GSCAN_SUBCMD_SET_CONFIG);
+        if (result < 0) {
+            return result;
         }
 
-        mMsg.put_u32(NL80211_ATTR_IFINDEX, mIfaceInfo->id);
+        nlattr *data = request.attr_start(NL80211_ATTR_VENDOR_DATA);
+        result = request.put_u32(GSCAN_ATTRIBUTE_NUM_BUCKETS, mNumBuckets);
+        if (result < 0) {
+            return result;
+        }
 
-        struct nlattr * attr = mMsg.attr_start(NL80211_ATTR_SCAN_FREQUENCIES);
-        int channel_id = 0;
-
-        /*
         for (int i = 0; i < mNumBuckets; i++) {
-            wifi_scan_bucket_spec &bucket = mBuckets[i];
-            for (int j = 0; j < bucket.num_channels; j++) {
-                ret = mMsg.put_u32(channel_id++, bucket.channels[j].channel);
-                if (ret < 0) {
-                    return ret;
+            nlattr * bucket = request.attr_start(i);    // next bucket
+            result = request.put_u32(GSCAN_ATTRIBUTE_BUCKET_ID, mBuckets[i].bucket);
+            if (result < 0) {
+                return result;
+            }
+            result = request.put_u32(GSCAN_ATTRIBUTE_BUCKET_PERIOD, mBuckets[i].period);
+            if (result < 0) {
+                return result;
+            }
+            result = request.put_u32(GSCAN_ATTRIBUTE_BUCKET_NUM_CHANNELS, mBuckets[i].num_channels);
+            if (result < 0) {
+                return result;
+            }
+
+            nlattr *channels = request.attr_start(GSCAN_ATTRIBUTE_BUCKET_CHANNELS);
+            for (int j = 0; j < mBuckets[i].num_channels; j++) {
+                result = request.put_u32(j, mBuckets[i].channels[j].channel);
+                if (result < 0) {
+                    return result;
                 }
             }
-        }*/
 
-        mMsg.put_u32(channel_id++, 2412);
-        mMsg.put_u32(channel_id++, 2437);
-        mMsg.put_u32(channel_id++, 2462);
+            request.attr_end(channels);
+            request.attr_end(bucket);
+        }
 
-        mMsg.attr_end(attr);
+        request.attr_end(data);
+        return WIFI_SUCCESS;
+    }
 
-        mMsg.put_u32(NL80211_ATTR_SCAN_FLAGS, NL80211_SCAN_FLAG_FLUSH);
-        return ret;
+    int createStartRequest(WifiRequest& request) {
+        int result = request.create(NL80211_CMD_VENDOR, GSCAN_SUBCMD_SET_CONFIG);
+        if (result < 0) {
+            return result;
+        }
+        return WIFI_SUCCESS;
+    }
+
+    int createStopRequest(WifiRequest& request) {
+        return WIFI_SUCCESS;
     }
 
     int start() {
@@ -142,12 +223,12 @@ public:
         return WIFI_SUCCESS;
     }
 
-    virtual int handleResponse(WifiEvent reply) {
+    virtual int handleResponse(WifiEvent& reply) {
         /* Nothing to do on response! */
         return NL_SKIP;
     }
 
-    virtual int handleEvent(WifiEvent event) {
+    virtual int handleEvent(WifiEvent& event) {
         ALOGI("Got a scan results event");
 
         event.log();
@@ -166,7 +247,7 @@ public:
             return NL_SKIP;
         }
 
-        ALOGI("SSID attribute size = %d", event.len(NL80211_ATTR_SCAN_SSIDS));
+        ALOGI("SSID attribute size = %d", event.get_len(NL80211_ATTR_SCAN_SSIDS));
 
         int rem = 0, i = 0;
 
@@ -197,7 +278,6 @@ wifi_error wifi_start_gscan(
         wifi_scan_result_handler handler)
 {
     wifi_handle handle = getWifiHandle(iface);
-    ALOGD("Starting GScan, halHandle = %p", handle);
 
     ALOGD("Starting GScan, halHandle = %p", handle);
 
@@ -281,12 +361,12 @@ public:
         return requestResponse();
     }
 
-    virtual int handleResponse(WifiEvent reply) {
+    virtual int handleResponse(WifiEvent& reply) {
         /* Nothing to do on response! */
         return NL_SKIP;
     }
 
-    virtual int handleEvent(WifiEvent event) {
+    virtual int handleEvent(WifiEvent& event) {
         ALOGI("Got a scan results event");
 
         int rem = 0, i = 0;
@@ -376,12 +456,12 @@ public:
         return requestResponse();
     }
 
-    virtual int handleResponse(WifiEvent reply) {
+    virtual int handleResponse(WifiEvent& reply) {
         /* Nothing to do on response! */
         return NL_SKIP;
     }
 
-    virtual int handleEvent(WifiEvent event) {
+    virtual int handleEvent(WifiEvent& event) {
         ALOGI("Got a scan results event");
 
         int rem = 0, i = 0;
