@@ -42,8 +42,8 @@ public:
         return get_u32(NL80211_ATTR_VENDOR_SUBCMD);
     }
 
-    nlattr *get_vendor_data() {
-        return (nlattr *)get_data(NL80211_ATTR_VENDOR_DATA);
+    void *get_vendor_data() {
+        return get_data(NL80211_ATTR_VENDOR_DATA);
     }
 
     int get_vendor_data_len() {
@@ -61,29 +61,31 @@ public:
     }
 
     uint8_t get_u8(int attribute) {
-        return nla_get_u8(mAttributes[attribute]);
+        return mAttributes[attribute] ? nla_get_u8(mAttributes[attribute]) : 0;
     }
 
     uint16_t get_u16(int attribute) {
-        return nla_get_u16(mAttributes[attribute]);
+        return mAttributes[attribute] ? nla_get_u16(mAttributes[attribute]) : 0;
     }
 
     uint32_t get_u32(int attribute) {
-        return nla_get_u32(mAttributes[attribute]);
+        return mAttributes[attribute] ? nla_get_u32(mAttributes[attribute]) : 0;
     }
 
     uint64_t get_u64(int attribute) {
-        return nla_get_u64(mAttributes[attribute]);
+        return mAttributes[attribute] ? nla_get_u64(mAttributes[attribute]) : 0;
     }
 
     int get_len(int attribute) {
-        return nla_len(mAttributes[attribute]);
+        return mAttributes[attribute] ? nla_len(mAttributes[attribute]) : 0;
     }
 
     void *get_data(int attribute) {
-        return nla_data(mAttributes[attribute]);
+        return mAttributes[attribute] ? nla_data(mAttributes[attribute]) : NULL;
     }
 
+private:
+    WifiEvent(const WifiEvent&);        // hide copy constructor to prevent copies
 };
 
 class nl_iterator {
@@ -124,19 +126,30 @@ public:
     int get_len() {
         return nla_len(pos);
     }
+private:
+    nl_iterator(const nl_iterator&);    // hide copy constructor to prevent copies
 };
 
 class WifiRequest
 {
 private:
     int mFamily;
+    int mIface;
     struct nl_msg *mMsg;
 
 public:
     WifiRequest(int family) {
         mMsg = NULL;
         mFamily = family;
+        mIface = -1;
     }
+
+    WifiRequest(int family, int iface) {
+        mMsg = NULL;
+        mFamily = family;
+        mIface = iface;
+    }
+
     ~WifiRequest() {
         destroy();
     }
@@ -176,7 +189,7 @@ public:
         return nla_put(mMsg, attribute, strlen(value) + 1, value);
     }
     int put_addr(int attribute, mac_addr value) {
-        return nla_put(mMsg, attribute, sizeof(mac_addr), &value);
+        return nla_put(mMsg, attribute, sizeof(mac_addr), value);
     }
 
     struct nlattr * attr_start(int attribute) {
@@ -189,6 +202,8 @@ public:
     int set_iface_id(int ifindex) {
         return put_u32(NL80211_ATTR_IFINDEX, ifindex);
     }
+private:
+    WifiRequest(const WifiRequest&);        // hide copy constructor to prevent copies
 
 };
 
@@ -210,7 +225,7 @@ public:
     }
 
     WifiCommand(wifi_interface_handle iface, wifi_request_id id)
-            : mMsg(getHalInfo(iface)->nl80211_family_id), mId(id)
+            : mMsg(getHalInfo(iface)->nl80211_family_id, getIfaceInfo(iface)->id), mId(id)
     {
         mIfaceInfo = getIfaceInfo(iface);
         mInfo = getHalInfo(iface);
@@ -246,6 +261,18 @@ protected:
         return getWifiHandle(mInfo);
     }
 
+    wifi_interface_handle ifaceHandle() {
+        return getIfaceHandle(mIfaceInfo);
+    }
+
+    int familyId() {
+        return mInfo->nl80211_family_id;
+    }
+
+    int ifaceId() {
+        return mIfaceInfo->id;
+    }
+
     /* Override this method to parse reply and dig out data; save it in the object */
     virtual int handleResponse(WifiEvent& reply) {
         ALOGI("skipping a response");
@@ -275,6 +302,7 @@ protected:
     }
 
 private:
+    WifiCommand(const WifiCommand& );           // hide copy constructor to prevent copies
 
     /* Event handling */
     static int response_handler(struct nl_msg *msg, void *arg);

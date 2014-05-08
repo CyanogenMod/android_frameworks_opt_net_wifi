@@ -272,11 +272,14 @@ static jstring android_net_wifi_getInterfaceName(JNIEnv *env, jobject obj, jint 
     }
 }
 
-static void onScanResults(wifi_request_id id, unsigned num_results, wifi_scan_result *results) {
+static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
+
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
-    ALOGD("onScanResults called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
+    ALOGD("onScanResultsAvailable called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
+
+    /*
 
     jclass clsScanResult = (env)->FindClass("com/android/server/wifi/WifiNative$ScanResult");
     if (clsScanResult == NULL) {
@@ -315,6 +318,7 @@ static void onScanResults(wifi_request_id id, unsigned num_results, wifi_scan_re
 
     reportEvent(env, mObj, "onScanResults",
             "(I[Lcom/android/server/wifi/WifiNative$ScanResult;)V", id, scanResults);
+     */
 }
 
 static jboolean android_net_wifi_startScan(JNIEnv *env, jobject obj, jint iface, jint id) {
@@ -327,7 +331,7 @@ static jboolean android_net_wifi_startScan(JNIEnv *env, jobject obj, jint iface,
 
     wifi_scan_result_handler handler;
     memset(&handler, 0, sizeof(handler));
-    handler.on_scan_results = &onScanResults;
+    handler.on_scan_results_available = &onScanResultsAvailable;
 
     return wifi_start_gscan(id, handle, params, handler) == WIFI_SUCCESS;
 }

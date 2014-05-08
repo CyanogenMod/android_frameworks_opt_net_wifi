@@ -18,7 +18,7 @@
 #include <netlink/handlers.h>
 #include <netlink/msg.h>
 
-#include <linux/nl80211.h>
+#include "nl80211_copy.h"
 
 #include <dirent.h>
 #include <net/if.h>
@@ -77,11 +77,13 @@ static nl_sock * wifi_create_nl_socket(int port)
     }
 
     // ALOGI("Making socket nonblocking");
+    /*
     if (nl_socket_set_nonblocking(sock)) {
         ALOGE("Could make socket non-blocking");
         nl_socket_free(sock);
         return NULL;
     }
+    */
 
     return sock;
 }
@@ -155,7 +157,7 @@ wifi_error wifi_initialize(wifi_handle *handle)
     wifi_init_interfaces(*handle);
     // ALOGI("Found %d interfaces", info->num_interfaces);
 
-    ALOGI("Initialized Wifi HAL Successfully");
+    ALOGI("Initialized Wifi HAL Successfully; vendor cmd = %d", NL80211_CMD_VENDOR);
     return WIFI_SUCCESS;
 }
 
@@ -279,7 +281,7 @@ static int internal_valid_message_handler(nl_msg *msg, void *arg)
 
     int cmd = event.get_cmd();
     uint32_t vendor_id = 0;
-    uint32_t subcmd = 0;
+    int subcmd = 0;
 
     if (cmd == NL80211_CMD_VENDOR) {
         vendor_id = event.get_u32(NL80211_ATTR_VENDOR_ID);
@@ -291,12 +293,15 @@ static int internal_valid_message_handler(nl_msg *msg, void *arg)
     }
 
     ALOGI("event received %s, vendor_id = 0x%0x", event.get_cmdString(), vendor_id);
-    event.log();
+    // event.log();
 
     bool dispatched = false;
     for (int i = 0; i < info->num_event_cb; i++) {
         if (cmd == info->event_cb[i].nl_cmd) {
-            if (cmd == NL80211_CMD_VENDOR && vendor_id != info->event_cb[i].vendor_id) {
+            if (cmd == NL80211_CMD_VENDOR
+                && ((vendor_id != info->event_cb[i].vendor_id)
+                || (subcmd != info->event_cb[i].vendor_subcmd)))
+            {
                 /* event for a different vendor, ignore it */
                 continue;
             }

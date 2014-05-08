@@ -44,7 +44,7 @@ typedef struct {
 } wifi_scan_result;
 
 typedef struct {
-    void (*on_scan_results) (wifi_request_id id, unsigned num_results, wifi_scan_result *results);
+    void (*on_scan_results_available) (wifi_request_id id, unsigned num_results_available);
 } wifi_scan_result_handler;
 
 typedef struct {
@@ -66,19 +66,19 @@ typedef struct {
 } wifi_scan_bucket_spec;
 
 typedef struct {
-    int period;                         // base timer period
+    int base_period;                    // base timer period in ms
     int max_ap_per_scan;
     int report_threshold;               // in %, when buffer is this much full, wake up AP
     int num_buckets;                    // maximum 8
-    wifi_scan_bucket_spec buckets[];
+    wifi_scan_bucket_spec buckets[8];
 } wifi_scan_cmd_params;
 
 wifi_error wifi_start_gscan(wifi_request_id id, wifi_interface_handle iface,
         wifi_scan_cmd_params params, wifi_scan_result_handler handler);
 wifi_error wifi_stop_gscan(wifi_request_id id, wifi_interface_handle iface);
 
-wifi_error wifi_get_cached_results(wifi_interface_handle iface, byte flush,
-        wifi_scan_result_handler handler);
+wifi_error wifi_get_cached_gscan_results(wifi_interface_handle iface, byte flush,
+        wifi_scan_result *results, int *num);
 
 
 /* BSSID Hotlist */
@@ -95,7 +95,7 @@ typedef struct {
 
 typedef struct {
     int num;                            // max??
-    ap_threshold_param bssids[];
+    ap_threshold_param bssids[64];
 } wifi_bssid_hotlist_params;
 
 wifi_error wifi_set_bssid_hotlist(wifi_request_id id, wifi_interface_handle iface,
@@ -113,12 +113,12 @@ typedef struct {
     int rssi_sample_size;               // number of samples for averaging RSSI
     int lost_ap_sample_size;            // number of samples to confirm AP loss
     int min_breaching;                  // number of APs breaching threshold
-    int num;                            // max??
-    ap_threshold_param bssids[];
+    int num;                            // max 64
+    ap_threshold_param bssids[64];
 } wifi_significant_change_params;
 
 wifi_error wifi_set_significant_change_handler(wifi_request_id id, wifi_interface_handle iface,
-        wifi_significant_change_handler handler);
+        wifi_significant_change_params params, wifi_significant_change_handler handler);
 wifi_error wifi_reset_significant_change_handler(wifi_request_id id, wifi_interface_handle iface);
 
 #endif
