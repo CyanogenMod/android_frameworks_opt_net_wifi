@@ -16,23 +16,31 @@
 
 package com.android.server.wifi;
 
+import android.Manifest.permission;
+import android.content.Context;
 import android.net.INetworkScoreCache;
 import android.net.NetworkKey;
 import android.net.ScoredNetwork;
 import android.net.wifi.ScanResult;
+import android.net.wifi.WifiManager;
 import android.util.Log;
 
+import java.io.FileDescriptor;
+import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
  {
 
     private static String TAG = "WifiNetworkScoreCache";
     private boolean DBG = true;
-    private HashMap<String, ScoredNetwork> mNetworkCache;
+    private final Context mContext;
+    private final Map<String, ScoredNetwork> mNetworkCache;
 
-    public WifiNetworkScoreCache() {
+    public WifiNetworkScoreCache(Context context) {
+        mContext = context;
         mNetworkCache = new HashMap<String, ScoredNetwork>();
     }
 
@@ -47,16 +55,9 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
 
         synchronized(mNetworkCache) {
             for (ScoredNetwork network : networks) {
-                if (network.networkKey == null) continue;
-                if (network.networkKey.wifiKey == null) continue;
-                if (network.networkKey.type == NetworkKey.TYPE_WIFI) {
-                    String key = network.networkKey.wifiKey.ssid;
-                    if (key == null) continue;
-                    if (network.networkKey.wifiKey.bssid != null) {
-                        key = key + network.networkKey.wifiKey.bssid;
-                    }
-                    mNetworkCache.put(key, network);
-                }
+                String networkKey = buildNetworkKey(network);
+                if (networkKey == null) continue;
+                mNetworkCache.put(networkKey, network);
             }
         }
      }
@@ -72,11 +73,9 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
 
         int score = -1;
 
-        String key = result.SSID;
-        if (key == null) return -1;
-        if (result.BSSID != null) {
-            key = key + result.BSSID;
-        }
+        String key = buildNetworkKey(result);
+        if (key == null) return score;
+
         //find it
         synchronized(mNetworkCache) {
             ScoredNetwork network = mNetworkCache.get(key);
@@ -90,6 +89,43 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
             }
         }
         return score;
+    }
+
+    private String buildNetworkKey(ScoredNetwork network) {
+        if (network.networkKey == null) return null;
+        if (network.networkKey.wifiKey == null) return null;
+        if (network.networkKey.type == NetworkKey.TYPE_WIFI) {
+            String key = network.networkKey.wifiKey.ssid;
+            if (key == null) return null;
+            if (network.networkKey.wifiKey.bssid != null) {
+                key = key + network.networkKey.wifiKey.bssid;
+            }
+            return key;
+        }
+        return null;
+    }
+
+    private String buildNetworkKey(ScanResult result) {
+        String key = result.SSID;
+        if (key == null) return null;
+        if (result.BSSID != null) {
+            key = key + result.BSSID;
+        }
+        return key;
+    }
+
+    @Override protected final void dump(FileDescriptor fd, PrintWriter writer, String[] args) {
+        mContext.enforceCallingOrSelfPermission(permission.DUMP, TAG);
+        writer.println("WifiNetworkScoreCache");
+        writer.println("  All score curves:");
+        for (Map.Entry<String, ScoredNetwork> entry : mNetworkCache.entrySet()) {
+            writer.println("    " + entry.getKey() + ": " + entry.getValue().rssiCurve);
+        }
+        writer.println("  Current network scores:");
+        WifiManager wifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
+        for (ScanResult scanResult : wifiManager.getScanResults()) {
+            writer.println("    " + buildNetworkKey(scanResult) + ": " + getNetworkScore(scanResult));
+        }
     }
 
 }

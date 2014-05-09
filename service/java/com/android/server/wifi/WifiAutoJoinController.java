@@ -76,8 +76,7 @@ public class WifiAutoJoinController {
             logDbg("Registered scoreManager NOT NULL" + " service " + Context.NETWORK_SCORE_SERVICE);
 
         if (scoreManager != null) {
-            // NETwork SCORE SERVICE doesnt seem to be working, so do nothing for now
-            mNetworkScoreCache = new WifiNetworkScoreCache();
+            mNetworkScoreCache = new WifiNetworkScoreCache(mContext);
             scoreManager.registerNetworkScoreCache(NetworkKey.TYPE_WIFI, mNetworkScoreCache);
         } else {
             logDbg("No network score service: Couldnt register as a WiFi score Manager, type="
