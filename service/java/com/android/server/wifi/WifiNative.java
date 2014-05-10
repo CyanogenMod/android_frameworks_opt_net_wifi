@@ -18,6 +18,7 @@ package com.android.server.wifi;
 
 import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.ScanResult;
+import android.net.wifi.WifiLinkLayerStats;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
@@ -1065,10 +1066,12 @@ public class WifiNative {
 
     /* WIFI HAL support */
 
-    private long mWifiHalHandle;                        /* used by JNI to save wifi_handle */
-    private long[] mWifiIfaceHandles;                   /* used by JNI to save interface handles */
-    private int mWlan0Index;
-    private int mP2p0Index;
+    private static long sWifiHalHandle = 0;  /* used by JNI to save wifi_handle */
+    private static long[] sWifiIfaceHandles = null;  /* used by JNI to save interface handles */
+    private static int sWlan0Index = -1;
+    private static int sP2p0Index = -1;
+
+    private static boolean sHalIsStarted = false;
 
     private native boolean startHalNative();
     private native void stopHalNative();
@@ -1076,47 +1079,58 @@ public class WifiNative {
 
     private class MonitorThread extends Thread {
         public void run() {
-            Log.i(mTAG, "Waiting for HAL events");
+            Log.i(mTAG, "Waiting for HAL events mWifiHalHandle=" + Long.toString(sWifiHalHandle));
             waitForHalEventNative();
         }
     }
 
-    public boolean startHal() {
-        if (startHalNative()) {
-            new MonitorThread().start();
-            return true;
-        } else {
-            Log.i(mTAG, "Could not start hal");
-            return false;
+    synchronized public boolean startHal() {
+        Log.i(mTAG, "startHal");
+        synchronized (mLock) {
+            if (sHalIsStarted)
+                return true;
+            if (startHalNative()) {
+                new MonitorThread().start();
+                sHalIsStarted = true;
+                return true;
+            } else {
+                Log.i(mTAG, "Could not start hal");
+                sHalIsStarted = false;
+                return false;
+            }
         }
     }
 
-    public void stopHal() {
+    synchronized public void stopHal() {
         stopHalNative();
     }
 
     private native int getInterfacesNative();
 
-    public int getInterfaces() {
-        int num = getInterfacesNative();
-        for (int i = 0; i < num; i++) {
-            String name = getInterfaceNameNative(i);
-            Log.i(mTAG, "interface[" + i + "] = " + name);
-            if (name.equals("wlan0")) {
-                mWlan0Index = i;
-            } else if (name.equals("p2p0")) {
-                mP2p0Index = i;
+    synchronized public int getInterfaces() {
+        synchronized (mLock) {
+            int num = getInterfacesNative();
+            for (int i = 0; i < num; i++) {
+                String name = getInterfaceNameNative(i);
+                Log.i(mTAG, "interface[" + i + "] = " + name);
+                if (name.equals("wlan0")) {
+                    sWlan0Index = i;
+                } else if (name.equals("p2p0")) {
+                    sP2p0Index = i;
+                }
             }
+            return num;
         }
-        return num;
     }
 
     private native String getInterfaceNameNative(int index);
 
     public void printInterfaceNames() {
-        for (int i = 0; i < mWifiIfaceHandles.length; i++) {
-            String name = getInterfaceNameNative(i);
-            Log.i(mTAG, "interface[" + i + "] = " + name);
+        synchronized (mLock) {
+            for (int i = 0; i < sWifiIfaceHandles.length; i++) {
+                String name = getInterfaceNameNative(i);
+                Log.i(mTAG, "interface[" + i + "] = " + name);
+            }
         }
     }
 
@@ -1131,7 +1145,7 @@ public class WifiNative {
     }
 
     public boolean getScanCapabilities(ScanCapabilities capabilities) {
-        return getScanCapabilitiesNative(mWlan0Index, capabilities);
+        return getScanCapabilitiesNative(sWlan0Index, capabilities);
     }
 
     private native boolean getScanCapabilitiesNative(int iface, ScanCapabilities capabilities);
@@ -1139,6 +1153,7 @@ public class WifiNative {
     private native boolean startScanNative(int iface, int id, ScanSettings settings);
     private native boolean stopScanNative(int iface, int id);
     private native ScanResult[] getScanResultsNative(int iface, boolean flush);
+    private native WifiLinkLayerStats getWifiLinkLayerStatsNative(int iface);
 
     public static class ChannelSettings {
         int frequency;
@@ -1168,11 +1183,11 @@ public class WifiNative {
         void onFullScanResult(ScanResult result, WifiScanner.InformationElement elems[]);
     }
 
-    void onScanResultsAvailable(int id) {
+    synchronized void onScanResultsAvailable(int id) {
         mScanEventHandler.onScanResultsAvailable();
     }
 
-    void onFullScanResult(int id, ScanResult result, byte bytes[]) {
+    synchronized void onFullScanResult(int id, ScanResult result, byte bytes[]) {
         Log.i(mTAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
                 "num = " + bytes.length);
 
@@ -1210,7 +1225,7 @@ public class WifiNative {
     private int mScanCmdId = 0;
     private ScanEventHandler mScanEventHandler;
 
-    public boolean startScan(ScanSettings settings, ScanEventHandler eventHandler) {
+    synchronized public boolean startScan(ScanSettings settings, ScanEventHandler eventHandler) {
         synchronized (mLock) {
             if (mScanCmdId != 0)
                 stopScan();
@@ -1218,7 +1233,7 @@ public class WifiNative {
 
             mScanEventHandler = eventHandler;
 
-            if (startScanNative(mWlan0Index, mScanCmdId, settings) == false) {
+            if (startScanNative(sWlan0Index, mScanCmdId, settings) == false) {
                 mScanEventHandler = null;
                 return false;
             }
@@ -1227,20 +1242,22 @@ public class WifiNative {
         }
     }
 
-    public void stopScan() {
+    synchronized public void stopScan() {
         synchronized (mLock) {
-            stopScanNative(mWlan0Index, mScanCmdId);
+            stopScanNative(sWlan0Index, mScanCmdId);
             mScanEventHandler = null;
             mScanCmdId = 0;
         }
     }
 
-    public ScanResult[] getScanResults() {
-        return getScanResultsNative(mWlan0Index, /* flush = */ false);
+    synchronized public ScanResult[] getScanResults() {
+        synchronized (mLock) {
+            return getScanResultsNative(sWlan0Index, /* flush = */ false);
+        }
     }
 
     public interface HotlistEventHandler {
-        void onHotlistApFound(ScanResult[] result);
+        void onHotlistApFound (ScanResult[]result);
     }
 
     private int mHotlistCmdId = 0;
@@ -1250,7 +1267,8 @@ public class WifiNative {
             WifiScanner.HotlistSettings settings);
     private native boolean resetHotlistNative(int iface, int id);
 
-    boolean setHotlist(WifiScanner.HotlistSettings settings, HotlistEventHandler eventHandler) {
+    synchronized boolean setHotlist(WifiScanner.HotlistSettings settings,
+                                    HotlistEventHandler eventHandler) {
         synchronized (mLock) {
             if (mHotlistCmdId != 0) {
                 return false;
@@ -1259,7 +1277,7 @@ public class WifiNative {
             }
 
             mHotlistEventHandler = eventHandler;
-            if (setHotlistNative(mWlan0Index, mScanCmdId, settings) == false) {
+            if (setHotlistNative(sWlan0Index, mScanCmdId, settings) == false) {
                 mHotlistEventHandler = null;
                 return false;
             }
@@ -1268,18 +1286,20 @@ public class WifiNative {
         }
     }
 
-    void resetHotlist() {
+    synchronized void resetHotlist() {
         synchronized (mLock) {
             if (mHotlistCmdId != 0) {
-                resetHotlistNative(mWlan0Index, mHotlistCmdId);
+                resetHotlistNative(sWlan0Index, mHotlistCmdId);
                 mHotlistCmdId = 0;
                 mHotlistEventHandler = null;
             }
         }
     }
 
-    void onHotlistApFound(int id, ScanResult[] results) {
-        mHotlistEventHandler.onHotlistApFound(results);
+    synchronized void onHotlistApFound(int id, ScanResult[] results) {
+        synchronized (mLock) {
+            mHotlistEventHandler.onHotlistApFound(results);
+        }
     }
 
     public interface SignificantWifiChangeEventHandler {
@@ -1289,11 +1309,11 @@ public class WifiNative {
     SignificantWifiChangeEventHandler mSignificantWifiChangeHandler;
     int mSignificantWifiChangeCmdId;
 
-    private native boolean trackSignificantWifiChangeNative(
+    synchronized private native boolean trackSignificantWifiChangeNative(
             int iface, int id, WifiScanner.WifiChangeSettings settings);
-    private native boolean untrackSignificantWifiChangeNative(int iface, int id);
+    synchronized private native boolean untrackSignificantWifiChangeNative(int iface, int id);
 
-    boolean trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings,
+    synchronized boolean trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings,
                                        SignificantWifiChangeEventHandler handler) {
         synchronized (mLock) {
             if (mSignificantWifiChangeCmdId != 0) {
@@ -1303,7 +1323,7 @@ public class WifiNative {
             }
 
             mSignificantWifiChangeHandler = handler;
-            if (trackSignificantWifiChangeNative(mWlan0Index, mScanCmdId, settings) == false) {
+            if (trackSignificantWifiChangeNative(sWlan0Index, mScanCmdId, settings) == false) {
                 mHotlistEventHandler = null;
                 return false;
             }
@@ -1312,20 +1332,29 @@ public class WifiNative {
         }
     }
 
-    void untrackSignificantWifiChange() {
+    synchronized void untrackSignificantWifiChange() {
         synchronized (mLock) {
             if (mSignificantWifiChangeCmdId != 0) {
-                untrackSignificantWifiChangeNative(mWlan0Index, mSignificantWifiChangeCmdId);
+                untrackSignificantWifiChangeNative(sWlan0Index, mSignificantWifiChangeCmdId);
                 mSignificantWifiChangeCmdId = 0;
                 mSignificantWifiChangeHandler = null;
             }
         }
     }
 
-    void onSignificantWifiChange(int id, ScanResult[] results) {
-        mSignificantWifiChangeHandler.onChangesFound(results);
+    synchronized void onSignificantWifiChange(int id, ScanResult[] results) {
+        synchronized (mLock) {
+            mSignificantWifiChangeHandler.onChangesFound(results);
+        }
     }
 
-
-
+    synchronized public WifiLinkLayerStats getWifiLinkLayerStats() {
+        synchronized (mLock) {
+            if (!sHalIsStarted)
+                startHal();
+            if (sHalIsStarted)
+                return getWifiLinkLayerStatsNative(sWlan0Index);
+        }
+        return null;
+    }
 }

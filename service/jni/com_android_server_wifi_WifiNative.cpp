@@ -148,8 +148,8 @@ static jstring android_net_wifi_doStringCommand(JNIEnv* env, jobject, jstring ja
 static jobject mObj;                            /* saved WifiNative object */
 static JavaVM *mVM;                             /* saved JVM pointer */
 
-static const char *WifiHandleVarName = "mWifiHalHandle";
-static const char *WifiIfaceHandleVarName = "mWifiIfaceHandles";
+static const char *WifiHandleVarName = "sWifiHalHandle";
+static const char *WifiIfaceHandleVarName = "sWifiIfaceHandles";
 static jmethodID OnScanResultsMethodID;
 
 static JNIEnv *getEnv() {
@@ -159,11 +159,11 @@ static JNIEnv *getEnv() {
 }
 
 static wifi_handle getWifiHandle(JNIEnv *env, jobject obj) {
-    return (wifi_handle) getLongField(env, obj, WifiHandleVarName);
+    return (wifi_handle) getStaticLongField(env, obj, WifiHandleVarName);
 }
 
 static wifi_interface_handle getIfaceHandle(JNIEnv *env, jobject obj, jint index) {
-    return (wifi_interface_handle) getLongArrayField(env, obj, WifiIfaceHandleVarName, index);
+    return (wifi_interface_handle) getStaticLongArrayField(env, obj, WifiIfaceHandleVarName, index);
 }
 
 static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
@@ -193,12 +193,13 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
 }
 
 static jboolean android_net_wifi_startHal(JNIEnv* env, jobject obj) {
-    ALOGD("In wifi start Hal");
     wifi_handle halHandle = getWifiHandle(env, obj);
+
     if (halHandle == NULL) {
         wifi_error res = wifi_initialize(&halHandle);
         if (res == WIFI_SUCCESS) {
-            setLongField(env, obj, WifiHandleVarName, (jlong)halHandle);
+            setStaticLongField(env, obj, WifiHandleVarName, (jlong)halHandle);
+            ALOGD("Did set static halHandle = %p", halHandle);
         }
         env->GetJavaVM(&mVM);
         mObj = env->NewGlobalRef(obj);
@@ -213,7 +214,7 @@ void android_net_wifi_hal_cleaned_up_handler(wifi_handle handle) {
     ALOGD("In wifi cleaned up handler");
 
     JNIEnv * env = getEnv();
-    setLongField(env, mObj, WifiHandleVarName, 0);
+    setStaticLongField(env, mObj, WifiHandleVarName, 0);
     env->DeleteGlobalRef(mObj);
     mObj = NULL;
     mVM  = NULL;
@@ -230,7 +231,6 @@ static void android_net_wifi_waitForHalEvents(JNIEnv* env, jobject obj) {
     ALOGD("waitForHalEvents called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
 
     wifi_handle halHandle = getWifiHandle(env, obj);
-    ALOGD("halHandle = %p", halHandle);
     wifi_event_loop(halHandle);
 }
 
@@ -241,6 +241,16 @@ static int android_net_wifi_getInterfaces(JNIEnv *env, jobject obj) {
     int result = wifi_get_ifaces(halHandle, &n, &ifaceHandles);
     if (result < 0) {
         return result;
+    }
+
+    if (n <= 0) {
+       THROW(env, "android_net_wifi_getInterfaces no interfaces");
+        return 0;
+    }
+
+    if (ifaceHandles == NULL) {
+       THROW(env, "android_net_wifi_getInterfaces null interface array");
+       return 0;
     }
 
     jlongArray array = (env)->NewLongArray(n);
@@ -258,17 +268,16 @@ static int android_net_wifi_getInterfaces(JNIEnv *env, jobject obj) {
     for (int i = 0; i < n; i++) {
         elems[i] = reinterpret_cast<jlong>(ifaceHandles[i]);
     }
-
     env->SetLongArrayRegion(array, 0, n, elems);
+    setStaticLongArrayField(env, obj, WifiIfaceHandleVarName, array);
 
-    setLongArrayField(env, obj, WifiIfaceHandleVarName, array);
     return (result < 0) ? result : n;
 }
 
 static jstring android_net_wifi_getInterfaceName(JNIEnv *env, jobject obj, jint i) {
     char buf[EVENT_BUF_SIZE];
 
-    jlong value = getLongArrayField(env, obj, WifiIfaceHandleVarName, i);
+    jlong value = getStaticLongArrayField(env, obj, WifiIfaceHandleVarName, i);
     wifi_interface_handle handle = (wifi_interface_handle) value;
     int result = ::wifi_get_iface_name(handle, buf, sizeof(buf));
     if (result < 0) {
@@ -324,49 +333,49 @@ static jboolean android_net_wifi_startScan(
 
     wifi_scan_cmd_params params;
     memset(&params, 0, sizeof(params));
-    
+
     params.base_period = getIntField(env, settings, "base_period_ms");
     params.max_ap_per_scan = getIntField(env, settings, "max_ap_per_scan");
     params.report_threshold = getIntField(env, settings, "report_threshold");
-    
+
     ALOGD("Initialized common fields %d, %d, %d", params.base_period,
             params.max_ap_per_scan, params.report_threshold);
 
     const char *bucket_array_type = "[Lcom/android/server/wifi/WifiNative$BucketSettings;";
     const char *channel_array_type = "[Lcom/android/server/wifi/WifiNative$ChannelSettings;";
-    
+
     jobjectArray buckets = (jobjectArray)getObjectField(env, settings, "buckets", bucket_array_type);
     params.num_buckets = getIntField(env, settings, "num_buckets");
-    
+
     ALOGD("Initialized num_buckets to %d", params.num_buckets);
 
     for (int i = 0; i < params.num_buckets; i++) {
         jobject bucket = getObjectArrayField(env, settings, "buckets", bucket_array_type, i);
-        
+
         params.buckets[i].bucket = getIntField(env, bucket, "bucket");
         params.buckets[i].band = (wifi_band) getIntField(env, bucket, "band");
         params.buckets[i].period = getIntField(env, bucket, "period_ms");
-        
+
         ALOGD("Initialized common bucket fields %d:%d:%d", params.buckets[i].bucket,
                 params.buckets[i].band, params.buckets[i].period);
 
         int report_events = getIntField(env, bucket, "report_events");
         params.buckets[i].report_events = report_events;
-        
+
         ALOGD("Initialized report events to %d", params.buckets[i].report_events);
 
         jobjectArray channels = (jobjectArray)getObjectField(
                 env, bucket, "channels", channel_array_type);
-        
+
         params.buckets[i].num_channels = getIntField(env, bucket, "num_channels");
         ALOGD("Initialized num_channels to %d", params.buckets[i].num_channels);
 
         for (int j = 0; j < params.buckets[i].num_channels; j++) {
             jobject channel = getObjectArrayField(env, bucket, "channels", channel_array_type, j);
-            
+
             params.buckets[i].channels[j].channel = getIntField(env, channel, "frequency");
             params.buckets[i].channels[j].dwellTimeMs = getIntField(env, channel, "dwell_time_ms");
-            
+
             bool passive = getBoolField(env, channel, "passive");
             params.buckets[i].channels[j].passive = (passive ? 1 : 0);
 
@@ -686,7 +695,7 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
     params.num = env->GetArrayLength(hotspots);
 
     if (params.num == 0) {
-        ALOGE("Error in accesing array");
+        ALOGE("Error in accessing array");
         return false;
     }
 
@@ -741,6 +750,53 @@ static jboolean android_net_wifi_untrackSignificantWifiChange(
     return wifi_reset_significant_change_handler(id, handle) == WIFI_SUCCESS;
 }
 
+wifi_iface_stat link_stat;
+
+void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
+         int num_radios, wifi_radio_stat *radio_stat)
+{
+    memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
+}
+
+static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jobject obj, jint iface)  {
+
+    wifi_stats_result_handler handler;
+    memset(&handler, 0, sizeof(handler));
+    handler.on_link_stats_results = &onLinkStatsResults;
+    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    int result = wifi_get_link_stats(0, handle, handler);
+    if (result < 0) {
+        ALOGE("failed to get link statistics\n");
+        return NULL;
+    }
+
+    jobject wifiLinkLayerStats = createObject(env, "android/net/wifi/WifiLinkLayerStats");
+    if (wifiLinkLayerStats == NULL) {
+       ALOGE("Error in allocating wifiLinkLayerStats");
+       return NULL;
+    }
+
+    setIntField(env, wifiLinkLayerStats, "beacon_rx", link_stat.beacon_rx);
+    setIntField(env, wifiLinkLayerStats, "rssi_mgmt", link_stat.rssi_mgmt);
+    setLongField(env, wifiLinkLayerStats, "rxmpdu_be", link_stat.ac[WIFI_AC_BE].rx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "rxmpdu_bk", link_stat.ac[WIFI_AC_BK].rx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "rxmpdu_vi", link_stat.ac[WIFI_AC_VI].rx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "rxmpdu_vo", link_stat.ac[WIFI_AC_VO].rx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "txmpdu_be", link_stat.ac[WIFI_AC_BE].tx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "txmpdu_bk", link_stat.ac[WIFI_AC_BK].tx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "txmpdu_vi", link_stat.ac[WIFI_AC_VI].tx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "txmpdu_vo", link_stat.ac[WIFI_AC_VO].tx_mpdu);
+    setLongField(env, wifiLinkLayerStats, "lostmpdu_be", link_stat.ac[WIFI_AC_BE].mpdu_lost);
+    setLongField(env, wifiLinkLayerStats, "lostmpdu_bk", link_stat.ac[WIFI_AC_BK].mpdu_lost);
+    setLongField(env, wifiLinkLayerStats, "lostmpdu_vi",  link_stat.ac[WIFI_AC_VI].mpdu_lost);
+    setLongField(env, wifiLinkLayerStats, "lostmpdu_vo", link_stat.ac[WIFI_AC_VO].mpdu_lost);
+    setLongField(env, wifiLinkLayerStats, "retries_be", link_stat.ac[WIFI_AC_BE].retries);
+    setLongField(env, wifiLinkLayerStats, "retries_bk", link_stat.ac[WIFI_AC_BK].retries);
+    setLongField(env, wifiLinkLayerStats, "retries_vi", link_stat.ac[WIFI_AC_VI].retries);
+    setLongField(env, wifiLinkLayerStats, "retries_vo", link_stat.ac[WIFI_AC_VO].retries);
+
+    return wifiLinkLayerStats;
+}
 
 // ----------------------------------------------------------------------------
 
@@ -775,16 +831,16 @@ static JNINativeMethod gWifiMethods[] = {
     { "stopScanNative", "(II)Z", (void*) android_net_wifi_stopScan},
     { "getScanResultsNative", "(IZ)[Landroid/net/wifi/ScanResult;",
             (void *) android_net_wifi_getScanResults},
-
     { "setHotlistNative", "(IILandroid/net/wifi/WifiScanner$HotlistSettings;)Z",
             (void*) android_net_wifi_setHotlist},
     { "resetHotlistNative", "(II)Z", (void*) android_net_wifi_resetHotlist},
-
-
     { "trackSignificantWifiChangeNative", "(IILandroid/net/wifi/WifiScanner$WifiChangeSettings;)Z",
             (void*) android_net_wifi_trackSignificantWifiChange},
     { "untrackSignificantWifiChangeNative", "(II)Z",
-            (void*) android_net_wifi_untrackSignificantWifiChange}
+            (void*) android_net_wifi_untrackSignificantWifiChange},
+    { "getWifiLinkLayerStatsNative", "(I)Landroid/net/wifi/WifiLinkLayerStats;",
+            (void*) android_net_wifi_getLinkLayerStats}
+
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

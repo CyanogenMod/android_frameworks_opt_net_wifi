@@ -19,6 +19,10 @@ void reportEvent(JNIEnv *env, jobject obj, const char *method, const char *signa
 jobject createObject(JNIEnv *env, const char *className);
 void setObjectField(JNIEnv *env, jobject obj, const char *name, const char *type, jobject value);
 
+jlong getStaticLongField(JNIEnv *env, jobject obj, const char *name);
+void setStaticLongField(JNIEnv *env, jobject obj, const char *name, jlong value);
+jlong getStaticLongArrayField(JNIEnv *env, jobject obj, const char *name, int index);
+void setStaticLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray value);
 }
 
 #define THROW(env, message)      throwException(env, message, __LINE__)

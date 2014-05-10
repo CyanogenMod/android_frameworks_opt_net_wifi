@@ -89,6 +89,21 @@ jlong getLongField(JNIEnv *env, jobject obj, const char *name)
     return value;
 }
 
+jlong getStaticLongField(JNIEnv *env, jobject obj, const char *name)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    jfieldID field = (env)->GetStaticFieldID(cls, name, "J");
+    if (field == 0) {
+        THROW(env, "Error in accessing field");
+        return 0;
+    }
+    ALOGE("getStaticLongField %s %p", name, obj);
+
+    jlong value = (env)->GetStaticLongField(cls, field);
+    env->DeleteLocalRef(cls);
+    return value;
+}
+
 jobject getObjectField(JNIEnv *env, jobject obj, const char *name, const char *type)
 {
     jclass cls = (env)->GetObjectClass(obj);
@@ -127,6 +142,33 @@ jlong getLongArrayField(JNIEnv *env, jobject obj, const char *name, int index)
 
     return value;
 }
+
+jlong getStaticLongArrayField(JNIEnv *env, jobject obj, const char *name, int index)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    jfieldID field = (env)->GetStaticFieldID(cls, name, "[J");
+    if (field == 0) {
+        THROW(env, "Error in accessing field definition");
+        return 0;
+    }
+
+    jlongArray array = (jlongArray)(env)->GetStaticObjectField(cls, field);
+    jlong *elem = (env)->GetLongArrayElements(array, 0);
+    if (elem == NULL) {
+        THROW(env, "Error in accessing index element");
+        return 0;
+    }
+
+    jlong value = elem[index];
+    (env)->ReleaseLongArrayElements(array, elem, 0);
+
+    env->DeleteLocalRef(array);
+    env->DeleteLocalRef(cls);
+
+    return value;
+}
+
+
 
 jobject getObjectArrayField(JNIEnv *env, jobject obj, const char *name, const char *type, int index)
 {
@@ -185,6 +227,24 @@ void setLongField(JNIEnv *env, jobject obj, const char *name, jlong value)
     env->DeleteLocalRef(cls);
 }
 
+void setStaticLongField(JNIEnv *env, jobject obj, const char *name, jlong value)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    if (cls == NULL) {
+        THROW(env, "Error in accessing class");
+        return;
+    }
+
+    jfieldID field = (env)->GetStaticFieldID(cls, name, "J");
+    if (field == NULL) {
+        THROW(env, "Error in accessing field");
+        return;
+    }
+
+    (env)->SetStaticLongField(cls, field, value);
+    env->DeleteLocalRef(cls);
+}
+
 void setLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray value)
 {
     ALOGD("setting long array field");
@@ -204,6 +264,30 @@ void setLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray va
     }
 
     (env)->SetObjectField(obj, field, value);
+    ALOGD("array field set");
+
+    env->DeleteLocalRef(cls);
+}
+
+void setStaticLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray value)
+{
+    ALOGD("setting long array field");
+
+    jclass cls = (env)->GetObjectClass(obj);
+    if (cls == NULL) {
+        THROW(env, "Error in accessing field");
+        return;
+    } else {
+        ALOGD("cls = %p", cls);
+    }
+
+    jfieldID field = (env)->GetStaticFieldID(cls, name, "[J");
+    if (field == NULL) {
+        THROW(env, "Error in accessing field");
+        return;
+    }
+
+    (env)->SetStaticObjectField(cls, field, value);
     ALOGD("array field set");
 
     env->DeleteLocalRef(cls);

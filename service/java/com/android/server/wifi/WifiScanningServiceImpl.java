@@ -245,13 +245,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                 switch (msg.what) {
                     case CMD_DRIVER_LOADED:
-                        if (mWifiNative.startHal() && mWifiNative.getInterfaces() != 0) {
+                        if (mWifiNative.startHal() && (mWifiNative.getInterfaces() != 0)) {
                             WifiNative.ScanCapabilities capabilities =
-                                    new WifiNative.ScanCapabilities();
+                                new WifiNative.ScanCapabilities();
                             if (mWifiNative.getScanCapabilities(capabilities)) {
-                                transitionTo(mStartedState);
+                               transitionTo(mStartedState);
                             } else {
-                                loge("could not get scan capabilities");
+                               loge("could not get scan capabilities");
                             }
                         } else {
                             loge("could not start HAL");
