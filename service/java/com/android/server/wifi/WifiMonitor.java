@@ -100,6 +100,11 @@ public class WifiMonitor {
     private static final String RX_HS20_ANQP_ICON_STR = "RX-HS20-ANQP-ICON";
     private static final int RX_HS20_ANQP_ICON_STR_LEN = RX_HS20_ANQP_ICON_STR.length();
 
+    /* Hotspot 2.0 events */
+    private static final String HS20_PREFIX_STR = "HS20-";
+    private static final String HS20_SUB_REM_STR = "HS20-SUBSCRIPTION-REMEDIATION";
+    private static final String HS20_DEAUTH_STR = "HS20-DEAUTH-IMMINENT-NOTICE";
+
     /**
      * Names of events from wpa_supplicant (minus the prefix). In the
      * format descriptions, * &quot;<code>x</code>&quot;
@@ -370,6 +375,10 @@ public class WifiMonitor {
     public static final int GAS_QUERY_DONE_EVENT                 = BASE + 52;
     public static final int RX_HS20_ANQP_ICON_EVENT              = BASE + 53;
 
+    /* hotspot 2.0 events */
+    public static final int HS20_REMEDIATION_EVENT               = BASE + 61;
+    public static final int HS20_DEAUTH_EVENT                    = BASE + 62;
+
     /**
      * This indicates a read error on the monitor socket conenction
      */
@@ -636,8 +645,9 @@ public class WifiMonitor {
                 if (mStateMachine2 != null)
                     mStateMachine2.sendMessage(RX_HS20_ANQP_ICON_EVENT,
                             eventStr.substring(RX_HS20_ANQP_ICON_STR_LEN + 1));
-            }
-            else {
+            } else if (eventStr.startsWith(HS20_PREFIX_STR)) {
+                handleHs20Events(eventStr);
+            } else {
                 if (DBG) Log.w(TAG, "couldn't identify event type - " + eventStr);
             }
             return false;
@@ -947,7 +957,39 @@ public class WifiMonitor {
             }
             mStateMachine2.sendMessage(GAS_QUERY_DONE_EVENT, success, 0, bssid);
         } else {
-            if (DBG) Log.d(TAG, "Unknown handled GAS query event");
+            if (DBG) Log.d(TAG, "Unknown GAS query event: " + dataString);
+        }
+    }
+
+    /**
+     * Handle HS20 events
+     */
+    private void handleHs20Events(String dataString) {
+        if (mStateMachine2 == null) return;
+        if (dataString.startsWith(HS20_SUB_REM_STR)) {
+            // format: HS20-SUBSCRIPTION-REMEDIATION osu_method, url
+            String[] dataTokens = dataString.split(" ");
+            int method = -1;
+            String url = null;
+            if (dataTokens.length >= 3) {
+                method = Integer.parseInt(dataTokens[1]);
+                url = dataTokens[2];
+            }
+            mStateMachine2.sendMessage(HS20_REMEDIATION_EVENT, method, 0, url);
+        } else if (dataString.startsWith(HS20_DEAUTH_STR)) {
+            // format: HS20-DEAUTH-IMMINENT-NOTICE code, delay, url
+            int code = -1;
+            int delay = -1;
+            String url = null;
+            String[] dataTokens = dataString.split(" ");
+            if (dataTokens.length >= 4) {
+                code = Integer.parseInt(dataTokens[1]);
+                delay = Integer.parseInt(dataTokens[2]);
+                url = dataTokens[3];
+            }
+            mStateMachine2.sendMessage(HS20_DEAUTH_EVENT, code, delay, url);
+        } else {
+            if (DBG) Log.d(TAG, "Unknown HS20 event: " + dataString);
         }
     }
 

@@ -24,6 +24,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.net.wifi.passpoint.PasspointInfo;
 import android.net.wifi.passpoint.PasspointManager;
+import android.net.wifi.passpoint.PasspointOsuProvider;
 import android.os.Message;
 import android.util.Log;
 
@@ -35,6 +36,7 @@ import com.android.server.wifi.WifiMonitor;
 import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.WifiStateMachine;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Locale;
 import java.util.Queue;
@@ -54,6 +56,8 @@ public class PasspointStateMachine extends StateMachine {
     private static final int CMD_GAS_QUERY_TIMEOUT          = BASE + 3;
 
     private static final int ANQP_TIMEOUT_MS                = 5000;
+
+    private static final String DEFAULT_LANGUAGE_CODE       = "zxx";
 
     private String mInterface;
     private WifiNative mWifiNative;
@@ -305,27 +309,201 @@ public class PasspointStateMachine extends StateMachine {
         }
 
         if (mAnqpRequestQueue.isEmpty()) {
-            if (VDBG) logd("mAnqpRequestQueue is emptry, done");
+            if (VDBG) logd("mAnqpRequestQueue is empty, done");
             mIsAnqpOngoing = false;
             mCurrentAnqpRequest = null;
         } else {
-            if (VDBG) logd("mAnqpRequestQueue is not emptry, next");
+            if (VDBG) logd("mAnqpRequestQueue is not empty, next");
             startAnqpFetch(mAnqpRequestQueue.remove());
         }
     }
 
+    private class AnqpFrame {
+        private byte bytes[];
+        private int current;
+        private int pos;
+
+        private boolean init(String hexString) {
+            int len = hexString.length();
+            if (len % 2 != 0) return false;
+            byte hexBytes[] = hexString.getBytes();
+            bytes = new byte[len / 2];
+            for (int i = 0, j = 0; i < len; i += 2, j++) {
+                int decimal;
+                String output = new String(hexBytes, i, 2);
+                try {
+                    decimal = Integer.parseInt(output, 16);
+                } catch (NumberFormatException e) {
+                    return false;
+                }
+                bytes[j] = (byte)decimal;
+            }
+            current = 0;
+            return true;
+        }
+
+        private int readInt(int len) {
+            int value = 0;
+            for (int i = 0, shift = 0; i < len; i++, shift += 8) {
+                int b = bytes[current++];
+                if (b < 0) b += 256;        // unsigned
+                value += (b << shift);      // little endian
+            }
+            return value;
+        }
+
+        private String readStr(int len) {
+            String str = new String(bytes, current, len);
+            current += len;
+            return str;
+        }
+
+        private String readStrLanguage(int len, String prefer, String backup) {
+            String ret = null;
+            while (len > 0) {
+                int n = readInt(1);
+                String lang = readStr(3);
+                String name = readStr(n - 3);
+                len = len - n - 1;
+                if (lang.equals(prefer)) {
+                    ret = name;
+                    break;
+                } else if (lang.equals(backup)) {
+                    ret = name;
+                }
+            }
+            current += len;
+            return ret;
+        }
+
+        private void setCount(int c) {
+            pos = current + c;
+        }
+
+        private int getCount() {
+            return pos - current;
+        }
+
+        private void clearCount() {
+            current = pos;
+        }
+
+    }
+
+    private void parseOsuProvider(PasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseOsuProvider()");
+        try {
+            passpoint.osuProviderList = new ArrayList<PasspointOsuProvider>();
+
+            // osu ssid
+            int n = frame.readInt(1);
+            String osuSSID = frame.readStr(n);
+            if (VDBG) logd("osu_SSID=" + osuSSID);
+
+            // osu provider list
+            n = frame.readInt(1);
+            for (int i = 0; i < n; i++) {
+                PasspointOsuProvider osu = new PasspointOsuProvider();
+                osu.ssid = osuSSID;
+
+                int m = frame.readInt(2);
+                if (VDBG) logd("osu_len=" + m);
+
+                // osu friendly name
+                m = frame.readInt(2);
+                osu.friendlyName = frame.readStrLanguage(m, mLanguageCode, DEFAULT_LANGUAGE_CODE);
+                if (VDBG) logd("fri_name=" + osu.friendlyName);
+
+                // osu server uri
+                m = frame.readInt(1);
+                osu.serverUri = frame.readStr(m);
+                if (VDBG) logd("uri=" + osu.serverUri);
+
+                // osu method
+                m = frame.readInt(1);
+                frame.setCount(m);
+                osu.osuMethod = frame.readInt(1);
+                frame.clearCount();
+                if (VDBG) logd("method=" + osu.osuMethod);
+
+                // osu icons
+                m = frame.readInt(2);
+                frame.setCount(m);
+                for (int best = 0; frame.getCount() > 0;) {
+                    int w = frame.readInt(2);
+                    int h = frame.readInt(2);
+                    String lang = frame.readStr(3);
+                    int lentype = frame.readInt(1);
+                    String type = frame.readStr(lentype);
+                    int lenfn = frame.readInt(1);
+                    String fn = frame.readStr(lenfn);
+                    if (w * h > best) {
+                        best = w * h;
+                        osu.iconWidth = w;
+                        osu.iconHeight = h;
+                        osu.iconType = type;
+                        osu.iconFileName = fn;
+                    }
+                }
+                frame.clearCount();
+                if (VDBG) logd("icon=" + osu.iconWidth + "x" + osu.iconHeight + " " + osu.iconType
+                        + " " + osu.iconFileName);
+
+                // osu nai
+                m = frame.readInt(1);
+                if (m > 0) osu.osuNai = frame.readStr(m);
+                if (VDBG) logd("nai=" + osu.osuNai);
+
+                // osu service
+                m = frame.readInt(2);
+                osu.osuService = frame.readStrLanguage(m, mLanguageCode, DEFAULT_LANGUAGE_CODE);
+                if (VDBG) logd("service=" + osu.osuService);
+
+                passpoint.osuProviderList.add(osu);
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("oops!! ArrayIndexOutOfBoundsException");
+            passpoint.osuProviderList = null;
+        }
+    }
+
     private PasspointInfo generatePasspointInfo(String bssid) {
-        PasspointInfo pi = new PasspointInfo();
+        PasspointInfo passpoint = new PasspointInfo();
+        passpoint.bssid = bssid;
         String result = mWifiNative.scanResult(bssid);
         String[] lines = result.split("\n");
         for (String line : lines) {
             String[] tokens = line.split("=");
-            logd("got line: token1=" + tokens[0] + " token2=" +
-                    (tokens.length >= 2 ? tokens[1] : "null"));
+            if (tokens.length < 2) continue;
+            logd("got variable: " + tokens[0]);
+            if (tokens[0].equals("anqp_venue_name")) {
+
+            } else if (tokens[0].equals("anqp_network_auth_type")) {
+
+            } else if (tokens[0].equals("anqp_roaming_consortium")) {
+
+            } else if (tokens[0].equals("anqp_ip_addr_type_availability")) {
+
+            } else if (tokens[0].equals("anqp_nai_realm")) {
+
+            } else if (tokens[0].equals("anqp_3gpp")) {
+
+            } else if (tokens[0].equals("anqp_domain_name")) {
+
+            } else if (tokens[0].equals("hs20_operator_friendly_name")) {
+
+            } else if (tokens[0].equals("hs20_wan_metrics")) {
+
+            } else if (tokens[0].equals("hs20_connection_capability")) {
+
+            } else if (tokens[0].equals("hs20_osu_providers_list")) {
+                AnqpFrame frame = new AnqpFrame();
+                if (!frame.init(tokens[1])) continue;
+                parseOsuProvider(passpoint, frame);
+            }
 
         }
-        pi.bssid = bssid;
-        return pi;
+        return passpoint;
     }
 
     /* State machine initiated requests can have replyTo set to null indicating
