@@ -4113,42 +4113,33 @@ public class WifiStateMachine extends StateMachine {
                     mSupplicantStateTracker.sendMessage(WifiMonitor.ASSOCIATION_REJECTION_EVENT);
                     break;
                 case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
-
-                    String substr = (String)message.obj;
-
-
                     mSupplicantStateTracker.sendMessage(WifiMonitor.AUTHENTICATION_FAILURE_EVENT);
-
+                    String substr = (String)message.obj;
                     netId = -1;
-                    String status[] = substr.split(" ");
-                    for (String key : status) {
-
-                        if (key.regionMatches(0, "id=", 0, 3)) {
-
-                            int idx = 3;
-                            netId = 0;
-                            while (idx < key.length()) {
-                                char c = key.charAt(idx);
-
-                                if ((c >= 0x30) && (c <= 0x39)) {
-                                    netId *= 10;
-                                    netId += c - 0x30;
-                                    idx++;
-                                } else {
-                                    break;
+                    if (substr != null) {
+                        String status[] = substr.split(" ");
+                        for (String key : status) {
+                            if (key.regionMatches(0, "id=", 0, 3)) {
+                                int idx = 3;
+                                netId = 0;
+                                while (idx < key.length()) {
+                                    char c = key.charAt(idx);
+                                    if ((c >= 0x30) && (c <= 0x39)) {
+                                        netId *= 10;
+                                        netId += c - 0x30;
+                                        idx++;
+                                    } else {
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
-
-                    if (substr != null) {
                         loge("ConnectModeState got auth failure nid="
-                                + Integer.toString(netId) + " [" + substr + "]");
-                    } else {
-                        loge("ConnectModeState got auth failure - unknown network");
-                    }
-                    mWifiConfigStore.handleAuthenticationFailure(netId);
-
+                                    + Integer.toString(netId) + " [" + substr + "]");
+                        } else {
+                            loge("ConnectModeState got auth failure - unknown network");
+                        }
+                        mWifiConfigStore.handleAuthenticationFailure(netId);
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     SupplicantState state = handleSupplicantStateChange(message);
