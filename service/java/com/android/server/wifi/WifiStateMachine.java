@@ -84,6 +84,7 @@ import android.provider.Settings;
 import android.util.LruCache;
 import android.text.TextUtils;
 import android.util.Log;
+import android.os.Build;
 
 import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
@@ -541,8 +542,8 @@ public class WifiStateMachine extends StateMachine {
      * Connected state framework scan interval in milliseconds.
      * This is used for extended roaming, when screen is lit.
      */
-    private final int mConnectedScanPeriodMs = 20000;
-    private final int mDisconnectedScanPeriodMs = 10000;
+    private int mConnectedScanPeriodMs = 20000;
+    private int mDisconnectedScanPeriodMs = 10000;
 
     /**
      * Supplicant scan interval in milliseconds.
@@ -897,6 +898,16 @@ public class WifiStateMachine extends StateMachine {
         setLogOnlyTransitions(false);
         if (VDBG) setDbg(true);
 
+        // On molly, do not enable auto-join driven scanning while associated as this interfere
+        // with streaming. Bug: 14696701
+        String build = Build.PRODUCT;
+        if (build != null) {
+            if (build.contains("molly")) {
+                loge("Molly is there, product=" + build + ", disable associated auto-join scanning.");
+                mConnectedScanPeriodMs = 0;
+            }
+        }
+
         //start the state machine
         start();
 
@@ -924,20 +935,14 @@ public class WifiStateMachine extends StateMachine {
         if (PDBG) {
             loge("setScanAlarm " + enabled + " period " + mCurrentScanAlarmMs);
         }
+        if (mCurrentScanAlarmMs <= 0) enabled = false;
         if (enabled == mAlarmEnabled) return;
         if (enabled) {
-            if (mCurrentScanAlarmMs > 0) {
-                if (mCurrentScanAlarmMs < 10000) {
-                    //paranoia
-                    mCurrentScanAlarmMs = 10000;
-                }
-
-                mAlarmManager.setRepeating(AlarmManager.RTC_WAKEUP,
-                        System.currentTimeMillis() + mCurrentScanAlarmMs,
-                        mCurrentScanAlarmMs,
-                        mScanIntent);
-                mAlarmEnabled = true;
-            }
+            mAlarmManager.setRepeating(AlarmManager.RTC_WAKEUP,
+                    System.currentTimeMillis() + mCurrentScanAlarmMs,
+                    mCurrentScanAlarmMs,
+                    mScanIntent);
+            mAlarmEnabled = true;
         } else {
             mAlarmManager.cancel(mScanIntent);
             mAlarmEnabled = false;
@@ -1954,12 +1959,10 @@ public class WifiStateMachine extends StateMachine {
                     mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
                     //kick a scan right now
                     startScanNative(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, null);
-
                 } else if (getCurrentState() == mDisconnectingState) {
                     mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
                     //kick a scan right now
                     startScanNative(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, null);
-
                 }
             }
             setScanAlarm(true);
