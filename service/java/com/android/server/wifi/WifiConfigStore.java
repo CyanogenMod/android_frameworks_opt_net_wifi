@@ -873,10 +873,13 @@ public class WifiConfigStore {
             if (mNetworkIds.containsKey(configKey(config))) {
                 // That SSID is already known, just ignore this duplicate entry
                 if (VDBG) localLog("discarded duplicate network", config.networkId);
-            } else {
+            } else if(config.isValid()){
                 mConfiguredNetworks.put(config.networkId, config);
                 mNetworkIds.put(configKey(config), config.networkId);
                 if (VDBG) localLog("loaded configured network", config.networkId);
+            } else {
+                if (DBG) log("Ingnoring loaded configured for network " + config.networkId
+                    + " because config are not vaild");
             }
         }
 

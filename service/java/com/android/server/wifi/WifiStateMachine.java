@@ -5159,6 +5159,9 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_REASSOCIATE:
                     deferMessage(message);
                     break;
+                case CMD_AUTO_CONNECT:
+                    if (DBG) log("Ignore auto connect command while WpsRunningState");
+                    break;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     if (DBG) log("Network connection lost");
                     handleNetworkDisconnect();
