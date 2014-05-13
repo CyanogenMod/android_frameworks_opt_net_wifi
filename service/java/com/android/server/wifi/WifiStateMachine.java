@@ -4399,11 +4399,13 @@ public class WifiStateMachine extends StateMachine {
                         NetworkUpdateResult result = mWifiConfigStore.saveNetwork(config);
                         netId = result.getNetworkId();
                     }
-
+                    if (mFrameworkAutoJoin.get()) {
+                        /* Tell autojoin the user did try to connect to that network */
+                        mWifiAutoJoinController.updateConfigurationHistory(netId, true, true);
+                    }
                     mLastConnectAttempt = mWifiConfigStore.getWifiConfiguration(netId);
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
-                        mWifiAutoJoinController.updateSavedConfigurationsPriorities(netId);
                         /* The state tracker handles enabling networks upon completion/failure */
                         mSupplicantStateTracker.sendMessage(WifiManager.CONNECT_NETWORK);
                         replyToMessage(message, WifiManager.CONNECT_NETWORK_SUCCEEDED);
@@ -4435,6 +4437,10 @@ public class WifiStateMachine extends StateMachine {
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
                         if (mFrameworkAutoJoin.get()) {
+                            /* Tell autojoin the user did try to modify and save that network */
+                            mWifiAutoJoinController.updateConfigurationHistory(config.networkId,
+                                    true, false);
+
                             mWifiAutoJoinController.attemptAutoJoin();
                             mWifiConfigStore.writeKnownNetworkHistory();
                         }
@@ -4596,7 +4602,9 @@ public class WifiStateMachine extends StateMachine {
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
                         if (mFrameworkAutoJoin.get()) {
-                            mWifiConfigStore.writeKnownNetworkHistory();
+                            /* Tell autojoin the user did try to modify and save that network */
+                            mWifiAutoJoinController.updateConfigurationHistory(config.networkId,
+                                    true, false);
                         }
                     } else {
                         loge("Failed to save network");
