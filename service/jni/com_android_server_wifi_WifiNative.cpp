@@ -166,6 +166,32 @@ static wifi_interface_handle getIfaceHandle(JNIEnv *env, jobject obj, jint index
     return (wifi_interface_handle) getLongArrayField(env, obj, WifiIfaceHandleVarName, index);
 }
 
+static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
+
+    ALOGD("creating scan result");
+
+    jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
+    if (scanResult == NULL) {
+        ALOGE("Error in creating scan result");
+        return NULL;
+    }
+
+    ALOGD("setting SSID to %s", result.ssid);
+    setStringField(env, scanResult, "SSID", result.ssid);
+
+    char bssid[32];
+    sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result.bssid[0], result.bssid[1],
+        result.bssid[2], result.bssid[3], result.bssid[4], result.bssid[5]);
+
+    setStringField(env, scanResult, "BSSID", bssid);
+
+    setIntField(env, scanResult, "level", result.rssi);
+    setIntField(env, scanResult, "frequency", result.channel);
+    setLongField(env, scanResult, "timestamp", result.ts);
+
+    return scanResult;
+}
+
 static jboolean android_net_wifi_startHal(JNIEnv* env, jobject obj) {
     ALOGD("In wifi start Hal");
     wifi_handle halHandle = getWifiHandle(env, obj);
@@ -262,6 +288,34 @@ static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
     reportEvent(env, mObj, "onScanResultsAvailable", "(I)V", id);
 }
 
+static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
+
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onFullScanResult called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
+
+    jobject scanResult = createScanResult(env, *result);
+
+    ALOGD("Creating a byte array of length %d", result->ie_length);
+
+    jbyteArray elements = env->NewByteArray(result->ie_length);
+    if (elements == NULL) {
+        ALOGE("Error in allocating array");
+        return;
+    }
+
+    ALOGE("Setting byte array");
+
+    jbyte *bytes = (jbyte *)&(result->ie_data[0]);
+    env->SetByteArrayRegion(elements, 0, result->ie_length, bytes);
+
+    ALOGE("Returning result");
+
+    reportEvent(env, mObj, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[B)V", id,
+            scanResult, elements);
+}
+
 static jboolean android_net_wifi_startScan(
         JNIEnv *env, jobject obj, jint iface, jint id, jobject settings) {
 
@@ -325,6 +379,7 @@ static jboolean android_net_wifi_startScan(
     wifi_scan_result_handler handler;
     memset(&handler, 0, sizeof(handler));
     handler.on_scan_results_available = &onScanResultsAvailable;
+    handler.on_full_scan_result = &onFullScanResult;
 
     return wifi_start_gscan(id, handle, params, handler) == WIFI_SUCCESS;
 }

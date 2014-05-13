@@ -1172,8 +1172,39 @@ public class WifiNative {
         mScanEventHandler.onScanResultsAvailable();
     }
 
-    void onFullScanResult(int id, ScanResult result, WifiScanner.InformationElement elems[]) {
-        mScanEventHandler.onFullScanResult(result, elems);
+    void onFullScanResult(int id, ScanResult result, byte bytes[]) {
+        Log.i(mTAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
+                "num = " + bytes.length);
+
+        int num = 0;
+        for (int i = 0; i < bytes.length; ) {
+            num++;
+            int type  = (int) bytes[i] & 0xFF;
+            int len = (int) bytes[i + 1] & 0xFF;
+            if (len < 0) {
+                Log.e(mTAG, "bad length; returning");
+                return;
+            }
+            i += len + 2;
+            Log.i(mTAG, "bytes[" + i + "] = [" + type + ", " + len + "]" + ", next = " + i);
+        }
+
+        WifiScanner.InformationElement elements[] = new WifiScanner.InformationElement[num];
+        for (int i = 0, index = 0; i < num; i++) {
+            int type  = (int) bytes[index] & 0xFF;
+            int len = (int) bytes[index + 1] & 0xFF;
+            Log.i(mTAG, "index = " + index + ", type = " + type + ", len = " + len);
+            WifiScanner.InformationElement elem = new WifiScanner.InformationElement();
+            elem.id = type;
+            elem.bytes = new byte[len];
+            for (int j = 0; j < len; j++) {
+                elem.bytes[j] = bytes[index + j + 2];
+            }
+            elements[i] = elem;
+            index += (len + 2);
+        }
+
+        mScanEventHandler.onFullScanResult(result, elements);
     }
 
     private int mScanCmdId = 0;
