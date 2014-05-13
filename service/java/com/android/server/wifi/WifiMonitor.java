@@ -664,7 +664,6 @@ public class WifiMonitor {
                 substr = eventStr.substring(ind + 1);
             }
             mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT, substr);
-
         } else if (event == STATE_CHANGE) {
             handleSupplicantStateChange(eventData);
         } else if (event == DRIVER_STATE) {
