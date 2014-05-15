@@ -1909,7 +1909,7 @@ public class WifiConfigStore {
      *
      */
     public WifiConfiguration associateWithConfiguration(ScanResult result) {
-        String configKey = configKeyFromScanResult(result);
+        String configKey = WifiConfiguration.configKey(result);
         if (configKey == null) {
             if (DBG) loge("associateWithConfiguration(): no config key " );
             return null;
@@ -1927,7 +1927,7 @@ public class WifiConfigStore {
                 return link; //found it exactly
             }
 
-            if ((link.scanResultCache != null) && (link.scanResultCache.size() <= 5)) {
+            if ((link.scanResultCache != null) && (link.scanResultCache.size() <= 4)) {
                 String bssid = "";
                 for (String key : link.scanResultCache.keySet()) {
                     bssid = key;
@@ -1998,7 +1998,7 @@ public class WifiConfigStore {
             return found;
 
         //first step, look for this scan Result by SSID + Key Management
-        String key = configKeyFromScanResult(scanResult);
+        String key = WifiConfiguration.configKey(scanResult);
         int hash = key.hashCode();
 
         Integer netId = mNetworkIds.get(hash);
@@ -2377,27 +2377,6 @@ public class WifiConfigStore {
         return -1;
     }
 
-
-    /* return the config key string based on a scan result */
-
-    public String configKeyFromScanResult(ScanResult result) {
-        String key = "\"" + result.SSID + "\"";
-
-        if (result.capabilities.contains("WEP")) {
-            key = key + "-WEP";
-        }
-
-        if (result.capabilities.contains("PSK")) {
-            key = key + "-" + KeyMgmt.strings[KeyMgmt.WPA_PSK];
-        }
-
-        if (result.capabilities.contains("EAP")) {
-            key = key + "-" + KeyMgmt.strings[KeyMgmt.WPA_EAP];
-        }
-
-        return key;
-    }
-
     /* return the allowed key management based on a scan result */
 
     public WifiConfiguration wifiConfigurationFromScanResult(ScanResult result) {
@@ -2573,9 +2552,12 @@ public class WifiConfigStore {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null && config.selfAdded) {
             loge("Authentication failure for  " + config.configKey() +
-                    " had autoJoinstatus=" + Integer.toString(config.autoJoinStatus));
-            disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
-            config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE;
+                    " had autoJoinstatus=" + Integer.toString(config.autoJoinStatus)
+                    + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
+            if (config.selfAdded) {
+                disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
+                config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE;
+            }
         }
     }
 

@@ -87,7 +87,10 @@ public class WifiAutoJoinController {
 
     int mScanResultMaximumAge = 30000; /* milliseconds unit */
 
-    /* flush out scan results older than mScanResultMaximumAge */
+    /*
+     * flush out scan results older than mScanResultMaximumAge
+     *
+     * */
     private void ageScanResultsOut(int delay) {
         if (delay <= 0) {
             delay = mScanResultMaximumAge; //something sane
@@ -180,15 +183,23 @@ public class WifiAutoJoinController {
     }
 
     void logDbg(String message) {
+        logDbg(message, true);
+    }
+
+    void logDbg(String message, boolean stackTrace) {
         long now = SystemClock.elapsedRealtimeNanos();
         String ts = String.format("[%,d us] ", now/1000);
-        Log.e(TAG, ts + message   + " stack:"
-                + Thread.currentThread().getStackTrace()[2].getMethodName() +" - "
-                + Thread.currentThread().getStackTrace()[3].getMethodName() +" - "
-                + Thread.currentThread().getStackTrace()[4].getMethodName() +" - "
-                + Thread.currentThread().getStackTrace()[5].getMethodName());
-
+        if (stackTrace) {
+            Log.e(TAG, ts + message + " stack:"
+                    + Thread.currentThread().getStackTrace()[2].getMethodName() + " - "
+                    + Thread.currentThread().getStackTrace()[3].getMethodName() + " - "
+                    + Thread.currentThread().getStackTrace()[4].getMethodName() + " - "
+                    + Thread.currentThread().getStackTrace()[5].getMethodName());
+        } else {
+            Log.e(TAG, ts + message);
+        }
     }
+
 
     /* called directly from WifiStateMachine  */
     void newSupplicantResults() {
@@ -251,53 +262,72 @@ public class WifiAutoJoinController {
         return 0;
     }
 
+    private String lastSelectedConfiguration = null;
 
-    /*
-     * user made a netork selection, hence remember that selection so as to use the
-     * infomration as part of our network selection logic.
+    public void setLastSelectedConfiguration(int netId) {
+        if (DBG) {
+            logDbg("setLastSelectedConfiguration " + Integer.toString(netId));
+        }
+        if (netId == WifiConfiguration.INVALID_NETWORK_ID) {
+            lastSelectedConfiguration = null;
+        } else {
+            WifiConfiguration selected = mWifiConfigStore.getWifiConfiguration(netId);
+            if (selected == null) {
+                lastSelectedConfiguration = null;
+            } else {
+                lastSelectedConfiguration = selected.configKey();
+                logDbg("setLastSelectedConfiguration found it " + lastSelectedConfiguration);
+            }
+        }
+    }
+
+    /**
+     * update the network history fields fo that configuration
+     * - if userTriggered, we mark the configuration as "non selfAdded" since the user has seen it
+     * and took over management
+     * - if it is a "connect", remember which network were there at the point of the connect, so
+     * as those networks get a relative lower score than the selected configuration
      *
+     * @param netId
+     * @param userTriggered : if the update come from WiFiManager
+     * @param connect : if the update includes a connect
      */
     public void updateConfigurationHistory(int netId, boolean userTriggered, boolean connect) {
-
         WifiConfiguration selected = mWifiConfigStore.getWifiConfiguration(netId);
         if (selected == null) {
             return;
         }
 
         if (userTriggered) {
-            // re-enable autojoin for this network,
+            // reenable autojoin for this network,
             // since the user want to connect to this configuration
             selected.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
-            // teh configuration doesn't belong to autojoin anymore if the user modified it
             selected.selfAdded = false;
         }
 
         if (DBG) {
             if (selected.connectChoices != null) {
-                logDbg("updateSavedConfigurationsPriorities will update "
+                logDbg("updateConfigurationHistory will update "
                         + Integer.toString(netId) + " now: "
                         + Integer.toString(selected.connectChoices.size()));
             } else {
-                logDbg("updateSavedConfigurationsPriorities will update "
+                logDbg("updateConfigurationHistory will update "
                         + Integer.toString(netId));
             }
         }
 
-        if (connect) {
+        if (connect && userTriggered) {
+            boolean found = false;
             List<WifiConfiguration> networks =
                     mWifiConfigStore.getRecentConfiguredNetworks(12000, false);
             if (networks != null) {
                 for (WifiConfiguration config : networks) {
                     if (DBG)
-                        logDbg("updateSavedConfigurationsPriorities got " + config.SSID);
+                        logDbg("updateConfigurationHistory got " + config.SSID);
 
                     if (selected.configKey(true).equals(config.configKey(true))) {
+                        found = true;
                         continue;
-                    }
-
-                    //we were preferred over a recently seen config
-                    if (selected.connectChoices == null) {
-                        selected.connectChoices = new HashMap<String, Integer>();
                     }
 
                     int rssi = WifiConfiguration.INVALID_RSSI;
@@ -310,32 +340,44 @@ public class WifiAutoJoinController {
                         continue;
                     }
 
-                    //remember the user's choice:
-                    //add the recently seen config to the selected's choice
-                    logDbg("updateSavedConfigurationsPriorities add a choice "
-                            + selected.configKey(true)
+                    //the selected configuration was preferred over a recently seen config
+                    //hence remember the user's choice:
+                    //add the recently seen config to the selected's connectChoices array
+
+                    if (selected.connectChoices == null) {
+                        selected.connectChoices = new HashMap<String, Integer>();
+                    }
+
+                    logDbg("updateConfigurationHistory add a choice " + selected.configKey(true)
                             + " over " + config.configKey(true) + " RSSI " + Integer.toString(rssi));
                     selected.connectChoices.put(config.configKey(true), rssi);
 
                     if (config.connectChoices != null) {
-                        if (VDBG)
-                            logDbg("updateSavedConfigurationsPriorities try to remove "
+                        if (VDBG) {
+                            logDbg("updateConfigurationHistory will remove "
                                     + selected.configKey(true) + " from " + config.configKey(true));
-
+                        }
                         //remove the selected from the recently seen config's array
                         config.connectChoices.remove(selected.configKey(true));
                     }
-                    printChoices(config);
+                }
+                if (found == false) {
+                     // log an error for now but do something stringer later
+                     // we will need a new scan before attempting to connect to this
+                     // configuration anyhow and thus we can process the scan results then
+                     logDbg("updateConfigurationHistory try to connect to an old network!! : "
+                             + selected.configKey());
                 }
 
                 if (selected.connectChoices != null) {
                     if (VDBG)
-                        logDbg("updateSavedConfigurationsPriorities " + Integer.toString(netId)
+                        logDbg("updateConfigurationHistory " + Integer.toString(netId)
                                 + " now: " + Integer.toString(selected.connectChoices.size()));
                 }
+
+                mWifiConfigStore.writeKnownNetworkHistory();
             }
         }
-        mWifiConfigStore.writeKnownNetworkHistory();
     }
 
     void printChoices(WifiConfiguration config) {
@@ -485,7 +527,8 @@ public class WifiAutoJoinController {
             order = order -2;
             if (VDBG)   {
                 logDbg("compareWifiConfigurations prefers -2 " + a.SSID
-                        + " over " + b.SSID + " due to user choice order -> " + Integer.toString(order));
+                        + " over " + b.SSID
+                        + " due to user choice order -> " + Integer.toString(order));
             }
         }
 
@@ -495,6 +538,28 @@ public class WifiAutoJoinController {
             if (VDBG)   {
                 logDbg("compareWifiConfigurations prefers +2 " + b.SSID + " over "
                         + a.SSID + " due to user choice order ->" + Integer.toString(order));
+            }
+        }
+
+        if ((lastSelectedConfiguration != null)
+                && a.configKey().equals(lastSelectedConfiguration)) {
+            // a is the last selected configuration, so keep it above connect choices
+            //by giving a -4 (whereas connect choice preference gives +2)
+            order = order - 4;
+            if (VDBG)   {
+                logDbg("compareWifiConfigurations prefers -4 " + a.SSID
+                        + " over " + b.SSID + " because a is the last selected -> "
+                        + Integer.toString(order));
+            }
+        } else if ((lastSelectedConfiguration != null)
+                && b.configKey().equals(lastSelectedConfiguration)) {
+            // b is the last selected configuration, so keep it above connect choices
+            //by giving a +4 (whereas connect choice preference gives -2)
+            order = order + 4;
+            if (VDBG)   {
+                logDbg("compareWifiConfigurations prefers +4 " + a.SSID
+                        + " over " + b.SSID + " because b is the last selected -> "
+                        + Integer.toString(order));
             }
         }
 

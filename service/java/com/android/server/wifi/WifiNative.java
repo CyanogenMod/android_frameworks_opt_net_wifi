@@ -248,11 +248,17 @@ public class WifiNative {
     private void logDbg(String debug) {
         long now = SystemClock.elapsedRealtimeNanos();
         String ts = String.format("[%,d us] ", now/1000);
-        Log.e("WifiNative: ", ts+debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName()+" - "+ Thread.currentThread().getStackTrace()[6].getMethodName());
+        Log.e("WifiNative: ", ts+debug+ " stack:"
+                + Thread.currentThread().getStackTrace()[2].getMethodName() +" - "
+                + Thread.currentThread().getStackTrace()[3].getMethodName() +" - "
+                + Thread.currentThread().getStackTrace()[4].getMethodName() +" - "
+                + Thread.currentThread().getStackTrace()[5].getMethodName()+" - "
+                + Thread.currentThread().getStackTrace()[6].getMethodName());
 
     }
     public boolean enableNetwork(int netId, boolean disableOthers) {
-        if (DBG) logDbg("enableNetwork nid=" + Integer.toString(netId) + " disableOthers=" + disableOthers);
+        if (DBG) logDbg("enableNetwork nid=" + Integer.toString(netId)
+                + " disableOthers=" + disableOthers);
         if (disableOthers) {
             return doBooleanCommand("SELECT_NETWORK " + netId);
         } else {

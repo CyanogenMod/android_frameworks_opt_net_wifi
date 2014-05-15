@@ -716,8 +716,6 @@ public class WifiStateMachine extends StateMachine {
     private WorkSource mNotedBatchedScanWorkSource = null;
     private int mNotedBatchedScanCsph = 0;
 
-    private WifiConfiguration mLastConnectAttempt = null; //at the moment used for debug
-
     private AtomicBoolean mFrameworkAutoJoin = new AtomicBoolean(true); //enable by default
 
     public WifiStateMachine(Context context, String wlanInterface, WifiTrafficPoller trafficPoller) {
@@ -886,7 +884,6 @@ public class WifiStateMachine extends StateMachine {
                                 Settings.Global.WIFI_ENHANCED_AUTO_JOIN, 0) == 1);
                     }
                 });
-
 
         mContext.registerReceiver(
                 new BroadcastReceiver() {
@@ -4259,6 +4256,20 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
                 case CMD_ENABLE_NETWORK:
+                    boolean others = message.arg2 == 1;
+                    // We should tell autojoin the user did try to connect to that network
+                    // However, it seems that this API is designed to NOT persist,
+                    // so don't tell anything to autojoin
+                    //      if (others && mFrameworkAutoJoin.get()) {
+                    //         mWifiAutoJoinController.
+                    //                  updateConfigurationHistory(message.arg1, true, true);
+                    //      }
+
+                    // As this command is ultimately coming from WifiManager public API,
+                    // setting the last selected configuration allows the system to
+                    // remember the last user choice without persisting
+                    mWifiAutoJoinController.setLastSelectedConfiguration(message.arg1);
+
                     ok = mWifiConfigStore.enableNetwork(message.arg1, message.arg2 == 1);
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
@@ -4307,7 +4318,8 @@ public class WifiStateMachine extends StateMachine {
                     break;
                     /* Do a redundant disconnect without transition */
                 case CMD_DISCONNECT:
-                    mLastConnectAttempt = null;
+                    mWifiAutoJoinController.setLastSelectedConfiguration
+                            (WifiConfiguration.INVALID_NETWORK_ID);
                     mWifiNative.disconnect();
                     break;
                 case CMD_RECONNECT:
@@ -4338,13 +4350,10 @@ public class WifiStateMachine extends StateMachine {
                     config = (WifiConfiguration) message.obj;
                     netId = message.arg1;
 
-                    loge("CMD_AUTO_CONNECT sup state " + mSupplicantStateTracker.getSupplicantStateName()
+                    loge("CMD_AUTO_CONNECT sup state "
+                            + mSupplicantStateTracker.getSupplicantStateName()
                             + " my state " + getCurrentState().getName()
                             + " nid=" + Integer.toString(netId));
-                    if (mLastConnectAttempt != null) {
-                        loge("CMD_AUTO_CONNECT last connect attempt "
-                                + mLastConnectAttempt.configKey());
-                    }
 
                     /* Save the network config */
                     if (config != null) {
@@ -4357,10 +4366,14 @@ public class WifiStateMachine extends StateMachine {
                                 + " nid=" + Integer.toString(netId));
                     }
 
-                    mLastConnectAttempt = mWifiConfigStore.getWifiConfiguration(netId);
-
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
+                        // we selected a better config, maybe because we could not see the last user
+                        // selection, then forget it. We will remember the selection
+                        // only if it was persisted.
+                        mWifiAutoJoinController.
+                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+
                         /* The state tracker handles enabling networks upon completion/failure */
                         mSupplicantStateTracker.sendMessage(WifiManager.CONNECT_NETWORK);
                         //replyToMessage(message, WifiManager.CONNECT_NETWORK_SUCCEEDED);
@@ -4403,7 +4416,8 @@ public class WifiStateMachine extends StateMachine {
                         /* Tell autojoin the user did try to connect to that network */
                         mWifiAutoJoinController.updateConfigurationHistory(netId, true, true);
                     }
-                    mLastConnectAttempt = mWifiConfigStore.getWifiConfiguration(netId);
+                    mWifiAutoJoinController.setLastSelectedConfiguration(netId);
+
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
                         /* The state tracker handles enabling networks upon completion/failure */
@@ -4451,6 +4465,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case WifiManager.FORGET_NETWORK:
+                    mWifiAutoJoinController.setLastSelectedConfiguration(message.arg1);
                     if (mWifiConfigStore.forgetNetwork(message.arg1)) {
                         replyToMessage(message, WifiManager.FORGET_NETWORK_SUCCEEDED);
                     } else {
@@ -4477,6 +4492,8 @@ public class WifiStateMachine extends StateMachine {
                             loge("Invalid setup for WPS");
                             break;
                     }
+                    mWifiAutoJoinController.setLastSelectedConfiguration
+                            (WifiConfiguration.INVALID_NETWORK_ID);
                     if (wpsResult.status == Status.SUCCESS) {
                         replyToMessage(message, WifiManager.START_WPS_SUCCEEDED, wpsResult);
                         transitionTo(mWpsRunningState);
@@ -4892,6 +4909,10 @@ public class WifiStateMachine extends StateMachine {
                 return;
             }
 
+            // loose the last selection choice
+            // mWifiAutoJoinController.setLastSelectedConfiguration
+            // (WifiConfiguration.INVALID_NETWORK_ID);
+
             mFrameworkScanIntervalMs = Settings.Global.getLong(mContext.getContentResolver(),
                     Settings.Global.WIFI_FRAMEWORK_SCAN_INTERVAL_MS,
                     mDefaultFrameworkScanIntervalMs);
@@ -4945,9 +4966,6 @@ public class WifiStateMachine extends StateMachine {
                 sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
                             ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
             }
-
-            mLastConnectAttempt = null; //make sure we don't accidentally disable the wrong network
-
         }
         @Override
         public boolean processMessage(Message message) {
