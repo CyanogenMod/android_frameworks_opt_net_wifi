@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package android.net.wifi;
+package com.android.server.wifi;
 
 import android.os.Parcelable;
 import android.os.Parcel;
