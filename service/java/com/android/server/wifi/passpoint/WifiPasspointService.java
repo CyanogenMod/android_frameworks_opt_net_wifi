@@ -20,15 +20,15 @@ import android.content.Context;
 import android.util.Log;
 import com.android.server.SystemService;
 
-public final class PasspointService extends SystemService {
+public final class WifiPasspointService extends SystemService {
 
     private static final String TAG = "PasspointService";
-    final PasspointServiceImpl mImpl;
+    WifiPasspointServiceImpl mImpl;
 
-    public PasspointService(Context context) {
+    public WifiPasspointService() {
         super(context);
         Log.i(TAG, "Creating " + Context.WIFI_PASSPOINT_SERVICE);
-        mImpl = new PasspointServiceImpl(getContext());
+        mImpl = new WifiPasspointServiceImpl(getContext());
     }
 
     @Override
@@ -44,4 +44,3 @@ public final class PasspointService extends SystemService {
         }
     }
 }
-

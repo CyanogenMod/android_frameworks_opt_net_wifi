@@ -32,20 +32,20 @@ import java.io.PrintWriter;
  * TODO: doc
  * @hide
  */
-public final class PasspointServiceImpl extends IWifiPasspointManager.Stub {
+public final class WifiPasspointServiceImpl extends IWifiPasspointManager.Stub {
     private static final String TAG = "PasspointService";
     private static final boolean DBG = true;
 
     private Context mContext;
     private String mInterface;
 
-    private PasspointStateMachine mSm;
+    private WifiPasspointStateMachine mSm;
 
-    public PasspointServiceImpl(Context context) {
+    public WifiPasspointServiceImpl(Context context) {
         mContext = context;
         mInterface = SystemProperties.get("wifi.interface", "wlan0");
 
-        mSm = new PasspointStateMachine(mContext, mInterface);
+        mSm = new WifiPasspointStateMachine(mContext, mInterface);
         mSm.start();
     }
 
@@ -64,10 +64,11 @@ public final class PasspointServiceImpl extends IWifiPasspointManager.Stub {
 
     @Override
     public Messenger getMessenger() {
-        if (DBG) Log.d(TAG, "hs20: getMessenger");
+        if (DBG)
+            Log.d(TAG, "hs20: getMessenger");
         enforceAccessPermission();
         enforceChangePermission();
-//        enforceConnectivityInternalPermission();
+        //        enforceConnectivityInternalPermission();
         Log.d(TAG, "getMessenger, mSm=" + mSm.toString());
         return new Messenger(mSm.getHandler());
     }
@@ -90,6 +91,5 @@ public final class PasspointServiceImpl extends IWifiPasspointManager.Stub {
         pw.println("dump test");
         pw.println();
     }
-
 
 }
