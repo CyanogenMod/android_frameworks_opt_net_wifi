@@ -1181,11 +1181,9 @@ public class WifiNative {
 
     public boolean startScan(ScanSettings settings, ScanEventHandler eventHandler) {
         synchronized (mLock) {
-            if (mScanCmdId != 0) {
-                return false;
-            } else {
-                mScanCmdId = getNewCmdIdLocked();
-            }
+            if (mScanCmdId != 0)
+                stopScan();
+            mScanCmdId = getNewCmdIdLocked();
 
             mScanEventHandler = eventHandler;
 
