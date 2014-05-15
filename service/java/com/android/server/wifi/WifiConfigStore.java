@@ -1953,6 +1953,7 @@ public class WifiConfigStore {
                             result.SSID + " and associate it with: " + link.SSID);
                 }
                 config = wifiConfigurationFromScanResult(result);
+                config.selfAdded = true;
                 if (config != null) {
                     if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
                             config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
@@ -2570,7 +2571,7 @@ public class WifiConfigStore {
 
     void handleAuthenticationFailure(int netId) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null) {
+        if (config != null && config.selfAdded) {
             loge("Authentication failure for  " + config.configKey() +
                     " had autoJoinstatus=" + Integer.toString(config.autoJoinStatus));
             disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);

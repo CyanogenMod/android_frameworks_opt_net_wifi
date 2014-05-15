@@ -572,7 +572,10 @@ public class WifiMonitor {
     private void logDbg(String debug) {
         long now = SystemClock.elapsedRealtimeNanos();
         String ts = String.format("[%,d us] ", now/1000);
-        Log.e(TAG, ts+debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName() +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
+        Log.e(TAG, ts+debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
+                +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName()
+                +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
+                +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
 
     }
 
@@ -584,8 +587,9 @@ public class WifiMonitor {
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
             if (eventStr.startsWith(WPA_EVENT_PREFIX_STR) &&
                     0 < eventStr.indexOf(PASSWORD_MAY_BE_INCORRECT_STR)) {
-               // AUTHENTICATION_FAILURE_EVENT is sent thru SSID_TEMP_DISABLED message, this CTRL message contains the netId and ssid
-               // and sohuld be used instead of the wpa_supplicant log
+               // AUTHENTICATION_FAILURE_EVENT is sent thru SSID_TEMP_DISABLED
+               // message, this CTRL message contains the netId and ssid
+               // and should be used instead of the wpa_supplicant log
                // mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
             } else if (eventStr.startsWith(WPS_SUCCESS_STR)) {
                 mStateMachine.sendMessage(WPS_SUCCESS_EVENT);

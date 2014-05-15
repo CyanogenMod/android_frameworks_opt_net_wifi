@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 The Android Open Source Project
+ * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -252,17 +252,25 @@ public class WifiAutoJoinController {
     }
 
 
-
-    public void updateSavedConfigurationsPriorities(int netId) {
+    /*
+     * user made a netork selection, hence remember that selection so as to use the
+     * infomration as part of our network selection logic.
+     *
+     */
+    public void updateConfigurationHistory(int netId, boolean userTriggered, boolean connect) {
 
         WifiConfiguration selected = mWifiConfigStore.getWifiConfiguration(netId);
         if (selected == null) {
             return;
         }
 
-        // reenable autojoin for this network,
-        // since the user want to connect to this configuration
-        selected.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
+        if (userTriggered) {
+            // re-enable autojoin for this network,
+            // since the user want to connect to this configuration
+            selected.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
+            // teh configuration doesn't belong to autojoin anymore if the user modified it
+            selected.selfAdded = false;
+        }
 
         if (DBG) {
             if (selected.connectChoices != null) {
@@ -275,56 +283,58 @@ public class WifiAutoJoinController {
             }
         }
 
-        List<WifiConfiguration> networks =  mWifiConfigStore.getRecentConfiguredNetworks(12000, false);
-        if (networks == null)
-            return;
+        if (connect) {
+            List<WifiConfiguration> networks =
+                    mWifiConfigStore.getRecentConfiguredNetworks(12000, false);
+            if (networks != null) {
+                for (WifiConfiguration config : networks) {
+                    if (DBG)
+                        logDbg("updateSavedConfigurationsPriorities got " + config.SSID);
 
-        for (WifiConfiguration config: networks) {
+                    if (selected.configKey(true).equals(config.configKey(true))) {
+                        continue;
+                    }
 
-            if (DBG)
-                logDbg("updateSavedConfigurationsPriorities got " + config.SSID);
+                    //we were preferred over a recently seen config
+                    if (selected.connectChoices == null) {
+                        selected.connectChoices = new HashMap<String, Integer>();
+                    }
 
-            if (selected.configKey(true).equals(config.configKey(true))) {
-                continue;
+                    int rssi = WifiConfiguration.INVALID_RSSI;
+                    if (config.visibility != null) {
+                        rssi = config.visibility.rssi5;
+                        if (config.visibility.rssi24 > rssi)
+                            rssi = config.visibility.rssi24;
+                    }
+                    if (rssi < -80) {
+                        continue;
+                    }
+
+                    //remember the user's choice:
+                    //add the recently seen config to the selected's choice
+                    logDbg("updateSavedConfigurationsPriorities add a choice "
+                            + selected.configKey(true)
+                            + " over " + config.configKey(true) + " RSSI " + Integer.toString(rssi));
+                    selected.connectChoices.put(config.configKey(true), rssi);
+
+                    if (config.connectChoices != null) {
+                        if (VDBG)
+                            logDbg("updateSavedConfigurationsPriorities try to remove "
+                                    + selected.configKey(true) + " from " + config.configKey(true));
+
+                        //remove the selected from the recently seen config's array
+                        config.connectChoices.remove(selected.configKey(true));
+                    }
+                    printChoices(config);
+                }
+
+                if (selected.connectChoices != null) {
+                    if (VDBG)
+                        logDbg("updateSavedConfigurationsPriorities " + Integer.toString(netId)
+                                + " now: " + Integer.toString(selected.connectChoices.size()));
+                }
             }
-
-            //we were preferred over a recently seen config
-            if (selected.connectChoices == null) {
-                selected.connectChoices = new HashMap<String, Integer>();
-            }
-
-            int rssi = WifiConfiguration.INVALID_RSSI;
-            if (config.visibility != null) {
-                rssi = config.visibility.rssi5;
-                if (config.visibility.rssi24 > rssi)
-                    rssi = config.visibility.rssi24;
-            }
-            if (rssi < -80) {
-                continue;
-            }
-
-            //remember the user's choice:
-            //add the recently seen config to the selected's choice
-            logDbg("updateSavedConfigurationsPriorities add a choice " + selected.configKey(true)
-                    + " over " + config.configKey(true) + " RSSI " + Integer.toString(rssi));
-            selected.connectChoices.put(config.configKey(true), rssi);
-
-            if (config.connectChoices != null) {
-                if (VDBG)
-                    logDbg("updateSavedConfigurationsPriorities try to remove "
-                            + selected.configKey(true) + " from " + config.configKey(true));
-
-                //remove the selected from the recently seen config's array
-                config.connectChoices.remove(selected.configKey(true));
-            }
-            printChoices(config);
         }
-
-        if (selected.connectChoices != null) {
-            if (VDBG) logDbg("updateSavedConfigurationsPriorities " + Integer.toString(netId)
-                    + " now: " + Integer.toString(selected.connectChoices.size()));
-        }
-
         mWifiConfigStore.writeKnownNetworkHistory();
     }
 
