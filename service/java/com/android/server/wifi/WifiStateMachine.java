@@ -3009,7 +3009,7 @@ public class WifiStateMachine extends StateMachine {
                     }
 
                     checkAndSetConnectivityInstance();
-                    mCm.registerNetworkFactory(new Messenger(getHandler()));
+                    mCm.registerNetworkFactory(new Messenger(getHandler()), NETWORKTYPE);
                     // let network requests drive this - TODO refactor for smoother startup
                     disconnectCommand();
                     break;
