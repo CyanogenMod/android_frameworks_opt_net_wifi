@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2014 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,9 +44,6 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
         mNetworkCache = new HashMap<String, ScoredNetwork>();
     }
 
-
-     //void updateScores(in List<ScoredNetwork> networks);
-
      @Override public final void updateScores(List<android.net.ScoredNetwork> networks) {
         if (networks == null) {
             return;
@@ -63,11 +60,24 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
      }
 
      @Override public final void clearScores() {
-         synchronized(mNetworkCache) {
+         synchronized (mNetworkCache) {
              mNetworkCache.clear();
          }
      }
 
+    public boolean isScoredNetwork(ScanResult result) {
+        String key = buildNetworkKey(result);
+        if (key == null) return false;
+
+        //find it
+        synchronized(mNetworkCache) {
+            ScoredNetwork network = mNetworkCache.get(key);
+            if (network != null) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public int getNetworkScore(ScanResult result) {
 

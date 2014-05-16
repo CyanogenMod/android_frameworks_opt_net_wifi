@@ -20,6 +20,7 @@ import android.content.Context;
 
 import android.net.NetworkKey;
 import android.net.NetworkScoreManager;
+import android.net.WifiKey;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
@@ -27,6 +28,8 @@ import android.net.wifi.WifiManager;
 import android.os.SystemClock;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.HashMap;
 import java.util.List;
@@ -113,16 +116,10 @@ public class WifiAutoJoinController {
         }
     }
 
-    /* Check if this network is known to kepler and return its score */
-    private int isScoredNetwork(ScanResult result) {
-        if (mNetworkScoreCache == null)
-            return 0;
-        return mNetworkScoreCache.getNetworkScore(result);
-    }
-
-
     void addToScanCache(List<ScanResult> scanList) {
         WifiConfiguration associatedConfig;
+
+        ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
         for(ScanResult result: scanList) {
             result.seen = System.currentTimeMillis();
@@ -154,11 +151,23 @@ public class WifiAutoJoinController {
 
                     avg_rssi = (int)((double)avg_rssi * (1-alpha) + (double)previous_rssi * alpha);
 
+
+
+
                 }
                 result.level = avg_rssi;
 
                 //remove the previous Scan Result
                 scanResultCache.remove(result.BSSID);
+            } else {
+                if (!mNetworkScoreCache.isScoredNetwork(result)) {
+                    //TODO : properly handle SSID formatting, i.e. among others check for string
+                    //TODO : representing hexadecimal SSIDs
+                    WifiKey wkey = new WifiKey("\"" + result.SSID + "\"", result.BSSID);
+                    NetworkKey nkey = new NetworkKey(wkey);
+                    //if we don't know this scan result then request a score to Herrevad
+                    unknownScanResults.add(nkey);
+                }
             }
 
             scanResultCache.put(result.BSSID, new ScanResult(result));
@@ -168,7 +177,7 @@ public class WifiAutoJoinController {
             //add this BSSID to the scanResultCache of the relevant WifiConfiguration
             associatedConfig = mWifiConfigStore.updateSavedNetworkHistory(result);
 
-            //try to associate this BSSID to an existing Saved Wificonfiguration
+            //try to associate this BSSID to an existing Saved WifiConfiguration
             if (associatedConfig == null) {
                 associatedConfig = mWifiConfigStore.associateWithConfiguration(result);
                 if (associatedConfig != null) {
@@ -179,6 +188,13 @@ public class WifiAutoJoinController {
                     mWifiStateMachine.sendMessage(WifiManager.SAVE_NETWORK, associatedConfig);
                 }
             }
+        }
+
+        if (unknownScanResults.size() != 0) {
+            NetworkKey[] newKeys =
+                    unknownScanResults.toArray(new NetworkKey[unknownScanResults.size()]);
+                //kick the score manager, we will get updated scores asynchronously
+            scoreManager.requestScores(newKeys);
         }
     }
 
