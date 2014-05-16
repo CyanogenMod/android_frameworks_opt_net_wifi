@@ -4184,32 +4184,16 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
                     mSupplicantStateTracker.sendMessage(WifiMonitor.AUTHENTICATION_FAILURE_EVENT);
+                    break;
+                case WifiMonitor.SSID_TEMP_DISABLED:
+                case WifiMonitor.SSID_REENABLED:
                     String substr = (String)message.obj;
-                    netId = -1;
-                    if (substr != null) {
-                        String status[] = substr.split(" ");
-                        for (String key : status) {
-                            if (key.regionMatches(0, "id=", 0, 3)) {
-                                int idx = 3;
-                                netId = 0;
-                                while (idx < key.length()) {
-                                    char c = key.charAt(idx);
-                                    if ((c >= 0x30) && (c <= 0x39)) {
-                                        netId *= 10;
-                                        netId += c - 0x30;
-                                        idx++;
-                                    } else {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        loge("ConnectModeState got auth failure nid="
-                                    + Integer.toString(netId) + " [" + substr + "]");
-                        } else {
-                            loge("ConnectModeState got auth failure - unknown network");
-                        }
-                        mWifiConfigStore.handleAuthenticationFailure(netId);
+                    String en = message.what == WifiMonitor.SSID_TEMP_DISABLED ?
+                             "temp-disabled" : "re-enabled";
+                    loge("ConnectModeState SSID state=" + en + " nid="
+                            + Integer.toString(message.arg1) + " [" + substr + "]");
+                    mWifiConfigStore.handleSSIDStateChange(message.arg1, message.what ==
+                            WifiMonitor.SSID_REENABLED);
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     SupplicantState state = handleSupplicantStateChange(message);

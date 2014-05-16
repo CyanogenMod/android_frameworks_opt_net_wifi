@@ -200,7 +200,6 @@ public class WifiAutoJoinController {
         }
     }
 
-
     /* called directly from WifiStateMachine  */
     void newSupplicantResults() {
         List<ScanResult> scanList = mWifiStateMachine.syncGetScanResultsList();
@@ -395,6 +394,8 @@ public class WifiAutoJoinController {
     }
 
 
+
+
     boolean hasConnectChoice(WifiConfiguration source, WifiConfiguration target) {
         boolean found = false;
         if (source == null)
@@ -520,8 +521,8 @@ public class WifiAutoJoinController {
                 order = 10;
             }
         }
-        //assuming that the WifiConfiguration aren't part of the same "extended roam domain",
-        //then compare by user's choice.
+
+        //compare by user's choice.
         if (hasConnectChoice(a, b)) {
             //a is of higher priority - descending
             order = order -2;
@@ -539,6 +540,21 @@ public class WifiAutoJoinController {
                 logDbg("compareWifiConfigurations prefers +2 " + b.SSID + " over "
                         + a.SSID + " due to user choice order ->" + Integer.toString(order));
             }
+        }
+
+        //TODO count the number of association rejection
+        // and use this to adjust the order by more than +/- 3
+        if ((a.status == WifiConfiguration.Status.DISABLED)
+                && (a.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT)) {
+            //a is of lower priority - ascending
+            //lower the comparison score a bit
+            order = order +3;
+        }
+        if ((b.status == WifiConfiguration.Status.DISABLED)
+                && (b.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT)) {
+            //a is of higher priority - descending
+            //lower the comparison score a bit
+            order = order -3;
         }
 
         if ((lastSelectedConfiguration != null)

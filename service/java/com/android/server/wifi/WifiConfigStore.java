@@ -2548,10 +2548,10 @@ public class WifiConfigStore {
         return false;
     }
 
-    void handleAuthenticationFailure(int netId) {
+    void handleSSIDStateChange(int netId, boolean enabled) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null && config.selfAdded) {
-            loge("Authentication failure for  " + config.configKey() +
+        if (config != null && config.selfAdded && !enabled) {
+            loge("SSID temp disabled for  " + config.configKey() +
                     " had autoJoinstatus=" + Integer.toString(config.autoJoinStatus)
                     + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
             if (config.selfAdded) {

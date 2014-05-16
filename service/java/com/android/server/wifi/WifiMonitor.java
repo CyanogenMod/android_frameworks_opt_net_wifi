@@ -61,8 +61,9 @@ public class WifiMonitor {
     private static final int DRIVER_STATE = 7;
     private static final int EAP_FAILURE  = 8;
     private static final int ASSOC_REJECT = 9;
-    private static final int SSID_TEMP_DISABLED = 10;
-    private static final int UNKNOWN      = 11;
+    private static final int SSID_TEMP_DISABLE = 10;
+    private static final int SSID_REENABLE = 11;
+    private static final int UNKNOWN      = 12;
 
     /** All events coming from the supplicant start with this prefix */
     private static final String EVENT_PREFIX_STR = "CTRL-EVENT-";
@@ -166,9 +167,14 @@ public class WifiMonitor {
     /**
      * This indicates auth or association failure bad enough so as network got disabled
      * - WPA_PSK auth failure suspecting shared key mismatch
-     * - failed 3 Association
+     * - failed multiple Associations
      */
     private static final String TEMP_DISABLED_STR = "SSID-TEMP-DISABLED";
+
+    /**
+     * This indicates a previously disabled SSID was reenabled by supplicant
+     */
+    private static final String REENABLED_STR = "SSID-REENABLED";
 
 
     /**
@@ -319,6 +325,11 @@ public class WifiMonitor {
     public static final int WPS_TIMEOUT_EVENT                    = BASE + 11;
     /* Driver was hung */
     public static final int DRIVER_HUNG_EVENT                    = BASE + 12;
+    /* SSID was disabled due to auth failure or excessive
+     * connection failures */
+    public static final int SSID_TEMP_DISABLED                   = BASE + 13;
+    /* SSID was reenabled */
+    public static final int SSID_REENABLED                       = BASE + 14;
 
     /* P2P events */
     public static final int P2P_DEVICE_FOUND_EVENT               = BASE + 21;
@@ -587,10 +598,7 @@ public class WifiMonitor {
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
             if (eventStr.startsWith(WPA_EVENT_PREFIX_STR) &&
                     0 < eventStr.indexOf(PASSWORD_MAY_BE_INCORRECT_STR)) {
-               // AUTHENTICATION_FAILURE_EVENT is sent thru SSID_TEMP_DISABLED
-               // message, this CTRL message contains the netId and ssid
-               // and should be used instead of the wpa_supplicant log
-               // mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
+               mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
             } else if (eventStr.startsWith(WPS_SUCCESS_STR)) {
                 mStateMachine.sendMessage(WPS_SUCCESS_EVENT);
             } else if (eventStr.startsWith(WPS_FAIL_STR)) {
@@ -641,7 +649,9 @@ public class WifiMonitor {
         else if (eventName.equals(ASSOC_REJECT_STR))
             event = ASSOC_REJECT;
         else if (eventName.equals(TEMP_DISABLED_STR)) {
-            event = SSID_TEMP_DISABLED;
+            event = SSID_TEMP_DISABLE;
+        } else if (eventName.equals(REENABLED_STR)) {
+            event = SSID_REENABLE;
         }
         else
             event = UNKNOWN;
@@ -661,13 +671,34 @@ public class WifiMonitor {
             }
         }
 
-        if (event == SSID_TEMP_DISABLED) {
+        if ((event == SSID_TEMP_DISABLE)||(event == SSID_REENABLE)) {
             String substr = null;
+            int netId = -1;
             int ind = eventStr.indexOf(" ");
             if (ind != -1) {
                 substr = eventStr.substring(ind + 1);
             }
-            mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT, substr);
+            if (substr != null) {
+                String status[] = substr.split(" ");
+                for (String key : status) {
+                    if (key.regionMatches(0, "id=", 0, 3)) {
+                        int idx = 3;
+                        netId = 0;
+                        while (idx < key.length()) {
+                            char c = key.charAt(idx);
+                            if ((c >= 0x30) && (c <= 0x39)) {
+                                netId *= 10;
+                                netId += c - 0x30;
+                                idx++;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            mStateMachine.sendMessage((event == SSID_TEMP_DISABLE)?
+                    SSID_TEMP_DISABLED:SSID_REENABLED, netId, 0, substr);
         } else if (event == STATE_CHANGE) {
             handleSupplicantStateChange(eventData);
         } else if (event == DRIVER_STATE) {
