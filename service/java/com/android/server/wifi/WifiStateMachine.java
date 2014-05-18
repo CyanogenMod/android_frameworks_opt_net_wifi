@@ -3168,10 +3168,10 @@ public class WifiStateMachine extends StateMachine {
 
             // STOPSHIP: temp solution, should use supplicant manager instead
             if (mPasspointChannel == null) {
-                mPasspointChannel = new AsyncChannel();
-                mPasspointChannel.connectSync(mContext, getHandler(),
-                        mPasspointManager.getMessenger());
-                mPasspointChannel.sendMessage(CMD_REGISTER_PASSPOINT, mWifiMonitor);
+//                mPasspointChannel = new AsyncChannel();
+//                mPasspointChannel.connectSync(mContext, getHandler(),
+//                        mPasspointManager.getMessenger());
+//                mPasspointChannel.sendMessage(CMD_REGISTER_PASSPOINT, mWifiMonitor);
             }
 
             if (mWifiApConfigChannel == null) {
