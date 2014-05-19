@@ -245,13 +245,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                 switch (msg.what) {
                     case CMD_DRIVER_LOADED:
-                        if (mWifiNative.startHal() && (mWifiNative.getInterfaces() != 0)) {
+                        if (mWifiNative.startHal() && mWifiNative.getInterfaces() != 0) {
                             WifiNative.ScanCapabilities capabilities =
-                                new WifiNative.ScanCapabilities();
+                                    new WifiNative.ScanCapabilities();
                             if (mWifiNative.getScanCapabilities(capabilities)) {
-                               transitionTo(mStartedState);
+                                transitionTo(mStartedState);
                             } else {
-                               loge("could not get scan capabilities");
+                                loge("could not get scan capabilities");
                             }
                         } else {
                             loge("could not start HAL");
@@ -417,12 +417,18 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         HashMap<Integer, ScanSettings> mScanSettings = new HashMap<Integer, ScanSettings>(4);
+        HashMap<Integer, Integer> mScanPeriods = new HashMap<Integer, Integer>(4);
+
         void addScanRequest(ScanSettings settings, int id) {
             mScanSettings.put(id, settings);
         }
 
         void removeScanRequest(int id) {
             mScanSettings.remove(id);
+        }
+
+        Iterator<Map.Entry<Integer, WifiScanner.ScanSettings>> getScans() {
+            return mScanSettings.entrySet().iterator();
         }
 
         Collection<ScanSettings> getScanSettings() {
@@ -493,6 +499,18 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
         }
 
+        void reportPeriodChanged(int handler, ScanSettings settings, int newPeriodInMs) {
+            Integer prevPeriodObject = mScanPeriods.get(handler);
+            int prevPeriodInMs = settings.periodInMs;
+            if (prevPeriodObject != null) {
+                prevPeriodInMs = prevPeriodObject;
+            }
+
+            if (prevPeriodInMs != newPeriodInMs) {
+                mChannel.sendMessage(WifiScanner.CMD_PERIOD_CHANGED, newPeriodInMs, handler);
+            }
+        }
+
         HashMap<Integer, WifiScanner.HotlistSettings> mHotlistSettings =
                 new HashMap<Integer, WifiScanner.HotlistSettings>();
 
@@ -539,7 +557,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                             index++;
                         }
                     }
-
                 }
 
                 WifiScanner.ParcelableScanResults parcelableScanResults =
@@ -683,7 +700,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 return -1;
             }
 
-            int mostFrequentBucketIndex = -1;
+            int mostFrequentBucketIndex = mTimeBuckets.length;
 
             for (WifiScanner.ChannelSpec desiredChannelSpec : channels) {
                 if (mChannelToBucketMap.containsKey(desiredChannelSpec.frequency)) {
@@ -705,18 +722,17 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 }
             }
 
-            if (mostFrequentBucketIndex != -1) {
-                if (mostFrequentBucketIndex < bestBucketIndex) {
-                    Log.d(TAG, "returning bucket number " + mostFrequentBucketIndex);
-                    return mostFrequentBucketIndex;
-                } else {
-                    for (WifiScanner.ChannelSpec desiredChannelSpec : channels) {
-                        mChannelToBucketMap.put(desiredChannelSpec.frequency, bestBucketIndex);
-                    }
-                    Log.d(TAG, "returning bucket number " + bestBucketIndex);
-                    return bestBucketIndex;
+            if (mostFrequentBucketIndex < bestBucketIndex) {
+                for (WifiScanner.ChannelSpec desiredChannelSpec : channels) {
+                    mChannelToBucketMap.put(desiredChannelSpec.frequency, mostFrequentBucketIndex);
                 }
+                Log.d(TAG, "returning mf bucket number " + mostFrequentBucketIndex);
+                return mostFrequentBucketIndex;
             } else if (bestBucketIndex != -1) {
+                for (WifiScanner.ChannelSpec desiredChannelSpec : channels) {
+                    mChannelToBucketMap.put(desiredChannelSpec.frequency, bestBucketIndex);
+                }
+                Log.d(TAG, "returning best bucket number " + bestBucketIndex);
                 return bestBucketIndex;
             }
 
@@ -728,12 +744,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             getBestBucket(settings);
         }
 
-        void addScanRequestToBucket(WifiScanner.ScanSettings settings) {
+        int addScanRequestToBucket(WifiScanner.ScanSettings settings) {
 
             int bucketIndex = getBestBucket(settings);
             if (bucketIndex == -1) {
                 Log.e(TAG, "Ignoring invalid settings");
-                return;
+                return -1;
             }
 
             WifiScanner.ChannelSpec desiredChannels[] = settings.channels;
@@ -743,7 +759,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 if (desiredChannels == null) {
                     // still no channels; then there's nothing to scan
                     Log.e(TAG, "No channels to scan!!");
-                    return;
+                    return -1;
                 }
             }
 
@@ -798,6 +814,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 bucket.period_ms = mTimeBuckets[bucketIndex].periodInSecond * 1000;
                 mSettings.num_buckets++;
             }
+
+            return bucket.period_ms;
         }
 
         public WifiNative.ScanSettings getComputedSettings() {
@@ -836,9 +854,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         for (ClientInfo ci : clients) {
-            Collection<ScanSettings> settings = ci.getScanSettings();
-            for (ScanSettings s : settings) {
-                c.addScanRequestToBucket(s);
+            Iterator it = ci.getScans();
+            while (it.hasNext()) {
+                Map.Entry<Integer, WifiScanner.ScanSettings> entry =
+                        (Map.Entry<Integer,WifiScanner.ScanSettings>)it.next();
+                int id = entry.getKey();
+                ScanSettings s = entry.getValue();
+                int newPeriodInMs = c.addScanRequestToBucket(s);
+                if (newPeriodInMs  != -1 && newPeriodInMs != s.periodInMs) {
+                    ci.reportPeriodChanged(id, s, newPeriodInMs);
+                }
             }
         }
 
@@ -1291,6 +1316,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             void deliverScanResults(int handler, ScanResult results[]) {
                 if (DBG) Log.d(TAG, "Delivering messages directly");
                 sendMessage(WIFI_CHANGE_CMD_NEW_SCAN_RESULTS, 0, 0, results);
+            }
+            @Override
+            void reportPeriodChanged(int handler, ScanSettings settings, int newPeriodInMs) {
+                // nothing to do; no one is listening for this
             }
         }
 
