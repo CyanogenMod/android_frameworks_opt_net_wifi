@@ -1874,6 +1874,10 @@ public class WifiConfigStore {
                     doLink = true;
                 }
             } else {
+                // we do not know BOTH default gateways hence we will try to link
+                // hoping that they are indeed behind the same gateway
+                // once both WifiConfiguration will have been tried we will know
+                // the default gateway and revisit the choice of linking them
                 if ((config.scanResultCache != null) && (config.scanResultCache.size() <= 5)
                         && (link.scanResultCache != null) && (link.scanResultCache.size() <= 5)) {
                     String abssid = "";
