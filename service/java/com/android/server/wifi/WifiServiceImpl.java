@@ -1632,4 +1632,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             return (mMulticasters.size() > 0);
         }
     }
+
+    // STOPSHIP: temp solution before supplicant manager
+    public WifiMonitor getMonitor() {
+        return mWifiStateMachine.getMonitor();
+    }
 }

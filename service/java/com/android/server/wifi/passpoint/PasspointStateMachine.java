@@ -25,8 +25,11 @@ import android.net.wifi.WifiManager;
 import android.net.wifi.passpoint.PasspointInfo;
 import android.net.wifi.passpoint.PasspointManager;
 import android.net.wifi.passpoint.PasspointOsuProvider;
+import android.os.IBinder;
 import android.os.Message;
+import android.os.ServiceManager;
 import android.util.Log;
+import android.net.wifi.IWifiManager;
 
 import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
@@ -34,7 +37,7 @@ import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 import com.android.server.wifi.WifiMonitor;
 import com.android.server.wifi.WifiNative;
-import com.android.server.wifi.WifiStateMachine;
+import com.android.server.wifi.WifiServiceImpl;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -70,6 +73,8 @@ public class PasspointStateMachine extends StateMachine {
     private IntentFilter mIntentFilter;
     private BroadcastReceiver mBroadcastReceiver;
 
+    private WifiServiceImpl mWifiServiceImpl;
+
     private String mLanguageCode;   // TODO: update this when language changes
 
     private Queue<Message> mAnqpRequestQueue = new LinkedList<Message>();
@@ -103,21 +108,21 @@ public class PasspointStateMachine extends StateMachine {
 
         setInitialState(mDisabledState);
 
+        // STOPSHIP: temp solution before supplicant manager
+        IBinder s = ServiceManager.getService(Context.WIFI_SERVICE);
+        mWifiServiceImpl = (WifiServiceImpl)IWifiManager.Stub.asInterface(s);
+        mWifiServiceImpl.getMonitor().setStateMachine2(PasspointStateMachine.this);
+
         setLogRecSize(1000);
         setLogOnlyTransitions(false);
         if (DBG) setDbg(true);
     }
 
     class DefaultState extends State {
-
         @Override
         public boolean processMessage(Message message) {
             if (VDBG) logd(getName() + message.toString());
             switch (message.what) {
-                case WifiStateMachine.CMD_REGISTER_PASSPOINT:
-                    WifiMonitor wm = (WifiMonitor)message.obj;
-                    wm.setStateMachine2(PasspointStateMachine.this);
-                    break;
                 case CMD_ENABLE_PASSPOINT:
                 case CMD_DISABLE_PASSPOINT:
                 case CMD_GAS_QUERY_TIMEOUT:
@@ -262,7 +267,7 @@ public class PasspointStateMachine extends StateMachine {
                         case WifiManager.WIFI_STATE_ENABLED:
                             sendMessage(CMD_ENABLE_PASSPOINT);
                             break;
-                        case WifiManager.WIFI_STATE_DISABLING:
+                        case WifiManager.WIFI_STATE_DISABLED:
                             sendMessage(CMD_DISABLE_PASSPOINT);
                             break;
                         default:
