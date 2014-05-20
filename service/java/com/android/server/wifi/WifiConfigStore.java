@@ -206,6 +206,14 @@ public class WifiConfigStore extends IpConfigStore {
     private WifiNative mWifiNative;
     private final KeyStore mKeyStore = KeyStore.getInstance();
 
+    /*
+     * lastSelectedConfiguration is used to remember which network was selected last by the user.
+     * The connection to this network may not be successful, as well
+     * the selection (i.e. network priority) might not be persisted.
+     * WiFi state machine is the only object that sets this variable.
+     */
+    private String lastSelectedConfiguration = null;
+
     WifiConfigStore(Context c, WifiNative wn) {
         mContext = c;
         mWifiNative = wn;
@@ -490,6 +498,8 @@ public class WifiConfigStore extends IpConfigStore {
      */
     int addOrUpdateNetwork(WifiConfiguration config) {
         if (VDBG) localLog("addOrUpdateNetwork", config.networkId);
+        //adding unconditional message to chase b/15111865
+        Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId));
         NetworkUpdateResult result = addOrUpdateNetworkNative(config);
         if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
             WifiConfiguration conf = mConfiguredNetworks.get(result.getNetworkId());
@@ -526,6 +536,11 @@ public class WifiConfigStore extends IpConfigStore {
             if (VDBG) {
                 loge("removeNetwork " + Integer.toString(netId) + " key=" +
                         config.configKey() + " config.id=" + Integer.toString(config.networkId));
+            }
+
+            // cancel the last user choice
+            if (config.configKey().equals(lastSelectedConfiguration)) {
+                lastSelectedConfiguration = null;
             }
 
             // Remove any associated keys
@@ -1106,7 +1121,29 @@ public class WifiConfigStore extends IpConfigStore {
         });
     }
 
-    private void readNetworkHistory() {
+    public void setLastSelectedConfiguration(int netId) {
+        if (DBG) {
+            loge("setLastSelectedConfiguration " + Integer.toString(netId));
+        }
+        if (netId == WifiConfiguration.INVALID_NETWORK_ID) {
+            lastSelectedConfiguration = null;
+        } else {
+            WifiConfiguration selected = getWifiConfiguration(netId);
+            if (selected == null) {
+                lastSelectedConfiguration = null;
+            } else {
+                lastSelectedConfiguration = selected.configKey();
+                loge("setLastSelectedConfiguration found it " + lastSelectedConfiguration);
+            }
+        }
+    }
+
+    public String getLastSelectedConfiguration() {
+        return lastSelectedConfiguration;
+    }
+
+
+        private void readNetworkHistory() {
         DataInputStream in = null;
         try {
             in = new DataInputStream(new BufferedInputStream(new FileInputStream(

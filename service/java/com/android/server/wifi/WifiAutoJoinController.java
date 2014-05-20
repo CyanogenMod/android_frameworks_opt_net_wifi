@@ -55,7 +55,7 @@ public class WifiAutoJoinController {
 
     private static final String TAG = "WifiAutoJoinController ";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static final boolean VDBG = true;
     private static final boolean mStaStaSupported = false;
     private static final int SCAN_RESULT_CACHE_SIZE = 80;
 
@@ -277,25 +277,6 @@ public class WifiAutoJoinController {
         return 0;
     }
 
-    private String lastSelectedConfiguration = null;
-
-    public void setLastSelectedConfiguration(int netId) {
-        if (DBG) {
-            logDbg("setLastSelectedConfiguration " + Integer.toString(netId));
-        }
-        if (netId == WifiConfiguration.INVALID_NETWORK_ID) {
-            lastSelectedConfiguration = null;
-        } else {
-            WifiConfiguration selected = mWifiConfigStore.getWifiConfiguration(netId);
-            if (selected == null) {
-                lastSelectedConfiguration = null;
-            } else {
-                lastSelectedConfiguration = selected.configKey();
-                logDbg("setLastSelectedConfiguration found it " + lastSelectedConfiguration);
-            }
-        }
-    }
-
     /**
      * update the network history fields fo that configuration
      * - if userTriggered, we mark the configuration as "non selfAdded" since the user has seen it
@@ -306,7 +287,7 @@ public class WifiAutoJoinController {
      * @param netId
      * @param userTriggered : if the update come from WiFiManager
      * @param connect : if the update includes a connect
-     */
+     **/
     public void updateConfigurationHistory(int netId, boolean userTriggered, boolean connect) {
         WifiConfiguration selected = mWifiConfigStore.getWifiConfiguration(netId);
         if (selected == null) {
@@ -467,7 +448,7 @@ public class WifiAutoJoinController {
 
     int compareWifiConfigurations(WifiConfiguration a, WifiConfiguration b) {
         int order = 0;
-
+        String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
         boolean linked = false;
 
         if ((a.linkedConfigurations != null) && (b.linkedConfigurations != null)) {

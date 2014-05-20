@@ -139,7 +139,7 @@ public class WifiStateMachine extends StateMachine {
     private static final boolean VDBG = false;
     private static final boolean mLogMessages = false;
 
-    /* KWD branch temporary debug flag - best network selection development */
+    /* temporary debug flag - best network selection development */
     private static final boolean PDBG = false;
     /**
      * Log with error attribute
@@ -2389,6 +2389,12 @@ public class WifiStateMachine extends StateMachine {
             }
         }
 
+        if (PDBG) {
+            loge("fetchRssiLinkSpeedAndFrequencyNative rssi="
+                    + Integer.toString(newRssi) + " linkspeed="
+                    + Integer.toString(newLinkSpeed));
+        }
+
         if (newRssi != -1 && MIN_RSSI < newRssi && newRssi < MAX_RSSI) { // screen out invalid values
             /* some implementations avoid negative values by adding 256
              * so we need to adjust for that here.
@@ -4260,7 +4266,7 @@ public class WifiStateMachine extends StateMachine {
                     // As this command is ultimately coming from WifiManager public API,
                     // setting the last selected configuration allows the system to
                     // remember the last user choice without persisting
-                    mWifiAutoJoinController.setLastSelectedConfiguration(message.arg1);
+                    mWifiConfigStore.setLastSelectedConfiguration(message.arg1);
 
                     ok = mWifiConfigStore.enableNetwork(message.arg1, message.arg2 == 1);
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
@@ -4310,7 +4316,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                     /* Do a redundant disconnect without transition */
                 case CMD_DISCONNECT:
-                    mWifiAutoJoinController.setLastSelectedConfiguration
+                    mWifiConfigStore.setLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
                     mWifiNative.disconnect();
                     break;
@@ -4363,7 +4369,7 @@ public class WifiStateMachine extends StateMachine {
                         // we selected a better config, maybe because we could not see the last user
                         // selection, then forget it. We will remember the selection
                         // only if it was persisted.
-                        mWifiAutoJoinController.
+                        mWifiConfigStore.
                                 setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
 
                         /* The state tracker handles enabling networks upon completion/failure */
@@ -4408,7 +4414,7 @@ public class WifiStateMachine extends StateMachine {
                         /* Tell autojoin the user did try to connect to that network */
                         mWifiAutoJoinController.updateConfigurationHistory(netId, true, true);
                     }
-                    mWifiAutoJoinController.setLastSelectedConfiguration(netId);
+                    mWifiConfigStore.setLastSelectedConfiguration(netId);
 
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
@@ -4457,7 +4463,6 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case WifiManager.FORGET_NETWORK:
-                    mWifiAutoJoinController.setLastSelectedConfiguration(message.arg1);
                     if (mWifiConfigStore.forgetNetwork(message.arg1)) {
                         replyToMessage(message, WifiManager.FORGET_NETWORK_SUCCEEDED);
                     } else {
@@ -4484,7 +4489,7 @@ public class WifiStateMachine extends StateMachine {
                             loge("Invalid setup for WPS");
                             break;
                     }
-                    mWifiAutoJoinController.setLastSelectedConfiguration
+                    mWifiConfigStore.setLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
                     if (wpsResult.status == Status.SUCCESS) {
                         replyToMessage(message, WifiManager.START_WPS_SUCCEEDED, wpsResult);
