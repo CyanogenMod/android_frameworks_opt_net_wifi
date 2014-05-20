@@ -18,16 +18,16 @@ package com.android.server.wifi;
 
 import android.content.Context;
 import android.content.Intent;
+import android.net.IpConfiguration;
+import android.net.IpConfiguration.IpAssignment;
+import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
-import android.net.NetworkUtils;
 import android.net.NetworkInfo.DetailedState;
 import android.net.ProxyInfo;
 import android.net.RouteInfo;
 import android.net.wifi.WifiConfiguration;
-import android.net.wifi.WifiConfiguration.IpAssignment;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
-import android.net.wifi.WifiConfiguration.ProxySettings;
 import android.net.wifi.WifiConfiguration.Status;
 import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
 
@@ -40,8 +40,6 @@ import android.net.wifi.ScanResult;
 
 import android.os.Environment;
 import android.os.FileObserver;
-import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.Process;
 import android.os.SystemClock;
 import android.os.UserHandle;
@@ -51,10 +49,13 @@ import android.security.KeyStore;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
+import android.util.SparseArray;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
+import com.android.server.net.DelayedDiskWrite;
+import com.android.server.net.IpConfigStore;
+
 import java.io.BufferedReader;
+import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
@@ -62,7 +63,6 @@ import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -77,9 +77,10 @@ import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Date;
+import java.util.Map;
 
 /**
  * This class provides the API to manage configured
@@ -126,7 +127,7 @@ import java.util.Date;
  * - Maintain a list of configured networks for quick access
  *
  */
-public class WifiConfigStore {
+public class WifiConfigStore extends IpConfigStore {
 
     private Context mContext;
     private static final String TAG = "WifiConfigStore";
@@ -157,21 +158,6 @@ public class WifiConfigStore {
 
     private static final String networkHistoryConfigFile = Environment.getDataDirectory() +
             "/misc/wifi/networkHistory.txt";
-
-    private static final int IPCONFIG_FILE_VERSION = 2;
-
-    /* IP and proxy configuration keys */
-    private static final String ID_KEY = "id";
-    private static final String IP_ASSIGNMENT_KEY = "ipAssignment";
-    private static final String LINK_ADDRESS_KEY = "linkAddress";
-    private static final String GATEWAY_KEY = "gateway";
-    private static final String DNS_KEY = "dns";
-    private static final String PROXY_SETTINGS_KEY = "proxySettings";
-    private static final String PROXY_HOST_KEY = "proxyHost";
-    private static final String PROXY_PORT_KEY = "proxyPort";
-    private static final String PROXY_PAC_FILE = "proxyPac";
-    private static final String EXCLUSION_LIST_KEY = "exclusionList";
-    private static final String EOS = "eos";
 
     /* Network History Keys */
     private static final String SSID_KEY = "SSID:  ";
@@ -734,7 +720,7 @@ public class WifiConfigStore {
      */
     LinkProperties getLinkProperties(int netId) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null) return new LinkProperties(config.linkProperties);
+        if (config != null) return new LinkProperties(config.getLinkProperties());
         return null;
     }
 
@@ -745,10 +731,10 @@ public class WifiConfigStore {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
             // add old proxy details - TODO - is this still needed?
-            if(config.linkProperties != null) {
-                linkProperties.setHttpProxy(config.linkProperties.getHttpProxy());
+            if(config.getLinkProperties() != null) {
+                linkProperties.setHttpProxy(config.getLinkProperties().getHttpProxy());
             }
-            config.linkProperties = linkProperties;
+            config.setLinkProperties(linkProperties);
         }
     }
 
@@ -770,11 +756,11 @@ public class WifiConfigStore {
      */
     void clearLinkProperties(int netId) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null && config.linkProperties != null) {
+        if (config != null && config.getLinkProperties() != null) {
             // Clear everything except proxy
-            ProxyInfo proxy = config.linkProperties.getHttpProxy();
-            config.linkProperties.clear();
-            config.linkProperties.setHttpProxy(proxy);
+            ProxyInfo proxy = config.getLinkProperties().getHttpProxy();
+            config.getLinkProperties().clear();
+            config.getLinkProperties().setHttpProxy(proxy);
         }
     }
 
@@ -799,7 +785,7 @@ public class WifiConfigStore {
      */
     boolean isUsingStaticIp(int netId) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null && config.ipAssignment == IpAssignment.STATIC) {
+        if (config != null && config.getIpAssignment() == IpAssignment.STATIC) {
             return true;
         }
         return false;
@@ -867,8 +853,9 @@ public class WifiConfigStore {
             if (config.priority > mLastPriority) {
                 mLastPriority = config.priority;
             }
-            config.ipAssignment = IpAssignment.DHCP;
-            config.proxySettings = ProxySettings.NONE;
+
+            config.setIpAssignment(IpAssignment.DHCP);
+            config.setProxySettings(ProxySettings.NONE);
 
             if (mNetworkIds.containsKey(configKey(config))) {
                 // That SSID is already known, just ignore this duplicate entry
@@ -1010,298 +997,114 @@ public class WifiConfigStore {
         return false;
     }
 
-    private void writeIpAndProxyConfigurations() {
-
-        if (VDBG) loge(" writeIpAndProxyConfigurations()");
-
-        /* Make a copy */
-        List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
-            networks.add(new WifiConfiguration(config));
-        }
-
-        DelayedDiskWrite.write(networks, DelayedDiskWrite.WRITE_IP_CONFIG);
-    }
-
     public void writeKnownNetworkHistory() {
-
         if (VDBG) {
             loge(" writeKnownNetworkHistory() num networks:" +
                     Integer.toString(mConfiguredNetworks.size()) );
         }
 
         /* Make a copy */
-        List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
+        final List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             networks.add(new WifiConfiguration(config));
         }
 
-        DelayedDiskWrite.write(networks, DelayedDiskWrite.WRITE_NETWORK_HISTORY);
+        mWriter.write(networkHistoryConfigFile, new DelayedDiskWrite.Writer() {
+            public void onWriteCalled(DataOutputStream out) throws IOException {
+                for (WifiConfiguration config : networks) {
+                    //loge("onWriteCalled write SSID: " + config.SSID);
+                   /* if (config.getLinkProperties() != null)
+                        loge(" lp " + config.getLinkProperties().toString());
+                    else
+                        loge("attempt config w/o lp");
+                    */
 
-    }
+                    if (DBG) {
+                        loge("saving network history: " + config.SSID  + " gw: " +
+                                config.defaultGwMacAddress + " autojoin status: " +
+                                config.autoJoinStatus + " ephemeral=" + config.ephemeral);
+                    }
+                    if (config.ephemeral == true)
+                        continue;
 
-    private static class DelayedDiskWrite {
+                    out.writeChars(CONFIG_KEY);
+                    out.writeChars(config.configKey());
+                    out.writeChars(SEPARATOR_KEY);
 
-        private static HandlerThread sDiskWriteHandlerThread;
-        private static Handler sDiskWriteHandler;
-        /* Tracks multiple writes on the same thread */
-        private static int sWriteSequence = 0;
-        private static final String TAG = "DelayedDiskWrite";
+                    out.writeChars(SSID_KEY);
+                    out.writeChars(config.SSID);
+                    out.writeChars(SEPARATOR_KEY);
 
-        static final int WRITE_IP_CONFIG = 0;
-        static final int WRITE_NETWORK_HISTORY = 1;
+                    out.writeChars(PRIORITY_KEY);
+                    out.writeChars(Integer.toString(config.priority));
+                    out.writeChars(SEPARATOR_KEY);
+                    out.writeChars(STATUS_KEY);
+                    out.writeChars(Integer.toString(config.autoJoinStatus));
+                    out.writeChars(SEPARATOR_KEY);
+                    out.writeChars(NETWORK_ID_KEY);
+                    out.writeChars(Integer.toString(config.networkId));
+                    out.writeChars(SEPARATOR_KEY);
 
-        static void write(final List<WifiConfiguration> networks, final int what) {
+                    String allowedKeyManagementString =
+                            makeString(config.allowedKeyManagement,
+                                    WifiConfiguration.KeyMgmt.strings);
+                    out.writeChars(AUTH_KEY);
+                    out.writeChars(allowedKeyManagementString);
+                    out.writeChars(SEPARATOR_KEY);
 
-            /* Do a delayed write to disk on a separate handler thread */
-            synchronized (DelayedDiskWrite.class) {
-                if (++sWriteSequence == 1) {
-                    sDiskWriteHandlerThread = new HandlerThread("WifiConfigThread");
-                    sDiskWriteHandlerThread.start();
-                    sDiskWriteHandler = new Handler(sDiskWriteHandlerThread.getLooper());
+                    if (config.connectChoices != null) {
+                        for (String key : config.connectChoices.keySet()) {
+                            out.writeChars(CHOICE_KEY);
+                            out.writeChars(key);
+                            out.writeChars(SEPARATOR_KEY);
+                        }
+                    }
+                    if (config.linkedConfigurations != null) {
+                        for (String key : config.linkedConfigurations.keySet()) {
+                            out.writeChars(LINK_KEY);
+                            out.writeChars(key);
+                            out.writeChars(SEPARATOR_KEY);
+                        }
+                    }
+
+                    if (config.getLinkProperties() != null) {
+                        String macAddress = config.defaultGwMacAddress;
+                        if (macAddress != null) {
+                            out.writeChars(DEFAULT_GW_KEY);
+                            out.writeChars(macAddress);
+                            out.writeChars(SEPARATOR_KEY);
+                        }
+                    }
+
+                    if (config.scanResultCache != null) {
+                        for (ScanResult result : config.scanResultCache.values()) {
+                            out.writeChars(BSSID_KEY);
+                            out.writeChars(result.BSSID);
+                            out.writeChars(SEPARATOR_KEY);
+
+                            out.writeChars(FREQ_KEY);
+                            out.writeChars(Integer.toString(result.frequency));
+                            out.writeChars(SEPARATOR_KEY);
+
+                            out.writeChars(RSSI_KEY);
+                            out.writeChars(Integer.toString(result.level));
+                            out.writeChars(SEPARATOR_KEY);
+
+                            if (result.seen != 0) {
+                                out.writeChars(MILLI_KEY);
+                                out.writeChars(Long.toString(result.seen));
+                                out.writeChars(SEPARATOR_KEY);
+                            }
+                            out.writeChars(BSSID_KEY_END);
+                            out.writeChars(SEPARATOR_KEY);
+                        }
+                    }
+                    out.writeChars(SEPARATOR_KEY);
                 }
             }
 
-            sDiskWriteHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onWriteCalled(networks, what);
-                }
-            });
-        }
-
-        private static void onWriteCalled(List<WifiConfiguration> networks, int what) {
-            DataOutputStream out = null;
-            try {
-                String outfile;
-                if (what == WRITE_IP_CONFIG) {
-                    outfile = ipConfigFile;
-                } else {
-                    outfile = networkHistoryConfigFile;
-                }
-
-                out = new DataOutputStream(new BufferedOutputStream(
-                        new FileOutputStream(outfile)));
-
-                if (what == WRITE_IP_CONFIG) {
-
-                    out.writeInt(IPCONFIG_FILE_VERSION);
-
-                    for(WifiConfiguration config : networks) {
-                        boolean writeToFile = false;
-
-                        if (config.ephemeral == true)
-                            continue;
-
-                        try {
-                            LinkProperties linkProperties = config.linkProperties;
-                            switch (config.ipAssignment) {
-                                case STATIC:
-                                    out.writeUTF(IP_ASSIGNMENT_KEY);
-                                    out.writeUTF(config.ipAssignment.toString());
-                                    for (LinkAddress linkAddr : linkProperties.getLinkAddresses()) {
-                                        out.writeUTF(LINK_ADDRESS_KEY);
-                                        out.writeUTF(linkAddr.getAddress().getHostAddress());
-                                        out.writeInt(linkAddr.getNetworkPrefixLength());
-                                    }
-                                    for (RouteInfo route : linkProperties.getRoutes()) {
-                                        out.writeUTF(GATEWAY_KEY);
-                                        LinkAddress dest = route.getDestination();
-                                        if (dest != null) {
-                                            out.writeInt(1);
-                                            out.writeUTF(dest.getAddress().getHostAddress());
-                                            out.writeInt(dest.getNetworkPrefixLength());
-                                        } else {
-                                            out.writeInt(0);
-                                        }
-                                        if (route.getGateway() != null) {
-                                            out.writeInt(1);
-                                            out.writeUTF(route.getGateway().getHostAddress());
-                                        } else {
-                                            out.writeInt(0);
-                                        }
-                                    }
-                                    for (InetAddress inetAddr : linkProperties.getDnses()) {
-                                        out.writeUTF(DNS_KEY);
-                                        out.writeUTF(inetAddr.getHostAddress());
-                                    }
-                                    writeToFile = true;
-                                    break;
-                                case DHCP:
-                                    out.writeUTF(IP_ASSIGNMENT_KEY);
-                                    out.writeUTF(config.ipAssignment.toString());
-                                    writeToFile = true;
-                                    break;
-                                case UNASSIGNED:
-                                /* Ignore */
-                                    break;
-                                default:
-                                    loge("Ignore invalid ip assignment while writing");
-                                    break;
-                            }
-
-                        switch (config.proxySettings) {
-                            case STATIC:
-                                ProxyInfo proxyProperties = linkProperties.getHttpProxy();
-                                String exclusionList = proxyProperties.getExclusionListAsString();
-                                out.writeUTF(PROXY_SETTINGS_KEY);
-                                out.writeUTF(config.proxySettings.toString());
-                                out.writeUTF(PROXY_HOST_KEY);
-                                out.writeUTF(proxyProperties.getHost());
-                                out.writeUTF(PROXY_PORT_KEY);
-                                out.writeInt(proxyProperties.getPort());
-                                out.writeUTF(EXCLUSION_LIST_KEY);
-                                out.writeUTF(exclusionList);
-                                writeToFile = true;
-                                break;
-                            case PAC:
-                                ProxyInfo proxyPacProperties = linkProperties.getHttpProxy();
-                                out.writeUTF(PROXY_SETTINGS_KEY);
-                                out.writeUTF(config.proxySettings.toString());
-                                out.writeUTF(PROXY_PAC_FILE);
-                                out.writeUTF(proxyPacProperties.getPacFileUrl().toString());
-                                writeToFile = true;
-                                break;
-                            case NONE:
-                                out.writeUTF(PROXY_SETTINGS_KEY);
-                                out.writeUTF(config.proxySettings.toString());
-                                writeToFile = true;
-                                break;
-                            case UNASSIGNED:
-                                /* Ignore */
-                                    break;
-                                default:
-                                    loge("Ignore invalid proxy settings while writing");
-                                    break;
-                            }
-                            if (writeToFile) {
-                                out.writeUTF(ID_KEY);
-                                out.writeInt(configKey(config));
-                            }
-                        } catch (NullPointerException e) {
-                            loge("Failure in writing " + config.linkProperties + e);
-                        }
-                        out.writeUTF(EOS);
-                    }
-                } else {
-
-                    for (WifiConfiguration config : networks) {
-                        //loge("onWriteCalled write SSID: " + config.SSID);
-                       /* if (config.linkProperties != null)
-                            loge(" lp " + config.linkProperties.toString());
-                        else
-                            loge("attempt config w/o lp");
-                        */
-
-                        if (DBG) {
-                            loge("saving network history: " + config.SSID  + " gw: " +
-                                    config.defaultGwMacAddress + " autojoin status: " +
-                                    config.autoJoinStatus + " ephemeral=" + config.ephemeral);
-                        }
-                        if (config.ephemeral == true)
-                            continue;
-
-                        out.writeChars(CONFIG_KEY);
-                        out.writeChars(config.configKey());
-                        out.writeChars(SEPARATOR_KEY);
-
-                        out.writeChars(SSID_KEY);
-                        out.writeChars(config.SSID);
-                        out.writeChars(SEPARATOR_KEY);
-
-                        out.writeChars(PRIORITY_KEY);
-                        out.writeChars(Integer.toString(config.priority));
-                        out.writeChars(SEPARATOR_KEY);
-                        out.writeChars(STATUS_KEY);
-                        out.writeChars(Integer.toString(config.autoJoinStatus));
-                        out.writeChars(SEPARATOR_KEY);
-                        out.writeChars(NETWORK_ID_KEY);
-                        out.writeChars(Integer.toString(config.networkId));
-                        out.writeChars(SEPARATOR_KEY);
-
-                        String allowedKeyManagementString =
-                                makeString(config.allowedKeyManagement,
-                                        WifiConfiguration.KeyMgmt.strings);
-                        out.writeChars(AUTH_KEY);
-                        out.writeChars(allowedKeyManagementString);
-                        out.writeChars(SEPARATOR_KEY);
-
-                        if (config.connectChoices != null) {
-                            for (String key : config.connectChoices.keySet()) {
-                                out.writeChars(CHOICE_KEY);
-                                out.writeChars(key);
-                                out.writeChars(SEPARATOR_KEY);
-                            }
-                        }
-                        if (config.linkedConfigurations != null) {
-                            for (String key : config.linkedConfigurations.keySet()) {
-                                out.writeChars(LINK_KEY);
-                                out.writeChars(key);
-                                out.writeChars(SEPARATOR_KEY);
-                            }
-                        }
-
-                        if (config.linkProperties != null) {
-                            String macAddress = config.defaultGwMacAddress;
-                            if (macAddress != null) {
-                                out.writeChars(DEFAULT_GW_KEY);
-                                out.writeChars(macAddress);
-                                out.writeChars(SEPARATOR_KEY);
-                            }
-                        }
-
-                        if (config.scanResultCache != null) {
-                            for (ScanResult result : config.scanResultCache.values()) {
-                                out.writeChars(BSSID_KEY);
-                                out.writeChars(result.BSSID);
-                                out.writeChars(SEPARATOR_KEY);
-
-                                out.writeChars(FREQ_KEY);
-                                out.writeChars(Integer.toString(result.frequency));
-                                out.writeChars(SEPARATOR_KEY);
-
-                                out.writeChars(RSSI_KEY);
-                                out.writeChars(Integer.toString(result.level));
-                                out.writeChars(SEPARATOR_KEY);
-
-                                if (result.seen != 0) {
-                                    out.writeChars(MILLI_KEY);
-                                    out.writeChars(Long.toString(result.seen));
-                                    out.writeChars(SEPARATOR_KEY);
-                                }
-                                out.writeChars(BSSID_KEY_END);
-                                out.writeChars(SEPARATOR_KEY);
-                            }
-                        }
-                        out.writeChars(SEPARATOR_KEY);
-                    }
-                }
-
-            } catch (IOException e) {
-                loge("Error writing data file");
-            } finally {
-                if (out != null) {
-                    try {
-                        out.close();
-                    } catch (Exception e) {}
-                }
-
-                //Quit if no more writes sent
-                synchronized (DelayedDiskWrite.class) {
-                    if (--sWriteSequence == 0) {
-                        sDiskWriteHandler.getLooper().quit();
-                        sDiskWriteHandler = null;
-                        sDiskWriteHandlerThread = null;
-                    }
-                }
-            }
-        }
-
-        private static void loge(String s) {
-            Log.e(TAG, s);
-        }
+        });
     }
-
 
     private void readNetworkHistory() {
         DataInputStream in = null;
@@ -1446,142 +1249,33 @@ public class WifiConfigStore {
         }
     }
 
+    private void writeIpAndProxyConfigurations() {
+        final SparseArray<IpConfiguration> networks = new SparseArray<IpConfiguration>();
+        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+            if (!config.ephemeral) {
+                networks.put(configKey(config), config.getIpConfiguration());
+            }
+        }
+
+        super.writeIpAndProxyConfigurations(ipConfigFile, networks);
+    }
 
     private void readIpAndProxyConfigurations() {
+        SparseArray<IpConfiguration> networks = super.readIpAndProxyConfigurations(ipConfigFile);
 
-        DataInputStream in = null;
-        try {
-            in = new DataInputStream(new BufferedInputStream(new FileInputStream(
-                    ipConfigFile)));
+        if (networks == null) {
+            // IpConfigStore.readIpAndProxyConfigurations has already logged an error.
+            return;
+        }
 
-            int version = in.readInt();
-            if (version != 2 && version != 1) {
-                loge("Bad version on IP configuration file, ignore read");
-                return;
-            }
+        for (int i = 0; i < networks.size(); i++) {
+            Integer id = (Integer) i;
+            WifiConfiguration config = mConfiguredNetworks.get(mNetworkIds.get(id));
 
-            while (true) {
-                int id = -1;
-                // Default is DHCP with no proxy
-                IpAssignment ipAssignment = IpAssignment.DHCP;
-                ProxySettings proxySettings = ProxySettings.NONE;
-                LinkProperties linkProperties = new LinkProperties();
-                String proxyHost = null;
-                String pacFileUrl = null;
-                int proxyPort = -1;
-                String exclusionList = null;
-                String key;
-
-                do {
-                    key = in.readUTF();
-                    try {
-                        if (key.equals(ID_KEY)) {
-                            id = in.readInt();
-                        } else if (key.equals(IP_ASSIGNMENT_KEY)) {
-                            ipAssignment = IpAssignment.valueOf(in.readUTF());
-                        } else if (key.equals(LINK_ADDRESS_KEY)) {
-                            LinkAddress linkAddr = new LinkAddress(
-                                    NetworkUtils.numericToInetAddress(in.readUTF()), in.readInt());
-                            linkProperties.addLinkAddress(linkAddr);
-                        } else if (key.equals(GATEWAY_KEY)) {
-                            LinkAddress dest = null;
-                            InetAddress gateway = null;
-                            if (version == 1) {
-                                // only supported default gateways - leave the dest/prefix empty
-                                gateway = NetworkUtils.numericToInetAddress(in.readUTF());
-                            } else {
-                                if (in.readInt() == 1) {
-                                    dest = new LinkAddress(
-                                            NetworkUtils.numericToInetAddress(in.readUTF()),
-                                            in.readInt());
-                                }
-                                if (in.readInt() == 1) {
-                                    gateway = NetworkUtils.numericToInetAddress(in.readUTF());
-                                }
-                            }
-                            linkProperties.addRoute(new RouteInfo(dest, gateway));
-                        } else if (key.equals(DNS_KEY)) {
-                            linkProperties.addDns(
-                                    NetworkUtils.numericToInetAddress(in.readUTF()));
-                        } else if (key.equals(PROXY_SETTINGS_KEY)) {
-                            proxySettings = ProxySettings.valueOf(in.readUTF());
-                        } else if (key.equals(PROXY_HOST_KEY)) {
-                            proxyHost = in.readUTF();
-                        } else if (key.equals(PROXY_PORT_KEY)) {
-                            proxyPort = in.readInt();
-                        } else if (key.equals(PROXY_PAC_FILE)) {
-                            pacFileUrl = in.readUTF();
-                        } else if (key.equals(EXCLUSION_LIST_KEY)) {
-                            exclusionList = in.readUTF();
-                        } else if (key.equals(EOS)) {
-                            break;
-                        } else {
-                            loge("Ignore unknown key " + key + "while reading");
-                        }
-                    } catch (IllegalArgumentException e) {
-                        loge("Ignore invalid address while reading" + e);
-                    }
-                } while (true);
-
-                if (id != -1) {
-                    WifiConfiguration config = null;
-                    Integer n = mNetworkIds.get(id);
-                    if (n != null) config = mConfiguredNetworks.get(n);
-                    if (config == null) {
-                        loge("configuration found for missing network, ignored");
-                    } else {
-                        config.linkProperties = linkProperties;
-                        switch (ipAssignment) {
-                            case STATIC:
-                            case DHCP:
-                                config.ipAssignment = ipAssignment;
-                                break;
-                            case UNASSIGNED:
-                                loge("BUG: Found UNASSIGNED IP on file, use DHCP");
-                                config.ipAssignment = IpAssignment.DHCP;
-                                break;
-                            default:
-                                loge("Ignore invalid ip assignment while reading");
-                                break;
-                        }
-
-                        switch (proxySettings) {
-                            case STATIC:
-                                config.proxySettings = proxySettings;
-                                ProxyInfo proxyProperties =
-                                    new ProxyInfo(proxyHost, proxyPort, exclusionList);
-                                linkProperties.setHttpProxy(proxyProperties);
-                                break;
-                            case PAC:
-                                config.proxySettings = proxySettings;
-                                ProxyInfo proxyPacProperties = 
-                                        new ProxyInfo(pacFileUrl);
-                                linkProperties.setHttpProxy(proxyPacProperties);
-                                break;
-                            case NONE:
-                                config.proxySettings = proxySettings;
-                                break;
-                            case UNASSIGNED:
-                                loge("BUG: Found UNASSIGNED proxy on file, use NONE");
-                                config.proxySettings = ProxySettings.NONE;
-                                break;
-                            default:
-                                loge("Ignore invalid proxy settings while reading");
-                                break;
-                        }
-                    }
-                } else {
-                    if (DBG) log("Missing id while parsing configuration");
-                }
-            }
-        } catch (EOFException ignore) {
-        } catch (IOException e) {
-            loge("Error parsing configuration" + e);
-        } finally {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (Exception e) {}
+            if (config == null) {
+                loge("configuration found for missing network, ignored");
+            } else {
+                config.setIpConfiguration(networks.valueAt(i));
             }
         }
     }
@@ -1836,8 +1530,8 @@ public class WifiConfigStore {
         WifiConfiguration currentConfig = mConfiguredNetworks.get(netId);
         if (currentConfig == null) {
             currentConfig = new WifiConfiguration();
-            currentConfig.ipAssignment = IpAssignment.DHCP;
-            currentConfig.proxySettings = ProxySettings.NONE;
+            currentConfig.setIpAssignment(IpAssignment.DHCP);
+            currentConfig.setProxySettings(ProxySettings.NONE);
             currentConfig.networkId = netId;
         }
 
@@ -2070,16 +1764,16 @@ public class WifiConfigStore {
         }
 
 
-        switch (newConfig.ipAssignment) {
+        switch (newConfig.getIpAssignment()) {
             case STATIC:
-                Collection<LinkAddress> currentLinkAddresses = currentConfig.linkProperties
+                Collection<LinkAddress> currentLinkAddresses = currentConfig.getLinkProperties()
                         .getLinkAddresses();
-                Collection<LinkAddress> newLinkAddresses = newConfig.linkProperties
+                Collection<LinkAddress> newLinkAddresses = newConfig.getLinkProperties()
                         .getLinkAddresses();
-                Collection<InetAddress> currentDnses = currentConfig.linkProperties.getDnses();
-                Collection<InetAddress> newDnses = newConfig.linkProperties.getDnses();
-                Collection<RouteInfo> currentRoutes = currentConfig.linkProperties.getRoutes();
-                Collection<RouteInfo> newRoutes = newConfig.linkProperties.getRoutes();
+                Collection<InetAddress> currentDnses = currentConfig.getLinkProperties().getDnses();
+                Collection<InetAddress> newDnses = newConfig.getLinkProperties().getDnses();
+                Collection<RouteInfo> currentRoutes = currentConfig.getLinkProperties().getRoutes();
+                Collection<RouteInfo> newRoutes = newConfig.getLinkProperties().getRoutes();
 
                 boolean linkAddressesDiffer =
                         (currentLinkAddresses.size() != newLinkAddresses.size()) ||
@@ -2089,7 +1783,7 @@ public class WifiConfigStore {
                 boolean routesDiffer = (currentRoutes.size() != newRoutes.size()) ||
                         !currentRoutes.containsAll(newRoutes);
 
-                if ((currentConfig.ipAssignment != newConfig.ipAssignment) ||
+                if ((currentConfig.getIpAssignment() != newConfig.getIpAssignment()) ||
                         linkAddressesDiffer ||
                         dnsesDiffer ||
                         routesDiffer) {
@@ -2097,7 +1791,7 @@ public class WifiConfigStore {
                 }
                 break;
             case DHCP:
-                if (currentConfig.ipAssignment != newConfig.ipAssignment) {
+                if (currentConfig.getIpAssignment() != newConfig.getIpAssignment()) {
                     ipChanged = true;
                 }
                 break;
@@ -2109,11 +1803,11 @@ public class WifiConfigStore {
                 break;
         }
 
-        switch (newConfig.proxySettings) {
+        switch (newConfig.getProxySettings()) {
             case STATIC:
             case PAC:
-                ProxyInfo newHttpProxy = newConfig.linkProperties.getHttpProxy();
-                ProxyInfo currentHttpProxy = currentConfig.linkProperties.getHttpProxy();
+                ProxyInfo newHttpProxy = newConfig.getLinkProperties().getHttpProxy();
+                ProxyInfo currentHttpProxy = currentConfig.getLinkProperties().getHttpProxy();
 
                 if (newHttpProxy != null) {
                     proxyChanged = !newHttpProxy.equals(currentHttpProxy);
@@ -2122,7 +1816,7 @@ public class WifiConfigStore {
                 }
                 break;
             case NONE:
-                if (currentConfig.proxySettings != newConfig.proxySettings) {
+                if (currentConfig.getProxySettings() != newConfig.getProxySettings()) {
                     proxyChanged = true;
                 }
                 break;
@@ -2137,7 +1831,7 @@ public class WifiConfigStore {
         if (!ipChanged) {
             linkProperties = copyIpSettingsFromConfig(currentConfig);
         } else {
-            currentConfig.ipAssignment = newConfig.ipAssignment;
+            currentConfig.setIpAssignment(newConfig.getIpAssignment());
             linkProperties = copyIpSettingsFromConfig(newConfig);
             log("IP config changed SSID = " + currentConfig.SSID + " linkProperties: " +
                     linkProperties.toString());
@@ -2145,10 +1839,10 @@ public class WifiConfigStore {
 
 
         if (!proxyChanged) {
-            linkProperties.setHttpProxy(currentConfig.linkProperties.getHttpProxy());
+            linkProperties.setHttpProxy(currentConfig.getLinkProperties().getHttpProxy());
         } else {
-            currentConfig.proxySettings = newConfig.proxySettings;
-            linkProperties.setHttpProxy(newConfig.linkProperties.getHttpProxy());
+            currentConfig.setProxySettings(newConfig.getProxySettings());
+            linkProperties.setHttpProxy(newConfig.getLinkProperties().getHttpProxy());
             log("proxy changed SSID = " + currentConfig.SSID);
             if (linkProperties.getHttpProxy() != null) {
                 log(" proxyProperties: " + linkProperties.getHttpProxy().toString());
@@ -2156,7 +1850,7 @@ public class WifiConfigStore {
         }
 
         if (ipChanged || proxyChanged) {
-            currentConfig.linkProperties = linkProperties;
+            currentConfig.setLinkProperties(linkProperties);
             writeIpAndProxyConfigurations();
             sendConfiguredNetworksChangedBroadcast(currentConfig,
                     WifiManager.CHANGE_REASON_CONFIG_CHANGE);
@@ -2166,14 +1860,14 @@ public class WifiConfigStore {
 
     private LinkProperties copyIpSettingsFromConfig(WifiConfiguration config) {
         LinkProperties linkProperties = new LinkProperties();
-        linkProperties.setInterfaceName(config.linkProperties.getInterfaceName());
-        for (LinkAddress linkAddr : config.linkProperties.getLinkAddresses()) {
+        linkProperties.setInterfaceName(config.getLinkProperties().getInterfaceName());
+        for (LinkAddress linkAddr : config.getLinkProperties().getLinkAddresses()) {
             linkProperties.addLinkAddress(linkAddr);
         }
-        for (RouteInfo route : config.linkProperties.getRoutes()) {
+        for (RouteInfo route : config.getLinkProperties().getRoutes()) {
             linkProperties.addRoute(route);
         }
-        for (InetAddress dns : config.linkProperties.getDnses()) {
+        for (InetAddress dns : config.getLinkProperties().getDnses()) {
             linkProperties.addDns(dns);
         }
         return linkProperties;
@@ -2456,7 +2150,7 @@ public class WifiConfigStore {
         return ipConfigFile;
     }
 
-    private void loge(String s) {
+    protected void loge(String s) {
         long now = SystemClock.elapsedRealtimeNanos();
         String ts = String.format("[%,d us] ", now/1000);
         Log.e(TAG, ts+s+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
@@ -2465,7 +2159,7 @@ public class WifiConfigStore {
                 +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
     }
 
-    private void log(String s) {
+    protected void log(String s) {
         Log.d(TAG, s);
     }
 
