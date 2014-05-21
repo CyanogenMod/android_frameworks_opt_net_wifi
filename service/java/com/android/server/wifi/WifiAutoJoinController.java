@@ -52,10 +52,9 @@ public class WifiAutoJoinController {
     private NetworkScoreManager scoreManager;
     private WifiNetworkScoreCache mNetworkScoreCache;
 
-
     private static final String TAG = "WifiAutoJoinController ";
-    private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static boolean DBG = false;
+    private static boolean VDBG = false;
     private static final boolean mStaStaSupported = false;
     private static final int SCAN_RESULT_CACHE_SIZE = 80;
 
@@ -89,7 +88,16 @@ public class WifiAutoJoinController {
         }
     }
 
-    int mScanResultMaximumAge = 30000; /* milliseconds unit */
+    void enableVerboseLogging(int verbose) {
+        if (verbose > 0 ) {
+            VDBG = true;
+        } else {
+            VDBG = false;
+        }
+    }
+
+
+        int mScanResultMaximumAge = 30000; /* milliseconds unit */
 
     /*
      * flush out scan results older than mScanResultMaximumAge
@@ -682,8 +690,10 @@ public class WifiAutoJoinController {
                 }
             }
         }
-        logDbg("attemptAutoJoin() num recent config " + Integer.toString(list.size())
-                +  " ---> currentId=" + Integer.toString(currentNetId));
+        if (DBG) {
+            logDbg("attemptAutoJoin() num recent config " + Integer.toString(list.size())
+                    + " ---> currentId=" + Integer.toString(currentNetId));
+        }
 
         if (currentConfiguration != null) {
             if (currentNetId != currentConfiguration.networkId) {
@@ -704,28 +714,36 @@ public class WifiAutoJoinController {
         for (WifiConfiguration config : list) {
             if ((config.status == WifiConfiguration.Status.DISABLED)
                     && (config.disableReason == WifiConfiguration.DISABLED_AUTH_FAILURE)) {
-                logDbg("attemptAutoJoin skip candidate due to auth failure key "
-                        + config.configKey(true));
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip candidate due to auth failure key "
+                            + config.configKey(true));
+                }
                 continue;
             }
 
             if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED) {
                 //avoid temporarily disabled networks altogether
                 //TODO: implement a better logic which will reenable the network after some time
-                logDbg("attemptAutoJoin skip candidate due to auto join status "
-                        + Integer.toString(config.autoJoinStatus) + " key "
-                        + config.configKey(true));
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip candidate due to auto join status "
+                            + Integer.toString(config.autoJoinStatus) + " key "
+                            + config.configKey(true));
+                }
                 continue;
             }
 
             if (config.networkId == currentNetId) {
-                logDbg("attemptAutoJoin skip current candidate  " + Integer.toString(currentNetId)
-                        + " key " + config.configKey(true));
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip current candidate  " + Integer.toString(currentNetId)
+                            + " key " + config.configKey(true));
+                }
                 continue;
             }
 
-            if (DBG) logDbg("attemptAutoJoin trying candidate id=" + config.networkId + " "
-                    + config.SSID + " key " + config.configKey(true));
+            if (DBG) {
+                logDbg("attemptAutoJoin trying candidate id=" + config.networkId + " "
+                        + config.SSID + " key " + config.configKey(true));
+            }
 
             if (candidate == null) {
                 candidate = config;
@@ -806,10 +824,10 @@ public class WifiAutoJoinController {
             }
 
             int networkDelta = compareNetwork(candidate);
-            if (networkDelta > 0)
+            if (DBG && (networkDelta > 0)) {
                 logDbg("attemptAutoJoin did find candidate " + candidate.configKey()
                         + " for delta " + Integer.toString(networkDelta));
-
+            }
             /* ASK traffic poller permission to switch:
                 for instance,
                 if user is currently streaming voice traffic,
