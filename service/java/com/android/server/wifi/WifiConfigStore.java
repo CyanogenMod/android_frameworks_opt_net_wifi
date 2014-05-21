@@ -1557,6 +1557,12 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
+            //autojoin will be abllowed to dynamically jump from a linked configuration
+            //to another, hence only link configurations that have equivalent level of security
+            if (!link.allowedKeyManagement.equals(config.allowedKeyManagement)) {
+                continue;
+            }
+
             if (config.defaultGwMacAddress != null && link.defaultGwMacAddress != null) {
                 //if both default GW are known, compare based on RSSI only if the GW is equal
                 if (config.defaultGwMacAddress.equals(link.defaultGwMacAddress)) {
