@@ -141,6 +141,7 @@ public class WifiStateMachine extends StateMachine {
 
     /* temporary debug flag - best network selection development */
     private static final boolean PDBG = false;
+
     /**
      * Log with error attribute
      *
@@ -4152,6 +4153,12 @@ public class WifiStateMachine extends StateMachine {
             case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
                 s= "WifiMonitor.AUTHENTICATION_FAILURE_EVENT";
                 break;
+            case WifiMonitor.SSID_TEMP_DISABLED:
+                s= "WifiMonitor.SSID_TEMP_DISABLED";
+                break;
+            case WifiMonitor.SSID_REENABLED:
+                s= "WifiMonitor.SSID_REENABLED";
+                break;
             case WifiMonitor.WPS_SUCCESS_EVENT:
                 s= "WPS_SUCCESS_EVENT";
                 break;
@@ -4207,7 +4214,7 @@ public class WifiStateMachine extends StateMachine {
                     loge("ConnectModeState SSID state=" + en + " nid="
                             + Integer.toString(message.arg1) + " [" + substr + "]");
                     mWifiConfigStore.handleSSIDStateChange(message.arg1, message.what ==
-                            WifiMonitor.SSID_REENABLED);
+                            WifiMonitor.SSID_REENABLED, substr);
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     SupplicantState state = handleSupplicantStateChange(message);

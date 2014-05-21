@@ -176,6 +176,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String AUTH_KEY = "AUTH:  ";
     private static final String SEPARATOR_KEY = "\n";
     private static final String STATUS_KEY = "AUTO_JOIN_STATUS:  ";
+    private static final String SELF_ADDED_KEY = "SELF_ADDED:  ";
 
     /* Enterprise configuration keys */
     /**
@@ -1035,7 +1036,7 @@ public class WifiConfigStore extends IpConfigStore {
                     */
 
                     if (DBG) {
-                        loge("saving network history: " + config.SSID  + " gw: " +
+                        loge("saving network history: " + config.configKey()  + " gw: " +
                                 config.defaultGwMacAddress + " autojoin status: " +
                                 config.autoJoinStatus + " ephemeral=" + config.ephemeral);
                     }
@@ -1058,6 +1059,9 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeChars(SEPARATOR_KEY);
                     out.writeChars(NETWORK_ID_KEY);
                     out.writeChars(Integer.toString(config.networkId));
+                    out.writeChars(SEPARATOR_KEY);
+                    out.writeChars(SELF_ADDED_KEY);
+                    out.writeChars(Boolean.toString(config.selfAdded));
                     out.writeChars(SEPARATOR_KEY);
 
                     String allowedKeyManagementString =
@@ -1198,6 +1202,11 @@ public class WifiConfigStore extends IpConfigStore {
                     if (key.startsWith(STATUS_KEY)) {
                         String status = key.replace(STATUS_KEY, "");
                         config.autoJoinStatus = Integer.getInteger(status);
+                    }
+
+                    if (key.startsWith(SELF_ADDED_KEY)) {
+                        String status = key.replace(STATUS_KEY, "");
+                        config.selfAdded = Boolean.getBoolean(status);
                     }
 
                     if (key.startsWith(CHOICE_KEY)) {
@@ -1594,7 +1603,7 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            //autojoin will be abllowed to dynamically jump from a linked configuration
+            //autojoin will be allowed to dynamically jump from a linked configuration
             //to another, hence only link configurations that have equivalent level of security
             if (!link.allowedKeyManagement.equals(config.allowedKeyManagement)) {
                 continue;
@@ -1612,7 +1621,7 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             } else {
                 // we do not know BOTH default gateways hence we will try to link
-                // hoping that they are indeed behind the same gateway
+                // hoping that WifiConfigurations are indeed behind the same gateway
                 // once both WifiConfiguration will have been tried we will know
                 // the default gateway and revisit the choice of linking them
                 if ((config.scanResultCache != null) && (config.scanResultCache.size() <= 5)
@@ -2302,15 +2311,36 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
-    void handleSSIDStateChange(int netId, boolean enabled) {
+    void handleSSIDStateChange(int netId, boolean enabled, String message) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null && config.selfAdded && !enabled) {
+        if (config != null && !enabled) {
             loge("SSID temp disabled for  " + config.configKey() +
                     " had autoJoinstatus=" + Integer.toString(config.autoJoinStatus)
                     + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
+            if (message != null) {
+                loge(" wpa_supplicant message=" + message);
+            }
             if (config.selfAdded) {
+                //this is a network we self added, so as auto-join can opportunistically try it
+                //the user did not create this network and entered its credentials, so we want
+                //to be very aggressive in disabling it completely.
                 disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
                 config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE;
+            } else {
+                if ((message != null) && (message.contains("WRONG_KEY")
+                        || message.contains("AUTH_FAILED"))) {
+                    //This configuration has received an auth failure, so disable it because we
+                    //don't want auto-join to try it out.
+                    //For instance: the user once selected it but the password became wrong or the
+                    //credentials are not valid anymore. We will not retry it due to linkage
+                    //anymore until the user modifies it.
+                    //
+                    //Note, it is not 100% clear if we should ONLY disable it for linkage
+                    //
+                    if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED) {
+                        config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED;
+                    }
+                }
             }
         }
     }
