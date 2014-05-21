@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  */
 public class WifiMonitor {
 
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
     private static final String TAG = "WifiMonitor";
 
     /** Events we receive from the supplicant daemon */
