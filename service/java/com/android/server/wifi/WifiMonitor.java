@@ -807,12 +807,14 @@ public class WifiMonitor {
     private void handleWpsFailEvent(String dataString) {
         final Pattern p = Pattern.compile(WPS_FAIL_PATTERN);
         Matcher match = p.matcher(dataString);
+        int reason = 0;
         if (match.find()) {
-            String cfgErr = match.group(1);
-            String reason = match.group(2);
+            String cfgErrStr = match.group(1);
+            String reasonStr = match.group(2);
 
-            if (reason != null) {
-                switch(Integer.parseInt(reason)) {
+            if (reasonStr != null) {
+                int reasonInt = Integer.parseInt(reasonStr);
+                switch(reasonInt) {
                     case REASON_TKIP_ONLY_PROHIBITED:
                         mStateMachine.sendMessage(mStateMachine.obtainMessage(WPS_FAIL_EVENT,
                                 WifiManager.WPS_TKIP_ONLY_PROHIBITED, 0));
@@ -821,10 +823,14 @@ public class WifiMonitor {
                         mStateMachine.sendMessage(mStateMachine.obtainMessage(WPS_FAIL_EVENT,
                                 WifiManager.WPS_WEP_PROHIBITED, 0));
                         return;
+                    default:
+                        reason = reasonInt;
+                        break;
                 }
             }
-            if (cfgErr != null) {
-                switch(Integer.parseInt(cfgErr)) {
+            if (cfgErrStr != null) {
+                int cfgErrInt = Integer.parseInt(cfgErrStr);
+                switch(cfgErrInt) {
                     case CONFIG_AUTH_FAILURE:
                         mStateMachine.sendMessage(mStateMachine.obtainMessage(WPS_FAIL_EVENT,
                                 WifiManager.WPS_AUTH_FAILURE, 0));
@@ -833,12 +839,15 @@ public class WifiMonitor {
                         mStateMachine.sendMessage(mStateMachine.obtainMessage(WPS_FAIL_EVENT,
                                 WifiManager.WPS_OVERLAP_ERROR, 0));
                         return;
+                    default:
+                        if (reason == 0) reason = cfgErrInt;
+                        break;
                 }
             }
         }
         //For all other errors, return a generic internal error
         mStateMachine.sendMessage(mStateMachine.obtainMessage(WPS_FAIL_EVENT,
-                WifiManager.ERROR, 0));
+                WifiManager.ERROR, reason));
     }
 
     /* <event> status=<err> and the special case of <event> reason=FREQ_CONFLICT */

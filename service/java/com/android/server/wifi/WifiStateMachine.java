@@ -5119,10 +5119,14 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiMonitor.WPS_FAIL_EVENT:
                     //arg1 has the reason for the failure
-                    replyToMessage(mSourceMessage, WifiManager.WPS_FAILED, message.arg1);
-                    mSourceMessage.recycle();
-                    mSourceMessage = null;
-                    transitionTo(mDisconnectedState);
+                    if ((message.arg1 != WifiManager.ERROR) || (message.arg2 != 0)) {
+                        replyToMessage(mSourceMessage, WifiManager.WPS_FAILED, message.arg1);
+                        mSourceMessage.recycle();
+                        mSourceMessage = null;
+                        transitionTo(mDisconnectedState);
+                    } else {
+                        if (DBG) log("Ignore unspecified fail event during WPS connection");
+                    }
                     break;
                 case WifiMonitor.WPS_TIMEOUT_EVENT:
                     replyToMessage(mSourceMessage, WifiManager.WPS_FAILED,
