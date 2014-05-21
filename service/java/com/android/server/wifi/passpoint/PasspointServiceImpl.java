@@ -18,7 +18,7 @@ package com.android.server.wifi.passpoint;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.net.wifi.passpoint.IPasspointManager;
+import android.net.wifi.passpoint.IWifiPasspointManager;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.Messenger;
@@ -32,7 +32,7 @@ import java.io.PrintWriter;
  * TODO: doc
  * @hide
  */
-public final class PasspointServiceImpl extends IPasspointManager.Stub {
+public final class PasspointServiceImpl extends IWifiPasspointManager.Stub {
     private static final String TAG = "PasspointService";
     private static final boolean DBG = true;
 

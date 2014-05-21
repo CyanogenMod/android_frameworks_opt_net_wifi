@@ -22,9 +22,9 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
-import android.net.wifi.passpoint.PasspointInfo;
-import android.net.wifi.passpoint.PasspointManager;
-import android.net.wifi.passpoint.PasspointOsuProvider;
+import android.net.wifi.passpoint.WifiPasspointInfo;
+import android.net.wifi.passpoint.WifiPasspointManager;
+import android.net.wifi.passpoint.WifiPasspointOsuProvider;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.ServiceManager;
@@ -64,7 +64,7 @@ public class PasspointStateMachine extends StateMachine {
 
     private String mInterface;
     private WifiNative mWifiNative;
-    private int mState = PasspointManager.PASSPOINT_STATE_UNKNOWN;
+    private int mState = WifiPasspointManager.PASSPOINT_STATE_UNKNOWN;
     private Object mStateLock = new Object();
 
     private AsyncChannel mReplyChannel = new AsyncChannel();
@@ -127,9 +127,9 @@ public class PasspointStateMachine extends StateMachine {
                 case CMD_DISABLE_PASSPOINT:
                 case CMD_GAS_QUERY_TIMEOUT:
                     break;
-                case PasspointManager.REQUEST_ANQP_INFO:
-                    replyToMessage(message, PasspointManager.REQUEST_ANQP_INFO_FAILED,
-                            PasspointManager.BUSY);
+                case WifiPasspointManager.REQUEST_ANQP_INFO:
+                    replyToMessage(message, WifiPasspointManager.REQUEST_ANQP_INFO_FAILED,
+                            WifiPasspointManager.BUSY);
                     break;
                 default:
                     loge("Unhandled message " + message);
@@ -144,7 +144,7 @@ public class PasspointStateMachine extends StateMachine {
         @Override
         public void enter() {
             synchronized (mStateLock) {
-                mState = PasspointManager.PASSPOINT_STATE_DISABLED;
+                mState = WifiPasspointManager.PASSPOINT_STATE_DISABLED;
             }
         }
 
@@ -201,7 +201,7 @@ public class PasspointStateMachine extends StateMachine {
                     }
                     break;
 
-                case PasspointManager.REQUEST_ANQP_INFO:
+                case WifiPasspointManager.REQUEST_ANQP_INFO:
                     // make a copy as the original message will be recycled
                     Message msg = new Message();
                     msg.copyFrom(message);
@@ -226,7 +226,7 @@ public class PasspointStateMachine extends StateMachine {
         @Override
         public void enter() {
             synchronized (mStateLock) {
-                mState = PasspointManager.PASSPOINT_STATE_DISCOVERY;
+                mState = WifiPasspointManager.PASSPOINT_STATE_DISCOVERY;
             }
         }
     }
@@ -235,7 +235,7 @@ public class PasspointStateMachine extends StateMachine {
         @Override
         public void enter() {
             synchronized (mStateLock) {
-                mState = PasspointManager.PASSPOINT_STATE_ACCESS;
+                mState = WifiPasspointManager.PASSPOINT_STATE_ACCESS;
             }
         }
     }
@@ -244,7 +244,7 @@ public class PasspointStateMachine extends StateMachine {
         @Override
         public void enter() {
             synchronized (mStateLock) {
-                mState = PasspointManager.PASSPOINT_STATE_PROVISION;
+                mState = WifiPasspointManager.PASSPOINT_STATE_PROVISION;
             }
         }
     }
@@ -288,13 +288,13 @@ public class PasspointStateMachine extends StateMachine {
         mCurrentAnqpRequest = message;
         mIsAnqpOngoing = true;
         switch (message.what) {
-            case PasspointManager.REQUEST_ANQP_INFO:
+            case WifiPasspointManager.REQUEST_ANQP_INFO:
                 ScanResult sr = (ScanResult) message.obj;
                 int mask = message.arg1;
                 if (VDBG) logd("wifinative fetch anqp bssid=" + sr.BSSID + " mask=" + mask);
-                mWifiNative.fetchAnqp(sr.BSSID, PasspointInfo.toAnqpSubtypes(mask));
+                mWifiNative.fetchAnqp(sr.BSSID, WifiPasspointInfo.toAnqpSubtypes(mask));
                 break;
-            case PasspointManager.REQUEST_OSU_INFO:
+            case WifiPasspointManager.REQUEST_OSU_INFO:
                 // TODO
                 break;
             default:
@@ -307,9 +307,9 @@ public class PasspointStateMachine extends StateMachine {
         if (mCurrentAnqpRequest != null) {
             ScanResult sr = (ScanResult) mCurrentAnqpRequest.obj;
             if (bssid == null || bssid.equals(sr.BSSID)) {
-                PasspointInfo result = generatePasspointInfo(sr.BSSID);
+                WifiPasspointInfo result = generatePasspointInfo(sr.BSSID);
                 replyToMessage(mCurrentAnqpRequest,
-                        PasspointManager.REQUEST_ANQP_INFO_SUCCEEDED, result);
+                        WifiPasspointManager.REQUEST_ANQP_INFO_SUCCEEDED, result);
             }
         }
 
@@ -395,10 +395,10 @@ public class PasspointStateMachine extends StateMachine {
 
     }
 
-    private void parseOsuProvider(PasspointInfo passpoint, AnqpFrame frame) {
+    private void parseOsuProvider(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseOsuProvider()");
         try {
-            passpoint.osuProviderList = new ArrayList<PasspointOsuProvider>();
+            passpoint.osuProviderList = new ArrayList<WifiPasspointOsuProvider>();
 
             // osu ssid
             int n = frame.readInt(1);
@@ -408,7 +408,7 @@ public class PasspointStateMachine extends StateMachine {
             // osu provider list
             n = frame.readInt(1);
             for (int i = 0; i < n; i++) {
-                PasspointOsuProvider osu = new PasspointOsuProvider();
+                WifiPasspointOsuProvider osu = new WifiPasspointOsuProvider();
                 osu.ssid = osuSSID;
 
                 int m = frame.readInt(2);
@@ -472,8 +472,8 @@ public class PasspointStateMachine extends StateMachine {
         }
     }
 
-    private PasspointInfo generatePasspointInfo(String bssid) {
-        PasspointInfo passpoint = new PasspointInfo();
+    private WifiPasspointInfo generatePasspointInfo(String bssid) {
+        WifiPasspointInfo passpoint = new WifiPasspointInfo();
         passpoint.bssid = bssid;
         String result = mWifiNative.scanResult(bssid);
         String[] lines = result.split("\n");
@@ -537,7 +537,7 @@ public class PasspointStateMachine extends StateMachine {
     }
 
     /* arg2 on the source message has a hash code that needs to be retained in replies
-     * see PasspointManager for details */
+     * see WifiPasspointManager for details */
     private Message obtainMessage(Message srcMsg) {
         Message msg = Message.obtain();
         msg.arg2 = srcMsg.arg2;
