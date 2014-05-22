@@ -1637,4 +1637,15 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public WifiMonitor getMonitor() {
         return mWifiStateMachine.getMonitor();
     }
+
+
+    public void enableVerboseLogging(int verbose) {
+        enforceAccessPermission();
+        mWifiStateMachine.enableVerboseLogging(verbose);
+    }
+
+    public int getVerboseLoggingLevel() {
+        enforceAccessPermission();
+        return mWifiStateMachine.getVerboseLoggingLevel();
+    }
 }

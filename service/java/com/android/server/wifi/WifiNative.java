@@ -44,7 +44,7 @@ import java.util.Locale;
  */
 public class WifiNative {
 
-    private static final boolean DBG = false;
+    private static boolean DBG = false;
     private final String mTAG;
     private static final int DEFAULT_GROUP_OWNER_INTENT     = 6;
 
@@ -110,6 +110,14 @@ public class WifiNative {
         } else {
             // commands for p2p0 interface don't need prefix
             mInterfacePrefix = "";
+        }
+    }
+
+    void enableVerboseLogging(int verbose) {
+        if (verbose > 0) {
+            DBG = true;
+        } else {
+            DBG = false;
         }
     }
 

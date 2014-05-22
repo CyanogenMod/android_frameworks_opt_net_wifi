@@ -132,7 +132,7 @@ public class WifiConfigStore extends IpConfigStore {
     private Context mContext;
     private static final String TAG = "WifiConfigStore";
     private static final boolean DBG = true;
-    private static final boolean VDBG = false;
+    private static boolean VDBG = false;
 
     private static final String SUPPLICANT_CONFIG_FILE = "/data/misc/wifi/wpa_supplicant.conf";
 
@@ -226,6 +226,14 @@ public class WifiConfigStore extends IpConfigStore {
         } else {
             mLocalLog = null;
             mFileObserver = null;
+        }
+    }
+
+    void enableVerboseLogging(int verbose) {
+        if (verbose > 0) {
+            VDBG = true;
+        } else {
+            VDBG = false;
         }
     }
 
@@ -1035,7 +1043,7 @@ public class WifiConfigStore extends IpConfigStore {
                         loge("attempt config w/o lp");
                     */
 
-                    if (DBG) {
+                    if (VDBG) {
                         loge("saving network history: " + config.configKey()  + " gw: " +
                                 config.defaultGwMacAddress + " autojoin status: " +
                                 config.autoJoinStatus + " ephemeral=" + config.ephemeral);
@@ -1137,7 +1145,9 @@ public class WifiConfigStore extends IpConfigStore {
                 lastSelectedConfiguration = null;
             } else {
                 lastSelectedConfiguration = selected.configKey();
-                loge("setLastSelectedConfiguration found it " + lastSelectedConfiguration);
+                if (VDBG) {
+                    loge("setLastSelectedConfiguration now: " + lastSelectedConfiguration);
+                }
             }
         }
     }
@@ -1146,8 +1156,7 @@ public class WifiConfigStore extends IpConfigStore {
         return lastSelectedConfiguration;
     }
 
-
-        private void readNetworkHistory() {
+    private void readNetworkHistory() {
         DataInputStream in = null;
         try {
             in = new DataInputStream(new BufferedInputStream(new FileInputStream(

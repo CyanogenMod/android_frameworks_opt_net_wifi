@@ -135,13 +135,12 @@ import java.net.Inet6Address;
 public class WifiStateMachine extends StateMachine {
 
     private static final String NETWORKTYPE = "WIFI";
-    private static final boolean DBG = false;
-    private static final boolean VDBG = false;
-    private static final boolean mLogMessages = false;
+    private static boolean DBG = false;
+    private static boolean VDBG = false;
+    private static boolean mLogMessages = false;
 
     /* temporary debug flag - best network selection development */
-    private static final boolean PDBG = false;
-
+    private static boolean PDBG = false;
     /**
      * Log with error attribute
      *
@@ -953,6 +952,33 @@ public class WifiStateMachine extends StateMachine {
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_DISABLED);
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+    }
+
+    private int mVerboseLoggingLevel = 0;
+
+    int getVerboseLoggingLevel() {
+        return mVerboseLoggingLevel;
+    }
+
+    void enableVerboseLogging(int verbose) {
+        mVerboseLoggingLevel = verbose;
+        if (verbose > 0) {
+            DBG = true;
+            VDBG = true;
+            PDBG = true;
+            mLogMessages = true;
+            mWifiAutoJoinController.enableVerboseLogging(verbose);
+            mWifiMonitor.enableVerboseLogging(verbose);
+            mWifiNative.enableVerboseLogging(verbose);
+        } else {
+            DBG = false;
+            VDBG = false;
+            PDBG = false;
+            mLogMessages = false;
+            mWifiAutoJoinController.enableVerboseLogging(verbose);
+            mWifiMonitor.enableVerboseLogging(verbose);
+            mWifiNative.enableVerboseLogging(verbose);
+        }
     }
 
     /*
@@ -2339,6 +2365,7 @@ public class WifiStateMachine extends StateMachine {
                             scanResult.capabilities = flags;
                             scanResult.frequency = freq;
                             scanResult.timestamp = tsf;
+                            scanResult.seen = System.currentTimeMillis();
                         } else {
                             scanResult =
                                 new ScanResult(

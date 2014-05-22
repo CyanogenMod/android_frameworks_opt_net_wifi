@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  */
 public class WifiMonitor {
 
-    private static final boolean DBG = true;
+    private static boolean DBG = false;
     private static final String TAG = "WifiMonitor";
 
     /** Events we receive from the supplicant daemon */
@@ -418,7 +418,15 @@ public class WifiMonitor {
         WifiMonitorSingleton.sInstance.registerInterfaceMonitor(mInterfaceName, this);
     }
 
-    // TODO: temporary hack, should be handle by supplicant manager (new component in future)
+    void enableVerboseLogging(int verbose) {
+        if (verbose > 0) {
+            DBG = true;
+        } else {
+            DBG = false;
+        }
+    }
+
+        // TODO: temporary hack, should be handle by supplicant manager (new component in future)
     public void setStateMachine2(StateMachine stateMachine) {
         mStateMachine2 = stateMachine;
     }
