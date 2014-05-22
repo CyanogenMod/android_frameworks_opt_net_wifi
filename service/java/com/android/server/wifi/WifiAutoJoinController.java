@@ -303,6 +303,10 @@ public class WifiAutoJoinController {
             return;
         }
 
+        if (selected.SSID == null) {
+            return;
+        }
+
         if (userTriggered) {
             // reenable autojoin for this network,
             // since the user want to connect to this configuration
@@ -722,6 +726,10 @@ public class WifiAutoJoinController {
                             + config.configKey(true));
                 }
                 continue;
+            }
+
+            if (config.SSID == null) {
+                return;
             }
 
             if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED) {

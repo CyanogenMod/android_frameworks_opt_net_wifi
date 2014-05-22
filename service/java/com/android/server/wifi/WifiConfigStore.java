@@ -1052,6 +1052,16 @@ public class WifiConfigStore extends IpConfigStore {
                     if (config.ephemeral == true)
                         continue;
 
+                    if (config.isValid() == false)
+                        continue;
+
+                    if (config.SSID == null) {
+                        if (VDBG) {
+                            loge("writeKnownNetworkHistory trying to write config with null SSID");
+                        }
+                        continue;
+                    }
+
                     out.writeChars(CONFIG_KEY);
                     out.writeChars(config.configKey());
                     out.writeChars(SEPARATOR_KEY);
