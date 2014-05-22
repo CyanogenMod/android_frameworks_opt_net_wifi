@@ -177,6 +177,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String SEPARATOR_KEY = "\n";
     private static final String STATUS_KEY = "AUTO_JOIN_STATUS:  ";
     private static final String SELF_ADDED_KEY = "SELF_ADDED:  ";
+    private static final String FAILURE_KEY = "FAILURE:  ";
 
     /* Enterprise configuration keys */
     /**
@@ -345,7 +346,7 @@ public class WifiConfigStore extends IpConfigStore {
         boolean networkEnabledStateChanged = false;
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             if(config != null && config.status == Status.DISABLED
-                    && (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED)) {
+                    && (config.autoJoinStatus <= WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED)) {
                 if(mWifiNative.enableNetwork(config.networkId, false)) {
                     networkEnabledStateChanged = true;
                     config.status = Status.ENABLED;
@@ -1126,6 +1127,11 @@ public class WifiConfigStore extends IpConfigStore {
                             out.writeChars(SEPARATOR_KEY);
                         }
                     }
+                    if (config.lastFailure != null) {
+                        out.writeChars(FAILURE_KEY);
+                        out.writeChars(config.lastFailure);
+                        out.writeChars(SEPARATOR_KEY);
+                    }
                     out.writeChars(SEPARATOR_KEY);
                 }
             }
@@ -1216,6 +1222,10 @@ public class WifiConfigStore extends IpConfigStore {
                     if (key.startsWith(SELF_ADDED_KEY)) {
                         String status = key.replace(STATUS_KEY, "");
                         config.selfAdded = Boolean.getBoolean(status);
+                    }
+
+                    if (key.startsWith(FAILURE_KEY)) {
+                        config.lastFailure = key.replace(FAILURE_KEY, "");
                     }
 
                     if (key.startsWith(CHOICE_KEY)) {
@@ -2336,19 +2346,20 @@ public class WifiConfigStore extends IpConfigStore {
                 disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
                 config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE;
             } else {
-                if ((message != null) && (message.contains("WRONG_KEY")
-                        || message.contains("AUTH_FAILED"))) {
-                    //This configuration has received an auth failure, so disable it because we
-                    //don't want auto-join to try it out.
-                    //For instance: the user once selected it but the password became wrong or the
-                    //credentials are not valid anymore. We will not retry it due to linkage
-                    //anymore until the user modifies it.
-                    //
-                    //Note, it is not 100% clear if we should ONLY disable it for linkage
-                    //
-                    if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED) {
-                        config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED;
+                if (message != null) {
+                    if (message.contains("WRONG_KEY")
+                        || message.contains("AUTH_FAILED")) {
+                        //This configuration has received an auth failure, so disable it because we
+                        //don't want auto-join to try it out.
+                        //this network will be re-enabled by the "usual" enableAllNetwork function
+                        //
+                        if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED) {
+                            config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED;
+                        }
                     }
+                    message.replace("\n", "");
+                    message.replace("\r", "");
+                    config.lastFailure = message;
                 }
             }
         }
