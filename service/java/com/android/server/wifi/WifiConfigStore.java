@@ -1309,7 +1309,7 @@ public class WifiConfigStore extends IpConfigStore {
     private void readIpAndProxyConfigurations() {
         SparseArray<IpConfiguration> networks = super.readIpAndProxyConfigurations(ipConfigFile);
 
-        if (networks == null) {
+        if (networks.size() == 0) {
             // IpConfigStore.readIpAndProxyConfigurations has already logged an error.
             return;
         }
