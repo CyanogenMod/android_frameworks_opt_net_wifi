@@ -290,8 +290,6 @@ public class WifiStateMachine extends StateMachine {
     private DhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
 
-    // Delay in switching to null country code (non-null has no delay)
-    private final int COUNTRY_CODE_DELAY_MS = 15000;
     private final AtomicInteger mCountryCodeSequence = new AtomicInteger();
 
     private class InterfaceObserver extends BaseNetworkObserver {
@@ -1854,12 +1852,13 @@ public class WifiStateMachine extends StateMachine {
      * @param persist {@code true} if the setting should be remembered.
      */
     public void setCountryCode(String countryCode, boolean persist) {
-        // if it's a country code, apply immediately,
-        // if it's empty, delay it in case it's a momentary dropout
+        // If it's a good country code, apply after the current
+        // wifi connection is terminated; ignore resetting of code
+        // for now (it is unclear what the chipset should do when
+        // country code is reset)
         int countryCodeSequence = mCountryCodeSequence.incrementAndGet();
         if (TextUtils.isEmpty(countryCode)) {
-            sendMessageDelayed(CMD_SET_COUNTRY_CODE, countryCodeSequence, persist ? 1 : 0,
-                    countryCode, COUNTRY_CODE_DELAY_MS);
+            log("Ignoring resetting of country code");
         } else {
             sendMessage(CMD_SET_COUNTRY_CODE, countryCodeSequence, persist ? 1 : 0, countryCode);
         }
@@ -1974,6 +1973,8 @@ public class WifiStateMachine extends StateMachine {
         pw.println("mSuspendOptNeedsDisabled " + mSuspendOptNeedsDisabled);
         pw.println("Supplicant status " + mWifiNative.status());
         pw.println("mEnableBackgroundScan " + mEnableBackgroundScan);
+        pw.println("mLastSetCountryCode " + mLastSetCountryCode);
+        pw.println("mPersistedCountryCode " + mPersistedCountryCode);
         pw.println();
         mWifiConfigStore.dump(fd, pw, args);
     }
@@ -4607,6 +4608,9 @@ public class WifiStateMachine extends StateMachine {
                         sendMessage(CMD_DISCONNECT);
                         deferMessage(message);
                     }
+                    break;
+                case CMD_SET_COUNTRY_CODE:
+                    deferMessage(message);
                     break;
                 case CMD_START_SCAN:
                     /* Do not attempt to connect when we are already connected */
