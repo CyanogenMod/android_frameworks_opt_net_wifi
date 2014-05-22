@@ -178,19 +178,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     if (msg.what == WifiManager.CONNECT_NETWORK)
                         Slog.e("WiFiServiceImpl " , "CONNECT " + " nid=" + Integer.toString(networkId));
                     if (config != null && config.isValid()) {
-                        // This is restricted because there is no UI for the user to
-                        // monitor/control PAC.
-                        if (config.getProxySettings() != ProxySettings.PAC) {
-                            if (DBG) Slog.d(TAG, "Connect with config" + config);
-                            mWifiStateMachine.sendMessage(Message.obtain(msg));
-                        } else {
-                            Slog.e(TAG,  "ClientHandler.handleMessage cannot process msg with PAC");
-                            if (msg.what == WifiManager.CONNECT_NETWORK) {
-                                replyFailed(msg, WifiManager.CONNECT_NETWORK_FAILED);
-                            } else {
-                                replyFailed(msg, WifiManager.SAVE_NETWORK_FAILED);
-                            }
-                        }
+                        if (DBG) Slog.d(TAG, "Connect with config" + config);
+                        mWifiStateMachine.sendMessage(Message.obtain(msg));
                     } else if (config == null
                             && networkId != WifiConfiguration.INVALID_NETWORK_ID) {
                         if (DBG) Slog.d(TAG, "Connect with networkId" + networkId);
@@ -766,9 +755,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
-        if (config.getProxySettings() == ProxySettings.PAC) {
-            enforceConnectivityInternalPermission();
-        }
         if (config.isValid()) {
             if (mWifiStateMachineChannel != null) {
                 return mWifiStateMachine.syncAddOrUpdateNetwork(mWifiStateMachineChannel, config);
