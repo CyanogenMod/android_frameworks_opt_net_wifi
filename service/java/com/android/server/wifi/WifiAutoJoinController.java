@@ -650,6 +650,9 @@ public class WifiAutoJoinController {
 
     /* attemptAutoJoin function implement the core of the a network switching algorithm */
     void attemptAutoJoin() {
+
+        String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
+
         //reset the currentConfiguration Key, and set it only if WifiStateMachine and
         // supplicant agree
         mCurrentConfigurationKey = null;
@@ -738,6 +741,16 @@ public class WifiAutoJoinController {
                             + " key " + config.configKey(true));
                 }
                 continue;
+            }
+
+            if (lastSelectedConfiguration == null || !config.configKey().equals(lastSelectedConfiguration)) {
+                //don't try to autojoin a network that is too far
+                if (config.visibility == null) {
+                    continue;
+                }
+                if (config.visibility.rssi5 < -70 && config.visibility.rssi24 < -80) {
+                    continue;
+                }
             }
 
             if (DBG) {
