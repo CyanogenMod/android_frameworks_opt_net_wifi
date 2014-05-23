@@ -37,6 +37,9 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
     private static String TAG = "WifiNetworkScoreCache";
     private boolean DBG = true;
     private final Context mContext;
+
+    // The key is of the form "<ssid>"<bssid>
+    // TODO: What about SSIDs that can't be encoded as UTF-8?
     private final Map<String, ScoredNetwork> mNetworkCache;
 
     public WifiNetworkScoreCache(Context context) {
@@ -116,12 +119,16 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
     }
 
     private String buildNetworkKey(ScanResult result) {
-        String key = result.SSID;
-        if (key == null) return null;
-        if (result.BSSID != null) {
-            key = key + result.BSSID;
+        if (result.SSID == null) {
+            return null;
         }
-        return key;
+        StringBuilder key = new StringBuilder("\"");
+        key.append(result.SSID);
+        key.append("\"");
+        if (result.BSSID != null) {
+            key.append(result.BSSID);
+        }
+        return key.toString();
     }
 
     @Override protected final void dump(FileDescriptor fd, PrintWriter writer, String[] args) {
