@@ -145,7 +145,6 @@ public class WifiAutoJoinController {
 
                 if ((previously_seen_milli > 0)
                         && (previously_seen_milli < mScanResultMaximumAge/2)) {
-
                     /*
                     *
                     * previously_seen_milli = 0 => RSSI = 0.5 * previous_seen_rssi + 0.5 * new_rssi
@@ -159,10 +158,6 @@ public class WifiAutoJoinController {
                             / (double)mScanResultMaximumAge;
 
                     avg_rssi = (int)((double)avg_rssi * (1-alpha) + (double)previous_rssi * alpha);
-
-
-
-
                 }
                 result.level = avg_rssi;
 
@@ -208,12 +203,12 @@ public class WifiAutoJoinController {
     }
 
     void logDbg(String message) {
-        logDbg(message, true);
+        logDbg(message, false);
     }
 
     void logDbg(String message, boolean stackTrace) {
         long now = SystemClock.elapsedRealtimeNanos();
-        String ts = String.format("[%,d us] ", now/1000);
+        String ts = String.format("[%,d us] ", now / 1000);
         if (stackTrace) {
             Log.e(TAG, ts + message + " stack:"
                     + Thread.currentThread().getStackTrace()[2].getMethodName() + " - "
@@ -318,10 +313,10 @@ public class WifiAutoJoinController {
             if (selected.connectChoices != null) {
                 logDbg("updateConfigurationHistory will update "
                         + Integer.toString(netId) + " now: "
-                        + Integer.toString(selected.connectChoices.size()));
+                        + Integer.toString(selected.connectChoices.size()), true);
             } else {
                 logDbg("updateConfigurationHistory will update "
-                        + Integer.toString(netId));
+                        + Integer.toString(netId), true);
             }
         }
 
@@ -358,7 +353,9 @@ public class WifiAutoJoinController {
                     }
 
                     logDbg("updateConfigurationHistory add a choice " + selected.configKey(true)
-                            + " over " + config.configKey(true) + " RSSI " + Integer.toString(rssi));
+                            + " over " + config.configKey(true)
+                            + " RSSI " + Integer.toString(rssi), true);
+                    //add the visible config to the selected's connect choice list
                     selected.connectChoices.put(config.configKey(true), rssi);
 
                     if (config.connectChoices != null) {
@@ -366,8 +363,16 @@ public class WifiAutoJoinController {
                             logDbg("updateConfigurationHistory will remove "
                                     + selected.configKey(true) + " from " + config.configKey(true));
                         }
-                        //remove the selected from the recently seen config's array
+                        //remove the selected from the recently seen config's connectChoice list
                         config.connectChoices.remove(selected.configKey(true));
+
+                        if (selected.linkedConfigurations != null) {
+                           //remove the selected's linked configuration from the
+                           //recently seen config's connectChoice list
+                           for (String key : selected.linkedConfigurations.keySet()) {
+                               config.connectChoices.remove(key);
+                           }
+                        }
                     }
                 }
                 if (found == false) {
@@ -402,9 +407,6 @@ public class WifiAutoJoinController {
             }
         }
     }
-
-
-
 
     boolean hasConnectChoice(WifiConfiguration source, WifiConfiguration target) {
         boolean found = false;
@@ -654,7 +656,6 @@ public class WifiAutoJoinController {
 
     /* attemptAutoJoin function implement the core of the a network switching algorithm */
     void attemptAutoJoin() {
-
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
 
         //reset the currentConfiguration Key, and set it only if WifiStateMachine and
@@ -775,11 +776,6 @@ public class WifiAutoJoinController {
                 }
 
                 int order = compareWifiConfigurations(candidate, config);
-
-                if (VDBG) {
-                    logDbg("attemptAutoJoin did compare candidate " + Integer.toString(order));
-                }
-
                 if (order > 0) {
                     //ascending : candidate < config
                     candidate = config;
@@ -839,11 +835,6 @@ public class WifiAutoJoinController {
         if (candidate != null) {
         /* if candidate is found, check the state of the connection so as
         to decide if we should be acting on this candidate and switching over */
-            if (VDBG) {
-               logDbg("attemptAutoJoin did find candidate " + candidate.configKey()
-                       + " key " + candidate.configKey(true));
-            }
-
             int networkDelta = compareNetwork(candidate);
             if (DBG && (networkDelta > 0)) {
                 logDbg("attemptAutoJoin did find candidate " + candidate.configKey()

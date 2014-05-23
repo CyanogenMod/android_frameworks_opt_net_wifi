@@ -48,6 +48,7 @@ import java.util.regex.Pattern;
 public class WifiMonitor {
 
     private static boolean DBG = false;
+    private static final boolean VDBG = false;
     private static final String TAG = "WifiMonitor";
 
     /** Events we receive from the supplicant daemon */
@@ -555,12 +556,12 @@ public class WifiMonitor {
                 iface = "p2p0";
             }
 
-            if (DBG) Log.d(TAG, "Dispatching event to interface: " + iface);
+            if (VDBG) Log.d(TAG, "Dispatching event to interface: " + iface);
 
             WifiMonitor m = mIfaceMap.get(iface);
             if (m != null) {
                 if (m.mMonitoring) {
-                    if (m.dispatchEvent(eventStr)) {
+                    if (m.dispatchEvent(eventStr, iface)) {
                         mConnected = false;
                         return true;
                     }
@@ -574,7 +575,7 @@ public class WifiMonitor {
                 if (DBG) Log.d(TAG, "Sending to all monitors because there's no matching iface");
                 boolean done = false;
                 for (WifiMonitor monitor : mIfaceMap.values()) {
-                    if (monitor.mMonitoring && monitor.dispatchEvent(eventStr)) {
+                    if (monitor.mMonitoring && monitor.dispatchEvent(eventStr, iface)) {
                         done = true;
                     }
                 }
@@ -617,19 +618,16 @@ public class WifiMonitor {
     }
 
     private void logDbg(String debug) {
-        long now = SystemClock.elapsedRealtimeNanos();
-        String ts = String.format("[%,d us] ", now/1000);
-        Log.e(TAG, ts+debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
+        Log.e(TAG, debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
                 +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName()
                 +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
                 +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
-
     }
 
     /* @return true if the event was supplicant disconnection */
-    private boolean dispatchEvent(String eventStr) {
+    private boolean dispatchEvent(String eventStr, String iface) {
 
-        if (DBG) logDbg("WifiMonitor dispatchEvent " + eventStr);
+        if (DBG) logDbg("WifiMonitor:" + iface + " dispatchEvent: " + eventStr);
 
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
             if (eventStr.startsWith(WPA_EVENT_PREFIX_STR) &&

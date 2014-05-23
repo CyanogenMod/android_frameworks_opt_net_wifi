@@ -162,7 +162,7 @@ public class WifiNative {
             localLog(cmdId + "->" + mInterfacePrefix + command);
             boolean result = doBooleanCommandNative(mInterfacePrefix + command);
             localLog(cmdId + "<-" + result);
-            if (DBG) Log.d(mTAG, "   returned " + result);
+            if (DBG) Log.d(mTAG, command + ": returned " + result);
             return result;
         }
     }
@@ -180,7 +180,12 @@ public class WifiNative {
     }
 
     private String doStringCommand(String command) {
-        if (DBG) Log.d(mTAG, "doString: " + command);
+        if (DBG) {
+            //GET_NETWORK commands flood the logs
+            if (!command.startsWith("GET_NETWORK")) {
+                Log.d(mTAG, "doString: [" + command + "]");
+            }
+        }
         synchronized (mLock) {
             int cmdId = getNewCmdIdLocked();
             localLog(cmdId + "->" + mInterfacePrefix + command);
@@ -192,8 +197,12 @@ public class WifiNative {
     }
 
     private String doStringCommandWithoutLogging(String command) {
-        if (DBG) Log.d(mTAG, "doString: " + command);
-        synchronized (mLock) {
+        if (DBG) {
+            //GET_NETWORK commands flood the logs
+            if (!command.startsWith("GET_NETWORK")) {
+                Log.d(mTAG, "doString: [" + command + "]");
+            }
+        }        synchronized (mLock) {
             return doStringCommandNative(mInterfacePrefix + command);
         }
     }

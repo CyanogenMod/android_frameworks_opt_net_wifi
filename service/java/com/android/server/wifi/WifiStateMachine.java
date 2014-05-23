@@ -965,18 +965,17 @@ public class WifiStateMachine extends StateMachine {
             VDBG = true;
             PDBG = true;
             mLogMessages = true;
-            mWifiAutoJoinController.enableVerboseLogging(verbose);
-            mWifiMonitor.enableVerboseLogging(verbose);
-            mWifiNative.enableVerboseLogging(verbose);
         } else {
             DBG = false;
             VDBG = false;
             PDBG = false;
             mLogMessages = false;
-            mWifiAutoJoinController.enableVerboseLogging(verbose);
-            mWifiMonitor.enableVerboseLogging(verbose);
-            mWifiNative.enableVerboseLogging(verbose);
         }
+        mWifiAutoJoinController.enableVerboseLogging(verbose);
+        mWifiMonitor.enableVerboseLogging(verbose);
+        mWifiNative.enableVerboseLogging(verbose);
+        mWifiConfigStore.enableVerboseLogging(verbose);
+        mSupplicantStateTracker.enableVerboseLogging(verbose);
     }
 
     /*
@@ -2991,7 +2990,8 @@ public class WifiStateMachine extends StateMachine {
                     if (ac == mWifiP2pChannel) {
                         loge("WifiP2pService channel lost, message.arg1 =" + message.arg1);
                         //TODO: Re-establish connection to state machine after a delay
-                        //mWifiP2pChannel.connect(mContext, getHandler(), mWifiP2pManager.getMessenger());
+                        //mWifiP2pChannel.connect(mContext, getHandler(),
+                        // mWifiP2pManager.getMessenger());
                     }
                     break;
                 }
