@@ -42,7 +42,7 @@ import java.io.PrintWriter;
 class SupplicantStateTracker extends StateMachine {
 
     private static final String TAG = "SupplicantStateTracker";
-    private static final boolean DBG = false;
+    private static boolean DBG = false;
 
     private WifiStateMachine mWifiStateMachine;
     private WifiConfigStore mWifiConfigStore;
@@ -72,6 +72,14 @@ class SupplicantStateTracker extends StateMachine {
     private State mHandshakeState = new HandshakeState();
     private State mCompletedState = new CompletedState();
     private State mDormantState = new DormantState();
+
+    void enableVerboseLogging(int verbose) {
+        if (verbose > 0) {
+            DBG = true;
+        } else {
+            DBG = false;
+        }
+    }
 
     public String getSupplicantStateName() {
         return getCurrentState().getName();
