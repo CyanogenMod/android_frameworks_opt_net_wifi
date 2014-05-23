@@ -186,6 +186,19 @@ void printScanResult(wifi_scan_result result) {
     printMsg("%lld\n", result.rtt_sd);
 }
 
+void printSignificantChangeResult(wifi_significant_change_result *res) {
+
+    wifi_significant_change_result &result = *res;
+    printMsg("%02x:%02x:%02x:%02x:%02x:%02x ", result.bssid[0], result.bssid[1],
+            result.bssid[2], result.bssid[3], result.bssid[4], result.bssid[5]);
+
+    printMsg("%d\t", result.channel);
+
+    for (int i = 0; i < result.num_rssi; i++) {
+        printMsg(",%d", result.rssi[i]);
+    }
+}
+
 void printScanCapabilities(wifi_gscan_capabilities capabilities)
 {
     printMsg("max_scan_cache_size = %d\n", capabilities.max_scan_cache_size);
@@ -358,7 +371,7 @@ static void retrieveScanResults() {
     memset(results, 0, sizeof(wifi_scan_result) * 256);
     printMsg("Retrieve Scan results available -->\n");
     int num_results = 256;
-    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, results, &num_results);
+    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
         return;
@@ -392,7 +405,7 @@ static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params
 
     printMsg("Retrieving scan results for Hotlist AP setting\n");
     int num_results = 256;
-    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, results, &num_results);
+    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
         return WIFI_ERROR_UNKNOWN;
@@ -405,11 +418,11 @@ static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params
     }
 
     for (int i = 0; i < stest_max_ap; i++) {
-        memcpy(params->bssids[i].bssid, results[i].bssid, sizeof(mac_addr));
-        params->bssids[i].low  = -htest_low_threshold;
-        params->bssids[i].high = -htest_high_threshold;
+        memcpy(params->ap[i].bssid, results[i].bssid, sizeof(mac_addr));
+        params->ap[i].low  = -htest_low_threshold;
+        params->ap[i].high = -htest_high_threshold;
     }
-    params->num = stest_max_ap;
+    params->num_ap = stest_max_ap;
     return WIFI_SUCCESS;
 }
 
@@ -419,21 +432,21 @@ static wifi_error setHotlistAPs() {
 
     if (num_hotlist_bssids > 0) {
       for (int i = 0; i < num_hotlist_bssids; i++) {
-          memcpy(params.bssids[i].bssid, hotlist_bssids[i], sizeof(mac_addr));
-          params.bssids[i].low  = -htest_low_threshold;
-          params.bssids[i].high = -htest_high_threshold;
+          memcpy(params.ap[i].bssid, hotlist_bssids[i], sizeof(mac_addr));
+          params.ap[i].low  = -htest_low_threshold;
+          params.ap[i].high = -htest_high_threshold;
       }
-      params.num = num_hotlist_bssids;
+      params.num_ap = num_hotlist_bssids;
     } else {
       setHotlistAPsUsingScanResult(&params);
     }
 
     printMsg("BSSID\t\t\tHIGH\tLOW\n");
-    for (int i = 0; i < params.num; i++) {
-        mac_addr &addr = params.bssids[i].bssid;
+    for (int i = 0; i < params.num_ap; i++) {
+        mac_addr &addr = params.ap[i].bssid;
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%d\t%d\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5],
-                params.bssids[i].high, params.bssids[i].low);
+                params.ap[i].high, params.ap[i].low);
     }
 
     wifi_hotlist_ap_found_handler handler;
@@ -486,11 +499,11 @@ static void testHotlistAPs(){
 }
 
 static void onSignificantWifiChange(wifi_request_id id,
-        unsigned num_results, wifi_scan_result *results)
+        unsigned num_results, wifi_significant_change_result **results)
 {
     printMsg("Significant wifi change for %d\n", num_results);
     for (unsigned i = 0; i < num_results; i++) {
-        printScanResult(results[i]);
+        printSignificantChangeResult(results[i]);
     }
     putEventInCache(EVENT_TYPE_SIGNIFICANT_WIFI_CHANGE, "significant wifi change noticed");
 }
@@ -500,7 +513,7 @@ static int SelectSignificantAPsFromScanResults() {
     memset(results, 0, sizeof(wifi_scan_result) * 256);
     printMsg("Retrieving scan results for significant wifi change setting\n");
     int num_results = 256;
-    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, results, &num_results);
+    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
         return WIFI_ERROR_UNKNOWN;
@@ -520,20 +533,20 @@ static int SelectSignificantAPsFromScanResults() {
     params.min_breaching = swctest_rssi_min_breaching;
 
     for (int i = 0; i < stest_max_ap; i++) {
-        memcpy(params.bssids[i].bssid, results[i].bssid, sizeof(mac_addr));
-        params.bssids[i].low  = results[i].rssi - swctest_rssi_ch_threshold;
-        params.bssids[i].high = results[i].rssi + swctest_rssi_ch_threshold;
+        memcpy(params.ap[i].bssid, results[i].bssid, sizeof(mac_addr));
+        params.ap[i].low  = results[i].rssi - swctest_rssi_ch_threshold;
+        params.ap[i].high = results[i].rssi + swctest_rssi_ch_threshold;
     }
-    params.num = stest_max_ap;
+    params.num_ap = stest_max_ap;
 
     printMsg("Settting Significant change params rssi_sample_size#%d lost_ap_sample_size#%d"
         " and min_breaching#%d\n", params.rssi_sample_size, params.lost_ap_sample_size , params.min_breaching);
     printMsg("BSSID\t\t\tHIGH\tLOW\n");
-    for (int i = 0; i < params.num; i++) {
-        mac_addr &addr = params.bssids[i].bssid;
+    for (int i = 0; i < params.num_ap; i++) {
+        mac_addr &addr = params.ap[i].bssid;
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%d\t%d\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5],
-                params.bssids[i].high, params.bssids[i].low);
+                params.ap[i].high, params.ap[i].low);
     }
     wifi_significant_change_handler handler;
     memset(&handler, 0, sizeof(handler));

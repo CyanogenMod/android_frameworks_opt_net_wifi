@@ -409,7 +409,7 @@ static jobject android_net_wifi_getScanResults(
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("getting scan results on interface[%d] = %p", iface, handle);
     
-    int result = wifi_get_cached_gscan_results(handle, 1, results, &num_results);
+    int result = wifi_get_cached_gscan_results(handle, 1, num_results, results, &num_results);
     if (result == WIFI_SUCCESS) {
         jclass clsScanResult = (env)->FindClass("android/net/wifi/ScanResult");
         if (clsScanResult == NULL) {
@@ -577,14 +577,14 @@ static jboolean android_net_wifi_setHotlist(
 
     jobjectArray array = (jobjectArray) getObjectField(env, ap,
             "hotspotInfos", "[Landroid/net/wifi/WifiScanner$HotspotInfo;");
-    params.num = env->GetArrayLength(array);
+    params.num_ap = env->GetArrayLength(array);
 
-    if (params.num == 0) {
+    if (params.num_ap == 0) {
         ALOGE("Error in accesing array");
         return false;
     }
 
-    for (int i = 0; i < params.num; i++) {
+    for (int i = 0; i < params.num_ap; i++) {
         jobject objAp = env->GetObjectArrayElement(array, i);
 
         jstring macAddrString = (jstring) getObjectField(
@@ -599,10 +599,10 @@ static jboolean android_net_wifi_setHotlist(
             ALOGE("Error getting bssid");
             return false;
         }
-        parseMacAddress(bssid, params.bssids[i].bssid);
+        parseMacAddress(bssid, params.ap[i].bssid);
 
         mac_addr addr;
-        memcpy(addr, params.bssids[i].bssid, sizeof(mac_addr));
+        memcpy(addr, params.ap[i].bssid, sizeof(mac_addr));
 
         char bssidOut[32];
         sprintf(bssidOut, "%0x:%0x:%0x:%0x:%0x:%0x", addr[0], addr[1],
@@ -610,8 +610,8 @@ static jboolean android_net_wifi_setHotlist(
 
         ALOGD("Added bssid %s", bssidOut);
 
-        params.bssids[i].low = getIntField(env, objAp, "low");
-        params.bssids[i].high = getIntField(env, objAp, "high");
+        params.ap[i].low = getIntField(env, objAp, "low");
+        params.ap[i].high = getIntField(env, objAp, "high");
     }
 
     wifi_hotlist_ap_found_handler handler;
@@ -630,7 +630,8 @@ static jboolean android_net_wifi_resetHotlist(
     return wifi_reset_bssid_hotlist(id, handle) == WIFI_SUCCESS;
 }
 
-void onSignificantWifiChange(wifi_request_id id, unsigned num_results, wifi_scan_result *results) {
+void onSignificantWifiChange(wifi_request_id id,
+        unsigned num_results, wifi_significant_change_result **results) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
@@ -650,23 +651,25 @@ void onSignificantWifiChange(wifi_request_id id, unsigned num_results, wifi_scan
 
     for (unsigned i = 0; i < num_results; i++) {
 
+        wifi_significant_change_result result = *(results[i]);
+
         jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
         if (scanResult == NULL) {
             ALOGE("Error in creating scan result");
             return;
         }
 
-        setStringField(env, scanResult, "SSID", results[i].ssid);
+        // setStringField(env, scanResult, "SSID", results[i].ssid);
 
         char bssid[32];
-        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[i].bssid[0], results[i].bssid[1],
-            results[i].bssid[2], results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
+        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result.bssid[0], result.bssid[1],
+            result.bssid[2], result.bssid[3], result.bssid[4], result.bssid[5]);
 
         setStringField(env, scanResult, "BSSID", bssid);
 
-        setIntField(env, scanResult, "level", results[i].rssi);
-        setIntField(env, scanResult, "frequency", results[i].channel);
-        setLongField(env, scanResult, "timestamp", results[i].ts);
+        setIntField(env, scanResult, "level", result.rssi[7]);
+        setIntField(env, scanResult, "frequency", result.channel);
+        // setLongField(env, scanResult, "timestamp", result.ts);
 
         env->SetObjectArrayElement(scanResults, i, scanResult);
     }
@@ -692,17 +695,17 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
     const char *hotspot_info_array_type = "[Landroid/net/wifi/WifiScanner$HotspotInfo;";
     jobjectArray hotspots = (jobjectArray)getObjectField(
                 env, settings, "hotspotInfos", hotspot_info_array_type);
-    params.num = env->GetArrayLength(hotspots);
+    params.num_ap = env->GetArrayLength(hotspots);
 
-    if (params.num == 0) {
+    if (params.num_ap == 0) {
         ALOGE("Error in accessing array");
         return false;
     }
 
     ALOGD("Initialized common fields %d, %d, %d, %d", params.rssi_sample_size,
-            params.lost_ap_sample_size, params.min_breaching, params.num);
+            params.lost_ap_sample_size, params.min_breaching, params.num_ap);
 
-    for (int i = 0; i < params.num; i++) {
+    for (int i = 0; i < params.num_ap; i++) {
         jobject objAp = env->GetObjectArrayElement(hotspots, i);
 
         jstring macAddrString = (jstring) getObjectField(
@@ -720,19 +723,19 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
 
         mac_addr addr;
         parseMacAddress(bssid, addr);
-        memcpy(params.bssids[i].bssid, addr, sizeof(mac_addr));
+        memcpy(params.ap[i].bssid, addr, sizeof(mac_addr));
 
         char bssidOut[32];
         sprintf(bssidOut, "%0x:%0x:%0x:%0x:%0x:%0x", addr[0], addr[1],
             addr[2], addr[3], addr[4], addr[5]);
 
-        params.bssids[i].low = getIntField(env, objAp, "low");
-        params.bssids[i].high = getIntField(env, objAp, "high");
+        params.ap[i].low = getIntField(env, objAp, "low");
+        params.ap[i].high = getIntField(env, objAp, "high");
 
-        ALOGD("Added bssid %s, [%04d, %04d]", bssidOut, params.bssids[i].low, params.bssids[i].high);
+        ALOGD("Added bssid %s, [%04d, %04d]", bssidOut, params.ap[i].low, params.ap[i].high);
     }
 
-    ALOGD("Added %d bssids", params.num);
+    ALOGD("Added %d bssids", params.num_ap);
 
     wifi_significant_change_handler handler;
     memset(&handler, 0, sizeof(handler));
