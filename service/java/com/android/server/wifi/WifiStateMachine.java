@@ -43,7 +43,6 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
-import static android.net.ConnectivityServiceProtocol.NetworkFactoryProtocol;
 import android.net.DhcpResults;
 import android.net.DhcpStateMachine;
 import android.net.InterfaceConfiguration;
@@ -51,6 +50,7 @@ import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.NetworkAgent;
 import android.net.NetworkCapabilities;
+import android.net.NetworkFactory;
 import android.net.NetworkInfo;
 import android.net.NetworkInfo.DetailedState;
 import android.net.NetworkRequest;
@@ -76,6 +76,7 @@ import android.os.BatteryStats;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.INetworkManagementService;
+import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.PowerManager;
@@ -350,7 +351,8 @@ public class WifiStateMachine extends StateMachine {
     private AsyncChannel mWifiP2pChannel;
     private AsyncChannel mWifiApConfigChannel;
 
-    private NetworkAgent mNetworkAgent;
+    private WifiNetworkFactory mNetworkFactory;
+    private WifiNetworkAgent mNetworkAgent;
 
     // Used to filter out requests we couldn't possibly satisfy.
     private final NetworkCapabilities mNetworkCapabilitiesFilter = new NetworkCapabilities();
@@ -792,25 +794,6 @@ public class WifiStateMachine extends StateMachine {
         mNetworkCapabilitiesFilter.setLinkDownstreamBandwidthKbps(1024 * 1024);
         // TODO - needs to be a bit more dynamic
         mNetworkCapabilities = new NetworkCapabilities(mNetworkCapabilitiesFilter);
-
-        mNetworkAgent = new NetworkAgent(getHandler().getLooper(), mContext,
-                "WifiNetworkAgent") {
-            protected void connect() {
-                if (DBG) log("WifiNetworkAgent -> reconnect wifi");
-                setDriverStart(true);
-                reconnectCommand();
-            }
-            protected void disconnect() {
-                if (DBG) log("WifiNetworkAgent -> Wifi disconnected");
-                //setDriverStart(false);
-            }
-        };
-        // TODO - this needs to be dynamic - do when we integrate with wifi selection change.
-        mNetworkAgent.sendNetworkCapabilities(mNetworkCapabilities);
-        // TODO - this is a const value to mimic old behavior - cell is using 50, wifi trumps it.
-        // This will be replaced by constants from the NetworkScore class post integration.
-        // For now, be better than the 50 in DcTracker.java
-        mNetworkAgent.sendNetworkScore(60);
 
         mContext.registerReceiver(
             new BroadcastReceiver() {
@@ -2533,7 +2516,7 @@ public class WifiStateMachine extends StateMachine {
                         + " old: " + mLinkProperties + "new: " + newLp);
             }
             mLinkProperties = newLp;
-            mNetworkAgent.sendLinkProperties(mLinkProperties);
+            if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
             if (getNetworkDetailedState() == DetailedState.CONNECTED) {
                 sendLinkConfigurationChangedBroadcast();
             }
@@ -2558,7 +2541,7 @@ public class WifiStateMachine extends StateMachine {
 
             // Now clear the merged link properties.
             mLinkProperties.clear();
-            mNetworkAgent.sendLinkProperties(mLinkProperties);
+            if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
      /**
@@ -2669,7 +2652,7 @@ public class WifiStateMachine extends StateMachine {
 
         if (state != mNetworkInfo.getDetailedState()) {
             mNetworkInfo.setDetailedState(state, null, mWifiInfo.getSSID());
-            mNetworkAgent.sendNetworkInfo(mNetworkInfo);
+            if (mNetworkAgent != null) mNetworkAgent.sendNetworkInfo(mNetworkInfo);
         }
     }
 
@@ -2730,6 +2713,10 @@ public class WifiStateMachine extends StateMachine {
         mWifiInfo.setMeteredHint(false);
 
         setNetworkDetailedState(DetailedState.DISCONNECTED);
+        if (mNetworkAgent != null) {
+            mNetworkAgent.sendNetworkInfo(mNetworkInfo);
+            mNetworkAgent = null;
+        }
         mWifiConfigStore.updateStatus(mLastNetworkId, DetailedState.DISCONNECTED);
 
         /* Clear network properties */
@@ -2964,6 +2951,20 @@ public class WifiStateMachine extends StateMachine {
         return macAddress;
 
     }
+
+    private class WifiNetworkFactory extends NetworkFactory {
+        public WifiNetworkFactory(Looper l, Context c, String TAG, NetworkCapabilities f) {
+            super(l, c, TAG, f);
+        }
+        protected void startNetwork() {
+            // TODO
+            // enter association mode.
+        }
+        protected void stopNetwork() {
+            // TODO
+            // stop associating.
+        }
+    }
     /********************************************************
      * HSM states
      *******************************************************/
@@ -3044,7 +3045,10 @@ public class WifiStateMachine extends StateMachine {
                     }
 
                     checkAndSetConnectivityInstance();
-                    mCm.registerNetworkFactory(new Messenger(getHandler()), NETWORKTYPE);
+                    mNetworkFactory = new WifiNetworkFactory(getHandler().getLooper(), mContext,
+                            NETWORKTYPE, mNetworkCapabilitiesFilter);
+                    mNetworkFactory.setScoreFilter(60);
+                    mCm.registerNetworkFactory(new Messenger(mNetworkFactory), NETWORKTYPE);
                     break;
                 case CMD_SET_BATCHED_SCAN:
                     recordBatchedScanSettings(message.arg1, message.arg2, (Bundle)message.obj);
@@ -3055,22 +3059,6 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_START_NEXT_BATCHED_SCAN:
                     startNextBatchedScan();
                     break;
-                case NetworkFactoryProtocol.CMD_REQUEST_NETWORK: {
-                    NetworkRequest netRequest = (NetworkRequest)message.obj;
-                    int score = message.arg1;
-                    NetworkCapabilities netCap = netRequest.networkCapabilities;
-                    if (netCap.satisfiedByNetworkCapabilities(mNetworkCapabilitiesFilter)) {
-                        mNetworkAgent.addNetworkRequest(netRequest, score);
-                    } else {
-                        if (DBG) log("Wifi can't satisfy request " + netRequest);
-                    }
-                    break;
-                }
-                case NetworkFactoryProtocol.CMD_CANCEL_REQUEST: {
-                    NetworkRequest netRequest = (NetworkRequest)message.obj;
-                    mNetworkAgent.removeNetworkRequest(netRequest);
-                    break;
-                }
                     /* Discard */
                 case CMD_START_SCAN:
                 case CMD_START_SUPPLICANT:
@@ -3439,7 +3427,7 @@ public class WifiStateMachine extends StateMachine {
         @Override
         public void exit() {
             mNetworkInfo.setIsAvailable(false);
-            mNetworkAgent.sendNetworkInfo(mNetworkInfo);
+            if (mNetworkAgent != null) mNetworkAgent.sendNetworkInfo(mNetworkInfo);
         }
     }
 
@@ -4560,6 +4548,18 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+    private class WifiNetworkAgent extends NetworkAgent {
+        public WifiNetworkAgent(Looper l, Context c, String TAG, NetworkInfo ni,
+                NetworkCapabilities nc, LinkProperties lp, int score) {
+            super(l, c, TAG, ni, nc, lp, score);
+        }
+        protected void unwanted() {
+            // ignore if we're not the current networkAgent.
+            if (this != mNetworkAgent) return;
+            // TODO - don't want this network.  What to do?
+        }
+    }
+
     class L2ConnectedState extends State {
         @Override
         public void enter() {
@@ -4567,6 +4567,14 @@ public class WifiStateMachine extends StateMachine {
             if (mEnableRssiPolling) {
                 sendMessage(CMD_RSSI_POLL, mRssiPollToken, 0);
             }
+            if (mNetworkAgent != null) {
+                loge("Have NetworkAgent when entering L2Connected");
+                setNetworkDetailedState(DetailedState.DISCONNECTED);
+            }
+            setNetworkDetailedState(DetailedState.CONNECTING);
+            mNetworkAgent = new WifiNetworkAgent(getHandler().getLooper(), mContext,
+                    "WifiNetworkAgent", mNetworkInfo, mNetworkCapabilitiesFilter,
+                    mLinkProperties, 60);
         }
 
         @Override
@@ -4833,14 +4841,6 @@ public class WifiStateMachine extends StateMachine {
     class ConnectedState extends State {
         @Override
         public void enter() {
-            // Verify we should be here.  There were some conditions at boot time that
-            // caused us to end here, but those races should be resolved.  Left in
-            // as a belt-and-suspenders measure.  TODO - remove if not longer hit.
-            if (mNetworkAgent.isConnectionRequested() == false) {
-                loge("Wifi hit ConnectedState when it should not be connecting");
-                sendMessage(CMD_STOP_DRIVER);
-            }
-
             String address;
             updateDefaultRouteMacAddress(1000);
             if (DBG) {
