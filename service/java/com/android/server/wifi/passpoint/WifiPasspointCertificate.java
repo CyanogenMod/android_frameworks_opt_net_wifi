@@ -75,44 +75,34 @@ public class WifiPasspointCertificate {
     private static final String TAG = "PasspointCertificate";
     private static final String TAG2 = "PasspointCertAdvance";
 
-    private static Context mContext;
-    public static KeyStore hs20KeyStore; // store ca cert (root ca, aaa trust root ca)
-    public static KeyStore hs20PKCS12KeyStore; //store client cert (extract from PKCS12)
-    private static android.security.KeyStore mKeyStore;
-    public static String passWord = "wifi@123"; //hs20KeyStore password
-    public static final String ENROLL = "Enroll";
-    public static final String REENROLL = "ReEnroll";
-    public static final String AAA_ROOT = "AAA_ROOT";
-    public static final String SUBSCRIPTION_ROOT = "SUBSCRIPTION_ROOT";
-    public static final String POLICY_ROOT = "POLICY_ROOT";
-    private static PrivateKey enrollPrivKey;
-    public final static String CACERT_ALIAS = "osu_ca_cert";
-    private final static String ENROLL_CACERT_ALIAS = "enroll_cacert";
-    private final static String ENROLL_CLIENTCERT_ALIAS = "enroll_clientcert";
-    private static String clientCertAlias;
+    private static Context sContext;
+    private android.security.KeyStore mKeyStore;
+    private PrivateKey mEnrollPrivKey;
+    private static final String ENROLL_CLIENTCERT_ALIAS = "enroll_clientcert";
+    private String mClientCertAlias;
 
-    private static String macAddress;
-    private static String challengePassword;
-    private static String SHAalgorithm;
-    private static String commonName;
-    private static String imeiMeid;
+    private String mMacAddress;
+    private String mChallengePassword;
+    private String mShaAlgorithm;
+    private String mCommonName;
+    private String mImeiMeid;
 
-    private static boolean macAddressRequired = false;
-    private static boolean challengePasswordRequired = false;
-    private static boolean SHAalgorithmRequired = false;
-    private static boolean commonNameRequired = false;
-    private static boolean imeiRequired = false;
-    private static boolean meidRequired = false;
-    private static boolean devidRequired = false;
-    private static boolean idkphs20authRequired = false;
+    private boolean mMacAddressRequired = false;
+    private boolean mChallengePasswordRequired = false;
+    private boolean mShaAlgorithmRequired = false;
+    private boolean mCommonNameRequired = false;
+    private boolean mImeiRequired = false;
+    private boolean mMeidRequired = false;
+    private boolean mDevidRequired = false;
+    private boolean mIdkphs20authRequired = false;
 
-    private static TrustManager[] myTrustManagerArray = new TrustManager[] {
+    private TrustManager[] myTrustManagerArray = new TrustManager[] {
             new CertTrustManager()
     };
 
     private FileOperationUtil mFileOperation = new FileOperationUtil();
 
-    private static class HeaderProperty {
+    private class HeaderProperty {
         private String key;
         private String value;
 
@@ -140,6 +130,14 @@ public class WifiPasspointCertificate {
 
     private static WifiPasspointCertificate instance = null;
 
+    public KeyStore mHs20PKCS12KeyStore; //store client cert (extract from PKCS12)
+    public String passWord = "wifi@123"; //hs20KeyStore password
+    public static final String ENROLL = "Enroll";
+    public static final String REENROLL = "ReEnroll";
+    public static final String AAA_ROOT = "AAA_ROOT";
+    public static final String SUBSCRIPTION_ROOT = "SUBSCRIPTION_ROOT";
+    public static final String POLICY_ROOT = "POLICY_ROOT";
+
     private WifiPasspointCertificate() {
         initKeyStore();
     }
@@ -150,7 +148,7 @@ public class WifiPasspointCertificate {
         }
 
         if (ctxt != null) {
-            mContext = ctxt;
+            sContext = ctxt;
         }
         return instance;
     }
@@ -160,14 +158,14 @@ public class WifiPasspointCertificate {
             //init keystore
             mKeyStore = android.security.KeyStore.getInstance();
             // store the key and the certificate chain for client certificate
-            hs20PKCS12KeyStore = KeyStore.getInstance("PKCS12", "BC");
-            hs20PKCS12KeyStore.load(null, null);
+            mHs20PKCS12KeyStore = KeyStore.getInstance("PKCS12", "BC");
+            mHs20PKCS12KeyStore.load(null, null);
         } catch (Exception e) {
             Log.e(TAG, "initKeyStore err:" + e);
         }
     }
 
-    public static String getSubjectX500PrincipalFromPKCS12Keystore(String sha256FingerPrint) {
+    public String getSubjectX500PrincipalFromPKCS12Keystore(String sha256FingerPrint) {
         if (!mKeyStore.contains(Credentials.WIFI + sha256FingerPrint)) {
             Log.e(TAG, "[getSubjectX500PrincipalFromPKCS12Keystore] client cert (SHA256: "
                     + sha256FingerPrint + ") does not exist !!!");
@@ -177,7 +175,7 @@ public class WifiPasspointCertificate {
         try {
             String alias = new String(mKeyStore.get(Credentials.WIFI + sha256FingerPrint));
             Log.d(TAG, "[getSubjectX500PrincipalFromPKCS12Keystore] alias: " + alias);
-            X509Certificate x509Cert = (X509Certificate) hs20PKCS12KeyStore.getCertificate(alias);
+            X509Certificate x509Cert = (X509Certificate) mHs20PKCS12KeyStore.getCertificate(alias);
             return x509Cert.getSubjectX500Principal().toString();
         } catch (Exception e) {
             Log.d(TAG, "getSubjectX500PrincipalFromPKCS12Keystore err:" + e);
@@ -185,45 +183,23 @@ public class WifiPasspointCertificate {
         return null;
     }
 
-    public static BigInteger getSerialNumberFromPKCS12Keystore() {
-        Log.d(TAG, "[getSerialNumberFromPKCS12Keystore] clientCertAlias: " + clientCertAlias);
-        if (clientCertAlias == null) {
-            return null;
-        }
+    public void setMacAddress(String address) {
+        mMacAddress = address;
+    }
 
+    public void setImeiOrMeid(String s) {
+        mImeiMeid = s;
+    }
+
+    private void cleanClientCertStore() {
         try {
-            X509Certificate x509Cert = (X509Certificate) hs20PKCS12KeyStore
-                    .getCertificate(clientCertAlias);
-            BigInteger serialNumber = x509Cert.getSerialNumber();
-            Log.d(TAG, "serialNumber: " + serialNumber);
-            return serialNumber;
-        } catch (Exception e) {
-            Log.d(TAG, "getSerialNumberFromPKCS12Keystore err:" + e);
-            return null;
-        }
-    }
-
-    public static void setMacAddress(String address) {
-        macAddress = address;
-    }
-
-    public static void setImeiOrMeid(String s) {
-        imeiMeid = s;
-    }
-
-    public static String getClientKeystorePassword() {
-        return passWord;
-    }
-
-    public static void cleanClientCertStore() {
-        try {
-            Enumeration enu = hs20PKCS12KeyStore.aliases();
+            Enumeration enu = mHs20PKCS12KeyStore.aliases();
             while (enu.hasMoreElements()) {
                 String alias = (String) enu.nextElement();
                 Log.d(TAG2, "[cleanClientCertStore] KeyStore alias: " + alias);
                 Log.d(TAG2, "[cleanClientCertStore] Certificate " + alias + ": "
-                        + hs20PKCS12KeyStore.getCertificate(alias).toString());
-                hs20PKCS12KeyStore.deleteEntry(alias);
+                        + mHs20PKCS12KeyStore.getCertificate(alias).toString());
+                mHs20PKCS12KeyStore.deleteEntry(alias);
             }
         } catch (Exception e) {
             Log.e(TAG, "cleanClientCertStore err:" + e);
@@ -245,7 +221,7 @@ public class WifiPasspointCertificate {
         return false;
     }
 
-    public static String computeHash(byte[] input, String type) throws NoSuchAlgorithmException,
+    public String computeHash(byte[] input, String type) throws NoSuchAlgorithmException,
             UnsupportedEncodingException {
         if (input == null) {
             return null;
@@ -263,18 +239,18 @@ public class WifiPasspointCertificate {
         return sb.toString();
     }
 
-    private static void csrAttrsParse(byte[] csrattr, String chanPassword) {
-        macAddressRequired = false;
-        challengePasswordRequired = false;
-        SHAalgorithmRequired = false;
-        commonNameRequired = false;
-        imeiRequired = false;
-        meidRequired = false;
-        devidRequired = false;
-        idkphs20authRequired = false;
+    private void csrAttrsParse(byte[] csrattr, String chanPassword) {
+        mMacAddressRequired = false;
+        mChallengePasswordRequired = false;
+        mShaAlgorithmRequired = false;
+        mCommonNameRequired = false;
+        mImeiRequired = false;
+        mMeidRequired = false;
+        mDevidRequired = false;
+        mIdkphs20authRequired = false;
 
         DataOutputStream dataOutputStream;
-        challengePassword = chanPassword;
+        mChallengePassword = chanPassword;
         try {
             ByteArrayInputStream bais = new ByteArrayInputStream(csrattr);
             ASN1InputStream asn1_is = new ASN1InputStream(bais);
@@ -283,33 +259,33 @@ public class WifiPasspointCertificate {
                 String oid = derObj.getObjectAt(i).toString();
                 Log.d(TAG2, oid);
                 if (oid.equals("1.3.6.1.1.1.1.22")) { //macAddress
-                    macAddressRequired = true;
+                    mMacAddressRequired = true;
                     Log.d(TAG2, "macAddress required");
                 } else if (oid.equals("1.3.6.1.4.1.40808.1.1.2")) { //id-kp-HS2.0-auth
                     Log.d(TAG2, "id-kp-HS2.0-auth required");
-                    idkphs20authRequired = true;
+                    mIdkphs20authRequired = true;
                 } else if (oid.equals("1.3.6.1.4.1.40808.1.1.3")) { //IMEI
                     Log.d(TAG2, "IMEI required");
-                    imeiRequired = true;
+                    mImeiRequired = true;
                 } else if (oid.equals("1.3.6.1.4.1.40808.1.1.4")) { //MEID
                     Log.d(TAG2, "MEID required");
-                    meidRequired = true;
+                    mMeidRequired = true;
                 } else if (oid.equals("1.2.840.113549.1.9.7")) { // challenge password
                     Log.d(TAG2, "challengePassword required");
-                    challengePasswordRequired = true;
+                    mChallengePasswordRequired = true;
                 } else if (oid.equals("1.3.132.0.34")) {
                     //                    Description:
                     //                        NIST curve P-384 (covers "secp384r1", the elliptic curve domain listed in See SEC 2: Recommended Elliptic Curve Domain Parameters)
                     //                        Information:
                     //                        The SEC (Standards for Efficient Cryptography) curves provide elliptic curve domain parameters at commonly required security levels for use by implementers of ECC standards like ANSI X9.62, ANSI X9.63, IEEE P1363, and other standards.
                 } else if (oid.equals("2.16.840.1.101.3.4.2.2")) { //SHA algorithm: "sha384"
-                    SHAalgorithm = "SHA-384";
+                    mShaAlgorithm = "SHA-384";
                 } else if (oid.equals("2.5.4.3")) {
                     Log.d(TAG2, "commonName required");
-                    commonNameRequired = true;
+                    mCommonNameRequired = true;
                 } else if (oid.equals("1.3.6.1.4.1.40808.1.1.5")) {
                     Log.d(TAG2, "DevID required");
-                    devidRequired = true;
+                    mDevidRequired = true;
                 }
             }
 
@@ -318,7 +294,7 @@ public class WifiPasspointCertificate {
         }
     }
 
-    private static KeyPair createKeyPair() {
+    private KeyPair createKeyPair() {
         KeyPair keyPair = null;
         try {
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
@@ -330,7 +306,7 @@ public class WifiPasspointCertificate {
         return keyPair;
     }
 
-    private static void genDERAttribute(DERObjectIdentifier oid, Object derObj, Vector oids,
+    private void genDERAttribute(DERObjectIdentifier oid, Object derObj, Vector oids,
             Vector values) {
         try {
             if (derObj instanceof GeneralName) {
@@ -362,14 +338,14 @@ public class WifiPasspointCertificate {
         }
     }
 
-    private static PKCS10CertificationRequest csrGenerate(String subjectDN) {
+    private PKCS10CertificationRequest csrGenerate(String subjectDN) {
         try {
             final KeyPair kp = createKeyPair();
-            enrollPrivKey = kp.getPrivate();
+            mEnrollPrivKey = kp.getPrivate();
 
             //sha384
-            if (!SHAalgorithm.isEmpty()) {
-                if ("2.16.840.1.101.3.4.2.2".equals(SHAalgorithm)) {
+            if (!mShaAlgorithm.isEmpty()) {
+                if ("2.16.840.1.101.3.4.2.2".equals(mShaAlgorithm)) {
                     Log.d(TAG2, "SHA 384 required");
                 }
             }
@@ -384,43 +360,43 @@ public class WifiPasspointCertificate {
             X509Extensions extensions;
             Attribute attribute;
 
-            if (challengePasswordRequired == true) {
+            if (mChallengePasswordRequired == true) {
                 //challenge password
                 ASN1ObjectIdentifier attrType = PKCSObjectIdentifiers.pkcs_9_at_challengePassword;
-                ASN1Set attrValues = new DERSet(new DERPrintableString(challengePassword));
+                ASN1Set attrValues = new DERSet(new DERPrintableString(mChallengePassword));
                 attribute = new Attribute(attrType, attrValues);
                 attributesVector.add(attribute);
             }
 
             //Extension
             //Extended Key Usage
-            if (idkphs20authRequired == true) {
+            if (mIdkphs20authRequired == true) {
                 genDERAttribute(X509Extensions.ExtendedKeyUsage, new ExtendedKeyUsage(
                         new KeyPurposeId("1.3.6.1.4.1.40808.1.1.2")), oids, values);//id-kp-HS2.0-auth
             }
 
-            if (macAddressRequired == true) {
+            if (mMacAddressRequired == true) {
                 //mac address
                 genDERAttribute(new DERObjectIdentifier("1.3.6.1.1.1.1.22"), new DERIA5String(
-                        macAddress), oids, values);
+                        mMacAddress), oids, values);
             }
 
-            if (imeiRequired == true) {
+            if (mImeiRequired == true) {
                 //IMEI
                 genDERAttribute(new DERObjectIdentifier("1.3.6.1.4.1.40808.1.1.3"),
-                        new DERIA5String(imeiMeid), oids, values);
+                        new DERIA5String(mImeiMeid), oids, values);
             }
 
-            if (meidRequired == true) {
+            if (mMeidRequired == true) {
                 //MEID
                 genDERAttribute(new DERObjectIdentifier("1.3.6.1.4.1.40808.1.1.4"),
-                        new DERBitString(imeiMeid.getBytes()), oids, values);
+                        new DERBitString(mImeiMeid.getBytes()), oids, values);
             }
 
-            if (devidRequired == true) {
+            if (mDevidRequired == true) {
                 //DevID
                 genDERAttribute(new DERObjectIdentifier("1.3.6.1.4.1.40808.1.1.5"),
-                        new DERPrintableString("imei:" + imeiMeid), oids, values);
+                        new DERPrintableString("imei:" + mImeiMeid), oids, values);
             }
 
             //complete attributes
@@ -433,7 +409,7 @@ public class WifiPasspointCertificate {
 
             Security.addProvider(new BouncyCastleProvider());
             PKCS10CertificationRequest csr;
-            if (challengePasswordRequired || macAddressRequired || SHAalgorithmRequired) {
+            if (mChallengePasswordRequired || mMacAddressRequired || mShaAlgorithmRequired) {
                 DERSet attrs;
                 //debugging for CSR attributes
                 if ("true".equals(SystemProperties.get("persist.service.nocsrattrs"))) {
@@ -492,8 +468,8 @@ public class WifiPasspointCertificate {
             }
 
             cleanClientCertStore();
-            hs20PKCS12KeyStore.setKeyEntry(certAlias, pk, passWord.toCharArray(), chain);
-            return hs20PKCS12KeyStore;
+            mHs20PKCS12KeyStore.setKeyEntry(certAlias, pk, passWord.toCharArray(), chain);
+            return mHs20PKCS12KeyStore;
         } catch (Exception e) {
             Log.e(TAG, "getCredentialCertKeyStore err:" + e);
         }
@@ -512,7 +488,7 @@ public class WifiPasspointCertificate {
     }
 
     public String getEnrollCertAlias() {
-        return clientCertAlias;
+        return mClientCertAlias;
     }
 
     private boolean installEnrolledClientCert(PrivateKey privKey,
@@ -540,7 +516,7 @@ public class WifiPasspointCertificate {
             Log.d(TAG2, "rootCaAmount: " + rootCaAmount);
             Log.d(TAG2, "clientCertAmount: " + clientCertAmount);
 
-            clientCertAlias = mCertificateHelper.getSha1FingerPrint(certificatePKCS7.get(0));
+            mClientCertAlias = mCertificateHelper.getSha1FingerPrint(certificatePKCS7.get(0));
 
             //Install client cert
             X509Certificate[] userCerts = certificatePKCS7
@@ -548,19 +524,19 @@ public class WifiPasspointCertificate {
             byte[] userCertsData = Credentials.convertToPem(userCerts);
 
             if (!mKeyStore.put(Credentials.WIFI + "HS20" + Credentials.USER_CERTIFICATE
-                    + clientCertAlias, userCertsData, android.security.KeyStore.UID_SELF,
+                    + mClientCertAlias, userCertsData, android.security.KeyStore.UID_SELF,
                     android.security.KeyStore.FLAG_ENCRYPTED)) {
                 Log.e(TAG, "Failed to install " + Credentials.WIFI + "HS20"
-                        + Credentials.USER_CERTIFICATE + clientCertAlias + " as user "
+                        + Credentials.USER_CERTIFICATE + mClientCertAlias + " as user "
                         + android.security.KeyStore.UID_SELF);
                 return false;
             }
 
             if (!mKeyStore.put(Credentials.WIFI + "HS20" + Credentials.USER_CERTIFICATE
-                    + clientCertAlias, userCertsData, Process.WIFI_UID,
+                    + mClientCertAlias, userCertsData, Process.WIFI_UID,
                     android.security.KeyStore.FLAG_NONE)) {
                 Log.e(TAG, "Failed to install " + Credentials.WIFI + "HS20"
-                        + Credentials.USER_CERTIFICATE + clientCertAlias + " as user "
+                        + Credentials.USER_CERTIFICATE + mClientCertAlias + " as user "
                         + Process.WIFI_UID);
                 return false;
             }
@@ -570,7 +546,7 @@ public class WifiPasspointCertificate {
             byte[] pubkey = userCerts[0].getPublicKey().getEncoded();
             int flags = android.security.KeyStore.FLAG_ENCRYPTED;
 
-            if (!mCertificateHelper.saveKeyPair(pubkey, prikey, clientCertAlias)) {
+            if (!mCertificateHelper.saveKeyPair(pubkey, prikey, mClientCertAlias)) {
                 Log.e(TAG, "Failed to install private key as user "
                         + android.security.KeyStore.UID_SELF);
                 return false;
@@ -584,9 +560,9 @@ public class WifiPasspointCertificate {
             }
 
             if (!mKeyStore.importKey(Credentials.WIFI + "HS20" + Credentials.USER_PRIVATE_KEY
-                    + clientCertAlias, prikey, Process.WIFI_UID, flags)) {
+                    + mClientCertAlias, prikey, Process.WIFI_UID, flags)) {
                 Log.e(TAG, "Failed to install " + Credentials.WIFI + "HS20"
-                        + Credentials.USER_PRIVATE_KEY + clientCertAlias + " as user "
+                        + Credentials.USER_PRIVATE_KEY + mClientCertAlias + " as user "
                         + Process.WIFI_UID);
                 return false;
             }
@@ -597,26 +573,26 @@ public class WifiPasspointCertificate {
             byte[] caCertsData = Credentials.convertToPem(caCerts);
 
             if (!mKeyStore.put(Credentials.WIFI + "HS20" + Credentials.CA_CERTIFICATE
-                    + clientCertAlias, caCertsData, android.security.KeyStore.UID_SELF,
+                    + mClientCertAlias, caCertsData, android.security.KeyStore.UID_SELF,
                     android.security.KeyStore.FLAG_ENCRYPTED)) {
                 Log.e(TAG, "Failed to install " + Credentials.WIFI + "HS20"
-                        + Credentials.CA_CERTIFICATE + clientCertAlias + " as user "
+                        + Credentials.CA_CERTIFICATE + mClientCertAlias + " as user "
                         + android.security.KeyStore.UID_SELF);
                 return false;
             }
 
             if (!mKeyStore.put(Credentials.WIFI + "HS20" + Credentials.CA_CERTIFICATE
-                    + clientCertAlias, caCertsData, Process.WIFI_UID,
+                    + mClientCertAlias, caCertsData, Process.WIFI_UID,
                     android.security.KeyStore.FLAG_NONE)) {
                 Log.e(TAG, "Failed to install " + Credentials.WIFI + "HS20"
-                        + Credentials.CA_CERTIFICATE + clientCertAlias + " as user "
+                        + Credentials.CA_CERTIFICATE + mClientCertAlias + " as user "
                         + Process.WIFI_UID);
                 return false;
             }
 
             //Save SHA256 SHA1 mapping
             String sha256FingerPrint = computeHash(userCerts[0].getEncoded(), "SHA-256");
-            saveMappingOfEnrollCertAliasAndSha256(clientCertAlias, sha256FingerPrint);
+            saveMappingOfEnrollCertAliasAndSha256(mClientCertAlias, sha256FingerPrint);
 
             if ("true".equals(SystemProperties.get("persist.service.hs20.cert.dbg"))) {
                 int index = 0;
@@ -636,7 +612,7 @@ public class WifiPasspointCertificate {
 
                 ks.setKeyEntry(ENROLL_CLIENTCERT_ALIAS, privKey, null, chain);
                 FileOutputStream fOut = new FileOutputStream(
-                        "/data/data/com.mediatek.security/est_client_cert.p12");
+                        "/data/data/est_client_cert.p12");
                 ks.store(fOut, passWord.toCharArray());
                 fOut.close();
             }
@@ -648,7 +624,7 @@ public class WifiPasspointCertificate {
         return true;
     }
 
-    public static byte[] httpClient(String serverUrl, String method) {
+    public byte[] httpClient(String serverUrl, String method) {
         try {
             boolean bGzipContent = false;
             boolean bBase64 = false;
@@ -758,9 +734,7 @@ public class WifiPasspointCertificate {
                     }
                 }
 
-            }
-            else
-            {
+            } else {
                 HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
                 urlConnection.setDoOutput(true);
                 urlConnection.setRequestMethod(method);
@@ -883,7 +857,7 @@ public class WifiPasspointCertificate {
                     } else {
                         isConnected = true;
                         if ("true".equals(SystemProperties.get("persist.service.hs20.cert.dbg"))) {
-                            String CaPath = "/data/data/com.mediatek.security/" + certName + ".crt";
+                            String CaPath = "/data/data/" + certName + ".crt";
                             mFileOperation.writeBytesToFile(response, CaPath);
                         }
                         byte[] trustRoot = response;
@@ -920,7 +894,7 @@ public class WifiPasspointCertificate {
                                 ByteArrayInputStream bais = new ByteArrayInputStream(trustRoot);
                                 List<X509Certificate> caCerts = (List<X509Certificate>) cf
                                         .generateCertificates(bais);
-                                mCertificateHelper.installCaCertsToKeyChain(mContext, caCerts);
+                                mCertificateHelper.installCaCertsToKeyChain(sContext, caCerts);
                             }
 
                             saveMappingOfEnrollCertAliasAndSha256(aliasSHA1, CertSHA256Fingerprint);
@@ -994,7 +968,7 @@ public class WifiPasspointCertificate {
                     ByteArrayInputStream bais = new ByteArrayInputStream(serverRoot);
                     List<X509Certificate> caCerts = (List<X509Certificate>) cf
                             .generateCertificates(bais);
-                    mCertificateHelper.installCaCertsToKeyChain(mContext, caCerts);
+                    mCertificateHelper.installCaCertsToKeyChain(sContext, caCerts);
                 }
 
                 saveMappingOfEnrollCertAliasAndSha256(aliasSHA1, fingerPrintSHA256);
@@ -1025,7 +999,7 @@ public class WifiPasspointCertificate {
             }
             if ("true".equals(SystemProperties.get("persist.service.hs20.cert.dbg"))) {
                 mFileOperation.writeBytesToFile(in,
-                        "/data/data/com.mediatek.security/est_ca_cert.p7b");
+                        "/data/data/est_ca_cert.p7b");
             }
 
             Provider provBC = Security.getProvider("BC");
@@ -1054,8 +1028,7 @@ public class WifiPasspointCertificate {
                 csrPkcs10 = csrGenerate(subjectDN);
             } else {
                 csrPkcs10 = csrGenerate("CN=" + digestUsername
-                        + ", OU=Mediatek, O=Mediatek, L=Taipei, ST=TW, C=TW");
-                //csrPkcs10 = csrGenerate("CN=" + SystemProperties.get("persist.service.cn", "www.mediatek.com") + ", OU=Mediatek, O=Mediatek, L=Taipei, ST=TW, C=TW");
+                        + ", OU=Google, O=Google, L=MountainView, ST=CA, C=US");
             }
 
             byte[] csr = csrPkcs10.getEncoded();
@@ -1071,7 +1044,7 @@ public class WifiPasspointCertificate {
 
                 if ("true".equals(SystemProperties.get("persist.service.hs20.cert.dbg"))) {
                     mFileOperation.writeBytesToFile(in,
-                            "/data/data/com.mediatek.security/est_client_cert.p7b");
+                            "/data/data/est_client_cert.p7b");
                 }
 
                 bais = new ByteArrayInputStream(in);
@@ -1081,7 +1054,7 @@ public class WifiPasspointCertificate {
                     Log.d(TAG2, "x509Cert: \r" + item);
                 }
 
-                return installEnrolledClientCert(enrollPrivKey, x509Cert, gRootCA);
+                return installEnrolledClientCert(mEnrollPrivKey, x509Cert, gRootCA);
             } else if (operation.equals(REENROLL)) {
                 in = estHttpClient(serverUrl, "POST", "/simplereenroll", operation, csr,
                         digestUsername, digestPassword);
@@ -1093,7 +1066,7 @@ public class WifiPasspointCertificate {
 
                 if ("true".equals(SystemProperties.get("persist.service.hs20.cert.dbg"))) {
                     mFileOperation.writeBytesToFile(in,
-                            "/data/data/com.mediatek.security/est_client_cert.p7b");
+                            "/data/data/est_client_cert.p7b");
                 }
 
                 bais = new ByteArrayInputStream(in);
@@ -1103,7 +1076,7 @@ public class WifiPasspointCertificate {
                     Log.d(TAG2, "x509Cert: \r" + item);
                 }
 
-                return installEnrolledClientCert(enrollPrivKey, x509Cert, gRootCA);
+                return installEnrolledClientCert(mEnrollPrivKey, x509Cert, gRootCA);
             }
 
         } catch (Exception e) {
@@ -1127,8 +1100,8 @@ public class WifiPasspointCertificate {
             if (serverUrl.startsWith("HTTPS://") || serverUrl.startsWith("https://")) {
                 if (operation.equals(REENROLL)) {
                     Log.d(TAG, "[estHttpClient]: re-enroll");
-                    if (hs20PKCS12KeyStore.aliases().hasMoreElements()) {
-                        hc = new WifiPasspointHttpClient(hs20PKCS12KeyStore, passWord.toCharArray());
+                    if (mHs20PKCS12KeyStore.aliases().hasMoreElements()) {
+                        hc = new WifiPasspointHttpClient(mHs20PKCS12KeyStore, passWord.toCharArray());
                     } else {
                         Log.d(TAG, "client cert is not installed in passpoint PKCS12 keystore");
                         return null;
@@ -1301,7 +1274,7 @@ public class WifiPasspointCertificate {
         return null;
     }
 
-    private static InputStream getUnZipInputStream(InputStream inputStream) throws IOException {
+    private InputStream getUnZipInputStream(InputStream inputStream) throws IOException {
         /* workaround for Android 2.3
            (see http://stackoverflow.com/questions/5131016/)
         */
@@ -1312,7 +1285,7 @@ public class WifiPasspointCertificate {
         }
     }
 
-    private static class CertTrustManager implements X509TrustManager {
+    private class CertTrustManager implements X509TrustManager {
         public void checkClientTrusted(X509Certificate[] arg0, String arg1) {
             Log.d(TAG, "[checkClientTrusted] " + arg0 + arg1);
         }
