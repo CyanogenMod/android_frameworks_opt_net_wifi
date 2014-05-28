@@ -90,8 +90,10 @@ public class WifiAutoJoinController {
 
     void enableVerboseLogging(int verbose) {
         if (verbose > 0 ) {
+            DBG = true;
             VDBG = true;
         } else {
+            DBG = false;
             VDBG = false;
         }
     }
