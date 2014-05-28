@@ -796,13 +796,13 @@ public class WifiStateMachine extends StateMachine {
         mNetworkAgent = new NetworkAgent(getHandler().getLooper(), mContext,
                 "WifiNetworkAgent") {
             protected void connect() {
-                if (DBG) log("WifiNetworkAgent Starting wifi");
+                if (DBG) log("WifiNetworkAgent -> reconnect wifi");
                 setDriverStart(true);
                 reconnectCommand();
             }
             protected void disconnect() {
-                if (DBG) log("WifiNetworkAgent Stopping Wifi");
-                setDriverStart(false);
+                if (DBG) log("WifiNetworkAgent -> Wifi disconnected");
+                //setDriverStart(false);
             }
         };
         // TODO - this needs to be dynamic - do when we integrate with wifi selection change.
