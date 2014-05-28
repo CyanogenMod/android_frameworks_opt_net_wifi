@@ -784,9 +784,17 @@ public class WifiPasspointStateMachine extends StateMachine {
         private int readInt(int len) {
             int value = 0;
             for (int i = 0, shift = 0; i < len; i++, shift += 8) {
-                int b = bytes[current++];
-                if (b < 0) b += 256;        // unsigned
-                value += (b << shift);      // little endian
+                int b = bytes[current++] & 0xFF;    // unsigned
+                value += (b << shift);              // little endian
+            }
+            return value;
+        }
+
+        private long readLong(int len) {
+            long value = 0;
+            for (int i = 0, shift = 0; i < len; i++, shift += 8) {
+                long b = bytes[current++] & 0xFF;   // unsigned
+                value += (b << shift);              // little endian
             }
             return value;
         }
@@ -815,6 +823,10 @@ public class WifiPasspointStateMachine extends StateMachine {
             return ret;
         }
 
+        private int getLeft() {
+            return bytes.length - current;
+        }
+
         private void setCount(int c) {
             pos = current + c;
         }
@@ -827,6 +839,156 @@ public class WifiPasspointStateMachine extends StateMachine {
             current = pos;
         }
 
+    }
+
+    private void parseVenueName(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseVenueName()");
+        try {
+            int n = frame.readInt(2); // venue info
+            n = frame.getLeft(); // venue info
+            passpoint.venueName =
+                    frame.readStrLanguage(n, mLanguageCode, DEFAULT_LANGUAGE_CODE);
+            if (VDBG) logd("passpoint.venueName" + passpoint.venueName);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.venueName = null;
+        }
+    }
+
+    private void parseNetworkAuthType(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseNetworkAuthType()");
+        try {
+            passpoint.networkAuthType = new ArrayList<WifiPasspointInfo.NetworkAuthType>();
+            while (frame.getLeft() > 0) {
+                WifiPasspointInfo.NetworkAuthType auth = new WifiPasspointInfo.NetworkAuthType();
+                auth.type = frame.readInt(1);
+                int n = frame.readInt(2);
+                if (n > 0) auth.redirectUrl = frame.readStr(n);
+                passpoint.networkAuthType.add(auth);
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.networkAuthType = null;
+        }
+    }
+
+    private void parseRoamingConsortium(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseRoamingConsortium()");
+        try {
+            passpoint.roamingConsortium = new ArrayList<String>();
+            while (frame.getLeft() > 0) {
+                int n = frame.readInt(1);
+                String oi = "";
+                for (int i = 0; i < n; i++)
+                    oi += String.format("%02X", frame.readInt(1));
+                passpoint.roamingConsortium.add(oi);
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.roamingConsortium = null;
+        }
+    }
+
+    private void parseIpAddrType(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseIpAddrType()");
+        try {
+            passpoint.ipAddrTypeAvailability = new WifiPasspointInfo.IpAddressType();
+            passpoint.ipAddrTypeAvailability.availability = frame.readInt(1);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.ipAddrTypeAvailability = null;
+        }
+    }
+
+    private void parseNaiRealm(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseNaiRealm()");
+        try {
+            passpoint.naiRealm = new ArrayList<WifiPasspointInfo.NaiRealm>();
+            int n = frame.readInt(2);
+            for (int i = 0; i < n; i++) {
+                WifiPasspointInfo.NaiRealm realm = new WifiPasspointInfo.NaiRealm();
+                int m = frame.readInt(2);
+                frame.setCount(m);
+                realm.encoding = frame.readInt(1);
+                int l = frame.readInt(1);
+                realm.realm = frame.readStr(l);
+                frame.clearCount();
+                passpoint.naiRealm.add(realm);
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.naiRealm = null;
+        }
+    }
+
+    private void parseCellularNetwork(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseCellularNetwork()");
+        try {
+            passpoint.cellularNetwork = new WifiPasspointInfo.CellularNetwork();
+            passpoint.cellularNetwork.rawData = frame.bytes;
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.cellularNetwork = null;
+        }
+    }
+
+    private void parseDomainName(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseDomainName()");
+        try {
+            passpoint.domainName = new ArrayList<String>();
+            while (frame.getLeft() > 0) {
+                int n = frame.readInt(1);
+                passpoint.domainName.add(frame.readStr(n));
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.domainName = null;
+        }
+    }
+
+    private void parseOperatorFriendlyName(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseOperatorFriendlyName()");
+        try {
+            int n = frame.getLeft();
+            passpoint.operatorFriendlyName =
+                    frame.readStrLanguage(n, mLanguageCode, DEFAULT_LANGUAGE_CODE);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.operatorFriendlyName = null;
+        }
+    }
+
+    private void parseWanMetrics(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseWanMetrics()");
+        try {
+            passpoint.wanMetrics = new WifiPasspointInfo.WanMetrics();
+            passpoint.wanMetrics.wanInfo = frame.readInt(1);
+            passpoint.wanMetrics.downlinkSpeed = frame.readLong(4);
+            passpoint.wanMetrics.uplinkSpeed = frame.readLong(4);
+            passpoint.wanMetrics.downlinkLoad = frame.readInt(1);
+            passpoint.wanMetrics.uplinkLoad = frame.readInt(1);
+            passpoint.wanMetrics.lmd = frame.readInt(1);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.wanMetrics = null;
+        }
+    }
+
+    private void parseConnectionCapability(WifiPasspointInfo passpoint, AnqpFrame frame) {
+        if (VDBG) logd("parseConnectionCapability()");
+        try {
+            passpoint.connectionCapability = new ArrayList<WifiPasspointInfo.IpProtoPort>();
+            while (frame.getLeft() > 0) {
+                WifiPasspointInfo.IpProtoPort ip = new WifiPasspointInfo.IpProtoPort();
+                ip.proto = frame.readInt(1);
+                ip.port = frame.readInt(2);
+                ip.status = frame.readInt(1);
+                passpoint.connectionCapability.add(ip);
+            }
+        } catch (ArrayIndexOutOfBoundsException e) {
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            passpoint.connectionCapability = null;
+        }
     }
 
     private void parseOsuProvider(WifiPasspointInfo passpoint, AnqpFrame frame) {
@@ -901,7 +1063,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                 passpoint.osuProviderList.add(osu);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("oops!! ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("ArrayIndexOutOfBoundsException");
             passpoint.osuProviderList = null;
         }
     }
@@ -915,32 +1077,31 @@ public class WifiPasspointStateMachine extends StateMachine {
             String[] tokens = line.split("=");
             if (tokens.length < 2) continue;
             logd("got variable: " + tokens[0]);
+            AnqpFrame frame = new AnqpFrame();
+            if (!frame.init(tokens[1])) continue;
             if (tokens[0].equals("anqp_venue_name")) {
-
+                parseVenueName(passpoint, frame);
             } else if (tokens[0].equals("anqp_network_auth_type")) {
-
+                parseNetworkAuthType(passpoint, frame);
             } else if (tokens[0].equals("anqp_roaming_consortium")) {
-
+                parseRoamingConsortium(passpoint, frame);
             } else if (tokens[0].equals("anqp_ip_addr_type_availability")) {
-
+                parseIpAddrType(passpoint, frame);
             } else if (tokens[0].equals("anqp_nai_realm")) {
-
+                parseNaiRealm(passpoint, frame);
             } else if (tokens[0].equals("anqp_3gpp")) {
-
+                parseCellularNetwork(passpoint, frame);
             } else if (tokens[0].equals("anqp_domain_name")) {
-
+                parseDomainName(passpoint, frame);
             } else if (tokens[0].equals("hs20_operator_friendly_name")) {
-
+                parseOperatorFriendlyName(passpoint, frame);
             } else if (tokens[0].equals("hs20_wan_metrics")) {
-
+                parseWanMetrics(passpoint, frame);
             } else if (tokens[0].equals("hs20_connection_capability")) {
-
+                parseConnectionCapability(passpoint, frame);
             } else if (tokens[0].equals("hs20_osu_providers_list")) {
-                AnqpFrame frame = new AnqpFrame();
-                if (!frame.init(tokens[1])) continue;
                 parseOsuProvider(passpoint, frame);
             }
-
         }
         return passpoint;
     }
