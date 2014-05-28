@@ -133,6 +133,7 @@ public class WifiAutoJoinController {
         ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
         for(ScanResult result: scanList) {
+            if (result.SSID == null) continue;
             result.seen = System.currentTimeMillis();
 
             ScanResult sr = scanResultCache.get(result.BSSID);
@@ -186,7 +187,7 @@ public class WifiAutoJoinController {
             //try to associate this BSSID to an existing Saved WifiConfiguration
             if (associatedConfig == null) {
                 associatedConfig = mWifiConfigStore.associateWithConfiguration(result);
-                if (associatedConfig != null) {
+                if (associatedConfig != null && associatedConfig.SSID != null) {
                     if (VDBG) {
                         logDbg("addToScanCache save associated config "
                                 + associatedConfig.SSID + " with " + associatedConfig.SSID);
