@@ -424,7 +424,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     public String getWpsNfcConfigurationToken(int netId) {
-        enforceChangePermission();
+        enforceConnectivityInternalPermission();
         return mWifiStateMachine.syncGetWpsNfcConfigurationToken(netId);
     }
 
