@@ -119,9 +119,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     private static final String DEVICE_OBJECT = "The interior node holding all devinfo objects";
     private static final String CONTENT_TYPE_XML_CHARSET_UTF_8 = "text/xml;charset=utf-8";
     private static final String CONTENT_TYPE_SOAP_XML_CHARSET_UTF_8 = "application/soap+xml;charset=utf-8";
-    public static final String REDIRECT_URL = "http://127.0.0.1";
-    public int OSU_REDIRECT_PORT;
-    public int REM_REDIRECT_PORT;
+    private String mRedirectUrl;
     // Subscription Provisioning request reason
     public static final String SUB_REGISTER = "Subscription registration";
     public static final String CERT_ENROLL_SUCCESS = "Certificate enrollment completed";
@@ -307,6 +305,10 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             }
         }
 
+    }
+
+    public void setBrowserRedirectUri(String uri) {
+        mRedirectUrl = uri;
     }
 
     public void setAuthenticationElement(AuthenticationElement ae) {
@@ -1119,7 +1121,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         request.addAttribute(WIFI_SOAP_REQ_REASON, requestReason);
 
         //redirectURL
-        request.addAttribute(WIFI_SOAP_REDIRECTURL, REDIRECT_URL + ":" + OSU_REDIRECT_PORT);
+        request.addAttribute(WIFI_SOAP_REDIRECTURL, mRedirectUrl);
 
         //sessionID (adding all packages except for the first one)
         if (!SUB_REGISTER.equals(requestReason)) {
@@ -1162,7 +1164,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         //requestReason
         request.addAttribute(WIFI_SOAP_REQ_REASON, requestReason);
         //redirectURL
-        request.addAttribute(WIFI_SOAP_REDIRECTURL, REDIRECT_URL + ":" + REM_REDIRECT_PORT);
+        request.addAttribute(WIFI_SOAP_REDIRECTURL, mRedirectUrl);
 
         //sessionID
         if (!SUB_PROVISION.equals(requestReason) && !SUB_REMEDIATION.equals(requestReason)) {

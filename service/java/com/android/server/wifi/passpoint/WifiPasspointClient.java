@@ -35,17 +35,17 @@ public class WifiPasspointClient {
         /**
          * Start to Online Sign-Up procedure
          */
-        public void startSubscriptionProvision(String serverUrl);
+        public void startSubscriptionProvision(String serverUri);
 
         /**
          * Start to remediation procedure
          */
-        public void startRemediation(String serverUrl, WifiPasspointCredential cred);
+        public void startRemediation(String serverUri, WifiPasspointCredential cred);
 
         /**
          * Start to policy update procedure
          */
-        public void startPolicyProvision(String serverUrl, WifiPasspointCredential cred);
+        public void startPolicyProvision(String serverUri, WifiPasspointCredential cred);
 
         /**
          * set WifiTree
@@ -56,6 +56,11 @@ public class WifiPasspointClient {
          * notify client the browser is redirected
          */
         public void setBrowserRedirected();
+
+        /**
+         * set browser redirect URI
+         */
+        public void setBrowserRedirectUri(String uri);
 
         /**
          * set authentication elements for SSL connection to check server certificate

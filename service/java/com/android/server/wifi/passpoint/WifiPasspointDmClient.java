@@ -54,6 +54,9 @@ public class WifiPasspointDmClient implements WifiPasspointClient.DmClient {
     public void setBrowserRedirected() {
     }
 
+    public void setBrowserRedirectUri(String uri) {
+    }
+
     public void setAuthenticationElement(AuthenticationElement ae) {
     }
 
