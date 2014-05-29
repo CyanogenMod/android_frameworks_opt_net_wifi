@@ -71,11 +71,10 @@ public class WifiAutoJoinController {
         mWifiTrafficPoller = t;
         mWifiNative = n;
         mNetworkScoreCache = null;
-        scoreManager = (NetworkScoreManager) mContext.getSystemService(Context.NETWORK_SCORE_SERVICE);
+        scoreManager =
+                (NetworkScoreManager) mContext.getSystemService(Context.NETWORK_SCORE_SERVICE);
         if (scoreManager == null)
             logDbg("Registered scoreManager NULL " + " service " + Context.NETWORK_SCORE_SERVICE);
-        else
-            logDbg("Registered scoreManager NOT NULL" + " service " + Context.NETWORK_SCORE_SERVICE);
 
         if (scoreManager != null) {
             mNetworkScoreCache = new WifiNetworkScoreCache(mContext);
@@ -98,8 +97,7 @@ public class WifiAutoJoinController {
         }
     }
 
-
-        int mScanResultMaximumAge = 30000; /* milliseconds unit */
+    int mScanResultMaximumAge = 30000; /* milliseconds unit */
 
     /*
      * flush out scan results older than mScanResultMaximumAge
@@ -168,12 +166,21 @@ public class WifiAutoJoinController {
                 scanResultCache.remove(result.BSSID);
             } else {
                 if (!mNetworkScoreCache.isScoredNetwork(result)) {
-                    //TODO : properly handle SSID formatting, i.e. among others check for string
-                    //TODO : representing hexadecimal SSIDs
-                    WifiKey wkey = new WifiKey("\"" + result.SSID + "\"", result.BSSID);
-                    NetworkKey nkey = new NetworkKey(wkey);
-                    //if we don't know this scan result then request a score to Herrevad
-                    unknownScanResults.add(nkey);
+                    WifiKey wkey;
+                    //TODO : find out how we can get there without a valid UTF-8 encoded SSID
+                    //TODO: which will cause WifiKey constructor to fail
+                    try {
+                        wkey = new WifiKey("\"" + result.SSID + "\"", result.BSSID);
+                    } catch (IllegalArgumentException e) {
+                        logDbg("AutoJoinController: received badly encoded SSID=[" + result.SSID +
+                                "] ->skipping this network");
+                        wkey = null;
+                    }
+                    if (wkey != null) {
+                        NetworkKey nkey = new NetworkKey(wkey);
+                        //if we don't know this scan result then request a score to Herrevad
+                        unknownScanResults.add(nkey);
+                    }
                 }
             }
 
@@ -749,13 +756,15 @@ public class WifiAutoJoinController {
 
             if (config.networkId == currentNetId) {
                 if (DBG) {
-                    logDbg("attemptAutoJoin skip current candidate  " + Integer.toString(currentNetId)
+                    logDbg("attemptAutoJoin skip current candidate  "
+                            + Integer.toString(currentNetId)
                             + " key " + config.configKey(true));
                 }
                 continue;
             }
 
-            if (lastSelectedConfiguration == null || !config.configKey().equals(lastSelectedConfiguration)) {
+            if (lastSelectedConfiguration == null ||
+                    !config.configKey().equals(lastSelectedConfiguration)) {
                 //don't try to autojoin a network that is too far
                 if (config.visibility == null) {
                     continue;
@@ -815,7 +824,7 @@ public class WifiAutoJoinController {
 
                                     //switch to this scan result
                                     candidate =
-                                            mWifiConfigStore.wifiConfigurationFromScanResult(result);
+                                           mWifiConfigStore.wifiConfigurationFromScanResult(result);
                                     candidate.ephemeral = true;
                                 }
                            } else {
@@ -826,7 +835,7 @@ public class WifiAutoJoinController {
 
                                     //switch to this scan result
                                     candidate =
-                                            mWifiConfigStore.wifiConfigurationFromScanResult(result);
+                                           mWifiConfigStore.wifiConfigurationFromScanResult(result);
                                     candidate.ephemeral = true;
                                 }
                            }

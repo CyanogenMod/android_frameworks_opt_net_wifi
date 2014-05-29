@@ -300,7 +300,7 @@ public class WifiNative {
     }
 
     public boolean disconnect() {
-        if (DBG) logDbg("RECONNECT ");
+        if (DBG) logDbg("DISCONNECT ");
         return doBooleanCommand("DISCONNECT");
     }
 
