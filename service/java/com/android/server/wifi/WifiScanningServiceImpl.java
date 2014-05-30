@@ -27,7 +27,6 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiScanner.ScanSettings;
-import android.net.wifi.WifiScanner.FullScanResult;
 import android.net.wifi.WifiSsid;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -211,12 +210,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         @Override
-        public void onFullScanResult(ScanResult result,
-                                     WifiScanner.InformationElement informationElements[]) {
+        public void onFullScanResult(ScanResult fullScanResult) {
             if (DBG) Log.d(TAG, "Full scanresult received");
-            FullScanResult fullScanResult = new FullScanResult();
-            fullScanResult.result = result;
-            fullScanResult.informationElements = informationElements;
             sendMessage(CMD_FULL_SCAN_RESULTS, 0, 0, fullScanResult);
         }
 
@@ -323,8 +318,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case WifiScanner.CMD_STOP_BACKGROUND_SCAN:
                         removeScanRequest(ci, msg.arg2);
                         break;
-                    case WifiScanner.CMD_GET_SCAN_RESULTS:
-                        getScanResults(ci, msg.arg2);
+                    case WifiScanner.CMD_GET_SCAN_RESULTS: {
+                            ScanResult[] results = getScanResults(ci);
+                            replySucceeded(msg, results);
+                        }
                         break;
                     case WifiScanner.CMD_SET_HOTLIST:
                         setHotlist(ci, msg.arg2, (WifiScanner.HotlistSettings) msg.obj);
@@ -352,7 +349,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         }
                         break;
                     case CMD_FULL_SCAN_RESULTS: {
-                            FullScanResult result = (FullScanResult) msg.obj;
+                            ScanResult result = (ScanResult) msg.obj;
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportFullScanResult(result);
@@ -514,13 +511,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             mChannel.sendMessage(WifiScanner.CMD_SCAN_RESULT, 0, handler, parcelableScanResults);
         }
 
-        void reportFullScanResult(FullScanResult result) {
+        void reportFullScanResult(ScanResult result) {
             Iterator<Integer> it = mScanSettings.keySet().iterator();
             while (it.hasNext()) {
                 int handler = it.next();
                 ScanSettings settings = mScanSettings.get(handler);
                 for (WifiScanner.ChannelSpec channelSpec : settings.channels) {
-                    if (channelSpec.frequency == result.result.frequency) {
+                    if (channelSpec.frequency == result.frequency) {
                         mChannel.sendMessage(WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, result);
                     }
                 }
@@ -920,9 +917,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         resetBuckets();
     }
 
-    void getScanResults(ClientInfo ci, int handler) {
+    ScanResult[] getScanResults(ClientInfo ci) {
         ScanResult results[] = WifiNative.getScanResults();
-        ci.reportScanResults(results, handler);
+        ci.reportScanResults(results);
+        return results;
     }
 
     void resetHotlist() {

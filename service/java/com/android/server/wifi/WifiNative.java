@@ -1199,7 +1199,7 @@ public class WifiNative {
 
     public static interface ScanEventHandler {
         void onScanResultsAvailable();
-        void onFullScanResult(ScanResult result, WifiScanner.InformationElement elems[]);
+        void onFullScanResult(ScanResult fullScanResult);
         void onScanPaused();
         void onScanRestarted();
     }
@@ -1225,12 +1225,12 @@ public class WifiNative {
             Log.i(TAG, "bytes[" + i + "] = [" + type + ", " + len + "]" + ", next = " + i);
         }
 
-        WifiScanner.InformationElement elements[] = new WifiScanner.InformationElement[num];
+        ScanResult.InformationElement elements[] = new ScanResult.InformationElement[num];
         for (int i = 0, index = 0; i < num; i++) {
             int type  = (int) bytes[index] & 0xFF;
             int len = (int) bytes[index + 1] & 0xFF;
             Log.i(TAG, "index = " + index + ", type = " + type + ", len = " + len);
-            WifiScanner.InformationElement elem = new WifiScanner.InformationElement();
+            ScanResult.InformationElement elem = new ScanResult.InformationElement();
             elem.id = type;
             elem.bytes = new byte[len];
             for (int j = 0; j < len; j++) {
@@ -1240,7 +1240,8 @@ public class WifiNative {
             index += (len + 2);
         }
 
-        sScanEventHandler.onFullScanResult(result, elements);
+        result.informationElements = elements;
+        sScanEventHandler.onFullScanResult(result);
     }
 
     private static int sScanCmdId = 0;
