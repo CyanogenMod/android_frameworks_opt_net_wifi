@@ -54,6 +54,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.WorkSource;
 import android.provider.Settings;
+import android.util.Log;
 import android.util.Slog;
 
 import java.io.FileNotFoundException;
@@ -173,10 +174,31 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 case WifiManager.SAVE_NETWORK: {
                     WifiConfiguration config = (WifiConfiguration) msg.obj;
                     int networkId = msg.arg1;
-                    if (msg.what == WifiManager.SAVE_NETWORK)
-                        Slog.e("WiFiServiceImpl " , "SAVE"  + " nid=" + Integer.toString(networkId));
-                    if (msg.what == WifiManager.CONNECT_NETWORK)
-                        Slog.e("WiFiServiceImpl " , "CONNECT " + " nid=" + Integer.toString(networkId));
+                    if (msg.what == WifiManager.SAVE_NETWORK) {
+                        if (config != null) {
+                            if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
+                                config.creatorUid = Binder.getCallingUid();
+                            } else {
+                                config.lastUpdateUid = Binder.getCallingUid();
+                            }
+                        }
+                        Slog.e("WiFiServiceImpl ", "SAVE"
+                                + " nid=" + Integer.toString(networkId)
+                                + " uid=" + Integer.toString(config.creatorUid)
+                                + "/" + Integer.toString(config.lastUpdateUid));
+                    }
+                    if (msg.what == WifiManager.CONNECT_NETWORK) {
+                        if (config != null) {
+                            if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
+                                config.creatorUid = Binder.getCallingUid();
+                            } else {
+                                config.lastUpdateUid = Binder.getCallingUid();
+                            }
+                        }
+                        Slog.e("WiFiServiceImpl ", "CONNECT "
+                                + " nid=" + Integer.toString(networkId)
+                                + " uid=" + Binder.getCallingUid());
+                    }
                     if (config != null && config.isValid()) {
                         if (DBG) Slog.d(TAG, "Connect with config" + config);
                         mWifiStateMachine.sendMessage(Message.obtain(msg));
@@ -756,6 +778,15 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
         if (config.isValid()) {
+            //TODO: pass the Uid the WifiStateMachine as a message parameter
+            Slog.e("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
+                    + " SSID " + config.SSID
+                    + " nid=" + Integer.toString(config.networkId));
+            if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
+                config.creatorUid = Binder.getCallingUid();
+            } else {
+                config.lastUpdateUid = Binder.getCallingUid();
+            }
             if (mWifiStateMachineChannel != null) {
                 return mWifiStateMachine.syncAddOrUpdateNetwork(mWifiStateMachineChannel, config);
             } else {

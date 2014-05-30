@@ -312,14 +312,16 @@ public class WifiAutoJoinController {
             selected.selfAdded = false;
         }
 
-        if (DBG) {
+        if (DBG && userTriggered) {
             if (selected.connectChoices != null) {
                 logDbg("updateConfigurationHistory will update "
                         + Integer.toString(netId) + " now: "
-                        + Integer.toString(selected.connectChoices.size()), true);
+                        + Integer.toString(selected.connectChoices.size())
+                        + " uid=" + Integer.toString(selected.creatorUid), true);
             } else {
                 logDbg("updateConfigurationHistory will update "
-                        + Integer.toString(netId), true);
+                        + Integer.toString(netId)
+                        + " uid=" + Integer.toString(selected.creatorUid), true);
             }
         }
 
@@ -329,8 +331,10 @@ public class WifiAutoJoinController {
                     mWifiConfigStore.getRecentConfiguredNetworks(12000, false);
             if (networks != null) {
                 for (WifiConfiguration config : networks) {
-                    if (DBG)
-                        logDbg("updateConfigurationHistory got " + config.SSID);
+                    if (DBG) {
+                        logDbg("updateConfigurationHistory got " + config.SSID + " nid="
+                                + Integer.toString(config.networkId));
+                    }
 
                     if (selected.configKey(true).equals(config.configKey(true))) {
                         found = true;
@@ -357,7 +361,7 @@ public class WifiAutoJoinController {
 
                     logDbg("updateConfigurationHistory add a choice " + selected.configKey(true)
                             + " over " + config.configKey(true)
-                            + " RSSI " + Integer.toString(rssi), true);
+                            + " RSSI " + Integer.toString(rssi));
                     //add the visible config to the selected's connect choice list
                     selected.connectChoices.put(config.configKey(true), rssi);
 
@@ -392,8 +396,12 @@ public class WifiAutoJoinController {
                                 + " now: " + Integer.toString(selected.connectChoices.size()));
                 }
 
-                mWifiConfigStore.writeKnownNetworkHistory();
             }
+        }
+
+        //TODO: write only if something changed
+        if (userTriggered || connect) {
+            mWifiConfigStore.writeKnownNetworkHistory();
         }
     }
 
