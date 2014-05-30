@@ -141,11 +141,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final int CMD_WIFI_CHANGES_STABILIZED             = BASE + 5;
     private static final int CMD_DRIVER_LOADED                       = BASE + 6;
     private static final int CMD_DRIVER_UNLOADED                     = BASE + 7;
+    private static final int CMD_SCAN_PAUSED                         = BASE + 8;
+    private static final int CMD_SCAN_RESTARTED                      = BASE + 9;
 
     private Context mContext;
     private WifiScanningStateMachine mStateMachine;
     private ClientHandler mClientHandler;
-    private WifiNative mWifiNative;
 
     WifiScanningServiceImpl() { }
 
@@ -162,8 +163,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         mClientHandler = new ClientHandler(thread.getLooper());
         mStateMachine = new WifiScanningStateMachine(thread.getLooper());
         mWifiChangeStateMachine = new WifiChangeStateMachine(thread.getLooper());
-
-        mWifiNative = new WifiNative("");
 
         mContext.registerReceiver(
                 new BroadcastReceiver() {
@@ -189,6 +188,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         private final DefaultState mDefaultState = new DefaultState();
         private final StartedState mStartedState = new StartedState();
+        private final PausedState  mPausedState  = new PausedState();
 
         public WifiScanningStateMachine(Looper looper) {
             super(TAG, looper);
@@ -199,6 +199,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             addState(mDefaultState);
                 addState(mStartedState, mDefaultState);
+                addState(mPausedState, mDefaultState);
 
             setInitialState(mDefaultState);
         }
@@ -217,6 +218,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             fullScanResult.result = result;
             fullScanResult.informationElements = informationElements;
             sendMessage(CMD_FULL_SCAN_RESULTS, 0, 0, fullScanResult);
+        }
+
+        @Override
+        public void onScanPaused() {
+            sendMessage(CMD_SCAN_PAUSED);
+        }
+
+        @Override
+        public void onScanRestarted() {
+            sendMessage(CMD_SCAN_RESTARTED);
         }
 
         @Override
@@ -245,10 +256,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                 switch (msg.what) {
                     case CMD_DRIVER_LOADED:
-                        if (mWifiNative.startHal() && mWifiNative.getInterfaces() != 0) {
+                        if (WifiNative.startHal() && WifiNative.getInterfaces() != 0) {
                             WifiNative.ScanCapabilities capabilities =
                                     new WifiNative.ScanCapabilities();
-                            if (mWifiNative.getScanCapabilities(capabilities)) {
+                            if (WifiNative.getScanCapabilities(capabilities)) {
                                 transitionTo(mStartedState);
                             } else {
                                 loge("could not get scan capabilities");
@@ -333,7 +344,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         configureWifiChange((WifiScanner.WifiChangeSettings) msg.obj);
                         break;
                     case CMD_SCAN_RESULTS_AVAILABLE: {
-                            ScanResult[] results = mWifiNative.getScanResults();
+                            ScanResult[] results = WifiNative.getScanResults();
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportScanResults(results);
@@ -368,12 +379,29 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                             reportWifiStabilized(results);
                         }
                         break;
+
                     default:
                         return NOT_HANDLED;
                 }
 
                 return HANDLED;
             }
+        }
+
+        class PausedState extends State {
+            @Override
+            public boolean processMessage(Message msg) {
+                switch (msg.what) {
+                    case CMD_SCAN_RESTARTED:
+                        transitionTo(mStartedState);
+                        break;
+                    default:
+                        deferMessage(msg);
+                        break;
+                }
+                return HANDLED;
+            }
+
         }
 
         @Override
@@ -872,9 +900,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         WifiNative.ScanSettings s = c.getComputedSettings();
         if (s.num_buckets == 0) {
             if (DBG) Log.d(TAG, "Stopping scan because there are no buckets");
-            mWifiNative.stopScan();
+            WifiNative.stopScan();
         } else {
-            if (mWifiNative.startScan(s, mStateMachine)) {
+            if (WifiNative.startScan(s, mStateMachine)) {
                 if (DBG) Log.d(TAG, "Successfully started scan of " + s.num_buckets + " buckets");
             } else {
                 if (DBG) Log.d(TAG, "Failed to start scan of " + s.num_buckets + " buckets");
@@ -893,7 +921,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     void getScanResults(ClientInfo ci, int handler) {
-        ScanResult results[] = mWifiNative.getScanResults();
+        ScanResult results[] = WifiNative.getScanResults();
         ci.reportScanResults(results, handler);
     }
 
@@ -909,7 +937,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         if (num_hotlist_ap == 0) {
-            mWifiNative.resetHotlist();
+            WifiNative.resetHotlist();
         } else {
             WifiScanner.HotspotInfo hotspotInfos[] = new WifiScanner.HotspotInfo[num_hotlist_ap];
             int index = 0;
@@ -925,7 +953,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             WifiScanner.HotlistSettings settings = new WifiScanner.HotlistSettings();
             settings.hotspotInfos = hotspotInfos;
             settings.apLostThreshold = 3;
-            mWifiNative.setHotlist(settings, mStateMachine);
+            WifiNative.setHotlist(settings, mStateMachine);
         }
     }
 
@@ -1349,11 +1377,11 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         void trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings) {
-            mWifiNative.trackSignificantWifiChange(settings, this);
+            WifiNative.trackSignificantWifiChange(settings, this);
         }
 
         void untrackSignificantWifiChange() {
-            mWifiNative.untrackSignificantWifiChange();
+            WifiNative.untrackSignificantWifiChange();
         }
 
     }
