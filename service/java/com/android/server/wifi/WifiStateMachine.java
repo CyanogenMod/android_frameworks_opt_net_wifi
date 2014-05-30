@@ -2783,6 +2783,7 @@ public class WifiStateMachine extends StateMachine {
         mWifiNative.setPowerSave(false);
 
         stopBatchedScan();
+        WifiNative.pauseScan();
 
         /* P2p discovery breaks dhcp, shut it down in order to get through this */
         Message msg = new Message();
@@ -2826,6 +2827,7 @@ public class WifiStateMachine extends StateMachine {
         mDhcpActive = false;
 
         startBatchedScan();
+        WifiNative.restartScan();
     }
 
     private void handleSuccessfulIpConfiguration(DhcpResults dhcpResults) {
