@@ -23,9 +23,9 @@ import com.android.server.SystemService;
 public final class WifiPasspointService extends SystemService {
 
     private static final String TAG = "PasspointService";
-    WifiPasspointServiceImpl mImpl;
+    final WifiPasspointServiceImpl mImpl;
 
-    public WifiPasspointService() {
+    public WifiPasspointService(Context context) {
         super(context);
         Log.i(TAG, "Creating " + Context.WIFI_PASSPOINT_SERVICE);
         mImpl = new WifiPasspointServiceImpl(getContext());
