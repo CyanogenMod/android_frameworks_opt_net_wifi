@@ -40,7 +40,7 @@ public final class WifiPasspointService extends SystemService {
     @Override
     public void onBootPhase(int phase) {
         if (phase == SystemService.PHASE_SYSTEM_SERVICES_READY) {
-            // TODO
+            mImpl.systemServiceReady();
         }
     }
 }

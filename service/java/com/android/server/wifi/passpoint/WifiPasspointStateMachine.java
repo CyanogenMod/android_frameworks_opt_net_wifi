@@ -122,7 +122,6 @@ public class WifiPasspointStateMachine extends StateMachine {
     private IntentFilter mIntentFilter;
     private BroadcastReceiver mBroadcastReceiver;
 
-    private WifiServiceImpl mWifiServiceImpl;
 
     private String mLanguageCode; // TODO: update this when language changes
 
@@ -225,10 +224,6 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         setupNetworkReceiver();
 
-        mWifiMgr = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
-        mTeleMgr = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
-        mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
-
         mWifiTree = new WifiPasspointDmTree();
 
         mDmClient = new WifiPasspointDmClient();
@@ -248,15 +243,16 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         setInitialState(mDisabledState);
 
-        // STOPSHIP: temp solution before supplicant manager
-        IBinder s = ServiceManager.getService(Context.WIFI_SERVICE);
-        mWifiServiceImpl = (WifiServiceImpl)IWifiManager.Stub.asInterface(s);
-        mWifiServiceImpl.getMonitor().setStateMachine2(WifiPasspointStateMachine.this);
-
         setLogRecSize(1000);
         setLogOnlyTransitions(false);
         if (DBG)
             setDbg(true);
+    }
+
+    public void systemServiceReady() {
+        mWifiMgr = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
+        mTeleMgr = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+        mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
     }
 
     class DefaultState extends State {

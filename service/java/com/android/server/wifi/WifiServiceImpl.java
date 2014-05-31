@@ -74,6 +74,8 @@ import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.passpoint.WifiPasspointServiceImpl;
+import com.android.server.wifi.passpoint.WifiPasspointStateMachine;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -1650,9 +1652,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         }
     }
 
-    // STOPSHIP: temp solution before supplicant manager
-    public WifiMonitor getMonitor() {
-        return mWifiStateMachine.getMonitor();
+    public WifiMonitor getWifiMonitor() {
+        return mWifiStateMachine.getWifiMonitor();
     }
 
 

@@ -72,6 +72,7 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
+import android.net.wifi.passpoint.IWifiPasspointManager;
 import android.os.BatteryStats;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -99,6 +100,8 @@ import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 import com.android.server.net.BaseNetworkObserver;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
+import com.android.server.wifi.passpoint.WifiPasspointServiceImpl;
+import com.android.server.wifi.passpoint.WifiPasspointStateMachine;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -116,7 +119,6 @@ import java.io.FileReader;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-
 import java.net.InetAddress;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -345,6 +347,7 @@ public class WifiStateMachine extends StateMachine {
     private AsyncChannel mReplyChannel = new AsyncChannel();
 
     private WifiP2pServiceImpl mWifiP2pServiceImpl;
+    private WifiPasspointServiceImpl mPasspointServiceImpl;
 
     // Used to initiate a connection with WifiP2pService
     private AsyncChannel mWifiP2pChannel;
@@ -743,8 +746,11 @@ public class WifiStateMachine extends StateMachine {
         mLinkProperties = new LinkProperties();
         mNetlinkLinkProperties = new LinkProperties();
 
-        IBinder s = ServiceManager.getService(Context.WIFI_P2P_SERVICE);
-        mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s);
+        IBinder s1 = ServiceManager.getService(Context.WIFI_P2P_SERVICE);
+        mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s1);
+
+        IBinder s2 = ServiceManager.getService(Context.WIFI_PASSPOINT_SERVICE);
+        mPasspointServiceImpl = (WifiPasspointServiceImpl)IWifiPasspointManager.Stub.asInterface(s2);
 
         mNetworkInfo.setIsAvailable(false);
         mLastBssid = null;
@@ -1020,8 +1026,7 @@ public class WifiStateMachine extends StateMachine {
         return new Messenger(getHandler());
     }
 
-    // STOPSHIP: temp solution before supplicant manager
-    public WifiMonitor getMonitor() {
+    public WifiMonitor getWifiMonitor() {
         return mWifiMonitor;
     }
 

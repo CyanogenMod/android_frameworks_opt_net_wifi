@@ -18,12 +18,18 @@ package com.android.server.wifi.passpoint;
 
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.net.wifi.IWifiManager;
 import android.net.wifi.passpoint.IWifiPasspointManager;
 import android.os.Binder;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Messenger;
+import android.os.ServiceManager;
 import android.os.SystemProperties;
 import android.util.Log;
+
+import com.android.server.wifi.WifiMonitor;
+import com.android.server.wifi.WifiServiceImpl;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -47,6 +53,13 @@ public final class WifiPasspointServiceImpl extends IWifiPasspointManager.Stub {
 
         mSm = new WifiPasspointStateMachine(mContext, mInterface);
         mSm.start();
+    }
+
+    public void systemServiceReady() {
+        IBinder s = ServiceManager.getService(Context.WIFI_SERVICE);
+        WifiServiceImpl wifiServiceImpl = (WifiServiceImpl)IWifiManager.Stub.asInterface(s);
+        wifiServiceImpl.getWifiMonitor().setStateMachine2(mSm);
+        mSm.systemServiceReady();
     }
 
     private void enforceAccessPermission() {
