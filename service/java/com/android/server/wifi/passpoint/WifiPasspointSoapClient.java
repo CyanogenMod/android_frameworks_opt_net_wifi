@@ -148,66 +148,41 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     public static final String WIFI_SOAP_UPDATE_RESPONSE_COMMAND_NOT_EXEC_DUE_TO_USER = "Command not executed due to user";
     public static final String WIFI_SOAP_UPDATE_RESPONSE_NOT_FOUND = "Not found";
 
-    private String soapUrl = "https://10.123.103.1:9443/OnlineSignup/services";
-
-    private String CMCServerUrl = "http://10.123.103.103:8180/ejbca/publicweb/enroll/cmc/simpleEnroll";
-
     private int mProcedureType;
     private static final int SUBSCRIPTION_PROVISION = 1;
     private static final int SUBSCRIPTION_REMEDIATION = 2;
     private static final int POLICY_UPDATE = 3;
     private static final int SUBSCRIPTION_SIM_PROVISION = 4;
-    private PpsmoParser ppsmoParser = new PpsmoParser();
-    long sleepTime = 100; // MS
-    int requestreason = 0;
+    private PpsmoParser mPpsmoParser = new PpsmoParser();
 
     private Context mContext;
 
     // HTTP digest
-    private static String digestUsername;
-    private static String digestPassword;
-
-    // ./Wi-Fi/xxxxx/PerProviderSubscription in managementTreeURI
-    private static String wifiSPFQDN;
+    private String mDigestUsername;
+    private String mDigestPassword;
 
     // Settion ID
-    private String SessionID;
-
-    // SubscriptionUpdate
-    private static String SubscriptionDMAccUsername;
-    private static String SubscriptionDMAccPassword;
+    private String mSessionID;
 
     // Policy
-    // PolicyUpdate
-    private static String PolicyDMAccUsername;
-    private static String PolicyDMAccPassword;
-
-    // HomeSP
-    private static String HomeOI;
-    private static boolean HomeOIRequired;
-
     private String mRequestReason;
-    private String moDevInfo;
-    private String moDevDetail;
-    private String moSubscription;
 
     // Credential
     private static String mSoapWebUrl;
     private static String mOSUServerUrl;
     private static String mREMServerUrl;
-    private static String mImsi;
+    private String mImsi;
     private String mEnrollmentServerURI;
     private String mEnrollmentServerCert;
 
-    private static String mOSUFriendlyName;
+    private String mOSUFriendlyName;
 
     TrustManager[] myTrustManagerArray = new TrustManager[] {
             new CertTrustManager()
     };
-    private static KeyStore hs20KeyStore;
-    private static KeyStore hs20PKCS12KeyStore;
-    private String mSPFQDN;
-    private String mSPFQDNFromMo;
+    private static KeyStore sHs20Pkcs12KeyStore;
+    private String mSpFqdn;
+    private String mSpFqdnFromMo;
     private static String mOSULanguage;
     private static String iconFileName;
     private static String iconHash;
@@ -243,25 +218,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         Log.d(TAG, "[init]");
         mTarget = target;
         mTreeHelper = new WifiPasspointDmTreeHelper();
-        mPasspointCertificate = WifiPasspointCertificate.getInstance(null);
         mRequestReason = null;
-        moDevInfo = null;
-        moDevDetail = null;
-        moSubscription = null;
-        digestUsername = null;
-        digestPassword = null;
-
-        // SubscriptionUpdate
-        SubscriptionDMAccUsername = null;
-        SubscriptionDMAccPassword = null;
-
-        // PolicyUpdate
-        PolicyDMAccUsername = null;
-        PolicyDMAccPassword = null;
-
-        // HomeSP
-        HomeOI = null;
-        HomeOIRequired = false;
+        mDigestUsername = null;
+        mDigestPassword = null;
 
         // Credential
         mSoapWebUrl = null;
@@ -279,72 +238,72 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     private void setRemediationHttpDigest() {
         Log.d(TAG, "[setRemediationHttpDigest]");
-        digestUsername = null;
-        digestPassword = null;
-        String eapType = mCred.getEapMethodStr();
+        mDigestUsername = null;
+        mDigestPassword = null;
+        String eapType = mCred.getType();
         Log.d(TAG, "eapType = " + eapType);
         if (eapType.equals("TTLS")) {
-            String subscriptionDMAccUsername = mCred.getSubscriptionDMAccUsername();
-            String subscriptionDMAccPassword = mCred.getSubscriptionDMAccPassword();
+            String subscriptionUpdateUsername = mCred.getSubscriptionUpdateUsername();
+            String subscriptionUpdatePassword = mCred.getSubscriptionUpdatePassword();
             String credentialUsername = mCred.getUserName();
             String credentialPassword = mCred.getPassword();
 
-            if (subscriptionDMAccUsername != null) {
-                Log.d(TAG, "subscriptionDMAccUsername = " + subscriptionDMAccUsername
-                        + ", subscriptionDMAccPassword = " + subscriptionDMAccPassword);
-                if (!subscriptionDMAccUsername.isEmpty()) {
-                    digestUsername = subscriptionDMAccUsername;
-                    digestPassword = subscriptionDMAccPassword;
+            if (subscriptionUpdateUsername != null) {
+                Log.d(TAG, "subscriptionUpdateUsername = " + subscriptionUpdateUsername
+                        + ", subscriptionUpdatePassword = " + subscriptionUpdatePassword);
+                if (!subscriptionUpdateUsername.isEmpty()) {
+                    mDigestUsername = subscriptionUpdateUsername;
+                    mDigestPassword = subscriptionUpdatePassword;
                     Log.d(TAG,
-                            "digest using Subscription Update DMAcc, digestUsername/digestPassword: "
-                                    + digestUsername + "/" + digestPassword);
+                            "digest using Subscription Update, mDigestUsername/mDigestPassword: "
+                                    + mDigestUsername + "/" + mDigestPassword);
                 } else if (credentialUsername != null && !credentialUsername.isEmpty()) {
                     Log.d(TAG, "credentialUsername = " + credentialUsername
                             + ", credentialPassword = " + credentialPassword);
-                    digestUsername = credentialUsername;
-                    digestPassword = credentialPassword;
-                    Log.d(TAG, "digest using credential, digestUsername/digestPassword: "
-                            + digestUsername + "/" + digestPassword);
+                    mDigestUsername = credentialUsername;
+                    mDigestPassword = credentialPassword;
+                    Log.d(TAG, "digest using credential, mDigestUsername/digestPassword: "
+                            + mDigestUsername + "/" + mDigestPassword);
                 }
             } else if (credentialUsername != null && !credentialUsername.isEmpty()) {
                 Log.d(TAG, "credentialUsername = " + credentialUsername + ", credentialPassword = "
                         + credentialPassword);
-                digestUsername = credentialUsername;
-                digestPassword = credentialPassword;
-                Log.d(TAG, "digest using credential, digestUsername/digestPassword: "
-                        + digestUsername + "/" + digestPassword);
+                mDigestUsername = credentialUsername;
+                mDigestPassword = credentialPassword;
+                Log.d(TAG, "digest using credential, mDigestUsername/digestPassword: "
+                        + mDigestUsername + "/" + mDigestPassword);
             }
         }
     }
 
     private void setPolicyUpdateHttpDigest() {
-        digestUsername = null;
-        digestPassword = null;
+        mDigestUsername = null;
+        mDigestPassword = null;
 
-        String eapType = mCred.getEapMethodStr();
+        String eapType = mCred.getType();
         if (eapType.equals("TTLS")) {
-            String policyDMAccUsername = mCred.getPolicyDMAccUsername();
-            String policyDMAccPassword = mCred.getPolicyDMAccPassword();
+            String policyUpdateUsername = mCred.getPolicyUpdateUsername();
+            String policyUpdatePassword = mCred.getPolicyUpdatePassword();
             String credentialUsername = mCred.getUserName();
             String credentialPassword = mCred.getPassword();
 
-            if (policyDMAccUsername != null) {
-                if (!policyDMAccUsername.isEmpty()) {
-                    digestUsername = policyDMAccUsername;
-                    digestPassword = policyDMAccPassword;
-                    Log.d(TAG, "digest using Policy Update DMAcc, digestUsername/digestPassword: "
-                            + digestUsername + "/" + digestPassword);
+            if (policyUpdateUsername != null) {
+                if (!policyUpdateUsername.isEmpty()) {
+                    mDigestUsername = policyUpdateUsername;
+                    mDigestPassword = policyUpdatePassword;
+                    Log.d(TAG, "digest using Policy Update, mDigestUsername/mDigestPassword: "
+                            + mDigestUsername + "/" + mDigestPassword);
                 } else if (credentialUsername != null && !credentialUsername.isEmpty()) {
-                    digestUsername = credentialUsername;
-                    digestPassword = credentialPassword;
-                    Log.d(TAG, "digest using credential, digestUsername/digestPassword: "
-                            + digestUsername + "/" + digestPassword);
+                    mDigestUsername = credentialUsername;
+                    mDigestPassword = credentialPassword;
+                    Log.d(TAG, "digest using credential, mDigestUsername/mDigestPassword: "
+                            + mDigestUsername + "/" + mDigestPassword);
                 }
             } else if (credentialUsername != null && !credentialUsername.isEmpty()) {
-                digestUsername = credentialUsername;
-                digestPassword = credentialPassword;
-                Log.d(TAG, "digest using credential, digestUsername/digestPassword: "
-                        + digestUsername + "/" + digestPassword);
+                mDigestUsername = credentialUsername;
+                mDigestPassword = credentialPassword;
+                Log.d(TAG, "digest using credential, mDigestUsername/mDigestPassword: "
+                        + mDigestUsername + "/" + mDigestPassword);
             }
         }
 
@@ -358,7 +317,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         mSoapWebUrl = null;
         mOSUServerUrl = null;
         mREMServerUrl = null;
-        mSPFQDN = ae.spFqdn;
+        mSpFqdn = ae.spFqdn;
         mOSUFriendlyName = ae.osuFriendlyName;
         mOSULanguage = ae.osuDefaultLanguage;
         try {
@@ -459,7 +418,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         mProcedureType = SUBSCRIPTION_PROVISION;
         mOSUServerUrl = serverUrl;
         mSoapWebUrl = serverUrl;
-        mSPFQDNFromMo = null;
+        mSpFqdnFromMo = null;
         mRequestReason = SUB_REGISTER;
         subscriptionProvision();
     }
@@ -480,7 +439,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         return;
                     }
 
-                    Document doc = ppsmoParser.getDocument(response);
+                    Document doc = mPpsmoParser.getDocument(response);
                     String status = checkStatus(doc);
 
                     // get OSU server page to fill form
@@ -505,9 +464,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     // machine-managed user/pass credential, then send
                     // sppUpdateResponse
                     else if (WIFI_SOAP_SPP_STATUS_PROVISION_COMPLETE.equals(status)) {
-                        if (checkWifiSPFQDNForAddMo(doc)) {
-                            Document docMgmtTree = ppsmoParser.extractMgmtTree(response);
-                            String moTree = ppsmoParser.xmlToString(docMgmtTree);
+                        if (checkWifiSpFqdnForAddMo(doc)) {
+                            Document docMgmtTree = mPpsmoParser.extractMgmtTree(response);
+                            String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                             String treeUri = getSPPTreeUri(doc, "addMO");
                             int injStatus = mDmClient.injectSoapPackage(treeUri, "addMO", moTree);
 
@@ -563,9 +522,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         mProcedureType = SUBSCRIPTION_REMEDIATION;
         mSoapWebUrl = serverUrl;
         mREMServerUrl = serverUrl;
-        mSPFQDNFromMo = null;
+        mSpFqdnFromMo = null;
 
-        if ("SIM".equals(cred.getEapMethodStr())) {
+        if ("SIM".equals(cred.getType())) {
             mRequestReason = SUB_PROVISION;
         } else {
             mRequestReason = SUB_REMEDIATION;
@@ -594,29 +553,29 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                     String eapType = null;
                     if (mCred != null) {
-                        eapType = mCred.getEapMethodStr();
+                        eapType = mCred.getType();
                     }
 
                     if ("SIM".equals(eapType)) {
                         Log.d(TAG, "EAP-SIM, no digest or client certifcate");
                         response = connectSoapServer(request, "", "", NO_CLIENT_AUTH);
                     } else if ("TTLS".equals(eapType)) {
-                        if (digestUsername != null && !digestUsername.isEmpty()) {
+                        if (mDigestUsername != null && !mDigestUsername.isEmpty()) {
                             Log.d(TAG,
-                                    "digest using U/P credential or DMAcc, digestUsername/digestPassword: "
-                                            + digestUsername + "/" + digestPassword);
-                            response = connectSoapServer(request, digestUsername,
-                                    digestPassword, NO_CLIENT_AUTH);
+                                    "digest using U/P or Subscription update credential, mDigestUsername/mDigestPassword: "
+                                            + mDigestUsername + "/" + mDigestPassword);
+                            response = connectSoapServer(request, mDigestUsername,
+                                    mDigestPassword, NO_CLIENT_AUTH);
                         }
                     } else if ("TLS".equals(eapType)) {
                         String credentialCertSHA256Fingerprint = mCred
                                 .getCertSha256Fingerprint();
                         Log.d(TAG, "digest using client cert credential, SHA256 fingerprint: "
                                 + credentialCertSHA256Fingerprint);
-                        hs20PKCS12KeyStore = mPasspointCertificate
+                        sHs20Pkcs12KeyStore = mPasspointCertificate
                                 .getCredentialCertKeyStore(credentialCertSHA256Fingerprint);
 
-                        if (hs20PKCS12KeyStore != null) {
+                        if (sHs20Pkcs12KeyStore != null) {
                             response = connectSoapServer(request, null, null, CLIENT_CERT);
                         } else {
                             Log.d(TAG, "client certifcate not found");
@@ -631,7 +590,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         return;
                     }
 
-                    Document doc = ppsmoParser.getDocument(response);
+                    Document doc = mPpsmoParser.getDocument(response);
                     String status = checkStatus(doc);
                     if (WIFI_SOAP_SPP_STATUS_REMEDIATION_COMPLETE.equals(status)) {
                         if (getNoMoUpdate(doc)) {
@@ -639,13 +598,13 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         } else if (getSubscriptionSignUpAndUserUpdate(doc)) {
                             Log.d(TAG, "[New] redirect to browser");
                         } else {
-                            if (checkWifiSPFQDNForUpdateMo(doc)) {
-                                Vector<Document> sppUpdateNodes = ppsmoParser.getSPPNodes(doc,
+                            if (checkWifiSpFqdnForUpdateMo(doc)) {
+                                Vector<Document> sppUpdateNodes = mPpsmoParser.getSPPNodes(doc,
                                         NAMESPACE_NS, "updateNode");
                                 for (Document docNodes : sppUpdateNodes) {
                                     ++managementTreeUpdateCount;
-                                    Document docMgmtTree = ppsmoParser.extractMgmtTree(docNodes);
-                                    String moTree = ppsmoParser.xmlToString(docMgmtTree);
+                                    Document docMgmtTree = mPpsmoParser.extractMgmtTree(docNodes);
+                                    String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                                     Log.d(TAG2, moTree);
                                     String sppTreeUri = getSPPTreeUri(docNodes, "updateNode");
                                     int injStatus = mDmClient.injectSoapPackage(sppTreeUri,
@@ -678,13 +637,13 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         } else if (getEnrollmentInfo(doc)) {
                             startCertificateEnroll(mPasspointCertificate.REENROLL);
                         } else {
-                            if (checkWifiSPFQDNForUpdateMo(doc)) {
-                                Vector<Document> sppUpdateNodes = ppsmoParser.getSPPNodes(doc,
+                            if (checkWifiSpFqdnForUpdateMo(doc)) {
+                                Vector<Document> sppUpdateNodes = mPpsmoParser.getSPPNodes(doc,
                                         NAMESPACE_NS, "updateNode");
                                 for (Document docNodes : sppUpdateNodes) {
                                     ++managementTreeUpdateCount;
-                                    Document docMgmtTree = ppsmoParser.extractMgmtTree(docNodes);
-                                    String moTree = ppsmoParser.xmlToString(docMgmtTree);
+                                    Document docMgmtTree = mPpsmoParser.extractMgmtTree(docNodes);
+                                    String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                                     Log.d(TAG2, moTree);
                                     String sppTreeUri = getSPPTreeUri(docNodes, "updateNode");
                                     int injStatus = mDmClient.injectSoapPackage(sppTreeUri,
@@ -709,8 +668,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                             }
                         }
                     } else if (WIFI_SOAP_SPP_STATUS_PROVISION_COMPLETE.equals(status)) {
-                        Document docMgmtTree = ppsmoParser.extractMgmtTree(response);
-                        String moTree = ppsmoParser.xmlToString(docMgmtTree);
+                        Document docMgmtTree = mPpsmoParser.extractMgmtTree(response);
+                        String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                         String treeUri = getSPPTreeUri(doc, "addMO");
                         int injStatus = mDmClient.injectSoapPackage(treeUri, "addMO", moTree);
 
@@ -746,7 +705,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         Log.d(TAG, "Run startPolicyProvision with " + serverUrl);
         mProcedureType = POLICY_UPDATE;
         mSoapWebUrl = serverUrl;
-        mSPFQDNFromMo = null;
+        mSpFqdnFromMo = null;
         mRequestReason = POL_UPDATE;
 
         if (cred != null) {
@@ -770,20 +729,20 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     SoapObject request = getPolicyUpdateRequest(mRequestReason);
                     String response = null;
 
-                    if (digestUsername != null && !digestUsername.isEmpty()) {
+                    if (mDigestUsername != null && !mDigestUsername.isEmpty()) {
                         Log.d(TAG,
-                                "digest using U/P Credential or DMAcc, digestUsername/digestPassword: "
-                                        + digestUsername + "/" + digestPassword);
-                        response = connectSoapServer(request, digestUsername, digestPassword,
+                                "digest using U/P Credential or Policy update, mDigestUsername/mDigestPassword: "
+                                        + mDigestUsername + "/" + mDigestPassword);
+                        response = connectSoapServer(request, mDigestUsername, mDigestPassword,
                                 NO_CLIENT_AUTH);
                     }
 
                     if (response != null && !response.isEmpty()) {
-                        Document doc = ppsmoParser.getDocument(response);
+                        Document doc = mPpsmoParser.getDocument(response);
                         String status = checkStatus(doc);
                         if (WIFI_SOAP_SPP_STATUS_OK.equals(status)) {
                             if (getUploadMO(doc)) {
-                                if (checkWifiSPFQDNForUploadMo(doc)) {
+                                if (checkWifiSpFqdnForUploadMo(doc)) {
                                     mRequestReason = POL_MO_UPLOAD;
                                     policyProvision();
                                     return;
@@ -794,13 +753,13 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                                 }
                             }
                         } else if (WIFI_SOAP_SPP_STATUS_UPDATE_COMPLETE.equals(status)) {
-                            if (checkWifiSPFQDNForUpdateMo(doc)) {
-                                Vector<Document> sppUpdateNodes = ppsmoParser.getSPPNodes(doc,
+                            if (checkWifiSpFqdnForUpdateMo(doc)) {
+                                Vector<Document> sppUpdateNodes = mPpsmoParser.getSPPNodes(doc,
                                         NAMESPACE_NS, "updateNode");
                                 for (Document docNodes : sppUpdateNodes) {
                                     ++managementTreeUpdateCount;
-                                    Document docMgmtTree = ppsmoParser.extractMgmtTree(docNodes);
-                                    String moTree = ppsmoParser.xmlToString(docMgmtTree);
+                                    Document docMgmtTree = mPpsmoParser.extractMgmtTree(docNodes);
+                                    String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                                     Log.d(TAG2, moTree);
                                     String sppTreeUri = getSPPTreeUri(docNodes, "updateNode");
                                     int injStatus = mDmClient.injectSoapPackage(sppTreeUri,
@@ -878,8 +837,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     hc.setAuthenticationCredentials(credentials);
                 } else {
                     if (clientCertType == CLIENT_CERT) {
-                        if (hs20PKCS12KeyStore.aliases().hasMoreElements()) {
-                            hc = new WifiPasspointHttpClient(hs20PKCS12KeyStore,
+                        if (sHs20Pkcs12KeyStore.aliases().hasMoreElements()) {
+                            hc = new WifiPasspointHttpClient(sHs20Pkcs12KeyStore,
                                     mPasspointCertificate.passWord.toCharArray());
                         } else {
                             Log.d(TAG, "client cert is not installed in passpoint PKCS12 keystore");
@@ -949,60 +908,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        } else {
-            try {
-                int retryCount = 5;
-                boolean isConnected = false;
-
-                WifiPasspointHttpClient hc = null;
-                UsernamePasswordCredentials credentials = null;
-
-                /* test site: http://httpbin.org/digest-auth/auth/user/passwd */
-                credentials = new UsernamePasswordCredentials("user", "passwd");
-                hc = new WifiPasspointHttpClient(null, null);
-                hc.setAuthenticationCredentials(credentials);
-
-                while (retryCount > 0 && !isConnected) {
-                    try {
-                        URI requestUri = new URI(mSoapWebUrl);
-                        Header[] requestHeaders;
-                        List<BasicHeader> basicHeaders = new ArrayList<BasicHeader>();
-
-                        basicHeaders.add(new BasicHeader(hc.CONNECTION, "close"));
-                        basicHeaders.add(new BasicHeader(hc.ACCEPT_ENCODING_HEADER, "gzip"));
-                        requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
-
-                        HttpResponse httpResp = hc.get(requestUri, requestHeaders);
-                        InputStream is = httpResp.getEntity().getContent();
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        byte[] buf = new byte[8192];
-
-                        while (true) {
-                            int rd = is.read(buf, 0, 8192);
-                            if (rd == -1) {
-                                break;
-                            }
-                            bos.write(buf, 0, rd);
-                        }
-
-                        bos.flush();
-                        response = bos.toString();
-                        isConnected = true;
-                        Log.d(TAG, "soap connect by TLS");
-                    } catch (UnknownHostException ee) {
-                        retryCount--;
-                        Log.d(TAG, "Wait for retry:" + retryCount);
-                        Thread.sleep(3 * 1000);
-                    }
-                }
-
-                if (!isConnected) {
-                    Log.e(TAG, "Failed to connect");
-                    return null;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
         }
 
         return response;
@@ -1032,14 +937,14 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     }
 
                     if (procedureType == POLICY_UPDATE || procedureType == SUBSCRIPTION_REMEDIATION) {
-                        String eapType = mCred.getEapMethodStr();
+                        String eapType = mCred.getType();
                         String credentialCertSHA256Fingerprint = mCred.getCertSha256Fingerprint();
 
-                        if (digestUsername != null && !digestUsername.isEmpty()) {
+                        if (mDigestUsername != null && !mDigestUsername.isEmpty()) {
                             Log.d(TAG,
-                                    "digest using U/P credential or DMAcc, digestUsername/digestPassword: "
-                                            + digestUsername + "/" + digestPassword);
-                            response = connectSoapServer(request, digestUsername, digestPassword,
+                                    "digest using U/P or Policy update credential, mDigestUsername/mDigestPassword: "
+                                            + mDigestUsername + "/" + mDigestPassword);
+                            response = connectSoapServer(request, mDigestUsername, mDigestPassword,
                                     NO_CLIENT_AUTH);
                         }
                         else if ("TLS".equals(eapType)) {
@@ -1059,7 +964,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         return;
                     }
 
-                    Document doc = ppsmoParser.getDocument(response);
+                    Document doc = mPpsmoParser.getDocument(response);
                     String status = checkStatus(doc, NAMESPACE_NS, WIFI_SOAP_SPP_EXCHANGE_COMPLETE);
 
                     if (WIFI_SOAP_SPP_STATUS_EXCHANGE_COMPLETE.equals(status)) {
@@ -1072,7 +977,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                             Collection<WifiPasspointDmTree.CredentialInfo> creds = mTreeHelper
                                     .getCredentialInfo(mTreeHelper.getSp(mSoapTree,
-                                            mSPFQDNFromMo));
+                                            mSpFqdnFromMo));
                             for (WifiPasspointDmTree.CredentialInfo credInfo : creds) {
                                 // Save mapping of enrolled certificate
                                 // alias and SHA256 fingerprint
@@ -1114,7 +1019,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                             Collection<WifiPasspointDmTree.CredentialInfo> creds = mTreeHelper
                                     .getCredentialInfo(mTreeHelper.getSp(mSoapTree,
-                                            mSPFQDNFromMo));
+                                            mSpFqdnFromMo));
                             for (WifiPasspointDmTree.CredentialInfo credInfo : creds) {
                                 for (WifiPasspointDmTree.AAAServerTrustRoot aaaTrustRoot : credInfo.aAAServerTrustRoot
                                         .values()) {
@@ -1147,7 +1052,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                             boolean result = true;
 
                             WifiPasspointDmTree.CredentialInfo credInfo = mTreeHelper.getCredentialInfo(
-                                    mSoapTree, mCred.getWifiSPFQDN(), mCred.getCredName());
+                                    mSoapTree, mCred.getWifiSpFqdn(), mCred.getCredName());
                             if (credInfo == null) {
                                 Log.d(TAG, "credInfo is null while retrieving AAA trust root");
                                 mTarget.sendMessage(
@@ -1220,7 +1125,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         if (!SUB_REGISTER.equals(requestReason)) {
             AttributeInfo sessionIDattributeInfo = new AttributeInfo();
             sessionIDattributeInfo.setName(WIFI_SOAP_SESSIONID);
-            sessionIDattributeInfo.setValue(SessionID);
+            sessionIDattributeInfo.setValue(mSessionID);
             sessionIDattributeInfo.setType("PropertyInfo.STRING_CLASS");
             sessionIDattributeInfo.setNamespace(NAMESPACE_NS);
             request.addAttribute(sessionIDattributeInfo);
@@ -1263,7 +1168,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         if (!SUB_PROVISION.equals(requestReason) && !SUB_REMEDIATION.equals(requestReason)) {
             AttributeInfo sessionIDattributeInfo = new AttributeInfo();
             sessionIDattributeInfo.setName(WIFI_SOAP_SESSIONID);
-            sessionIDattributeInfo.setValue(SessionID);
+            sessionIDattributeInfo.setValue(mSessionID);
             sessionIDattributeInfo.setType("PropertyInfo.STRING_CLASS");
             sessionIDattributeInfo.setNamespace(NAMESPACE_NS);
             request.addAttribute(sessionIDattributeInfo);
@@ -1296,7 +1201,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     private SoapObject getSubscription() {
         WifiPasspointDmTree.CredentialInfo credInfo = mTreeHelper.getCredentialInfo(mSoapTree,
-                mCred.getWifiSPFQDN(), mCred.getCredName());
+                mCred.getWifiSpFqdn(), mCred.getCredName());
         SoapObject nsRequest = new SoapObject(NAMESPACE_NS, WIFI_SOAP_MO_CONTAINER);
         AttributeInfo attributeInfo = new AttributeInfo();
         attributeInfo.setName(WIFI_SOAP_MO_URN);
@@ -1495,7 +1400,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         if (!POL_UPDATE.equals(requestReason)) {
             AttributeInfo sessionIDattributeInfo = new AttributeInfo();
             sessionIDattributeInfo.setName(WIFI_SOAP_SESSIONID);
-            sessionIDattributeInfo.setValue(SessionID);
+            sessionIDattributeInfo.setValue(mSessionID);
             sessionIDattributeInfo.setType("PropertyInfo.STRING_CLASS");
             sessionIDattributeInfo.setNamespace(NAMESPACE_NS);
             request.addAttribute(sessionIDattributeInfo);
@@ -1550,7 +1455,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         //sessionID
         AttributeInfo sessionIDattributeInfo = new AttributeInfo();
         sessionIDattributeInfo.setName(WIFI_SOAP_SESSIONID);
-        sessionIDattributeInfo.setValue(SessionID);
+        sessionIDattributeInfo.setValue(mSessionID);
         sessionIDattributeInfo.setType("PropertyInfo.STRING_CLASS");
         sessionIDattributeInfo.setNamespace(NAMESPACE_NS);
         request.addAttribute(sessionIDattributeInfo);
@@ -1585,17 +1490,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         //DevInfo
         /*
         sample:
-            v4
-                <![CDATA[<DevInfo xmlns="urn:oma:mo:oma-dm-devinfo:1.0">
-                    <DevId> urn:acme:00-11-22-33-44-55 </DevId>
-                    <Man>ACME</Man>
-                    <Mod>HS2.0-01</Mod>
-                    <DmV>1.2</DmV>
-                    <Lang>en-US</Lang>
-                </DevInfo>
-                ]]>
-
-            v6
                 <![CDATA[ <MgmtTree>
                     <VerDTD>1.2</VerDTD>
                         <Node>
@@ -1628,79 +1522,56 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         </Node>
                     </MgmtTree> ]]>
         */
-        if ("true".equals(SystemProperties.get("persist.service.soapv4"))) { // format v4
-            Log.d(TAG, "[getMoInfo] v4");
 
-            SoapObject devInfoRequest = new SoapObject(null, "DevInfo");
-            AttributeInfo MODevInfoattributeInfo = new AttributeInfo();
-            MODevInfoattributeInfo.setName(WIFI_SOAP_MO_XMLNS);
-            MODevInfoattributeInfo.setValue(WIFI_SOAP_S_MODEVINFO);
-            MODevInfoattributeInfo.setType("PropertyInfo.STRING_CLASS");
-            devInfoRequest.addAttribute(MODevInfoattributeInfo);
+        SoapObject devInfoRequest = new SoapObject(null, WIFI_SOAP_MGMTREE);
+        //xmlns
+        AttributeInfo MoDetailattributeInfo = new AttributeInfo();
+        MoDetailattributeInfo.setName(WIFI_SOAP_MO_XMLNS);
+        MoDetailattributeInfo.setValue(WIFI_SOAP_SYNCML_DMDDF_1_2);
+        MoDetailattributeInfo.setType("PropertyInfo.STRING_CLASS");
+        devInfoRequest.addAttribute(MoDetailattributeInfo);
 
-            devInfoRequest.addProperty("DevId", "imei:868145012164046");
-            devInfoRequest.addProperty("Man", "Mediatek");
-            devInfoRequest.addProperty("Mod", "HS20-station");
-            devInfoRequest.addProperty("DmV", "1.2");
-            //devInfoRequest.addProperty("Lang", "en-US");
-            devInfoRequest.addProperty("Lang", get2LettersSystemLanguageCode());
+        devInfoRequest.addProperty("VerDTD", "1.2");
 
-            //Add to DM tree
-            dmMoRequest.addSoapObject(devInfoRequest);
-        }
-        else { //default format v6
-            Log.d(TAG, "[getMoInfo] v6");
+        SoapObject node1Request = new SoapObject(null, "Node");
+        node1Request.addProperty("NodeName", "DevInfo");
 
-            SoapObject devInfoRequest = new SoapObject(null, WIFI_SOAP_MGMTREE);
-            //xmlns
-            AttributeInfo MoDetailattributeInfo = new AttributeInfo();
-            MoDetailattributeInfo.setName(WIFI_SOAP_MO_XMLNS);
-            MoDetailattributeInfo.setValue(WIFI_SOAP_SYNCML_DMDDF_1_2);
-            MoDetailattributeInfo.setType("PropertyInfo.STRING_CLASS");
-            devInfoRequest.addAttribute(MoDetailattributeInfo);
+        SoapObject rtPropertiesRequest = new SoapObject(null, "RTProperties");
+        SoapObject typeRequest = new SoapObject(null, "Type");
+        typeRequest.addProperty("DDFName", WIFI_SOAP_S_MODEVINFO);
+        rtPropertiesRequest.addSoapObject(typeRequest);
+        node1Request.addSoapObject(rtPropertiesRequest);
 
-            devInfoRequest.addProperty("VerDTD", "1.2");
+        SoapObject node1aRequest = new SoapObject(null, "Node");
+        node1aRequest.addProperty("NodeName", "DevId");
+        node1aRequest.addProperty("Value", "imei:" + getDeviceId());
+        node1Request.addSoapObject(node1aRequest);
 
-            SoapObject node1Request = new SoapObject(null, "Node");
-            node1Request.addProperty("NodeName", "DevInfo");
+        SoapObject node1bRequest = new SoapObject(null, "Node");
+        node1bRequest.addProperty("NodeName", "Man");
+        node1bRequest.addProperty("Value", "Google");
+        node1Request.addSoapObject(node1bRequest);
 
-            SoapObject rtPropertiesRequest = new SoapObject(null, "RTProperties");
-            SoapObject typeRequest = new SoapObject(null, "Type");
-            typeRequest.addProperty("DDFName", WIFI_SOAP_S_MODEVINFO);
-            rtPropertiesRequest.addSoapObject(typeRequest);
-            node1Request.addSoapObject(rtPropertiesRequest);
+        SoapObject node1cRequest = new SoapObject(null, "Node");
+        node1cRequest.addProperty("NodeName", "Mod");
+        node1cRequest.addProperty("Value", "HS20-station");
+        node1Request.addSoapObject(node1cRequest);
 
-            SoapObject node1aRequest = new SoapObject(null, "Node");
-            node1aRequest.addProperty("NodeName", "DevId");
-            node1aRequest.addProperty("Value", "imei:" + getDeviceId());
-            node1Request.addSoapObject(node1aRequest);
+        SoapObject node1dRequest = new SoapObject(null, "Node");
+        node1dRequest.addProperty("NodeName", "DmV");
+        node1dRequest.addProperty("Value", "1.2");
+        node1Request.addSoapObject(node1dRequest);
 
-            SoapObject node1bRequest = new SoapObject(null, "Node");
-            node1bRequest.addProperty("NodeName", "Man");
-            node1bRequest.addProperty("Value", "Mediatek");
-            node1Request.addSoapObject(node1bRequest);
+        SoapObject node1eRequest = new SoapObject(null, "Node");
+        node1eRequest.addProperty("NodeName", "Lang");
+        //node1eRequest.addProperty("Value", "en-US");
+        node1eRequest.addProperty("Value", get2LettersSystemLanguageCode());
+        node1Request.addSoapObject(node1eRequest);
 
-            SoapObject node1cRequest = new SoapObject(null, "Node");
-            node1cRequest.addProperty("NodeName", "Mod");
-            node1cRequest.addProperty("Value", "HS20-station");
-            node1Request.addSoapObject(node1cRequest);
+        devInfoRequest.addSoapObject(node1Request);
 
-            SoapObject node1dRequest = new SoapObject(null, "Node");
-            node1dRequest.addProperty("NodeName", "DmV");
-            node1dRequest.addProperty("Value", "1.2");
-            node1Request.addSoapObject(node1dRequest);
-
-            SoapObject node1eRequest = new SoapObject(null, "Node");
-            node1eRequest.addProperty("NodeName", "Lang");
-            //node1eRequest.addProperty("Value", "en-US");
-            node1eRequest.addProperty("Value", get2LettersSystemLanguageCode());
-            node1Request.addSoapObject(node1eRequest);
-
-            devInfoRequest.addSoapObject(node1Request);
-
-            //Add to DM tree
-            dmMoRequest.addSoapObject(devInfoRequest);
-        }
+        //Add to DM tree
+        dmMoRequest.addSoapObject(devInfoRequest);
 
         return dmMoRequest;
     }
@@ -1848,7 +1719,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         //IMSI
         if ("false".equals(SystemProperties.get("persist.service.manual.ut.rem"))) {
             WifiPasspointDmTree.CredentialInfo credInfo = mTreeHelper.getCredentialInfo(mSoapTree,
-                    mCred.getWifiSPFQDN(), mCred.getCredName());
+                    mCred.getWifiSpFqdn(), mCred.getCredName());
             if (credInfo != null &&
                     credInfo.credential != null &&
                     credInfo.credential.sim != null) {
@@ -1918,7 +1789,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
         SoapObject OEMRequest = new SoapObject(null, "Node");
         OEMRequest.addProperty("NodeName", "OEM");
-        OEMRequest.addProperty("Value", "MEDIATEK");
+        OEMRequest.addProperty("Value", "GOOGLE");
         DevDetailRequest.addSoapObject(OEMRequest);
 
         SoapObject FwVRequest = new SoapObject(null, "Node");
@@ -1968,8 +1839,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     || WIFI_SOAP_SPP_STATUS_PROVISION_COMPLETE.equals(sppStatus)
                     || WIFI_SOAP_SPP_STATUS_REMEDIATION_COMPLETE.equals(sppStatus)
                     || WIFI_SOAP_SPP_STATUS_UPDATE_COMPLETE.equals(sppStatus)) {
-                SessionID = element.getAttributeNS(NAMESPACE_NS, "sessionID");
-                Log.d(TAG, "sessionID: " + SessionID);
+                mSessionID = element.getAttributeNS(NAMESPACE_NS, "sessionID");
+                Log.d(TAG, "sessionID: " + mSessionID);
             }
             return sppStatus;
         }
@@ -2059,19 +1930,19 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 if (!"EST".equals(att)) { // EST is allowed only
                     return false;
                 }
-                mEnrollmentServerURI = ppsmoParser.getTagValue(NAMESPACE_NS,
+                mEnrollmentServerURI = mPpsmoParser.getTagValue(NAMESPACE_NS,
                         "enrollmentServerURI", eElement);
                 Log.d(TAG, "EnrollmentServerURI: " + mEnrollmentServerURI);
-                mEnrollmentServerCert = ppsmoParser.getTagValue(NAMESPACE_NS,
+                mEnrollmentServerCert = mPpsmoParser.getTagValue(NAMESPACE_NS,
                         "caCertificate", eElement);
                 Log.d(TAG, "caCertificate: " + mEnrollmentServerCert);
-                enrollDigestUsername = ppsmoParser.getTagValue(NAMESPACE_NS, "estUserID",
+                enrollDigestUsername = mPpsmoParser.getTagValue(NAMESPACE_NS, "estUserID",
                         eElement);
                 if (enrollDigestUsername == null) {
                     enrollDigestUsername = null;
                 }
                 Log.d(TAG, "enrollDigestUsername: " + enrollDigestUsername);
-                String enrollDigestPasswordBase64 = ppsmoParser.getTagValue(NAMESPACE_NS,
+                String enrollDigestPasswordBase64 = mPpsmoParser.getTagValue(NAMESPACE_NS,
                         "estPassword", eElement);
                 if (enrollDigestPasswordBase64 == null) {
                     enrollDigestPassword = null;
@@ -2100,7 +1971,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         "acceptProviderCerts"); // providerIssuerName
 
                 if (attAcceptProviderCerts.equalsIgnoreCase("true")) {
-                    providerIssuerName = ppsmoParser.getTagValue(NAMESPACE_NS,
+                    providerIssuerName = mPpsmoParser.getTagValue(NAMESPACE_NS,
                             "providerIssuerName", eElement);
                 } else {
                     providerIssuerName = null;
@@ -2133,55 +2004,54 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return null;
     }
 
-    private String getWifiSPFQDNFromMoTree(Document doc, String execution) {
+    private String getWifiSpFqdnFromMoTree(Document doc, String execution) {
         // ex: spp:addMO
         // spp:managementTreeURI="./Wi-Fi/wi-fi.org/PerProviderSubscription"
-        Log.d(TAG, "[getWifiSPFQDNFromMoTree]");
+        Log.d(TAG, "[getWifiSpFqdnFromMoTree]");
         String sppTreeUri = getSPPTreeUri(doc, execution);
 
         if (sppTreeUri != null && !sppTreeUri.isEmpty()) {
             String[] words = sppTreeUri.split("/");
-            wifiSPFQDN = words[2];
-            Log.d(TAG, "wifiSPFQDN: " + wifiSPFQDN);
-            return wifiSPFQDN;
+            Log.d(TAG, "wifiSPFQDN: " + words[2]);
+            return words[2];
         }
 
         return null;
     }
 
-    private boolean checkWifiSPFQDNForAddMo(Document doc) {
-        Log.d(TAG, "[checkWifiSPFQDNForAddMo]");
-        mSPFQDNFromMo = getWifiSPFQDNFromMoTree(doc, "addMO");
-        Log.d(TAG, "current wifiSPFQDN: " + mSPFQDN + ", wifiSPFQDN From MO: " + mSPFQDNFromMo);
-        if (mSPFQDNFromMo != null && mSPFQDN.endsWith(mSPFQDNFromMo)) {
-            Log.d(TAG, "[checkWifiSPFQDNForAddMo] pass");
+    private boolean checkWifiSpFqdnForAddMo(Document doc) {
+        Log.d(TAG, "[checkWifiSpFqdnForAddMo]");
+        mSpFqdnFromMo = getWifiSpFqdnFromMoTree(doc, "addMO");
+        Log.d(TAG, "current wifiSPFQDN: " + mSpFqdn + ", wifiSPFQDN From MO: " + mSpFqdnFromMo);
+        if (mSpFqdnFromMo != null && mSpFqdn.endsWith(mSpFqdnFromMo)) {
+            Log.d(TAG, "[checkWifiSpFqdnForAddMo] pass");
             return true;
         }
-        Log.d(TAG, "[checkWifiSPFQDNForAddMo] fail");
+        Log.d(TAG, "[checkWifiSpFqdnForAddMo] fail");
         return false;
     }
 
-    private boolean checkWifiSPFQDNForUpdateMo(Document doc) {
-        Log.d(TAG, "[checkWifiSPFQDNForUpdateMo]");
-        mSPFQDNFromMo = getWifiSPFQDNFromMoTree(doc, "updateNode");
-        Log.d(TAG, "current wifiSPFQDN: " + mSPFQDN + ", wifiSPFQDN From MO: " + mSPFQDNFromMo);
-        if (mSPFQDNFromMo != null && mSPFQDN.endsWith(mSPFQDNFromMo)) {
-            Log.d(TAG, "[checkWifiSPFQDNForUpdateMo] pass");
+    private boolean checkWifiSpFqdnForUpdateMo(Document doc) {
+        Log.d(TAG, "[checkWifiSpFqdnForUpdateMo]");
+        mSpFqdnFromMo = getWifiSpFqdnFromMoTree(doc, "updateNode");
+        Log.d(TAG, "current wifiSPFQDN: " + mSpFqdn + ", wifiSPFQDN From MO: " + mSpFqdnFromMo);
+        if (mSpFqdnFromMo != null && mSpFqdn.endsWith(mSpFqdnFromMo)) {
+            Log.d(TAG, "[checkWifiSpFqdnForUpdateMo] pass");
             return true;
         }
-        Log.d(TAG, "[checkWifiSPFQDNForUpdateMo] fail");
+        Log.d(TAG, "[checkWifiSpFqdnForUpdateMo] fail");
         return false;
     }
 
-    private boolean checkWifiSPFQDNForUploadMo(Document doc) {
-        Log.d(TAG, "[checkWifiSPFQDNForUploadMo]");
-        mSPFQDNFromMo = getWifiSPFQDNFromMoTree(doc, "uploadMO");
-        Log.d(TAG, "current wifiSPFQDN: " + mSPFQDN + ", wifiSPFQDN From MO: " + mSPFQDNFromMo);
-        if (mSPFQDNFromMo != null && mSPFQDN.endsWith(mSPFQDNFromMo)) {
-            Log.d(TAG, "[checkWifiSPFQDNForUploadMo] pass");
+    private boolean checkWifiSpFqdnForUploadMo(Document doc) {
+        Log.d(TAG, "[checkWifiSpFqdnForUploadMo]");
+        mSpFqdnFromMo = getWifiSpFqdnFromMoTree(doc, "uploadMO");
+        Log.d(TAG, "current wifiSPFQDN: " + mSpFqdn + ", wifiSPFQDN From MO: " + mSpFqdnFromMo);
+        if (mSpFqdnFromMo != null && mSpFqdn.endsWith(mSpFqdnFromMo)) {
+            Log.d(TAG, "[checkWifiSpFqdnForUploadMo] pass");
             return true;
         }
-        Log.d(TAG, "[checkWifiSPFQDNForUploadMo] fail");
+        Log.d(TAG, "[checkWifiSpFqdnForUploadMo] fail");
         return false;
     }
 
@@ -2196,9 +2066,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     Element eElement = (Element) nNode;
                     Log.d(TAG,
                             "launchBrowserToURI : "
-                                    + ppsmoParser.getTagValue(NAMESPACE_NS,
+                                    + mPpsmoParser.getTagValue(NAMESPACE_NS,
                                             "launchBrowserToURI", eElement));
-                    String uri = ppsmoParser.getTagValue(NAMESPACE_NS,
+                    String uri = mPpsmoParser.getTagValue(NAMESPACE_NS,
                             "launchBrowserToURI", eElement);
                     if (uri == null) {
                         return false;
@@ -2832,7 +2702,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     // check SPFQDN on subscription and policy server
                     suffixMatch = true;
                 }
-                if (!checkSubjectAltNameDNSName(arg0[0], mSPFQDN, suffixMatch)) {
+                if (!checkSubjectAltNameDNSName(arg0[0], mSpFqdn, suffixMatch)) {
                     throw new RuntimeException(
                             "Certificate Subject Alternative Name doesn't include SP-FQDN");
                 }

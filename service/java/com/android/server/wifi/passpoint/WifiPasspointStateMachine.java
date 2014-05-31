@@ -399,7 +399,7 @@ public class WifiPasspointStateMachine extends StateMachine {
             switch (message.what) {
                 case CMD_START_OSU:
                     String ssid = null;//TODO: get ssid form app layer
-                    ConnectToPasspoint(buildPolicy(ssid, 1, ssid, null, null,
+                    ConnectToPasspoint(buildPolicy(ssid, ssid, null, null,
                             WifiPasspointPolicy.UNRESTRICTED, false));
                     break;
                 case CMD_WIFI_CONNECTED:
@@ -518,7 +518,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                 Log.d(TAG, "connecting to Reme server:" + updateMethod);
 
                 WifiPasspointDmTree.CredentialInfo info = mTreeHelper.getCredentialInfo(mWifiTree,
-                        mCurrentUsedPolicy.getCredential().getWifiSPFQDN(),
+                        mCurrentUsedPolicy.getCredential().getWifiSpFqdn(),
                         mCurrentUsedPolicy.getCredential().getCredName());
                 if (info != null && info.subscriptionUpdate.URI != null) {
                     url = info.subscriptionUpdate.URI;
@@ -568,7 +568,7 @@ public class WifiPasspointStateMachine extends StateMachine {
             }
 
             try {
-                String polUrl = currentCredential.getPolicyUpdateURI();
+                String polUrl = currentCredential.getPolicyUpdateUri();
                 URL policyUpdateUrl = new URL(polUrl);
                 String fqdn = policyUpdateUrl.getHost();
 
@@ -1105,6 +1105,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                     pc = new WifiPasspointCredential("TTLS",
                             aaaRootCertSha1FingerPrint,
                             null,
+                            null,
+                            null,
                             sp,
                             info);
 
@@ -1141,6 +1143,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                         pc = new WifiPasspointCredential("TLS",
                                 aaaRootCertSha1FingerPrint,
                                 creSha1FingerPrint,
+                                null,
+                                null,
                                 sp,
                                 info);
                         pc.setUserPreference(isUserPreferred);
@@ -1221,11 +1225,11 @@ public class WifiPasspointStateMachine extends StateMachine {
         return null;
     }
 
-    private WifiPasspointPolicy buildPolicy(String name, int priority, String ssid,
+    private WifiPasspointPolicy buildPolicy(String name, String ssid,
             String bssid, WifiPasspointCredential pc,
             int restriction, boolean ishomesp) {
 
-        WifiPasspointPolicy policy = new WifiPasspointPolicy(name, priority, ssid, bssid, pc, restriction,
+        WifiPasspointPolicy policy = new WifiPasspointPolicy(name, ssid, bssid, pc, restriction,
                 ishomesp);
         Log.d(TAG, "buildPolicy:" + policy);
         return policy;
@@ -1343,16 +1347,16 @@ public class WifiPasspointStateMachine extends StateMachine {
             //Log.d(TAG, "CreateOsenConfig");
             //mWifiMgr.disableAllNetworkAtOnce();
             //wfg = CreateOsenConfig(pp);
-        } else if (null == currentCredential || null == currentCredential.getEapMethodStr()) {
+        } else if (null == currentCredential || null == currentCredential.getType()) {
             Log.d(TAG, "CreateOpenConfig");
             wfg = CreateOpenConfig(pp);
-        } else if ("TTLS".equals(currentCredential.getEapMethodStr())) {
+        } else if ("TTLS".equals(currentCredential.getType())) {
             Log.d(TAG, "CreateEapTtlsConfig");
             wfg = CreateEapTtlsConfig(pp);
-        } else if ("SIM".equals(currentCredential.getEapMethodStr())) {
+        } else if ("SIM".equals(currentCredential.getType())) {
             Log.d(TAG, "CreateEapSimConfig");
             wfg = CreateEapSimConfig(pp);
-        } else if ("TLS".equals(currentCredential.getEapMethodStr())) {
+        } else if ("TLS".equals(currentCredential.getType())) {
             Log.d(TAG, "CreateEapTlsConfig");
             wfg = CreateEapTlsConfig(pp);
         }
@@ -1369,8 +1373,8 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
 
         // Set highest priority while OSU or using preferred credential
-        if (pp.getSubscriptionPriority() == 0 ||
-                (osen || null == currentCredential || null == currentCredential.getEapMethodStr())) {
+        if (pp.getCredentialPriority() == 0 ||
+                (osen || null == currentCredential || null == currentCredential.getType())) {
 
             wfg.priority = findHighestPriorityNetwork() + 1;
             mWifiMgr.updateNetwork(wfg);
