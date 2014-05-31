@@ -178,7 +178,12 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String STATUS_KEY = "AUTO_JOIN_STATUS:  ";
     private static final String SELF_ADDED_KEY = "SELF_ADDED:  ";
     private static final String FAILURE_KEY = "FAILURE:  ";
-
+    private static final String DID_SELF_ADD_KEY = "DID_SELF_ADD:  ";
+    private static final String CREATOR_UID_KEY = "CREATOR_UID_KEY:  ";
+    private static final String CONNECT_UID_KEY = "CONNECT_UID_KEY:  ";
+    private static final String UPDATE_UID_KEY = "UPDATE_UID:  ";
+    private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS:  ";
+    private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON:  ";
     /* Enterprise configuration keys */
     /**
      * In old configurations, the "private_key" field was used. However, newer
@@ -423,7 +428,9 @@ public class WifiConfigStore extends IpConfigStore {
         if (VDBG) localLog("WifiConfigStore: saveNetwork netId", config.networkId);
         if (VDBG) {
             loge("WifiConfigStore saveNetwork, size=" + mConfiguredNetworks.size()
-                    + " SSID=" + config.SSID);
+                    + " SSID=" + config.SSID
+                    + " Uid=" + Integer.toString(config.creatorUid)
+                    + "/" + Integer.toString(config.lastUpdateUid));
         }
         boolean newNetwork = (config.networkId == INVALID_NETWORK_ID);
         NetworkUpdateResult result = addOrUpdateNetworkNative(config);
@@ -450,6 +457,9 @@ public class WifiConfigStore extends IpConfigStore {
                 conf.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
                 enableNetworkWithoutBroadcast(conf.networkId, false);
             }
+            if (VDBG) loge("WifiConfigStore: saveNetwork got config back netId="
+                    + Integer.toString(netId)
+                    + " uid=" + Integer.toString(config.creatorUid));
         }
 
         mWifiNative.saveConfig();
@@ -507,9 +517,11 @@ public class WifiConfigStore extends IpConfigStore {
      * @return network Id
      */
     int addOrUpdateNetwork(WifiConfiguration config) {
-        if (VDBG) localLog("addOrUpdateNetwork", config.networkId);
+        if (VDBG) localLog("addOrUpdateNetwork id=", config.networkId);
         //adding unconditional message to chase b/15111865
-        Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId));
+        Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId)
+                + " uid=" + Integer.toString(config.creatorUid)
+                + "/" + Integer.toString(config.lastUpdateUid));
         NetworkUpdateResult result = addOrUpdateNetworkNative(config);
         if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
             WifiConfiguration conf = mConfiguredNetworks.get(result.getNetworkId());
@@ -1080,9 +1092,22 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(PRIORITY_KEY + Integer.toString(config.priority) + SEPARATOR_KEY);
                     out.writeUTF(STATUS_KEY + Integer.toString(config.autoJoinStatus)
                             + SEPARATOR_KEY);
+                    out.writeUTF(SUPPLICANT_STATUS_KEY + Integer.toString(config.status)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(SUPPLICANT_DISABLE_REASON_KEY
+                            + Integer.toString(config.disableReason)
+                            + SEPARATOR_KEY);
                     out.writeUTF(NETWORK_ID_KEY + Integer.toString(config.networkId)
                             + SEPARATOR_KEY);
                     out.writeUTF(SELF_ADDED_KEY + Boolean.toString(config.selfAdded)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(DID_SELF_ADD_KEY + Boolean.toString(config.didSelfAdd)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(CREATOR_UID_KEY + Integer.toString(config.creatorUid)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(CONNECT_UID_KEY + Integer.toString(config.lastConnectUid)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(UPDATE_UID_KEY + Integer.toString(config.lastUpdateUid)
                             + SEPARATOR_KEY);
 
                     String allowedKeyManagementString =
@@ -1232,10 +1257,47 @@ public class WifiConfigStore extends IpConfigStore {
                         config.autoJoinStatus = Integer.parseInt(status);
                     }
 
-                    if (key.startsWith(SELF_ADDED_KEY)) {
-                        String status = key.replace(STATUS_KEY, "");
+                    /*
+                    if (key.startsWith(SUPPLICANT_STATUS_KEY)) {
+                        String status = key.replace(SUPPLICANT_STATUS_KEY, "");
                         status = status.replace(SEPARATOR_KEY, "");
-                        config.selfAdded = Boolean.parseBoolean(status);
+                        config.status = Integer.parseInt(status);
+                    }
+
+                    if (key.startsWith(SUPPLICANT_DISABLE_REASON_KEY)) {
+                        String reason = key.replace(SUPPLICANT_DISABLE_REASON_KEY, "");
+                        reason = reason.replace(SEPARATOR_KEY, "");
+                        config.disableReason = Integer.parseInt(reason);
+                    }*/
+
+                    if (key.startsWith(SELF_ADDED_KEY)) {
+                        String selfAdded = key.replace(SELF_ADDED_KEY, "");
+                        selfAdded = selfAdded.replace(SEPARATOR_KEY, "");
+                        config.selfAdded = Boolean.parseBoolean(selfAdded);
+                    }
+
+                    if (key.startsWith(DID_SELF_ADD_KEY)) {
+                        String didSelfAdd = key.replace(DID_SELF_ADD_KEY, "");
+                        didSelfAdd = didSelfAdd.replace(SEPARATOR_KEY, "");
+                        config.didSelfAdd = Boolean.parseBoolean(didSelfAdd);
+                    }
+
+                    if (key.startsWith(CREATOR_UID_KEY)) {
+                        String uid = key.replace(CREATOR_UID_KEY, "");
+                        uid = uid.replace(SEPARATOR_KEY, "");
+                        config.creatorUid = Integer.parseInt(uid);
+                    }
+
+                    if (key.startsWith(CONNECT_UID_KEY)) {
+                        String uid = key.replace(CONNECT_UID_KEY, "");
+                        uid = uid.replace(SEPARATOR_KEY, "");
+                        config.lastConnectUid = Integer.parseInt(uid);
+                    }
+
+                    if (key.startsWith(UPDATE_UID_KEY)) {
+                        String uid = key.replace(UPDATE_UID_KEY, "");
+                        uid = uid.replace(SEPARATOR_KEY, "");
+                        config.lastUpdateUid = Integer.parseInt(uid);
                     }
 
                     if (key.startsWith(FAILURE_KEY)) {
@@ -1620,7 +1682,18 @@ public class WifiConfigStore extends IpConfigStore {
             currentConfig.setIpAssignment(IpAssignment.DHCP);
             currentConfig.setProxySettings(ProxySettings.NONE);
             currentConfig.networkId = netId;
-            if (DBG) loge("created new config netId=" + Integer.toString(netId));
+            if (config != null) {
+                //carry over the creation parameters
+                currentConfig.selfAdded = config.selfAdded;
+                currentConfig.didSelfAdd = config.didSelfAdd;
+                currentConfig.lastConnectUid = config.lastConnectUid;
+                currentConfig.lastUpdateUid = config.lastUpdateUid;
+                currentConfig.creatorUid = config.creatorUid;
+            }
+            if (DBG) {
+                loge("created new config netId=" + Integer.toString(netId)
+                        + " uid=" + Integer.toString(currentConfig.creatorUid));
+            }
         }
 
         if (DBG) loge("will read network variables netId=" + Integer.toString(netId));
@@ -1761,17 +1834,14 @@ public class WifiConfigStore extends IpConfigStore {
                             result.SSID + " and associate it with: " + link.SSID);
                 }
                 config = wifiConfigurationFromScanResult(result);
-                config.selfAdded = true;
                 if (config != null) {
+                    config.selfAdded = true;
+                    config.didSelfAdd = true;
                     if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
                             config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-
-                        //transfer the credentials
-
+                        //transfer the credentials from the configuration we are linking from
                         String psk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
                         if (psk != null) {
-
-
                             config.preSharedKey = psk;
                             if (VDBG) {
                                 if (config.preSharedKey != null)
@@ -1790,6 +1860,8 @@ public class WifiConfigStore extends IpConfigStore {
                         } else {
                             config = null;
                         }
+                    } else {
+                        config = null;
                     }
                 }
             } else {

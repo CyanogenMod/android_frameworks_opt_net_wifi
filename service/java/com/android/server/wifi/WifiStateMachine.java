@@ -965,11 +965,13 @@ public class WifiStateMachine extends StateMachine {
             VDBG = true;
             PDBG = true;
             mLogMessages = true;
+            mWifiNative.setSupplicantLogLevel("DEBUG");
         } else {
             DBG = false;
             VDBG = false;
             PDBG = false;
             mLogMessages = false;
+            mWifiNative.setSupplicantLogLevel("INFO");
         }
         mWifiAutoJoinController.enableVerboseLogging(verbose);
         mWifiMonitor.enableVerboseLogging(verbose);
@@ -4292,17 +4294,14 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_ENABLE_NETWORK:
                     boolean others = message.arg2 == 1;
-                    // We should tell autojoin the user did try to connect to that network
-                    // However, it seems that this API is designed to NOT persist,
-                    // so don't tell anything to autojoin
-                    //      if (others && mFrameworkAutoJoin.get()) {
-                    //         mWifiAutoJoinController.
-                    //                  updateConfigurationHistory(message.arg1, true, true);
-                    //      }
-
-                    // As this command is ultimately coming from WifiManager public API,
-                    // setting the last selected configuration allows the system to
-                    // remember the last user choice without persisting
+                    // Tell autojoin the user did try to select to that network
+                    // However, do NOT persist the choice by bumping the priority of the network
+                    if (others && mFrameworkAutoJoin.get()) {
+                        mWifiAutoJoinController.
+                                updateConfigurationHistory(message.arg1, true, false);
+                    }
+                    // Set the last selected configuration so as to allow the system to
+                    // stick the last user choice without persisting the choice
                     mWifiConfigStore.setLastSelectedConfiguration(message.arg1);
 
                     ok = mWifiConfigStore.enableNetwork(message.arg1, message.arg2 == 1);
@@ -4485,13 +4484,16 @@ public class WifiStateMachine extends StateMachine {
                     NetworkUpdateResult result = mWifiConfigStore.saveNetwork(config);
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
+                        if (VDBG) {
+                            loge("Success save network nid="
+                                    + Integer.toString(result.getNetworkId())
+                                    + " autojoin " + mFrameworkAutoJoin.get());
+                        }
                         if (mFrameworkAutoJoin.get()) {
                             /* Tell autojoin the user did try to modify and save that network */
-                            mWifiAutoJoinController.updateConfigurationHistory(config.networkId,
-                                    true, false);
-
+                            mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
+                                    ,true, false);
                             mWifiAutoJoinController.attemptAutoJoin();
-                            mWifiConfigStore.writeKnownNetworkHistory();
                         }
                     } else {
                         loge("Failed to save network");
@@ -4638,7 +4640,8 @@ public class WifiStateMachine extends StateMachine {
                                 + " cnid=" + config.networkId
                                 + " autojoin=" + Integer.toString(config.autoJoinStatus)
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
-                                + " my state " + getCurrentState().getName());
+                                + " my state " + getCurrentState().getName()
+                                + " uid " + Integer.toString(config.creatorUid));
                     }
 
                     NetworkUpdateResult result = mWifiConfigStore.saveNetwork(config);
@@ -4655,10 +4658,16 @@ public class WifiStateMachine extends StateMachine {
 
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
+                        if (VDBG) {
+                            loge("Success save network l2 nid="
+                                    + Integer.toString(result.getNetworkId())
+                                    + " autojoin " + mFrameworkAutoJoin.get());
+                        }
                         if (mFrameworkAutoJoin.get()) {
                             /* Tell autojoin the user did try to modify and save that network */
                             mWifiAutoJoinController.updateConfigurationHistory(config.networkId,
                                     true, false);
+                            mWifiAutoJoinController.attemptAutoJoin();
                         }
                     } else {
                         loge("Failed to save network");

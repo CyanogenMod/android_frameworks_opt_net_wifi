@@ -212,6 +212,10 @@ public class WifiNative {
         return (pong != null && pong.equals("PONG"));
     }
 
+    public void setSupplicantLogLevel(String level) {
+        doStringCommand("LOG_LEVEL " + level);
+    }
+
     public String getFreqCapability() {
         return doStringCommand("GET_CAPABILITY freq");
     }
