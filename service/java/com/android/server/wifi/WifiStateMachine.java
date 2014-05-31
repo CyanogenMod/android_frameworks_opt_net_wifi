@@ -965,11 +965,13 @@ public class WifiStateMachine extends StateMachine {
             VDBG = true;
             PDBG = true;
             mLogMessages = true;
+            mWifiNative.setSupplicantLogLevel("DEBUG");
         } else {
             DBG = false;
             VDBG = false;
             PDBG = false;
             mLogMessages = false;
+            mWifiNative.setSupplicantLogLevel("INFO");
         }
         mWifiAutoJoinController.enableVerboseLogging(verbose);
         mWifiMonitor.enableVerboseLogging(verbose);

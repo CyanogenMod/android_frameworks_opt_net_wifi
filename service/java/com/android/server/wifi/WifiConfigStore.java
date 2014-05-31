@@ -182,6 +182,8 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String CREATOR_UID_KEY = "CREATOR_UID_KEY:  ";
     private static final String CONNECT_UID_KEY = "CONNECT_UID_KEY:  ";
     private static final String UPDATE_UID_KEY = "UPDATE_UID:  ";
+    private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS:  ";
+    private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON:  ";
     /* Enterprise configuration keys */
     /**
      * In old configurations, the "private_key" field was used. However, newer
@@ -1090,6 +1092,11 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(PRIORITY_KEY + Integer.toString(config.priority) + SEPARATOR_KEY);
                     out.writeUTF(STATUS_KEY + Integer.toString(config.autoJoinStatus)
                             + SEPARATOR_KEY);
+                    out.writeUTF(SUPPLICANT_STATUS_KEY + Integer.toString(config.status)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(SUPPLICANT_DISABLE_REASON_KEY
+                            + Integer.toString(config.disableReason)
+                            + SEPARATOR_KEY);
                     out.writeUTF(NETWORK_ID_KEY + Integer.toString(config.networkId)
                             + SEPARATOR_KEY);
                     out.writeUTF(SELF_ADDED_KEY + Boolean.toString(config.selfAdded)
@@ -1249,6 +1256,19 @@ public class WifiConfigStore extends IpConfigStore {
                         status = status.replace(SEPARATOR_KEY, "");
                         config.autoJoinStatus = Integer.parseInt(status);
                     }
+
+                    /*
+                    if (key.startsWith(SUPPLICANT_STATUS_KEY)) {
+                        String status = key.replace(SUPPLICANT_STATUS_KEY, "");
+                        status = status.replace(SEPARATOR_KEY, "");
+                        config.status = Integer.parseInt(status);
+                    }
+
+                    if (key.startsWith(SUPPLICANT_DISABLE_REASON_KEY)) {
+                        String reason = key.replace(SUPPLICANT_DISABLE_REASON_KEY, "");
+                        reason = reason.replace(SEPARATOR_KEY, "");
+                        config.disableReason = Integer.parseInt(reason);
+                    }*/
 
                     if (key.startsWith(SELF_ADDED_KEY)) {
                         String selfAdded = key.replace(SELF_ADDED_KEY, "");
