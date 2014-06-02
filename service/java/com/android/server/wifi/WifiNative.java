@@ -1191,7 +1191,7 @@ public class WifiNative {
         int period_ms;
         int report_events;
         int num_channels;
-        ChannelSettings channels[] = new ChannelSettings[8];
+        ChannelSettings channels[];
     }
 
     public static class ScanSettings {
@@ -1199,7 +1199,7 @@ public class WifiNative {
         int max_ap_per_scan;
         int report_threshold;
         int num_buckets;
-        BucketSettings buckets[] = new BucketSettings[8];
+        BucketSettings buckets[];
     }
 
     public static interface ScanEventHandler {
