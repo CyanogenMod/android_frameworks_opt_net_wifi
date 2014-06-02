@@ -145,7 +145,7 @@ static jstring android_net_wifi_doStringCommand(JNIEnv* env, jobject, jstring ja
 
 /* wifi_hal <==> WifiNative bridge */
 
-static jobject mObj;                            /* saved WifiNative object */
+static jclass mCls;                             /* saved WifiNative object */
 static JavaVM *mVM;                             /* saved JVM pointer */
 
 static const char *WifiHandleVarName = "sWifiHalHandle";
@@ -158,17 +158,17 @@ static JNIEnv *getEnv() {
     return env;
 }
 
-static wifi_handle getWifiHandle(JNIEnv *env, jobject obj) {
-    return (wifi_handle) getStaticLongField(env, obj, WifiHandleVarName);
+static wifi_handle getWifiHandle(JNIEnv *env, jclass cls) {
+    return (wifi_handle) getStaticLongField(env, cls, WifiHandleVarName);
 }
 
-static wifi_interface_handle getIfaceHandle(JNIEnv *env, jobject obj, jint index) {
-    return (wifi_interface_handle) getStaticLongArrayField(env, obj, WifiIfaceHandleVarName, index);
+static wifi_interface_handle getIfaceHandle(JNIEnv *env, jclass cls, jint index) {
+    return (wifi_interface_handle) getStaticLongArrayField(env, cls, WifiIfaceHandleVarName, index);
 }
 
 static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
 
-    ALOGD("creating scan result");
+    // ALOGD("creating scan result");
 
     jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
     if (scanResult == NULL) {
@@ -176,7 +176,7 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
         return NULL;
     }
 
-    ALOGD("setting SSID to %s", result.ssid);
+    // ALOGD("setting SSID to %s", result.ssid);
     setStringField(env, scanResult, "SSID", result.ssid);
 
     char bssid[32];
@@ -192,18 +192,18 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
     return scanResult;
 }
 
-static jboolean android_net_wifi_startHal(JNIEnv* env, jobject obj) {
-    wifi_handle halHandle = getWifiHandle(env, obj);
+static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
+    wifi_handle halHandle = getWifiHandle(env, cls);
 
     if (halHandle == NULL) {
         wifi_error res = wifi_initialize(&halHandle);
         if (res == WIFI_SUCCESS) {
-            setStaticLongField(env, obj, WifiHandleVarName, (jlong)halHandle);
+            setStaticLongField(env, cls, WifiHandleVarName, (jlong)halHandle);
             ALOGD("Did set static halHandle = %p", halHandle);
         }
         env->GetJavaVM(&mVM);
-        mObj = env->NewGlobalRef(obj);
-        ALOGD("halHandle = %p, mVM = %p, mObj = %p", halHandle, mVM, mObj);
+        mCls = (jclass) env->NewGlobalRef(cls);
+        ALOGD("halHandle = %p, mVM = %p, mCls = %p", halHandle, mVM, mCls);
         return res == WIFI_SUCCESS;
     } else {
         return true;
@@ -214,29 +214,29 @@ void android_net_wifi_hal_cleaned_up_handler(wifi_handle handle) {
     ALOGD("In wifi cleaned up handler");
 
     JNIEnv * env = getEnv();
-    setStaticLongField(env, mObj, WifiHandleVarName, 0);
-    env->DeleteGlobalRef(mObj);
-    mObj = NULL;
+    setStaticLongField(env, mCls, WifiHandleVarName, 0);
+    env->DeleteGlobalRef(mCls);
+    mCls = NULL;
     mVM  = NULL;
 }
 
-static void android_net_wifi_stopHal(JNIEnv* env, jobject obj) {
+static void android_net_wifi_stopHal(JNIEnv* env, jclass cls) {
     ALOGD("In wifi stop Hal");
-    wifi_handle halHandle = getWifiHandle(env, obj);
+    wifi_handle halHandle = getWifiHandle(env, cls);
     wifi_cleanup(halHandle, android_net_wifi_hal_cleaned_up_handler);
 }
 
-static void android_net_wifi_waitForHalEvents(JNIEnv* env, jobject obj) {
+static void android_net_wifi_waitForHalEvents(JNIEnv* env, jclass cls) {
 
-    ALOGD("waitForHalEvents called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
+    ALOGD("waitForHalEvents called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
-    wifi_handle halHandle = getWifiHandle(env, obj);
+    wifi_handle halHandle = getWifiHandle(env, cls);
     wifi_event_loop(halHandle);
 }
 
-static int android_net_wifi_getInterfaces(JNIEnv *env, jobject obj) {
+static int android_net_wifi_getInterfaces(JNIEnv *env, jclass cls) {
     int n = 0;
-    wifi_handle halHandle = getWifiHandle(env, obj);
+    wifi_handle halHandle = getWifiHandle(env, cls);
     wifi_interface_handle *ifaceHandles = NULL;
     int result = wifi_get_ifaces(halHandle, &n, &ifaceHandles);
     if (result < 0) {
@@ -269,15 +269,15 @@ static int android_net_wifi_getInterfaces(JNIEnv *env, jobject obj) {
         elems[i] = reinterpret_cast<jlong>(ifaceHandles[i]);
     }
     env->SetLongArrayRegion(array, 0, n, elems);
-    setStaticLongArrayField(env, obj, WifiIfaceHandleVarName, array);
+    setStaticLongArrayField(env, cls, WifiIfaceHandleVarName, array);
 
     return (result < 0) ? result : n;
 }
 
-static jstring android_net_wifi_getInterfaceName(JNIEnv *env, jobject obj, jint i) {
+static jstring android_net_wifi_getInterfaceName(JNIEnv *env, jclass cls, jint i) {
     char buf[EVENT_BUF_SIZE];
 
-    jlong value = getStaticLongArrayField(env, obj, WifiIfaceHandleVarName, i);
+    jlong value = getStaticLongArrayField(env, cls, WifiIfaceHandleVarName, i);
     wifi_interface_handle handle = (wifi_interface_handle) value;
     int result = ::wifi_get_iface_name(handle, buf, sizeof(buf));
     if (result < 0) {
@@ -292,9 +292,9 @@ static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
-    ALOGD("onScanResultsAvailable called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
+    ALOGD("onScanResultsAvailable called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
-    reportEvent(env, mObj, "onScanResultsAvailable", "(I)V", id);
+    reportEvent(env, mCls, "onScanResultsAvailable", "(I)V", id);
 }
 
 static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
@@ -302,7 +302,7 @@ static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
-    ALOGD("onFullScanResult called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
+    ALOGD("onFullScanResult called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
     jobject scanResult = createScanResult(env, *result);
 
@@ -321,14 +321,14 @@ static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
 
     ALOGE("Returning result");
 
-    reportEvent(env, mObj, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[B)V", id,
+    reportEvent(env, mCls, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[B)V", id,
             scanResult, elements);
 }
 
 static jboolean android_net_wifi_startScan(
-        JNIEnv *env, jobject obj, jint iface, jint id, jobject settings) {
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject settings) {
 
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("starting scan on interface[%d] = %p", iface, handle);
 
     wifi_scan_cmd_params params;
@@ -393,20 +393,20 @@ static jboolean android_net_wifi_startScan(
     return wifi_start_gscan(id, handle, params, handler) == WIFI_SUCCESS;
 }
 
-static jboolean android_net_wifi_stopScan(JNIEnv *env, jobject obj, jint iface, jint id) {
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+static jboolean android_net_wifi_stopScan(JNIEnv *env, jclass cls, jint iface, jint id) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("stopping scan on interface[%d] = %p", iface, handle);
 
     return wifi_stop_gscan(id, handle)  == WIFI_SUCCESS;
 }
 
 static jobject android_net_wifi_getScanResults(
-        JNIEnv *env, jobject obj, jint iface, jboolean flush)  {
+        JNIEnv *env, jclass cls, jint iface, jboolean flush)  {
     
     wifi_scan_result results[256];
     int num_results = 256;
     
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("getting scan results on interface[%d] = %p", iface, handle);
     
     int result = wifi_get_cached_gscan_results(handle, 1, results, &num_results);
@@ -456,9 +456,9 @@ static jobject android_net_wifi_getScanResults(
 
 
 static jboolean android_net_wifi_getScanCapabilities(
-        JNIEnv *env, jobject obj, jint iface, jobject capabilities) {
+        JNIEnv *env, jclass cls, jint iface, jobject capabilities) {
 
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("getting scan capabilities on interface[%d] = %p", iface, handle);
 
     wifi_gscan_capabilities c;
@@ -523,7 +523,7 @@ static void onHotlistApFound(wifi_request_id id,
     mVM->AttachCurrentThread(&env, NULL);
 
     ALOGD("onHotlistApFound called, vm = %p, obj = %p, env = %p, num_results = %d",
-            mVM, mObj, env, num_results);
+            mVM, mCls, env, num_results);
 
     jclass clsScanResult = (env)->FindClass("android/net/wifi/ScanResult");
     if (clsScanResult == NULL) {
@@ -562,14 +562,14 @@ static void onHotlistApFound(wifi_request_id id,
         ALOGD("Found AP %32s %s", results[i].ssid, bssid);
     }
 
-    reportEvent(env, mObj, "onHotlistApFound", "(I[Landroid/net/wifi/ScanResult;)V",
+    reportEvent(env, mCls, "onHotlistApFound", "(I[Landroid/net/wifi/ScanResult;)V",
         id, scanResults);
 }
 
 static jboolean android_net_wifi_setHotlist(
-        JNIEnv *env, jobject obj, jint iface, jint id, jobject ap)  {
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject ap)  {
 
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("setting hotlist on interface[%d] = %p", iface, handle);
 
     wifi_bssid_hotlist_params params;
@@ -622,9 +622,9 @@ static jboolean android_net_wifi_setHotlist(
 }
 
 static jboolean android_net_wifi_resetHotlist(
-        JNIEnv *env, jobject obj, jint iface, jint id)  {
+        JNIEnv *env, jclass cls, jint iface, jint id)  {
 
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("resetting hotlist on interface[%d] = %p", iface, handle);
 
     return wifi_reset_bssid_hotlist(id, handle) == WIFI_SUCCESS;
@@ -634,7 +634,7 @@ void onSignificantWifiChange(wifi_request_id id, unsigned num_results, wifi_scan
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
-    ALOGD("onSignificantWifiChange called, vm = %p, obj = %p, env = %p", mVM, mObj, env);
+    ALOGD("onSignificantWifiChange called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
     jclass clsScanResult = (env)->FindClass("android/net/wifi/ScanResult");
     if (clsScanResult == NULL) {
@@ -671,15 +671,15 @@ void onSignificantWifiChange(wifi_request_id id, unsigned num_results, wifi_scan
         env->SetObjectArrayElement(scanResults, i, scanResult);
     }
 
-    reportEvent(env, mObj, "onSignificantWifiChange", "(I[Landroid/net/wifi/ScanResult;)V",
+    reportEvent(env, mCls, "onSignificantWifiChange", "(I[Landroid/net/wifi/ScanResult;)V",
         id, scanResults);
 
 }
 
 static jboolean android_net_wifi_trackSignificantWifiChange(
-        JNIEnv *env, jobject obj, jint iface, jint id, jobject settings)  {
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject settings)  {
 
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("tracking significant wifi change on interface[%d] = %p", iface, handle);
 
     wifi_significant_change_params params;
@@ -742,9 +742,9 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
 }
 
 static jboolean android_net_wifi_untrackSignificantWifiChange(
-        JNIEnv *env, jobject obj, jint iface, jint id)  {
+        JNIEnv *env, jclass cls, jint iface, jint id)  {
 
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("resetting significant wifi change on interface[%d] = %p", iface, handle);
 
     return wifi_reset_significant_change_handler(id, handle) == WIFI_SUCCESS;
@@ -758,12 +758,12 @@ void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
     memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
 }
 
-static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jobject obj, jint iface)  {
+static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint iface)  {
 
     wifi_stats_result_handler handler;
     memset(&handler, 0, sizeof(handler));
     handler.on_link_stats_results = &onLinkStatsResults;
-    wifi_interface_handle handle = getIfaceHandle(env, obj, iface);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     int result = wifi_get_link_stats(0, handle, handler);
     if (result < 0) {
         ALOGE("failed to get link statistics\n");
