@@ -61,8 +61,8 @@ wifi_error wifi_stop_gscan(wifi_request_id id, wifi_interface_handle iface) {
     return WIFI_ERROR_UNINITIALIZED;
 }
 
-wifi_error wifi_get_cached_results(wifi_interface_handle iface, byte flush,
-        wifi_scan_result_handler handler) {
+wifi_error wifi_get_cached_gscan_results(wifi_interface_handle iface, byte flush,
+        int max, wifi_scan_result *results, int *num) {
     return WIFI_ERROR_UNINITIALIZED;
 }
 
@@ -107,4 +107,5 @@ wifi_error wifi_clear_link_stats(wifi_interface_handle iface,
       u32 stats_clear_req_mask, u32 *stats_clear_rsp_mask, u8 stop_req, u8 *stop_rsp) {
     return WIFI_ERROR_UNINITIALIZED;
 }
+
 
