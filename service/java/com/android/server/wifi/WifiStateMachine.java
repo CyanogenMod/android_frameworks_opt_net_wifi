@@ -293,6 +293,8 @@ public class WifiStateMachine extends StateMachine {
     private DhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
 
+    private boolean mWifiLinkLayerStatsSupported = true;
+
     private final AtomicInteger mCountryCodeSequence = new AtomicInteger();
 
     private class InterfaceObserver extends BaseNetworkObserver {
@@ -508,6 +510,8 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_RELOAD_TLS_AND_RECONNECT         = BASE + 142;
 
     static final int CMD_AUTO_CONNECT                     = BASE + 143;
+
+    static final int CMD_UNWANTED_NETWORK                 = BASE + 144;
 
     /* Wifi state machine modes of operation */
     /* CONNECT_MODE - connect to any 'known' AP when it becomes available */
@@ -2031,9 +2035,7 @@ public class WifiStateMachine extends StateMachine {
             setScanAlarm(false);
         }
 
-
         if (DBG) log("handleScreenStateChanged Exit: " + screenOn);
-
     }
 
     private void checkAndSetConnectivityInstance() {
@@ -2446,6 +2448,109 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+
+    private void calculateWifiScore(WifiLinkLayerStats stats) {
+
+        mWifiInfo.updatePacketRates(stats);
+        int score = 56; //starting score, temporarily hardcoded in between 50 and 60
+        boolean isBadLinkspeed = (mWifiInfo.is24GHz()
+                && mWifiInfo.getLinkSpeed() <= 6)
+                || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed() <= 18);
+        boolean isGoodLinkspeed = (mWifiInfo.is24GHz()
+                && mWifiInfo.getLinkSpeed() >= 48)
+                || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed() >= 48);
+        boolean isBadRSSI = (mWifiInfo.is24GHz() && mWifiInfo.getRssi() < WifiConfiguration.BAD_RSSI_24)
+                || (mWifiInfo.is5GHz() && mWifiInfo.getRssi() < WifiConfiguration.BAD_RSSI_5);
+        boolean isLowRSSI = (mWifiInfo.is24GHz() && mWifiInfo.getRssi() < WifiConfiguration.LOW_RSSI_24)
+                || (mWifiInfo.is5GHz() && mWifiInfo.getRssi() < WifiConfiguration.LOW_RSSI_5);
+        boolean isHighRSSI = (mWifiInfo.is24GHz() && mWifiInfo.getRssi() >= WifiConfiguration.GOOD_RSSI_24)
+                || (mWifiInfo.is5GHz() && mWifiInfo.getRssi() >= WifiConfiguration.GOOD_RSSI_5);
+
+        if (PDBG) {
+            String rssi = "";
+            if (isBadRSSI) rssi += " badRSSI ";
+            else if (isHighRSSI) rssi += " highRSSI ";
+            else if (isLowRSSI) rssi += " lowRSSI ";
+            if (isBadLinkspeed) rssi += " lowSpeed ";
+            loge("calculateWifiScore freq=" + Integer.toString(mWifiInfo.getFrequency())
+                            + " speed=" + Integer.toString(mWifiInfo.getLinkSpeed())
+                            + " score=" + Integer.toString(mWifiInfo.score)
+                            + rssi
+                            + " -> txbadrate=" + String.format( "%.2f", mWifiInfo.txBadRate )
+                            + " txgoodrate=" + String.format("%.2f", mWifiInfo.txSuccessRate)
+                            + " txretriesrate=" + String.format("%.2f", mWifiInfo.txRetriesRate)
+                            + " rxrate=" + String.format("%.2f", mWifiInfo.rxSuccessRate)
+            );
+        }
+
+        if ((mWifiInfo.txBadRate > 1.8) && (mWifiInfo.txSuccessRate < 3) && (isBadRSSI || isLowRSSI)) {
+            //bad link speed && link is stuck
+            score -= 5;
+            if (PDBG) loge(" stuck --------> score=" + Integer.toString(score));
+        }
+
+        if (isBadLinkspeed) {
+            score -= 4;
+            if (PDBG) loge(" isBadLinkspeed   ---> score=" + Integer.toString(score));
+        } else if ((isGoodLinkspeed) && (mWifiInfo.txSuccessRate > 5)) {
+            score += 4; //so as bad rssi alone dont kill us
+        }
+
+
+
+        if (isBadRSSI) {
+
+            if (mWifiInfo.badRssiCount < 7)
+                mWifiInfo.badRssiCount += 1;
+        } else if (isLowRSSI) {
+            mWifiInfo.lowRssiCount = 1; //dont increment
+        } else {
+            mWifiInfo.badRssiCount = 0;
+            mWifiInfo.lowRssiCount = 0;
+        }
+
+        score -= mWifiInfo.badRssiCount * 3 +  mWifiInfo.lowRssiCount ;
+
+        if (PDBG) loge(" badRSSI count" + Integer.toString(mWifiInfo.badRssiCount)
+                     + " lowRSSI count" + Integer.toString(mWifiInfo.lowRssiCount)
+                        + " --> score " + Integer.toString(score));
+
+
+        if (isHighRSSI) {
+            score += 5;
+            if (PDBG) loge(" isHighRSSI       ---> score=" + Integer.toString(score));
+        }
+
+        //sanitize boundaries
+        if (score > NetworkAgent.WIFI_BASE_SCORE)
+            score = NetworkAgent.WIFI_BASE_SCORE;
+        if (score < 0)
+            score = 0;
+
+        //report score
+        if (score != mWifiInfo.score) {
+            if (DBG) {
+                loge("calculateWifiScore() report new score " + Integer.toString(score));
+            }
+            mWifiInfo.score = score;
+            mNetworkAgent.sendNetworkScore(score);
+        }
+    }
+
+    public double getTxPacketRate() {
+        if (mWifiInfo != null) {
+            return mWifiInfo.txSuccessRate;
+        }
+        return -1;
+    }
+
+    public double getRxPacketRate() {
+        if (mWifiInfo != null) {
+            return mWifiInfo.rxSuccessRate;
+        }
+        return -1;
+    }
+
     /*
      * Fetch TX packet counters on current connection
      */
@@ -2694,7 +2799,7 @@ public class WifiStateMachine extends StateMachine {
      * using the interface, stopping DHCP & disabling interface
      */
     private void handleNetworkDisconnect() {
-        if (DBG) log("Stopping DHCP and clearing IP");
+        if (DBG) log("handleNetworkDisconnect: Stopping DHCP and clearing IP");
 
         stopDhcp();
 
@@ -4562,7 +4667,14 @@ public class WifiStateMachine extends StateMachine {
             // ignore if we're not the current networkAgent.
             if (this != mNetworkAgent) return;
             // TODO - don't want this network.  What to do?
+            if (DBG) log("WifiNetworkAgent -> Wifi unwanted score "
+                    + Integer.toString(mWifiInfo.score));
+            unwantedNetwork();
         }
+    }
+
+    void unwantedNetwork() {
+        sendMessage(CMD_UNWANTED_NETWORK);
     }
 
     class L2ConnectedState extends State {
@@ -4691,8 +4803,13 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
+                        WifiLinkLayerStats stats = null;
+                        if (mWifiLinkLayerStatsSupported) {
+                            stats = mWifiNative.getWifiLinkLayerStats();
+                        }
                         // Get Info and continue polling
                         fetchRssiLinkSpeedAndFrequencyNative();
+                        calculateWifiScore(stats);
                         sendMessageDelayed(obtainMessage(CMD_RSSI_POLL,
                                 mRssiPollToken, 0), POLL_RSSI_INTERVAL_MSECS);
                     } else {
@@ -4715,6 +4832,14 @@ public class WifiStateMachine extends StateMachine {
                     info.rssi = mWifiInfo.getRssi();
                     fetchPktcntNative(info);
                     replyToMessage(message, WifiManager.RSSI_PKTCNT_FETCH_SUCCEEDED, info);
+                    break;
+                case CMD_UNWANTED_NETWORK:
+                    //mWifiConfigStore.handleBadNetworkDisconnectReport(mLastNetworkId, mWifiInfo);
+                    //disconnecting is probably too rough and reduce the chance we recover quickly.
+                    //we should not have to disconnect, instead rely on network stack to send data
+                    //traffic somewhere else but remember that this network is roamable with a
+                    //low wifi score threshold
+                    sendMessage(CMD_DISCONNECT);
                     break;
                 default:
                     return NOT_HANDLED;
@@ -4881,6 +5006,14 @@ public class WifiStateMachine extends StateMachine {
 
                     transitionTo(mVerifyingLinkState);
                     break;
+                case CMD_UNWANTED_NETWORK:
+                    mWifiConfigStore.handleBadNetworkDisconnectReport(mLastNetworkId, mWifiInfo);
+                    //disconnecting is probably too rough and reduce the chance we recover quickly.
+                    //we should not have to disconnect, instead rely on network stack to send data
+                    //traffic somewhere else but remember that this network is roamable with a
+                    //low wifi score threshold
+                    sendMessage(CMD_DISCONNECT);
+                    return HANDLED;
                 default:
                     return NOT_HANDLED;
             }

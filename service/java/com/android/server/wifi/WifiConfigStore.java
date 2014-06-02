@@ -37,6 +37,7 @@ import android.net.wifi.WifiSsid;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
 import android.net.wifi.ScanResult;
+import android.net.wifi.WifiInfo;
 
 import android.os.Environment;
 import android.os.FileObserver;
@@ -170,6 +171,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String FREQ_KEY = "FREQ:  ";
     private static final String DATE_KEY = "DATE:  ";
     private static final String MILLI_KEY = "MILLI:  ";
+    private static final String BLACKLIST_MILLI_KEY = "BLACKLIST_MILLI:  ";
     private static final String NETWORK_ID_KEY = "ID:  ";
     private static final String PRIORITY_KEY = "PRIORITY:  ";
     private static final String DEFAULT_GW_KEY = "DEFAULT_GW:  ";
@@ -466,7 +468,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (VDBG) localLog("WifiConfigStore: re-enabling: " + conf.SSID);
 
                 // reenable autojoin, since new information has been provided
-                conf.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
+                conf.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 enableNetworkWithoutBroadcast(conf.networkId, false);
             }
             if (VDBG) loge("WifiConfigStore: saveNetwork got config back netId="
@@ -487,6 +489,8 @@ public class WifiConfigStore extends IpConfigStore {
             switch (state) {
                 case CONNECTED:
                     config.status = Status.CURRENT;
+                    //we successfully connected, hence remove the blacklist
+                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                     break;
                 case DISCONNECTED:
                     //If network is already disabled, keep the status
@@ -607,7 +611,7 @@ public class WifiConfigStore extends IpConfigStore {
                  * that could cause the system to re-add it right away.
                  * Instead black list it. It will be unblacklisted only thru a new add.
                  */
-                config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DELETED;
+                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DELETED);
                 mWifiNative.disableNetwork(config.networkId);
                 remove = false;
             }
@@ -1141,6 +1145,8 @@ public class WifiConfigStore extends IpConfigStore {
                         out.writeUTF(PEER_CONFIGURATION_KEY + config.peerWifiConfiguration
                                 + SEPARATOR_KEY);
                     }
+                    out.writeUTF(BLACKLIST_MILLI_KEY + Long.toString(config.blackListTimestamp)
+                            + SEPARATOR_KEY);
                     out.writeUTF(CREATOR_UID_KEY + Integer.toString(config.creatorUid)
                             + SEPARATOR_KEY);
                     out.writeUTF(CONNECT_UID_KEY + Integer.toString(config.lastConnectUid)
@@ -1323,6 +1329,12 @@ public class WifiConfigStore extends IpConfigStore {
                         String uid = key.replace(CREATOR_UID_KEY, "");
                         uid = uid.replace(SEPARATOR_KEY, "");
                         config.creatorUid = Integer.parseInt(uid);
+                    }
+
+                    if (key.startsWith(BLACKLIST_MILLI_KEY)) {
+                        String milli = key.replace(BLACKLIST_MILLI_KEY, "");
+                        milli = milli.replace(SEPARATOR_KEY, "");
+                        config.blackListTimestamp = Long.parseLong(milli);
                     }
 
                     if (key.startsWith(CONNECT_UID_KEY)) {
@@ -1756,7 +1768,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (currentConfig.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
             //make sure the configuration is not deleted anymore since we just
             //added or modified it.
-            currentConfig.autoJoinStatus = currentConfig.AUTO_JOIN_ENABLED;
+            currentConfig.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
             currentConfig.selfAdded = false;
             currentConfig.didSelfAdd = false;
         }
@@ -2506,6 +2518,31 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
+    /** called when CS ask WiFistateMachine to disconnect the current network
+     * because the score is bad.
+     */
+    void handleBadNetworkDisconnectReport(int netId, WifiInfo info) {
+        /* TODO verify the bad network is current */
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        if (config != null) {
+            if ((info.getRssi() < WifiConfiguration.UNWANTED_BLACKLIST_SOFT_RSSI_24
+                    && info.is24GHz()) || (info.getRssi() <
+                            WifiConfiguration.UNWANTED_BLACKLIST_SOFT_RSSI_5 && info.is5GHz())) {
+                //we got disconnected and RSSI was bad, so disable light
+                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED
+                        + WifiConfiguration.UNWANTED_BLACKLIST_SOFT_BUMP);
+                loge("handleBadNetworkDisconnectReport (+4) "
+                        + Integer.toString(netId) + " " + info);
+            } else {
+                //we got disabled but RSSI is good, so disable hard
+                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED
+                        + WifiConfiguration.UNWANTED_BLACKLIST_HARD_BUMP);
+                loge("handleBadNetworkDisconnectReport (+8) "
+                        + Integer.toString(netId) + " " + info);
+            }
+        }
+    }
+
     void handleSSIDStateChange(int netId, boolean enabled, String message) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
@@ -2514,7 +2551,7 @@ public class WifiConfigStore extends IpConfigStore {
                         " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
                         + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
                 if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
-                    config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
+                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 }
             } else {
                 loge("SSID temp disabled for  " + config.configKey() +
@@ -2528,18 +2565,28 @@ public class WifiConfigStore extends IpConfigStore {
                     //the user did not create this network and entered its credentials, so we want
                     //to be very aggressive in disabling it completely.
                     disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
-                    config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE;
+                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
+                    config.disableReason = WifiConfiguration.DISABLED_AUTH_FAILURE;
+
                 } else {
                     if (message != null) {
                         if (message.contains("WRONG_KEY")
                                 || message.contains("AUTH_FAILED")) {
                             //This configuration has received an auth failure, so disable it
-                            //because we don't want auto-join to try it out.
+                            //temporarily because we don't want auto-join to try it out.
                             //this network may be re-enabled by the "usual"
                             // enableAllNetwork function
-                            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED) {
-                                config.autoJoinStatus
-                                        = WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED;
+                            //TODO: resolve interpretation of WRONG_KEY and AUTH_FAILURE:
+                            //TODO: if we could count on the wrong_ley or auth_failure message to be correct
+                            //TODO: then we could just mark the configuration as DISABLED_ON_AUTH_FAILURE
+                            //TODO: and the configuration will stay there until user enter new credentials
+                            //TODO: It is not the case however, so instead  of disabling, let's start
+                            //TODO: blacklisting hard
+                            if (config.autoJoinStatus <=
+                                    WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
+                                config.setAutoJoinStatus(3 + config.autoJoinStatus * 2);
+                                if (config.autoJoinStatus > WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
+                                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
                             }
                         }
                         message.replace("\n", "");
