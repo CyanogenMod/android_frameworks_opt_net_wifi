@@ -66,13 +66,13 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.Queue;
 
 /**
@@ -114,7 +114,7 @@ public class WifiPasspointStateMachine extends StateMachine {
     private Object mStateLock = new Object();
     private Object mPolicyLock = new Object();
     private ArrayList<WifiPasspointCredential> mCredentialList = new ArrayList<WifiPasspointCredential>();
-    private TreeSet<WifiPasspointPolicy> mNetworkPolicy = new TreeSet<WifiPasspointPolicy>();
+    private ArrayList<WifiPasspointPolicy> mNetworkPolicy = new ArrayList<WifiPasspointPolicy>();
 
     private AsyncChannel mReplyChannel = new AsyncChannel();
 
@@ -140,8 +140,7 @@ public class WifiPasspointStateMachine extends StateMachine {
     private WifiPasspointPolicy mCurrentUsedPolicy;
     private String mMcc;
     private String mMnc;
-    private ServerSocket mServerSocketForOSU;
-    private ServerSocket mServerSocketForREM;
+    private ServerSocket mRedirectServerSocket;
     private String mUpdateMethod;
     private PendingIntent mPolicyPollIntent;
 
@@ -151,6 +150,11 @@ public class WifiPasspointStateMachine extends StateMachine {
     private DiscoveryState mDiscoveryState = new DiscoveryState();
     private ProvisionState mProvisionState = new ProvisionState();
     private AccessState mAccessState = new AccessState();
+
+    private enum MatchSubscription {
+        REALM, PLMN, HOMESP_FQDN, HOMESP_OTHER_HOME_PARTNER, HOME_OI;
+    }
+
     private final String[] mIANA_EAPmethod = {
             "Reserved",//0
             "Identity",// 1
@@ -373,8 +377,6 @@ public class WifiPasspointStateMachine extends StateMachine {
                     transitionTo(mProvisionState);
                     break;
                 case CMD_START_REMEDIATION:
-                    deferMessage(message);
-                    break;
                 case CMD_START_POLICY_UPDATE:
                     deferMessage(message);
                 default:
@@ -399,8 +401,8 @@ public class WifiPasspointStateMachine extends StateMachine {
             switch (message.what) {
                 case CMD_START_OSU:
                     String ssid = null;//TODO: get ssid form app layer
-                    ConnectToPasspoint(buildPolicy(ssid, ssid, null, null,
-                            WifiPasspointPolicy.UNRESTRICTED, false));
+                    mCurrentUsedPolicy = buildPolicy(ssid, null, null, WifiPasspointPolicy.UNRESTRICTED, false);
+                    ConnectToPasspoint(mCurrentUsedPolicy);
                     break;
                 case CMD_WIFI_CONNECTED:
                     String serverurl = null;//TODO: get osu server url from app layer
@@ -411,6 +413,12 @@ public class WifiPasspointStateMachine extends StateMachine {
                     int result = message.arg1;
                     WifiPasspointDmTree tree = (WifiPasspointDmTree) message.obj;
                     handleProvisionDone(result, tree);
+                    break;
+                case CMD_LAUNCH_BROWSER:
+                    //TODO: notify app to launch browser
+                    break;
+                case CMD_BROWSER_REDIRECTED:
+                    handleBrowserRedirected();
                     break;
                 default:
                     return NOT_HANDLED;
@@ -444,7 +452,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                 CookieManager cookieMan = new CookieManager(null, null);
                 CookieHandler.setDefault(cookieMan);
 
-                startHttpServer(HS_OSU_LISTEN_PORT);
+                startHttpServer(HS_LISTEN_PORT);
                 client.startSubscriptionProvision(url);
             } catch (Exception e) {
                 Log.d(TAG, "startSubscriptionProvision fail:" + e);
@@ -480,6 +488,12 @@ public class WifiPasspointStateMachine extends StateMachine {
                     int result = message.arg1;
                     WifiPasspointDmTree tree = (WifiPasspointDmTree) message.obj;
                     handleProvisionDone(result, tree);
+                    break;
+                case CMD_LAUNCH_BROWSER:
+                    //TODO: notify app to launch browser
+                    break;
+                case CMD_BROWSER_REDIRECTED:
+                    handleBrowserRedirected();
                     break;
                 default:
                     return NOT_HANDLED;
@@ -535,7 +549,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                     CookieManager cookieMan = new CookieManager(null, null);
                     CookieHandler.setDefault(cookieMan);
 
-                    startHttpServer(HS_REM_LISTEN_PORT);
+                    startHttpServer(HS_LISTEN_PORT);
                     client.startRemediation(url, mCurrentUsedPolicy.getCredential());
                 } catch (Exception e) {
                     Log.d(TAG, "startRemediation fail:" + e);
@@ -1142,6 +1156,29 @@ public class WifiPasspointStateMachine extends StateMachine {
         return msg;
     }
 
+    private void handleBrowserRedirected() {
+        WifiPasspointClient.BaseClient client = null;
+        String updateMethod;
+
+        if (mCurrentUsedPolicy == null) {
+            updateMethod = mUpdateMethod;
+        } else  {
+            updateMethod = mCurrentUsedPolicy.getCredential().getUpdateMethod();
+        }
+
+        if (WifiPasspointManager.PROTOCOL_SOAP.equals(updateMethod)) {
+            client = mSoapClient;
+        } else if (WifiPasspointManager.PROTOCOL_DM.equals(updateMethod)) {
+            client = mDmClient;
+        } else {
+            Log.e(TAG, "STOP, updateMethod is not mentioned");
+            return;
+        }
+
+        client.setBrowserRedirected();
+
+    }
+
     private void handleProvisionDone(int result, WifiPasspointDmTree tree) {
         if (result == 0) {
             mWifiTree = tree;
@@ -1151,7 +1188,6 @@ public class WifiPasspointStateMachine extends StateMachine {
 
     private void disconnectWifi() {
         mCredentialList.clear();
-        mNetworkPolicy.clear();
         RemoveCurrentNetwork();
         mCurrentUsedPolicy = null;
         mWifiMgr.disconnect();
@@ -1183,6 +1219,297 @@ public class WifiPasspointStateMachine extends StateMachine {
                 }
             }
         }
+    }
+
+    private void createDefaultPolicies (List<String> ssidlist, WifiPasspointCredential credential) {
+        if (ssidlist.isEmpty()) {
+            return;
+        }
+
+        for (String ssid : ssidlist) {
+            WifiPasspointPolicy policy = buildPolicy(ssid, null, credential, WifiPasspointPolicy.UNRESTRICTED, false);
+            addPolicy(policy);
+        }
+    }
+
+    private List<String> getSsidMatchRoamingPartnerInfo(List<ScanResult> srlist, String fqdnMatch) {
+        List<String> ssidlist = new ArrayList<String>();
+        String[] splits = fqdnMatch.split(",");
+        if (splits.length != 2) {
+            Log.d(TAG, "partner.FQDN_Match format err:" + fqdnMatch);
+            return null;
+        }
+        String matchType = splits[0];
+        String fqdn = splits[1];
+
+        for (ScanResult sr : srlist) {
+            if (matchType.equals("includeSubdomains")) {
+                for (String name : sr.passpoint.domainName) {
+                    if (name.contains(fqdn)) {
+                        ssidlist.add(sr.SSID);
+                        break;
+                    }
+                }
+            } else if (matchType.equals("exactMatch")) {
+                for (String name : sr.passpoint.domainName) {
+                    if (name.equals(fqdn)) {
+                        ssidlist.add(sr.SSID);
+                        break;
+                    }
+                }
+            }
+        }
+
+        return ssidlist;
+    }
+
+    private List<String> getSsidMatchPasspointInfo(MatchSubscription match, List<ScanResult> srlist, WifiPasspointCredential cred) {
+        List<String> ssidlist = new ArrayList<String>();
+
+        switch(match) {
+            case REALM:
+                for (ScanResult sr : srlist) {
+                    for (WifiPasspointInfo.NaiRealm realm : sr.passpoint.naiRealm) {
+                        if (cred.getRealm().equals(realm.realm)) {
+                            ssidlist.add(sr.SSID);
+                            break;
+                        }
+                    }
+                }
+                break;
+            case PLMN:
+                //TODO: check how to get PLMN info in WifiPasspointInfo
+                break;
+            case HOMESP_FQDN:
+                for (ScanResult sr : srlist) {
+                    for (String name : sr.passpoint.domainName) {
+                        if (cred.getHomeSpFqdn().equals(name)) {
+                            ssidlist.add(sr.SSID);
+                            break;
+                        }
+                    }
+                }
+                break;
+            case HOMESP_OTHER_HOME_PARTNER:
+                Collection<WifiPasspointDmTree.OtherHomePartners> otherHomePartnerList = cred.getOtherHomePartnerList();
+                for (ScanResult sr : srlist) {
+                    for (WifiPasspointDmTree.OtherHomePartners partner : otherHomePartnerList) {
+                        for (String name : sr.passpoint.domainName) {
+                            if (partner.FQDN.equals(name)) {
+                                ssidlist.add(sr.SSID);
+                                break;
+                            }
+                        }
+                    }
+                }
+                break;
+            case HOME_OI:
+                Collection<WifiPasspointDmTree.HomeOIList> homeOiList = cred.getHomeOiList();
+                for (ScanResult sr : srlist) {
+                    for (WifiPasspointDmTree.HomeOIList homeOi : homeOiList) {
+                        if (homeOi.HomeOIRequired) {
+                            //TODO: match home oi info
+                        }
+                    }
+                }
+                break;
+            default:
+                Log.e(TAG, "getSsidMatchPasspointInfo got unknown match type " + match);
+        }
+        return ssidlist;
+    }
+
+    private boolean isSimCredential(String type) {
+        return "SIM".equals(mIANA_EAPmethod[Integer.parseInt(type)]);
+    }
+
+    private boolean isTlsCredential(String type) {
+        return "TLS".equals(mIANA_EAPmethod[Integer.parseInt(type)]);
+    }
+
+    private boolean isTtlsCredential(String type) {
+        return "TTLS".equals(mIANA_EAPmethod[Integer.parseInt(type)]);
+    }
+
+    public List<WifiPasspointPolicy> requestCredentialMatch(List<ScanResult> srlist) {
+        mNetworkPolicy.clear();
+        List<String> ssidlist = null;
+
+        for (WifiPasspointCredential credential : mCredentialList) {
+            if (isSimCredential(credential.getType())) {
+                ssidlist = getSsidMatchPasspointInfo(MatchSubscription.PLMN, srlist, credential);
+                createDefaultPolicies(ssidlist, credential);
+            } else if(credential.getRealm() != null) {
+                ssidlist = getSsidMatchPasspointInfo(MatchSubscription.REALM, srlist, credential);
+                createDefaultPolicies(ssidlist, credential);
+            } else {
+                continue;
+            }
+
+            int homeSpNumber = 0;
+            int homeSpOtherHomePartnerNumber = 0;
+
+            //Match HomeSP FQDN
+            if (credential.getHomeSpFqdn() != null) {
+                homeSpNumber = matchHomeSpFqdn(credential, srlist);
+                Log.d(TAG, "[createPolicyByCredential] homeSpNumber:" + homeSpNumber);
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.FQDN)");
+            }
+            //Match HomeSP OtherHomePartner
+            if (!credential.getOtherHomePartnerList().isEmpty()) {
+                homeSpOtherHomePartnerNumber = matchHomeSpOtherHomePartner(credential, srlist);
+                Log.d(TAG, "[createPolicyByCredential] homeSpOtherHomePartnerNumber:" + homeSpOtherHomePartnerNumber);
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.OtherHomePartner)");
+            }
+            //Match HomeOI
+            if (!credential.getHomeOiList().isEmpty() && (homeSpNumber > 0 || homeSpOtherHomePartnerNumber > 0)) {
+                Log.d(TAG, "[createPolicyByCredential] matchHomeOi");
+                if (matchHomeOi(credential, srlist)) {
+                    continue;
+                }
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.HomeOI)");
+            }
+            //Match Preferred Roaming Partner
+            if(!credential.getPreferredRoamingPartnerList().isEmpty()){
+                Log.d(TAG, "[createPolicyByCredential] matchRoamingPartner");
+                matchPreferredRoamingPartner(credential, srlist);
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (Policy.PreferredRoamingPartenerList)");
+            }
+
+            //Match Policy
+            matchPolicy(credential, srlist);
+        }
+
+        return mNetworkPolicy;
+    }
+
+    private int matchHomeSpFqdn(WifiPasspointCredential credential, List<ScanResult> srlist){
+        List<String> ssidlist;
+        WifiPasspointPolicy policy = null;
+
+        ssidlist = getSsidMatchPasspointInfo(MatchSubscription.HOMESP_FQDN, srlist, credential);
+
+        if (ssidlist.size() != 0) {
+            for (String ssid : ssidlist) {
+                policy = buildPolicy(ssid, null, credential, WifiPasspointPolicy.HOME_SP, true);
+                updatePolicy(policy);
+            }
+        }
+        return ssidlist.size();
+    }
+
+    private int matchHomeSpOtherHomePartner(WifiPasspointCredential credential, List<ScanResult> srlist){
+        List<String> ssidlist;
+        WifiPasspointPolicy policy = null;
+
+        ssidlist = getSsidMatchPasspointInfo(MatchSubscription.HOMESP_OTHER_HOME_PARTNER, srlist, credential);
+
+        if (ssidlist.size() != 0) {
+            for (String ssid : ssidlist) {
+                policy = buildPolicy(ssid, null, credential, WifiPasspointPolicy.HOME_SP, true);
+                updatePolicy(policy);
+            }
+        }
+        return ssidlist.size();
+    }
+
+    private boolean matchHomeOi(WifiPasspointCredential credential, List<ScanResult> srlist){
+        List<String> ssidlist;
+        boolean found = false;
+        ArrayList<WifiPasspointPolicy> newNetworkPolicy;
+
+        if (!mNetworkPolicy.isEmpty()) {
+            newNetworkPolicy = (ArrayList<WifiPasspointPolicy>) mNetworkPolicy.clone();
+        } else {
+            return false;
+        }
+
+        ssidlist = getSsidMatchPasspointInfo(MatchSubscription.HOME_OI, srlist, credential);
+
+        if (ssidlist.isEmpty()) {
+            Log.d(TAG, "[matchHomeOi]ssidlist.isEmpty");
+            return false;
+        }
+
+        for ( String ssid : ssidlist ) {
+            Log.d(TAG,"[matchHomeOi]mNetworkPolicy size:" + mNetworkPolicy.size());
+            for (WifiPasspointPolicy policy : mNetworkPolicy ) {
+                if( policy.getSsid().equals(ssid) ) {
+                    found = true;
+                    policy.setHomeSp(true);
+                    updatePolicy(policy);
+                    Log.d(TAG,"keep policy in list:" + ssid);
+                } else {
+                    boolean r = newNetworkPolicy.remove(policy);
+                    Log.d(TAG,"delete policy in list:" + policy.getSsid() + " ret:" + r);
+                }
+            }
+        }
+
+        mNetworkPolicy = newNetworkPolicy;
+        Log.d(TAG,"matchHomeOi:" + found);
+        return found;
+    }
+
+    private int matchPreferredRoamingPartner(WifiPasspointCredential credential, List<ScanResult> srlist){
+        List<String> ssidlist;
+        int roamingPartners = 0;
+        String fqdnMatch;
+        WifiPasspointPolicy policy = null;
+        Collection<WifiPasspointDmTree.PreferredRoamingPartnerList> partnerList = credential.getPreferredRoamingPartnerList();
+
+        for (WifiPasspointDmTree.PreferredRoamingPartnerList partner : partnerList) {
+            fqdnMatch = partner.FQDN_Match;
+            if( fqdnMatch != null && fqdnMatch.length() != 0 ) {
+                ssidlist = getSsidMatchRoamingPartnerInfo(srlist, fqdnMatch);
+                if (ssidlist == null) {
+                    continue;
+                }
+
+                for (String ssid : ssidlist) {
+                    policy = buildPolicy(ssid, null, credential, WifiPasspointPolicy.ROAMING_PARTNER, false);
+                    policy.setRoamingPriority(Integer.valueOf(partner.Priority));
+                    updatePolicy(policy);
+                }
+
+                roamingPartners += ssidlist.size();
+                Log.d(TAG, "[matchRoamingPartner] match Roaming Partner:" + fqdnMatch);
+            }
+        }
+        Log.d(TAG, "[createPolicyByCredential] matchRoamingPartner end:" + roamingPartners);
+        return roamingPartners;
+    }
+
+    private void matchPolicy(WifiPasspointCredential credential, List<ScanResult> srlist) {
+        //SPExclustion checking
+        Collection<WifiPasspointDmTree.SPExclusionList> list = mTreeHelper.getSPExclusionList(
+            mTreeHelper.getCredentialInfo(mWifiTree,
+                    credential.getWifiSpFqdn(),
+                    credential.getCredName()));
+
+        if (list != null) {
+            for (WifiPasspointDmTree.SPExclusionList exclusion : list) {
+                Log.d(TAG, "SPExclusionList item.SSID:" + exclusion.SSID);
+                for (WifiPasspointPolicy policy : mNetworkPolicy) {
+                    if (policy.getSsid().equals(exclusion.SSID)) {
+                        Log.d(TAG, "tryConnectToPasspoint - blackSsid match");
+                        mNetworkPolicy.remove(policy);
+                    }
+                }
+            }
+        }
+
+        //MinimumBackhaulThreshold TODO:remove not matched policy
+
+        //ProtoPortTuple TODO:remove not matched policy
+
+        //MaximumBssLoad TODO:remove not matched policy
+
+        //user preferred TODO: preserved
     }
 
     private void createCredentialList(final WifiPasspointDmTree tree) {
@@ -1251,8 +1578,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                     return;
                 }
 
-                // TTLS
-                if ("21".equals(unpwEapType)) {
+                if (isTtlsCredential(unpwEapType)) {
                     String aaaRootCertSha1FingerPrint = null;
 
                     if (!mKeyStore.contains(Credentials.WIFI + aaaRootCertSha256FingerPrint)) {
@@ -1265,18 +1591,13 @@ public class WifiPasspointStateMachine extends StateMachine {
 
                     pc = new WifiPasspointCredential("TTLS",
                             aaaRootCertSha1FingerPrint,
-                            null,
-                            null,
-                            null,
+                            null, null, null,
                             sp,
                             info);
 
                     pc.setUserPreference(isUserPreferred);
                     mCredentialList.add(pc);
-                    // TLS
                 } else if ("x509v3".equals(digiCertType)) {
-                    // get certificate credential by searching Public Key
-                    // SHA-256 FingerPrint
                     if (mKeyStore.contains(Credentials.WIFI + digiCredSha256FingerPrint)) {
                         Log.d(TAG, "load client cert");
 
@@ -1304,8 +1625,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                         pc = new WifiPasspointCredential("TLS",
                                 aaaRootCertSha1FingerPrint,
                                 creSha1FingerPrint,
-                                null,
-                                null,
+                                null, null,
                                 sp,
                                 info);
                         pc.setUserPreference(isUserPreferred);
@@ -1313,11 +1633,9 @@ public class WifiPasspointStateMachine extends StateMachine {
                     } else {
                         Log.d(TAG, "client cert doesn't exist");
                     }
-                    // SIM
                 } else if (simEapType != null) {
-                    String credSimEapType = mIANA_EAPmethod[Integer.valueOf(simEapType)];
-                    Log.d(TAG, "credSimEapType: " + credSimEapType);
-                    if ("SIM".equals(credSimEapType)) {
+                    Log.d(TAG, "credSimEapType: " + simEapType);
+                    if (isSimCredential(simEapType)) {
 
                         String mccMnc = mTeleMgr.getSimOperator();
                         Log.d(TAG, "mccMnc: " + mccMnc);
@@ -1386,11 +1704,10 @@ public class WifiPasspointStateMachine extends StateMachine {
         return null;
     }
 
-    private WifiPasspointPolicy buildPolicy(String name, String ssid,
-            String bssid, WifiPasspointCredential pc,
+    private WifiPasspointPolicy buildPolicy(String ssid, String bssid, WifiPasspointCredential pc,
             int restriction, boolean ishomesp) {
 
-        WifiPasspointPolicy policy = new WifiPasspointPolicy(name, ssid, bssid, pc, restriction,
+        WifiPasspointPolicy policy = new WifiPasspointPolicy(ssid, ssid, bssid, pc, restriction,
                 ishomesp);
         Log.d(TAG, "buildPolicy:" + policy);
         return policy;
@@ -1511,13 +1828,13 @@ public class WifiPasspointStateMachine extends StateMachine {
         } else if (null == currentCredential || null == currentCredential.getType()) {
             Log.d(TAG, "CreateOpenConfig");
             wfg = CreateOpenConfig(pp);
-        } else if ("TTLS".equals(currentCredential.getType())) {
+        } else if (isTtlsCredential(currentCredential.getType())) {
             Log.d(TAG, "CreateEapTtlsConfig");
             wfg = CreateEapTtlsConfig(pp);
-        } else if ("SIM".equals(currentCredential.getType())) {
+        } else if (isSimCredential(currentCredential.getType())) {
             Log.d(TAG, "CreateEapSimConfig");
             wfg = CreateEapSimConfig(pp);
-        } else if ("TLS".equals(currentCredential.getType())) {
+        } else if (isTlsCredential(currentCredential.getType())) {
             Log.d(TAG, "CreateEapTlsConfig");
             wfg = CreateEapTlsConfig(pp);
         }
@@ -1642,14 +1959,13 @@ public class WifiPasspointStateMachine extends StateMachine {
     }
 
     //TODO: change to random number
-    private int HS_OSU_LISTEN_PORT = 8899;
-    private int HS_REM_LISTEN_PORT = 9900;
+    private int HS_LISTEN_PORT = 8899;
 
     class SimpleHttpServer {
-        private int mServerPort;
+        private int serverPort;
 
         SimpleHttpServer(int port) {
-            mServerPort = port;
+            serverPort = port;
         }
 
         public void startListener() {
@@ -1657,32 +1973,29 @@ public class WifiPasspointStateMachine extends StateMachine {
 
                 public void run() {
                     Log.d(TAG, "[HttpServer] >> enter");
-                    if (mServerPort == HS_OSU_LISTEN_PORT) {
                         try {
-                            if (mServerSocketForOSU == null) {
-                                mServerSocketForOSU = new ServerSocket(mServerPort);
-                                Log.d(TAG, "[HttpServer] The server is running on " + mServerPort
-                                        + " mServerSocketForOSU:" + mServerSocketForOSU);
+                        if (mRedirectServerSocket == null) {
+                            mRedirectServerSocket = new ServerSocket(serverPort);
+                            Log.d(TAG, "[HttpServer] The server is running on " + serverPort
+                                    + " mRedirectServerSocket:" + mRedirectServerSocket);
                             } else {
-                                Log.d(TAG,
-                                        "[HttpServer] The server is running already mServerSocketForOSU:"
-                                                + mServerSocketForOSU);
+                            Log.d(TAG, "[HttpServer] The server is running already:"+ mRedirectServerSocket);
                                 return;
                             }
                         } catch (SocketException e) {
-                            e.printStackTrace();
+                        Log.e(TAG, "[HttpServer] SocketException:" +e);
                         } catch (IOException e) {
-                            e.printStackTrace();
+                        Log.e(TAG, "[HttpServer] IOException:" +e);
                         }
 
                         try {
                             // Accept incoming connections.
                             Log.d(TAG, "[HttpServer] accepting");
                             Socket clientSocket;
-                            clientSocket = mServerSocketForOSU.accept();
+                        clientSocket = mRedirectServerSocket.accept();
                             Log.d(TAG, "[HttpServer] accepted clientSocket:" + clientSocket);
 
-                            handleResponseToClient(clientSocket, mServerPort);
+                        handleResponseToClient(clientSocket);
                             clientSocket.close();
                         } catch (Exception ioe) {
                             Log.d(TAG,
@@ -1691,88 +2004,26 @@ public class WifiPasspointStateMachine extends StateMachine {
                         }
 
                         try {
-                            mServerSocketForOSU.close();
+                        mRedirectServerSocket.close();
                             Log.d(TAG, "[HttpServer] ServerSocket closed");
                         } catch (Exception ioe) {
                             Log.d(TAG, "[HttpServer] Problem stopping server socket");
                             ioe.printStackTrace();
                         }
-                        mServerSocketForOSU = null;
+                    mRedirectServerSocket = null;
                         Log.d(TAG, "[HttpServer] << exit");
-                    } else if (mServerPort == HS_REM_LISTEN_PORT) {
-                        try {
-                            if (mServerSocketForREM == null) {
-                                mServerSocketForREM = new ServerSocket(mServerPort);
-                                Log.d(TAG, "[HttpServer] The server is running on " + mServerPort
-                                        + " mServerSocketForREM:" + mServerSocketForREM);
-                            } else {
-                                Log.d(TAG,
-                                        "[HttpServer] The server is running already mServerSocketForREM:"
-                                                + mServerSocketForREM);
-                                return;
-                            }
-                        } catch (SocketException e) {
-                            e.printStackTrace();
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-
-                        try {
-                            // Accept incoming connections.
-                            Log.d(TAG, "[HttpServer] accepting");
-                            Socket clientSocket;
-                            clientSocket = mServerSocketForREM.accept();
-                            Log.d(TAG, "[HttpServer] accepted clientSocket:" + clientSocket);
-
-                            handleResponseToClient(clientSocket, mServerPort);
-                            clientSocket.close();
-                        } catch (Exception ioe) {
-                            Log.d(TAG,
-                                    "[HttpServer] Exception encountered on accept. Ignoring. Stack Trace :");
-                            ioe.printStackTrace();
-                        }
-
-                        try {
-                            mServerSocketForREM.close();
-                            Log.d(TAG, "[HttpServer] ServerSocket closed");
-                        } catch (Exception ioe) {
-                            Log.d(TAG, "[HttpServer] Problem stopping server socket");
-                            ioe.printStackTrace();
-                        }
-                        mServerSocketForREM = null;
-                        Log.d(TAG, "[HttpServer] << exit");
-                    }
-
                 }// end of run()
             }).start();
         }
 
-        private void handleResponseToClient(Socket cs, int sp) {
+        private void handleResponseToClient(Socket cs) {
             final String HTTP_RESPNOSE = "<html><body>" + "redirected test" + "</body></html>";
             String redirectIntent = null;
             BufferedReader in = null;
             PrintWriter out = null;
-            String updateMethod = null;
-            WifiPasspointClient.BaseClient client = null;
-
-            if (HS_OSU_LISTEN_PORT == sp) {
-                updateMethod = mUpdateMethod;
-            } else if (HS_REM_LISTEN_PORT == sp) {
-                updateMethod = mCurrentUsedPolicy.getCredential().getUpdateMethod();
-            }
-
-            if (WifiPasspointManager.PROTOCOL_SOAP.equals(updateMethod)) {
-                client = mSoapClient;
-            } else if (WifiPasspointManager.PROTOCOL_DM.equals(updateMethod)) {
-                client = mDmClient;
-            } else {
-                Log.e(TAG, "STOP, updateMethod is not mentioned");
-                return;
-            }
-
-            client.setBrowserRedirected();
 
             Log.d(TAG, "[HttpServer] Accepted Client Address-" + cs.getInetAddress().getHostName());
+            sendMessage(CMD_BROWSER_REDIRECTED);
 
             try {
                 in = new BufferedReader(new InputStreamReader(cs.getInputStream()));
