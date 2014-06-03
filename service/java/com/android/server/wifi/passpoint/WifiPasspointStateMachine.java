@@ -934,8 +934,38 @@ public class WifiPasspointStateMachine extends StateMachine {
     private void parseCellularNetwork(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseCellularNetwork()");
         try {
-            passpoint.cellularNetwork = new WifiPasspointInfo.CellularNetwork();
-            passpoint.cellularNetwork.rawData = frame.bytes;
+            passpoint.cellularNetwork = new ArrayList<WifiPasspointInfo.CellularNetwork>();
+            int gud = frame.readInt(1);
+            int udhl = frame.readInt(1);
+
+            while (frame.getLeft() > 0) {
+                int iei = frame.readInt(1);
+                int plmn_length = frame.readInt(1);
+                int plmn_num = frame.readInt(1);
+                for (int i = 0; i < plmn_num; i++) {
+                    WifiPasspointInfo.CellularNetwork plmn = new WifiPasspointInfo.CellularNetwork();
+
+                    StringBuilder sb = new StringBuilder();
+                    for (int j = 0; j < 3; j++) {
+                        sb.append(String.format("%02X", frame.readInt(1)));
+                    }
+                    String plmn_mix = sb.toString();
+
+                    plmn.mcc = "";
+                    plmn.mcc += plmn_mix.charAt(1);
+                    plmn.mcc += plmn_mix.charAt(0);
+                    plmn.mcc += plmn_mix.charAt(3);
+
+                    plmn.mnc = "";
+                    plmn.mnc += plmn_mix.charAt(5);
+                    plmn.mnc += plmn_mix.charAt(4);
+                    if (plmn_mix.charAt(2) != 'F') {
+                        plmn.mnc += plmn_mix.charAt(2);
+                    }
+
+                    passpoint.cellularNetwork.add(plmn);
+                }
+            }
         } catch (ArrayIndexOutOfBoundsException e) {
             if (VDBG) logd("ArrayIndexOutOfBoundsException");
             passpoint.cellularNetwork = null;
