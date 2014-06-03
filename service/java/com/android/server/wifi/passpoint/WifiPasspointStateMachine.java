@@ -1304,7 +1304,14 @@ public class WifiPasspointStateMachine extends StateMachine {
                 }
                 break;
             case PLMN:
-                //TODO: check how to get PLMN info in WifiPasspointInfo
+                for (ScanResult sr : srlist) {
+                    for (WifiPasspointInfo.CellularNetwork network : sr.passpoint.cellularNetwork) {
+                        if (cred.getMcc().equals(network.mcc) && cred.getMnc().equals(network.mnc)) {
+                            ssidlist.add(sr.SSID);
+                            break;
+                        }
+                    }
+                }
                 break;
             case HOMESP_FQDN:
                 for (ScanResult sr : srlist) {
@@ -1332,9 +1339,11 @@ public class WifiPasspointStateMachine extends StateMachine {
             case HOME_OI:
                 Collection<WifiPasspointDmTree.HomeOIList> homeOiList = cred.getHomeOiList();
                 for (ScanResult sr : srlist) {
-                    for (WifiPasspointDmTree.HomeOIList homeOi : homeOiList) {
-                        if (homeOi.HomeOIRequired) {
-                            //TODO: match home oi info
+                    for (String oi : sr.passpoint.roamingConsortium) {
+                        for (WifiPasspointDmTree.HomeOIList homeOi : homeOiList) {
+                            if (homeOi.HomeOIRequired && homeOi.HomeOI.equals(oi)) {
+                                ssidlist.add(sr.SSID);
+                            }
                         }
                     }
                 }
@@ -1407,7 +1416,7 @@ public class WifiPasspointStateMachine extends StateMachine {
             }
 
             //Match Policy
-            matchPolicy(credential, srlist);
+            policyInspection(credential, srlist);
         }
 
         return mNetworkPolicy;
@@ -1498,7 +1507,7 @@ public class WifiPasspointStateMachine extends StateMachine {
 
                 for (String ssid : ssidlist) {
                     policy = buildPolicy(ssid, null, credential, WifiPasspointPolicy.ROAMING_PARTNER, false);
-                    policy.setRoamingPriority(Integer.valueOf(partner.Priority));
+                    policy.setRoamingPriority(Integer.parseInt(partner.Priority));
                     updatePolicy(policy);
                 }
 
@@ -1510,30 +1519,92 @@ public class WifiPasspointStateMachine extends StateMachine {
         return roamingPartners;
     }
 
-    private void matchPolicy(WifiPasspointCredential credential, List<ScanResult> srlist) {
-        //SPExclustion checking
-        Collection<WifiPasspointDmTree.SPExclusionList> list = mTreeHelper.getSPExclusionList(
-            mTreeHelper.getCredentialInfo(mWifiTree,
+    private void policyInspection(WifiPasspointCredential credential, List<ScanResult> srlist) {
+        //SPExclustion
+        Collection<WifiPasspointDmTree.SPExclusionList> spExclusionList =
+            mTreeHelper.getSPExclusionList (mTreeHelper.getCredentialInfo(mWifiTree,
                     credential.getWifiSpFqdn(),
                     credential.getCredName()));
 
-        if (list != null) {
-            for (WifiPasspointDmTree.SPExclusionList exclusion : list) {
-                Log.d(TAG, "SPExclusionList item.SSID:" + exclusion.SSID);
+        if (spExclusionList !=null && !spExclusionList.isEmpty()) {
+            for (WifiPasspointDmTree.SPExclusionList spExclusion : spExclusionList) {
+                Log.d(TAG, "SPExclusionList item.SSID:" + spExclusion.SSID);
                 for (WifiPasspointPolicy policy : mNetworkPolicy) {
-                    if (policy.getSsid().equals(exclusion.SSID)) {
+                    if (policy.getSsid().equals(spExclusion.SSID)) {
                         Log.d(TAG, "tryConnectToPasspoint - blackSsid match");
-                        mNetworkPolicy.remove(policy);
+                        deletePolicy(policy);
                     }
                 }
             }
         }
 
-        //MinimumBackhaulThreshold TODO:remove not matched policy
+        //MinimumBackhaulThreshold
+        Collection<WifiPasspointDmTree.MinBackhaulThresholdNetwork> minNetwrokList =
+            mTreeHelper.getMinBackhaulThreshold(
+            mTreeHelper.getCredentialInfo(mWifiTree,
+                    credential.getWifiSpFqdn(),
+                    credential.getCredName()));
 
-        //ProtoPortTuple TODO:remove not matched policy
+        long dlBandwidth;
+        long ulBandwidth;
+        if (minNetwrokList != null && !minNetwrokList.isEmpty()) {
+            for (ScanResult sr : srlist) {
+                for (WifiPasspointPolicy policy : mNetworkPolicy) {
+                    if (sr.SSID.equals(policy.getSsid())) {
+                        for (WifiPasspointDmTree.MinBackhaulThresholdNetwork minNetwrok : minNetwrokList) {
+                            dlBandwidth = Long.parseLong(minNetwrok.DLBandwidth);
+                            ulBandwidth = Long.parseLong(minNetwrok.ULBandwidth);
+                            if (sr.passpoint.wanMetrics.downlinkSpeed <  dlBandwidth ||
+                                sr.passpoint.wanMetrics.uplinkSpeed < ulBandwidth) {
+                                deletePolicy(policy);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-        //MaximumBssLoad TODO:remove not matched policy
+        //ProtoPortTuple
+        Collection<WifiPasspointDmTree.RequiredProtoPortTuple> tupleList =
+            mTreeHelper.getRequiredProtoPortTuple(
+            mTreeHelper.getCredentialInfo(mWifiTree,
+                    credential.getWifiSpFqdn(),
+                    credential.getCredName()));
+
+        if (tupleList !=null && !tupleList.isEmpty()) {
+            for (ScanResult sr : srlist) {
+                for (WifiPasspointPolicy policy : mNetworkPolicy) {
+                    if (sr.SSID.equals(policy.getSsid())) {
+                        for (WifiPasspointDmTree.RequiredProtoPortTuple tuple : tupleList) {
+                            for (WifiPasspointInfo.IpProtoPort ipp : sr.passpoint.connectionCapability) {
+                                if (Integer.parseInt(tuple.IPProtocol) != ipp.proto ||
+                                    Integer.parseInt(tuple.PortNumber) != ipp.port) {
+                                    deletePolicy(policy);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        //MaximumBssLoad
+        String maxBssLoadValue = mTreeHelper.getCredentialInfo(mWifiTree,
+                    credential.getWifiSpFqdn(),
+                    credential.getCredName()).policy.maximumBSSLoadValue;
+        int maxBssLoad = Integer.parseInt(maxBssLoadValue);
+
+        if (maxBssLoadValue != null) {
+            for (ScanResult sr : srlist) {
+                for (WifiPasspointPolicy policy : mNetworkPolicy) {
+                    if (sr.SSID.equals(policy.getSsid())) {
+                        if ((sr.passpoint.wanMetrics.downlinkLoad + sr.passpoint.wanMetrics.uplinkLoad) > maxBssLoad) {
+                            deletePolicy(policy);
+                        }
+                    }
+                }
+            }
+        }
 
         //user preferred TODO: preserved
     }
