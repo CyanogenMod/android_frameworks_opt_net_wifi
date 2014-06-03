@@ -662,9 +662,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     void replyFailed(Message msg, int reason, String description) {
         Message reply = Message.obtain();
         reply.what = WifiScanner.CMD_OP_FAILED;
-        reply.arg1 = reason;
         reply.arg2 = msg.arg2;
-        reply.obj = description;
+        reply.obj = new WifiScanner.OperationResult(reason, description);
         try {
             msg.replyTo.send(reply);
         } catch (RemoteException e) {
