@@ -29,37 +29,47 @@ import com.android.server.wifi.passpoint.WifiPasspointClient.AuthenticationEleme
 public class WifiPasspointDmClient implements WifiPasspointClient.DmClient {
     private StateMachine mTarget;
 
+    @Override
     public void init(StateMachine target) {
         mTarget = target;
     }
 
+    @Override
     public void startSubscriptionProvision(String serverUrl) {
     }
 
+    @Override
     public void startRemediation(String serverUrl, WifiPasspointCredential cred) {
     }
 
+    @Override
     public void startPolicyProvision(String serverUrl, WifiPasspointCredential cred) {
     }
 
+    @Override
     public void setWifiTree(WifiPasspointDmTree tree) {
     }
 
+    @Override
     public WifiPasspointDmTree getWifiTree() {
         WifiPasspointDmTree tree = null;
         //TODO: get all MOs from DM engine and translate to WifiTree
         return tree;
     }
 
-    public void setBrowserRedirected() {
+    @Override
+    public void notifyBrowserRedirected() {
     }
 
+    @Override
     public void setBrowserRedirectUri(String uri) {
     }
 
+    @Override
     public void setAuthenticationElement(AuthenticationElement ae) {
     }
 
+    @Override
     public int injectSoapPackage(String path, String command, String pacckage) {
         //TODO: return error code if any
         return 0;

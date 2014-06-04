@@ -55,7 +55,7 @@ public class WifiPasspointClient {
         /**
          * notify client the browser is redirected
          */
-        public void setBrowserRedirected();
+        public void notifyBrowserRedirected();
 
         /**
          * set browser redirect URI
@@ -71,7 +71,7 @@ public class WifiPasspointClient {
     public interface DmClient extends BaseClient {
         public WifiPasspointDmTree getWifiTree();
 
-        public int injectSoapPackage(String path, String command, String pacckage);
+        public int injectSoapPackage(String path, String command, String content);
     }
 
     public interface SoapClient extends BaseClient {
