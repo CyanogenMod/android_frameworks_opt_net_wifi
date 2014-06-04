@@ -369,6 +369,7 @@ public class WifiAutoJoinController {
                     logDbg("updateConfigurationHistory add a choice " + selected.configKey(true)
                             + " over " + config.configKey(true)
                             + " RSSI " + Integer.toString(rssi));
+
                     //add the visible config to the selected's connect choice list
                     selected.connectChoices.put(config.configKey(true), rssi);
 

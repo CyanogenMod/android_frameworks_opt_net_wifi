@@ -1147,7 +1147,6 @@ public class WifiConfigStore extends IpConfigStore {
                             + SEPARATOR_KEY);
                     out.writeUTF(UPDATE_UID_KEY + Integer.toString(config.lastUpdateUid)
                             + SEPARATOR_KEY);
-
                     String allowedKeyManagementString =
                             makeString(config.allowedKeyManagement,
                                     WifiConfiguration.KeyMgmt.strings);
@@ -1463,6 +1462,7 @@ public class WifiConfigStore extends IpConfigStore {
         for (int i = 0; i < networks.size(); i++) {
             Integer id = (Integer) i;
             WifiConfiguration config = mConfiguredNetworks.get(mNetworkIds.get(id));
+
 
             if (config == null || config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
                 loge("configuration found for missing network, nid="+Integer.toString(id)
