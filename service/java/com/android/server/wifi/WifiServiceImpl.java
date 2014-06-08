@@ -1028,7 +1028,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             }
         }
         int dnsFound = 0;
-        for (InetAddress dns : dhcpResults.linkProperties.getDnses()) {
+        for (InetAddress dns : dhcpResults.linkProperties.getDnsServers()) {
             if (dns instanceof Inet4Address) {
                 if (dnsFound == 0) {
                     info.dns1 = NetworkUtils.inetAddressToInt((Inet4Address)dns);

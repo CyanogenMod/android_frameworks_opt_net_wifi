@@ -2499,8 +2499,8 @@ public class WifiStateMachine extends StateMachine {
                 for (RouteInfo route: lp.getRoutes()) {
                     newLp.addRoute(route);
                 }
-                for (InetAddress dns: lp.getDnses()) {
-                    newLp.addDns(dns);
+                for (InetAddress dns: lp.getDnsServers()) {
+                    newLp.addDnsServer(dns);
                 }
                 newLp.setDomains(lp.getDomains());
             }
