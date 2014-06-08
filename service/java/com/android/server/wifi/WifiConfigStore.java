@@ -2011,8 +2011,9 @@ public class WifiConfigStore extends IpConfigStore {
                         .getLinkAddresses();
                 Collection<LinkAddress> newLinkAddresses = newConfig.getLinkProperties()
                         .getLinkAddresses();
-                Collection<InetAddress> currentDnses = currentConfig.getLinkProperties().getDnses();
-                Collection<InetAddress> newDnses = newConfig.getLinkProperties().getDnses();
+                Collection<InetAddress> currentDnses =
+                        currentConfig.getLinkProperties().getDnsServers();
+                Collection<InetAddress> newDnses = newConfig.getLinkProperties().getDnsServers();
                 Collection<RouteInfo> currentRoutes = currentConfig.getLinkProperties().getRoutes();
                 Collection<RouteInfo> newRoutes = newConfig.getLinkProperties().getRoutes();
 
@@ -2108,8 +2109,8 @@ public class WifiConfigStore extends IpConfigStore {
         for (RouteInfo route : config.getLinkProperties().getRoutes()) {
             linkProperties.addRoute(route);
         }
-        for (InetAddress dns : config.getLinkProperties().getDnses()) {
-            linkProperties.addDns(dns);
+        for (InetAddress dns : config.getLinkProperties().getDnsServers()) {
+            linkProperties.addDnsServer(dns);
         }
         return linkProperties;
     }
@@ -2720,4 +2721,3 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
 }
-
