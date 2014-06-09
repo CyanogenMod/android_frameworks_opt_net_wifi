@@ -471,11 +471,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         void reportScanResults(ScanResult[] results, int handler) {
             ScanSettings settings = mScanSettings.get(handler);
+            WifiScanner.ChannelSpec desiredChannels[] = settings.channels;
+            if (settings.band != WifiScanner.WIFI_BAND_UNSPECIFIED
+                    || desiredChannels == null || desiredChannels.length == 0)  {
+                desiredChannels = getChannelsForBand(settings.band);
+            }
 
             // check the channels this client asked for ..
             int num_results = 0;
             for (ScanResult result : results) {
-                for (WifiScanner.ChannelSpec channelSpec : settings.channels) {
+                for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
                     if (channelSpec.frequency == result.frequency) {
                         num_results++;
                         break;
@@ -491,7 +496,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             ScanResult results2[] = new ScanResult[num_results];
             int index = 0;
             for (ScanResult result : results) {
-                for (WifiScanner.ChannelSpec channelSpec : settings.channels) {
+                for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
                     if (channelSpec.frequency == result.frequency) {
                         WifiSsid wifiSsid = WifiSsid.createFromAsciiEncoded(result.SSID);
                         ScanResult newResult = new ScanResult(wifiSsid, result.BSSID, "",
@@ -793,7 +798,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
 
             WifiScanner.ChannelSpec desiredChannels[] = settings.channels;
-            if (desiredChannels == null) {
+            if (settings.band != WifiScanner.WIFI_BAND_UNSPECIFIED
+                    || desiredChannels == null
+                    || desiredChannels.length == 0) {
                 // set channels based on band
                 desiredChannels = getChannelsForBand(settings.band);
                 if (desiredChannels == null) {
@@ -839,6 +846,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 bucket.band = getBandFromChannels(bucket.channels)
                         | getBandFromChannels(desiredChannels);
                 bucket.channels = new WifiNative.ChannelSettings[0];
+                Log.d(TAG, "switching to using band " + bucket.band);
             } else {
                 for (WifiScanner.ChannelSpec desiredChannelSpec : newChannels) {
 
@@ -1171,9 +1179,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             public void enter() {
                 if (DBG) Log.d(TAG, "Entering MovingState");
                 WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
-                settings.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
-                /* TODO: Currently no driver allows scanning with band; hence this workaround */
-                settings.channels = getChannelsForBand(WifiScanner.WIFI_BAND_24_GHZ);
+                settings.band = WifiScanner.WIFI_BAND_BOTH;
                 settings.periodInMs = MOVING_SCAN_PERIOD_MS;
                 settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
                 addScanRequest(settings);
@@ -1412,36 +1418,54 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         if (band == WifiScanner.WIFI_BAND_24_GHZ) {
             return new WifiScanner.ChannelSpec[] {
-                    new WifiScanner.ChannelSpec(2412),
-                    new WifiScanner.ChannelSpec(2437),
-                    new WifiScanner.ChannelSpec(2462)
+                    new WifiScanner.ChannelSpec(2412),              // channel  1
+                    new WifiScanner.ChannelSpec(2417),              // channel  2
+                    new WifiScanner.ChannelSpec(2422),              // channel  3
+                    new WifiScanner.ChannelSpec(2427),              // channel  4
+                    new WifiScanner.ChannelSpec(2432),              // channel  5
+                    new WifiScanner.ChannelSpec(2437),              // channel  6
+                    new WifiScanner.ChannelSpec(2442),              // channel  7
+                    new WifiScanner.ChannelSpec(2447),              // channel  8
+                    new WifiScanner.ChannelSpec(2452),              // channel  9
+                    new WifiScanner.ChannelSpec(2457),              // channel 10
+                    new WifiScanner.ChannelSpec(2462)               // channel 11
                     };
         } else if (band == WifiScanner.WIFI_BAND_5_GHZ
                 || band == WifiScanner.WIFI_BAND_5_GHZ_WITH_DFS) {
             return new WifiScanner.ChannelSpec[] {
-                    new WifiScanner.ChannelSpec(5180),
-                    new WifiScanner.ChannelSpec(5200),
-                    new WifiScanner.ChannelSpec(5220),
-                    new WifiScanner.ChannelSpec(5745),
-                    new WifiScanner.ChannelSpec(5765),
-                    new WifiScanner.ChannelSpec(5785),
-                    new WifiScanner.ChannelSpec(5805),
-                    new WifiScanner.ChannelSpec(5825)
+                    new WifiScanner.ChannelSpec(5180),              // channel  36
+                    new WifiScanner.ChannelSpec(5200),              // channel  40
+                    new WifiScanner.ChannelSpec(5220),              // channel  44
+                    new WifiScanner.ChannelSpec(5240),              // channel  48
+                    new WifiScanner.ChannelSpec(5745),              // channel 149
+                    new WifiScanner.ChannelSpec(5765),              // channel 153
+                    new WifiScanner.ChannelSpec(5785),              // channel 157
+                    new WifiScanner.ChannelSpec(5805),              // channel 161
+                    new WifiScanner.ChannelSpec(5825)               // channel 165
                     };
         } else if (band == WifiScanner.WIFI_BAND_BOTH
                 || band == WifiScanner.WIFI_BAND_BOTH_WITH_DFS) {
             return new WifiScanner.ChannelSpec[] {
-                    new WifiScanner.ChannelSpec(2412),
-                    new WifiScanner.ChannelSpec(2437),
-                    new WifiScanner.ChannelSpec(2462),
-                    new WifiScanner.ChannelSpec(5180),
-                    new WifiScanner.ChannelSpec(5200),
-                    new WifiScanner.ChannelSpec(5220),
-                    new WifiScanner.ChannelSpec(5745),
-                    new WifiScanner.ChannelSpec(5765),
-                    new WifiScanner.ChannelSpec(5785),
-                    new WifiScanner.ChannelSpec(5805),
-                    new WifiScanner.ChannelSpec(5825)
+                    new WifiScanner.ChannelSpec(2412),              // channel   1
+                    new WifiScanner.ChannelSpec(2417),              // channel   2
+                    new WifiScanner.ChannelSpec(2422),              // channel   3
+                    new WifiScanner.ChannelSpec(2427),              // channel   4
+                    new WifiScanner.ChannelSpec(2432),              // channel   5
+                    new WifiScanner.ChannelSpec(2437),              // channel   6
+                    new WifiScanner.ChannelSpec(2442),              // channel   7
+                    new WifiScanner.ChannelSpec(2447),              // channel   8
+                    new WifiScanner.ChannelSpec(2452),              // channel   9
+                    new WifiScanner.ChannelSpec(2457),              // channel  10
+                    new WifiScanner.ChannelSpec(2462),              // channel  11
+                    new WifiScanner.ChannelSpec(5180),              // channel  36
+                    new WifiScanner.ChannelSpec(5200),              // channel  40
+                    new WifiScanner.ChannelSpec(5220),              // channel  44
+                    new WifiScanner.ChannelSpec(5240),              // channel  48
+                    new WifiScanner.ChannelSpec(5745),              // channel 149
+                    new WifiScanner.ChannelSpec(5765),              // channel 153
+                    new WifiScanner.ChannelSpec(5785),              // channel 157
+                    new WifiScanner.ChannelSpec(5805),              // channel 161
+                    new WifiScanner.ChannelSpec(5825)               // channel 165
                     };
         } else {
             return null;
