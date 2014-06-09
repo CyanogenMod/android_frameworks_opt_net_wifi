@@ -191,7 +191,7 @@ public class WifiNative {
             localLog(cmdId + "->" + mInterfacePrefix + command);
             String result = doStringCommandNative(mInterfacePrefix + command);
             localLog(cmdId + "<-" + result);
-            if (DBG) Log.d(mTAG, "   returned " + result);
+            if (DBG) Log.d(mTAG, "   returned " + result.replace("\n", " "));
             return result;
         }
     }
@@ -202,7 +202,8 @@ public class WifiNative {
             if (!command.startsWith("GET_NETWORK")) {
                 Log.d(mTAG, "doString: [" + command + "]");
             }
-        }        synchronized (mLock) {
+        }
+        synchronized (mLock) {
             return doStringCommandNative(mInterfacePrefix + command);
         }
     }

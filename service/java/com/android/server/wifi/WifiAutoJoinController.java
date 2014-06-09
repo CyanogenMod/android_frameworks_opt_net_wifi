@@ -63,6 +63,12 @@ public class WifiAutoJoinController {
     private HashMap<String, ScanResult> scanResultCache =
             new HashMap<String, ScanResult>();
 
+    //lose the non-auth failure blacklisting after 8 hours
+    private final static long loseBlackListHardMilly = 1000 * 60 * 60 * 8;
+    //lose some temporary blacklisting after 30 minutes
+    private final static long loseBlackListSoftMilly = 1000 * 60 * 30;
+
+
     WifiAutoJoinController(Context c, WifiStateMachine w, WifiConfigStore s,
                            WifiTrafficPoller t, WifiNative n) {
         mContext = c;
@@ -185,8 +191,6 @@ public class WifiAutoJoinController {
             }
 
             scanResultCache.put(result.BSSID, new ScanResult(result));
-
-            ScanResult srn = scanResultCache.get(result.BSSID);
 
             //add this BSSID to the scanResultCache of the relevant WifiConfiguration
             associatedConfig = mWifiConfigStore.updateSavedNetworkHistory(result);
@@ -315,7 +319,7 @@ public class WifiAutoJoinController {
         if (userTriggered) {
             // reenable autojoin for this network,
             // since the user want to connect to this configuration
-            selected.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
+            selected.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
             selected.selfAdded = false;
         }
 
@@ -403,7 +407,6 @@ public class WifiAutoJoinController {
                         logDbg("updateConfigurationHistory " + Integer.toString(netId)
                                 + " now: " + Integer.toString(selected.connectChoices.size()));
                 }
-
             }
         }
 
@@ -677,7 +680,7 @@ public class WifiAutoJoinController {
     void attemptAutoJoin() {
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
 
-        //reset the currentConfiguration Key, and set it only if WifiStateMachine and
+        // reset the currentConfiguration Key, and set it only if WifiStateMachine and
         // supplicant agree
         mCurrentConfigurationKey = null;
         WifiConfiguration currentConfiguration = mWifiStateMachine.getCurrentWifiConfiguration();
@@ -685,7 +688,7 @@ public class WifiAutoJoinController {
         WifiConfiguration candidate = null;
 
         /* obtain the subset of recently seen networks */
-        List<WifiConfiguration> list = mWifiConfigStore.getRecentConfiguredNetworks(3000, true);
+        List<WifiConfiguration> list = mWifiConfigStore.getRecentConfiguredNetworks(3000, false);
         if (list == null) {
             if (VDBG)  logDbg("attemptAutoJoin nothing");
             return;
@@ -752,7 +755,8 @@ public class WifiAutoJoinController {
                 return;
             }
 
-            if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED) {
+            if (config.autoJoinStatus >=
+                    WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
                 //avoid temporarily disabled networks altogether
                 //TODO: implement a better logic which will reenable the network after some time
                 if (DBG) {
@@ -763,6 +767,65 @@ public class WifiAutoJoinController {
                 continue;
             }
 
+            //try to unblacklist based on elapsed time
+            if (config.blackListTimestamp > 0) {
+                long now = System.currentTimeMillis();
+                if (now < config.blackListTimestamp) {
+                    //looks like there was a change in the system clock since we black listed, and the
+                    //timestamp is not meaningful anymore, hence lose it.
+                    //this event should be rare enough so that we still want to lose the black list
+                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+                } else {
+                    if ((now - config.blackListTimestamp) > loseBlackListHardMilly) {
+                        //reenable it after 18 hours, i.e. next day
+                        config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+                    } else if ((now - config.blackListTimestamp) > loseBlackListSoftMilly) {
+                        //lose blacklisting due to bad link
+                        config.setAutoJoinStatus(config.autoJoinStatus - 8);
+                    }
+                }
+            }
+
+            //try to unblacklist based on good visibility
+            if (config.visibility.rssi5 < WifiConfiguration.UNBLACKLIST_THRESHOLD_5_SOFT
+                    && config.visibility.rssi24 < WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT) {
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip candidate due to auto join status "
+                            + Integer.toString(config.autoJoinStatus) + " key "
+                            + config.configKey(true)
+                            + " rssi=" + config.visibility.rssi24
+                            + ", " + config.visibility.rssi5
+                            + " num=" + config.visibility.num24
+                            + ", " + config.visibility.num5);
+                }
+            } else if (config.visibility.rssi5 < WifiConfiguration.UNBLACKLIST_THRESHOLD_5_HARD
+                    && config.visibility.rssi24 < WifiConfiguration.UNBLACKLIST_THRESHOLD_24_HARD) {
+                // if the network is simply temporary disabled, don't allow reconnect until
+                // rssi becomes good enough
+                config.setAutoJoinStatus(config.autoJoinStatus - 1);
+                if (DBG) {
+                    logDbg("attemptAutoJoin good candidate seen, bumped soft -> status="
+                            + config.autoJoinStatus
+                            + ", " + config.visibility.rssi5
+                            + " num=" + config.visibility.num24
+                            + ", " + config.visibility.num5);
+                }
+            } else {
+                config.setAutoJoinStatus(config.autoJoinStatus - 2);
+                if (DBG) {
+                    logDbg("attemptAutoJoin good candidate seen, bumped hard -> status="
+                            + config.autoJoinStatus
+                            + ", " + config.visibility.rssi5
+                            + " num=" + config.visibility.num24
+                            + ", " + config.visibility.num5);
+                }
+            }
+
+            if (config.autoJoinStatus >=
+                    WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED) {
+                //network is blacklisted, skip
+                continue;
+            }
             if (config.networkId == currentNetId) {
                 if (DBG) {
                     logDbg("attemptAutoJoin skip current candidate  "
@@ -778,7 +841,8 @@ public class WifiAutoJoinController {
                 if (config.visibility == null) {
                     continue;
                 }
-                if (config.visibility.rssi5 < -70 && config.visibility.rssi24 < -80) {
+                if (config.visibility.rssi5 < WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5
+                        && config.visibility.rssi24 < WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24) {
                     continue;
                 }
             }
@@ -875,14 +939,8 @@ public class WifiAutoJoinController {
                                 + Integer.toString(candidate.networkId)
                                 + " to " + candidate.configKey());
                     }
-
                     mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
                             candidate.networkId);
-                    //mWifiConfigStore.enableNetworkWithoutBroadcast(candidate.networkId, true);
-
-                    //we would do the below only if we want to persist the new choice
-                    //mWifiConfigStore.selectNetwork(candidate.networkId);
-
                 }
             }
         }
