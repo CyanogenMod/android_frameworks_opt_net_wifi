@@ -75,6 +75,8 @@ import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 import com.android.server.net.BaseNetworkObserver;
+import com.android.server.net.NetlinkTracker;
+
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 import com.android.server.wifi.passpoint.WifiPasspointServiceImpl;
 import com.android.server.wifi.passpoint.WifiPasspointStateMachine;
@@ -241,13 +243,6 @@ public class WifiStateMachine extends StateMachine {
      */
     private LinkProperties mLinkProperties;
 
-    /**
-     * Subset of link properties coming from netlink.
-     * Currently includes IPv4 and IPv6 addresses. In the future will also include IPv6 DNS servers
-     * and domains obtained from router advertisements (RFC 6106).
-     */
-    private final LinkProperties mNetlinkLinkProperties;
-
     /* Tracks sequence number on a periodic scan message */
     private int mPeriodicScanToken = 0;
 
@@ -300,43 +295,12 @@ public class WifiStateMachine extends StateMachine {
 
     static private final int ONE_HOUR_MILLI = 1000 * 60 * 60;
 
-    private class InterfaceObserver extends BaseNetworkObserver {
-        private WifiStateMachine mWifiStateMachine;
-
-        InterfaceObserver(WifiStateMachine wifiStateMachine) {
-            super();
-            mWifiStateMachine = wifiStateMachine;
-        }
-
-        private void maybeLog(String operation, String iface, LinkAddress address) {
-            if (DBG) {
-                log(operation + ": " + address + " on " + iface +
-                    " flags " + address.getFlags() + " scope " + address.getScope());
-            }
-        }
-
-        @Override
-        public void addressUpdated(String iface, LinkAddress address) {
-            if (PDBG) {
-                loge(" addressUpdated  " + iface  + " " + address.toString());
-            }
-
-            if (mWifiStateMachine.mInterfaceName.equals(iface)) {
-                maybeLog("addressUpdated", iface, address);
-                mWifiStateMachine.sendMessage(CMD_IP_ADDRESS_UPDATED, address);
-            }
-        }
-
-        @Override
-        public void addressRemoved(String iface, LinkAddress address) {
-            if (mWifiStateMachine.mInterfaceName.equals(iface)) {
-                maybeLog("addressRemoved", iface, address);
-                mWifiStateMachine.sendMessage(CMD_IP_ADDRESS_REMOVED, address);
-            }
-        }
-    }
-
-    private InterfaceObserver mInterfaceObserver;
+    /**
+     * Subset of link properties coming from netlink.
+     * Currently includes IPv4 and IPv6 addresses. In the future will also include IPv6 DNS servers
+     * and domains obtained from router advertisements (RFC 6106).
+     */
+    private NetlinkTracker mNetlinkTracker;
 
     private AlarmManager mAlarmManager;
     private PendingIntent mScanIntent;
@@ -504,11 +468,9 @@ public class WifiStateMachine extends StateMachine {
     public static final int CMD_START_NEXT_BATCHED_SCAN   = BASE + 136;
     public static final int CMD_POLL_BATCHED_SCAN         = BASE + 137;
 
-    /* Link configuration (IP address, DNS, ...) changes */
-    /* An new IP address was added to our interface, or an existing IP address was updated */
-    static final int CMD_IP_ADDRESS_UPDATED               = BASE + 140;
-    /* An IP address was removed from our interface */
-    static final int CMD_IP_ADDRESS_REMOVED               = BASE + 141;
+    /* Link configuration (IP address, DNS, ...) changes notified via netlink */
+    public static final int CMD_NETLINK_UPDATE            = BASE + 140;
+
     /* Reload all networks and reconnect */
     static final int CMD_RELOAD_TLS_AND_RECONNECT         = BASE + 142;
 
@@ -771,7 +733,6 @@ public class WifiStateMachine extends StateMachine {
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
                 getHandler());
         mLinkProperties = new LinkProperties();
-        mNetlinkLinkProperties = new LinkProperties();
 
         IBinder s1 = ServiceManager.getService(Context.WIFI_P2P_SERVICE);
         mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s1);
@@ -784,11 +745,15 @@ public class WifiStateMachine extends StateMachine {
         mLastNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
         mLastSignalLevel = -1;
 
-        mInterfaceObserver = new InterfaceObserver(this);
+        mNetlinkTracker = new NetlinkTracker(mInterfaceName, new NetlinkTracker.Callback() {
+            public void update() {
+                sendMessage(CMD_NETLINK_UPDATE);
+            }
+        });
         try {
-            mNwService.registerObserver(mInterfaceObserver);
+            mNwService.registerObserver(mNetlinkTracker);
         } catch (RemoteException e) {
-            loge("Couldn't register interface observer: " + e.toString());
+            loge("Couldn't register netlink tracker: " + e.toString());
         }
 
         mAlarmManager = (AlarmManager)mContext.getSystemService(Context.ALARM_SERVICE);
@@ -2645,7 +2610,7 @@ public class WifiStateMachine extends StateMachine {
      *
      * The information in mLinkProperties is currently obtained as follows:
      * - Interface name: set in the constructor.
-     * - IPv4 and IPv6 addresses: netlink, via mInterfaceObserver.
+     * - IPv4 and IPv6 addresses: netlink, passed in by mNetlinkTracker.
      * - IPv4 routes, DNS servers, and domains: DHCP.
      * - HTTP proxy: the wifi config store.
      */
@@ -2657,7 +2622,7 @@ public class WifiStateMachine extends StateMachine {
         newLp.setHttpProxy(mWifiConfigStore.getProxyProperties(mLastNetworkId));
 
         // IPv4 and IPv6 addresses come from netlink.
-        newLp.setLinkAddresses(mNetlinkLinkProperties.getLinkAddresses());
+        newLp.setLinkAddresses(mNetlinkTracker.getLinkProperties().getLinkAddresses());
 
         // For now, routing and DNS only come from DHCP or static configuration. In the future,
         // we'll need to merge IPv6 DNS servers and domains coming from netlink.
@@ -2705,7 +2670,7 @@ public class WifiStateMachine extends StateMachine {
                     mDhcpResults.linkProperties.clear();
                 }
             }
-            mNetlinkLinkProperties.clear();
+            mNetlinkTracker.clearLinkProperties();
 
             // Now clear the merged link properties.
             mLinkProperties.clear();
@@ -3362,17 +3327,10 @@ public class WifiStateMachine extends StateMachine {
                     mTemporarilyDisconnectWifi = (message.arg1 == 1);
                     replyToMessage(message, WifiP2pServiceImpl.DISCONNECT_WIFI_RESPONSE);
                     break;
-                case CMD_IP_ADDRESS_UPDATED:
-                    // addLinkAddress is a no-op if called more than once with the same address.
-                    if (mNetlinkLinkProperties.addLinkAddress((LinkAddress) message.obj)) {
-                        updateLinkProperties();
-                    }
-                    break;
-                case CMD_IP_ADDRESS_REMOVED:
-                    if (mNetlinkLinkProperties.removeLinkAddress((LinkAddress) message.obj)) {
-                        updateLinkProperties();
-                    }
-                    break;
+                /* Link configuration (IP address, DNS, ...) changes notified via netlink */
+                case CMD_NETLINK_UPDATE:
+                  updateLinkProperties();
+                  break;
                 default:
                     loge("Error! unhandled message" + message);
                     break;
@@ -4343,11 +4301,8 @@ public class WifiStateMachine extends StateMachine {
             case CMD_POLL_BATCHED_SCAN:
                 s="CMD_POLL_BATCHED_SCAN";
                 break;
-            case CMD_IP_ADDRESS_UPDATED:
-                s="CMD_IP_ADDRESS_UPDATED";
-                break;
-            case CMD_IP_ADDRESS_REMOVED:
-                s="CMD_IP_ADDRESS_REMOVED";
+            case CMD_NETLINK_UPDATE:
+                s="CMD_NETLINK_UPDATE";
                 break;
             case CMD_RELOAD_TLS_AND_RECONNECT:
                 s= "CMD_RELOAD_TLS_AND_RECONNECT";
