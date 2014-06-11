@@ -1020,7 +1020,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     info.gateway = NetworkUtils.inetAddressToInt((Inet4Address)gateway);
                 }
             } else if (r.hasGateway() == false) {
-                LinkAddress dest = r.getDestination();
+                LinkAddress dest = r.getDestinationLinkAddress();
                 if (dest.getAddress() instanceof Inet4Address) {
                     info.netmask = NetworkUtils.prefixLengthToNetmaskInt(
                             dest.getNetworkPrefixLength());
