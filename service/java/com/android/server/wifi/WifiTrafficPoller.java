@@ -104,15 +104,6 @@ final class WifiTrafficPoller {
         Message.obtain(mTrafficHandler, REMOVE_CLIENT, client).sendToTarget();
     }
 
-    boolean shouldSwitchNetwork(int networkDelta) {
-        if (networkDelta > 100)
-            return true;
-
-
-
-        return false;
-    }
-
     void enableVerboseLogging(int verbose) {
         if (verbose > 0 ) {
             DBG = true;
