@@ -75,13 +75,7 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.text.SimpleDateFormat;
 import java.text.DateFormat;
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * This class provides the API to manage configured
@@ -1959,6 +1953,54 @@ public class WifiConfigStore extends IpConfigStore {
         return config;
     }
 
+    public Set<Integer> makeChannelList(WifiConfiguration config, int age) {
+        if (config == null)
+            return null;
+        long now_ms = System.currentTimeMillis();
+
+        HashSet<Integer> channels = new HashSet<Integer>();
+
+        //get channels for this configuration, if there are at least 2 BSSIDs
+        if (config.scanResultCache == null && config.linkedConfigurations == null) {
+            return null;
+        }
+
+        if (VDBG) {
+            StringBuilder dbg = new StringBuilder();
+            dbg.append("makeChannelList for " + config.configKey());
+            if (config.scanResultCache != null) {
+                dbg.append(" bssids=" + config.scanResultCache.size());
+            }
+            if (config.linkedConfigurations != null) {
+                dbg.append(" linked=" + config.linkedConfigurations.size());
+            }
+            loge(dbg.toString());
+        }
+        if (config.scanResultCache != null && config.scanResultCache.size() > 0) {
+            for (ScanResult result : config.scanResultCache.values()) {
+                if ((now_ms - result.seen) < age) {
+                    channels.add(result.frequency);
+                }
+            }
+        }
+        //get channels for linked configurations
+        if (config.linkedConfigurations != null) {
+            for (String key : config.linkedConfigurations.keySet()) {
+                WifiConfiguration linked = getWifiConfiguration(key);
+                if (linked == null)
+                    continue;
+                if (linked.scanResultCache == null) {
+                    return null;
+                }
+                for (ScanResult result : linked.scanResultCache.values()) {
+                    if ((now_ms - result.seen) < age) {
+                        channels.add(result.frequency);
+                    }
+                }
+            }
+        }
+        return channels;
+    }
 
     public WifiConfiguration updateSavedNetworkHistory(ScanResult scanResult) {
         WifiConfiguration found = null;
@@ -2551,6 +2593,8 @@ public class WifiConfigStore extends IpConfigStore {
                 loge("SSID re-enabled for  " + config.configKey() +
                         " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
                         + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
+                //TODO: really I don't know if re-enabling is right but we should err on the side of trying to connect
+                //TODO: even if the attempt will fail
                 if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 }
@@ -2561,14 +2605,13 @@ public class WifiConfigStore extends IpConfigStore {
                 if (message != null) {
                     loge(" wpa_supplicant message=" + message);
                 }
-                if (config.selfAdded) {
-                    //this is a network we self added, so as auto-join can opportunistically try it
-                    //the user did not create this network and entered its credentials, so we want
+                if (config.selfAdded && config.lastConnected == 0) {
+                    //this is a network we self added, and we never succeeded,
+                    //the user did not create this network and never entered its credentials, so we want
                     //to be very aggressive in disabling it completely.
                     disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
                     config.disableReason = WifiConfiguration.DISABLED_AUTH_FAILURE;
-
                 } else {
                     if (message != null) {
                         if (message.contains("WRONG_KEY")
@@ -2585,7 +2628,9 @@ public class WifiConfigStore extends IpConfigStore {
                             //TODO: blacklisting hard
                             if (config.autoJoinStatus <=
                                     WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
-                                config.setAutoJoinStatus(3 + config.autoJoinStatus * 2);
+                                //4 auth failure will reach 128 and disable permanently
+                                //autoJoinStatus: 0 -> 4 -> 20 -> 84 -> 128
+                                config.setAutoJoinStatus(4 + config.autoJoinStatus * 4);
                                 if (config.autoJoinStatus > WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
                                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
                             }
