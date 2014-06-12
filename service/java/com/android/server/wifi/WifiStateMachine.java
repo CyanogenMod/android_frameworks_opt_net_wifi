@@ -794,10 +794,8 @@ public class WifiStateMachine extends StateMachine {
                 Settings.Global.WIFI_ENHANCED_AUTO_JOIN, 1) == 1);
 
         mNetworkCapabilitiesFilter.addTransportType(NetworkCapabilities.TRANSPORT_WIFI);
-        mNetworkCapabilitiesFilter.addNetworkCapability(
-                NetworkCapabilities.NET_CAPABILITY_INTERNET);
-        mNetworkCapabilitiesFilter.addNetworkCapability(
-                NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED);
+        mNetworkCapabilitiesFilter.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        mNetworkCapabilitiesFilter.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED);
         mNetworkCapabilitiesFilter.setLinkUpstreamBandwidthKbps(1024 * 1024);
         mNetworkCapabilitiesFilter.setLinkDownstreamBandwidthKbps(1024 * 1024);
         // TODO - needs to be a bit more dynamic
