@@ -344,10 +344,8 @@ public class WifiPasspointCertificate {
             mEnrollPrivKey = kp.getPrivate();
 
             //sha384
-            if (!mShaAlgorithm.isEmpty()) {
-                if ("2.16.840.1.101.3.4.2.2".equals(mShaAlgorithm)) {
-                    Log.d(TAG2, "SHA 384 required");
-                }
+            if ("2.16.840.1.101.3.4.2.2".equals(mShaAlgorithm)) {
+                Log.d(TAG2, "SHA 384 required");
             }
 
             String signatureAlgorithm = "sha1withRSA";
@@ -427,6 +425,7 @@ public class WifiPasspointCertificate {
 
             return csr;
         } catch (Exception e) {
+            e.printStackTrace();
             Log.e(TAG, "PKCS10CertificationRequest err:" + e);
         }
         return null;
@@ -1080,6 +1079,7 @@ public class WifiPasspointCertificate {
             }
 
         } catch (Exception e) {
+            e.printStackTrace();
             Log.d(TAG2, "Certificate Enrollment fail");
             Log.e(TAG, "err:" + e);
             return false;
@@ -1131,12 +1131,16 @@ public class WifiPasspointCertificate {
                             "\n-----END CERTIFICATE REQUEST-----";
                     pemCsr = base64String.replaceAll("(.{64})", "$1\n");
                     Log.d(TAG, "CSR: " + pemCsr);
-                    basicHeaders.add(new BasicHeader(hc.CONTENT_LENGTH_HEADER,
-                            "" + pemCsr.getBytes().length));
+                    //basicHeaders.add(new BasicHeader(hc.CONTENT_LENGTH_HEADER,
+                            //"" + pemCsr.getBytes().length));
                     basicHeaders.add(new BasicHeader(hc.CONTENT_TRANSFER_ENCODING, "base64"));
                     requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
                     httpResp = hc
                             .post(url, "application/pkcs10", pemCsr.getBytes(), requestHeaders);
+                } else {
+                    requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
+                    httpResp = hc
+                            .get(url, requestHeaders);
                 }
 
                 //get response header
@@ -1152,7 +1156,8 @@ public class WifiPasspointCertificate {
                         bCSRAttrs = true;
                     }
 
-                    if ("gzip".equalsIgnoreCase(httpResp.getEntity().getContentEncoding()
+                    if (httpResp.getEntity().getContentEncoding() != null &&
+                            "gzip".equalsIgnoreCase(httpResp.getEntity().getContentEncoding()
                             .getValue())) {
                         bGzipContent = true;
                     }
@@ -1193,7 +1198,6 @@ public class WifiPasspointCertificate {
                 if (digestUsername != null && digestPassword != null) {
                     hc.setAuthenticationCredentials(new UsernamePasswordCredentials(digestUsername,
                             digestPassword));
-
                 }
 
                 HttpResponse httpResp = null;
@@ -1270,6 +1274,7 @@ public class WifiPasspointCertificate {
             }
         } catch (Exception e) {
             Log.e(TAG, "estHttpClient err:" + e);
+            e.printStackTrace();
         }
         return null;
     }

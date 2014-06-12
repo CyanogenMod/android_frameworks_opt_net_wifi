@@ -83,8 +83,8 @@ import javax.xml.transform.OutputKeys;
 public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     private StateMachine mTarget;
     private WifiPasspointClient.DmClient mDmClient;
-    private static final String TAG = "SoapClient";
-    private static final String TAG2 = "SoapClAdvance";
+    private static final String TAG = "WifiPasspointSoapClient";
+    private static final String TAG2 = "WifiPasspointSoapClientAdvance";
     private static final String NAMESPACE_NS = "http://www.wi-fi.org/specifications/hotspot2dot0/v1.0/spp";
     private static final String NAMESPACE_DM = "http://www.openmobilealliance.org/tech/DTD/dm_ddf-v1_2.dtd";
     private static final String WIFI_SOAP_POST_DEV_DATA = "sppPostDevData";
@@ -825,6 +825,11 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     private String connectSoapServer(SoapObject request, final String digestUsername,
             final String digestPassword, final int clientCertType) {
+        if (mRedirectUrl == null) {
+            Log.e(TAG, "Failed to connect due to null redirect URL");
+            return null;
+        }
+
         Log.d(TAG, "[connectSoapServer]: request:" + request);
         String response = null;
         SoapSerializationEnvelope envelope = new SoapSerializationEnvelope(SoapEnvelope.VER12);
@@ -877,8 +882,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                         basicHeaders.add(new BasicHeader(hc.CONNECTION, "close"));
                         basicHeaders.add(new BasicHeader(hc.ACCEPT_ENCODING_HEADER, "gzip"));
-                        basicHeaders.add(new BasicHeader(hc.CONTENT_LENGTH_HEADER, ""
-                                + requestData.length));
+
                         requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
 
                         if (envelope.version == SoapSerializationEnvelope.VER12) {
@@ -1842,8 +1846,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
         NodeList list = doc.getElementsByTagNameNS(NAMESPACE_NS, "sppPostDevDataResponse");
         if (list.getLength() != 0) {
-            Log.d(TAG, "[checkStatus(Document doc)] format type Q can be removed");
-
             Element element = (Element) list.item(0);
             String sppStatus = element.getAttributeNS(NAMESPACE_NS, WIFI_SOAP_SPP_STATUS);
             Log.d(TAG, "sppStatus: " + sppStatus);

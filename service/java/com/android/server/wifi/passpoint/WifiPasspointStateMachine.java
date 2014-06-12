@@ -94,15 +94,16 @@ public class WifiPasspointStateMachine extends StateMachine {
     static final int CMD_START_POLICY_UPDATE            = BASE + 6;
     static final int CMD_LAUNCH_BROWSER                 = BASE + 7;
     static final int CMD_ENROLL_CERTIFICATE             = BASE + 8;
-    static final int CMD_OSU_DONE                       = BASE + 9;
-    static final int CMD_OSU_FAIL                       = BASE + 10;
-    static final int CMD_REMEDIATION_DONE               = BASE + 11;
-    static final int CMD_POLICY_UPDATE_DONE             = BASE + 12;
-    static final int CMD_SIM_PROVISION_DONE             = BASE + 13;
-    static final int CMD_BROWSER_REDIRECTED             = BASE + 14;
-    static final int CMD_ENROLLMENT_DONE                = BASE + 15;
-    static final int CMD_WIFI_CONNECTED                 = BASE + 16;
-    static final int CMD_WIFI_DISCONNECTED              = BASE + 17;
+//    static final int CMD_OSU_RETRY                      = BASE + 9;
+    static final int CMD_OSU_DONE                       = BASE + 10;
+    static final int CMD_OSU_FAIL                       = BASE + 11;
+    static final int CMD_REMEDIATION_DONE               = BASE + 12;
+    static final int CMD_POLICY_UPDATE_DONE             = BASE + 13;
+    static final int CMD_SIM_PROVISION_DONE             = BASE + 14;
+    static final int CMD_BROWSER_REDIRECTED             = BASE + 15;
+    static final int CMD_ENROLLMENT_DONE                = BASE + 16;
+    static final int CMD_WIFI_CONNECTED                 = BASE + 17;
+    static final int CMD_WIFI_DISCONNECTED              = BASE + 18;
 
     private static final int ANQP_TIMEOUT_MS = 5000;
 
@@ -468,12 +469,13 @@ public class WifiPasspointStateMachine extends StateMachine {
     }
 
     private class ProvisionState extends State {
-        private static final int MAX_OSU_CONNECT_ATTEMPT = 3;
+//        private static final int MAX_OSU_CONNECT_ATTEMPT = 5;
+//        private static final int OSU_RETRY_DELAY_MS = 3000;
 
         private WifiPasspointOsuProvider mOsu;
         private Message mOsuMessage;
         private String mOsuMethod;
-        private int mRetryCount;
+//        private int mRetryCount;
 
         @Override
         public void enter() {
@@ -519,11 +521,15 @@ public class WifiPasspointStateMachine extends StateMachine {
 
                     // connect to OSU SSID
                     if (VDBG) logd("START_OSU, osu=" + mOsu.toString());
-                    mRetryCount = 0;
+//                    mRetryCount = 0;
                     mCurrentUsedPolicy = buildPolicy(mOsu.ssid, null, null,
                             WifiPasspointPolicy.UNRESTRICTED, false);
                     ConnectToPasspoint(mCurrentUsedPolicy);
                     break;
+
+//                case CMD_OSU_RETRY:
+//                    ConnectToPasspoint(mCurrentUsedPolicy);
+//                    break;
 
                 case CMD_WIFI_CONNECTED:
                     String connected = WifiInfo.removeDoubleQuotes(
@@ -536,15 +542,17 @@ public class WifiPasspointStateMachine extends StateMachine {
                     startSubscriptionProvision(mOsu.serverUri, mOsuMethod);
                     break;
 
-                case CMD_WIFI_DISCONNECTED:
-                    if (++mRetryCount < MAX_OSU_CONNECT_ATTEMPT) {
-                        if (VDBG) logd("mRetryCount=" + mRetryCount + ", retry");
-                        ConnectToPasspoint(mCurrentUsedPolicy);
-                    } else {
-                        if (VDBG) logd("mRetryCount=" + mRetryCount + ", fail");
-                        finishOsu(false, WifiPasspointManager.REASON_ERROR);
-                    }
-                    break;
+//                case CMD_WIFI_DISCONNECTED:
+//                    if (mCurrentUsedPolicy == null || mCurrentUsedPolicy.getCredential() == null)
+//                        return NOT_HANDLED;
+//                    if (++mRetryCount < MAX_OSU_CONNECT_ATTEMPT) {
+//                        if (VDBG) logd("mRetryCount=" + mRetryCount + ", retry");
+//                        sendMessageDelayed(CMD_OSU_RETRY, OSU_RETRY_DELAY_MS);
+//                    } else {
+//                        if (VDBG) logd("mRetryCount=" + mRetryCount + ", fail");
+//                        finishOsu(false, WifiPasspointManager.REASON_ERROR);
+//                    }
+//                    break;
 
                 case CMD_OSU_DONE:
                     int result = message.arg1;
@@ -583,7 +591,8 @@ public class WifiPasspointStateMachine extends StateMachine {
             mOsu = null;
             mOsuMessage = null;
             mOsuMethod = null;
-            mRetryCount = 0;
+//            mRetryCount = 0;
+            disconnectWifi();
             transitionTo(mDiscoveryState);
         }
 
@@ -612,7 +621,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                 CookieManager cookieMan = new CookieManager(null, null);
                 CookieHandler.setDefault(cookieMan);
 
-                startHttpServer(HS_LISTEN_PORT);
+                client.setBrowserRedirectUri(startHttpServer());
                 client.startSubscriptionProvision(url);
             } catch (Exception e) {
                 Log.d(TAG, "startSubscriptionProvision fail:" + e);
@@ -709,7 +718,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                     CookieManager cookieMan = new CookieManager(null, null);
                     CookieHandler.setDefault(cookieMan);
 
-                    startHttpServer(HS_LISTEN_PORT);
+                    client.setBrowserRedirectUri(startHttpServer());
                     client.startRemediation(url, mCurrentUsedPolicy.getCredential());
                 } catch (Exception e) {
                     Log.d(TAG, "startRemediation fail:" + e);
@@ -1024,36 +1033,36 @@ public class WifiPasspointStateMachine extends StateMachine {
     private void parseNetworkAuthType(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseNetworkAuthType()");
         try {
-            passpoint.networkAuthType = new ArrayList<WifiPasspointInfo.NetworkAuthType>();
+            passpoint.networkAuthTypeList = new ArrayList<WifiPasspointInfo.NetworkAuthType>();
             while (frame.getLeft() > 0) {
                 WifiPasspointInfo.NetworkAuthType auth = new WifiPasspointInfo.NetworkAuthType();
                 auth.type = frame.readInt(1);
                 int n = frame.readInt(2);
                 if (n > 0) auth.redirectUrl = frame.readStr(n);
-                passpoint.networkAuthType.add(auth);
+                passpoint.networkAuthTypeList.add(auth);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             if (VDBG) logd("parseNetworkAuthType: ArrayIndexOutOfBoundsException");
             e.printStackTrace();
-            passpoint.networkAuthType = null;
+            passpoint.networkAuthTypeList = null;
         }
     }
 
     private void parseRoamingConsortium(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseRoamingConsortium()");
         try {
-            passpoint.roamingConsortium = new ArrayList<String>();
+            passpoint.roamingConsortiumList = new ArrayList<String>();
             while (frame.getLeft() > 0) {
                 int n = frame.readInt(1);
                 String oi = "";
                 for (int i = 0; i < n; i++)
                     oi += String.format("%02x", frame.readInt(1));
-                passpoint.roamingConsortium.add(oi);
+                passpoint.roamingConsortiumList.add(oi);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             if (VDBG) logd("parseRoamingConsortium: ArrayIndexOutOfBoundsException");
             e.printStackTrace();
-            passpoint.roamingConsortium = null;
+            passpoint.roamingConsortiumList = null;
         }
     }
 
@@ -1072,7 +1081,7 @@ public class WifiPasspointStateMachine extends StateMachine {
     private void parseNaiRealm(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseNaiRealm()");
         try {
-            passpoint.naiRealm = new ArrayList<WifiPasspointInfo.NaiRealm>();
+            passpoint.naiRealmList = new ArrayList<WifiPasspointInfo.NaiRealm>();
             int n = frame.readInt(2);
             for (int i = 0; i < n; i++) {
                 WifiPasspointInfo.NaiRealm realm = new WifiPasspointInfo.NaiRealm();
@@ -1082,19 +1091,19 @@ public class WifiPasspointStateMachine extends StateMachine {
                 int l = frame.readInt(1);
                 realm.realm = frame.readStr(l);
                 frame.clearCount();
-                passpoint.naiRealm.add(realm);
+                passpoint.naiRealmList.add(realm);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             if (VDBG) logd("parseNaiRealm: ArrayIndexOutOfBoundsException");
             e.printStackTrace();
-            passpoint.naiRealm = null;
+            passpoint.naiRealmList = null;
         }
     }
 
     private void parseCellularNetwork(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseCellularNetwork()");
         try {
-            passpoint.cellularNetwork = new ArrayList<WifiPasspointInfo.CellularNetwork>();
+            passpoint.cellularNetworkList = new ArrayList<WifiPasspointInfo.CellularNetwork>();
             int gud = frame.readInt(1);
             int udhl = frame.readInt(1);
 
@@ -1119,28 +1128,28 @@ public class WifiPasspointStateMachine extends StateMachine {
                     plmn.mnc += plmn_mix.charAt(4);
                     if (plmn_mix.charAt(2) != 'f') plmn.mnc += plmn_mix.charAt(2);
 
-                    passpoint.cellularNetwork.add(plmn);
+                    passpoint.cellularNetworkList.add(plmn);
                 }
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             if (VDBG) logd("parseCellularNetwork: ArrayIndexOutOfBoundsException");
             e.printStackTrace();
-            passpoint.cellularNetwork = null;
+            passpoint.cellularNetworkList = null;
         }
     }
 
     private void parseDomainName(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseDomainName()");
         try {
-            passpoint.domainName = new ArrayList<String>();
+            passpoint.domainNameList = new ArrayList<String>();
             while (frame.getLeft() > 0) {
                 int n = frame.readInt(1);
-                passpoint.domainName.add(frame.readStr(n));
+                passpoint.domainNameList.add(frame.readStr(n));
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             if (VDBG) logd("parseDomainName: ArrayIndexOutOfBoundsException");
             e.printStackTrace();
-            passpoint.domainName = null;
+            passpoint.domainNameList = null;
         }
     }
 
@@ -1177,18 +1186,18 @@ public class WifiPasspointStateMachine extends StateMachine {
     private void parseConnectionCapability(WifiPasspointInfo passpoint, AnqpFrame frame) {
         if (VDBG) logd("parseConnectionCapability()");
         try {
-            passpoint.connectionCapability = new ArrayList<WifiPasspointInfo.IpProtoPort>();
+            passpoint.connectionCapabilityList = new ArrayList<WifiPasspointInfo.IpProtoPort>();
             while (frame.getLeft() > 0) {
                 WifiPasspointInfo.IpProtoPort ip = new WifiPasspointInfo.IpProtoPort();
                 ip.proto = frame.readInt(1);
                 ip.port = frame.readInt(2);
                 ip.status = frame.readInt(1);
-                passpoint.connectionCapability.add(ip);
+                passpoint.connectionCapabilityList.add(ip);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             if (VDBG) logd("parseConnectionCapability: ArrayIndexOutOfBoundsException");
             e.printStackTrace();
-            passpoint.connectionCapability = null;
+            passpoint.connectionCapabilityList = null;
         }
     }
 
@@ -1335,7 +1344,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         WifiPasspointClient.BaseClient client = null;
         String updateMethod;
 
-        if (mCurrentUsedPolicy == null) {
+        if (mCurrentUsedPolicy == null || mCurrentUsedPolicy.getCredential() == null) {
             updateMethod = mUpdateMethod;
         } else  {
             updateMethod = mCurrentUsedPolicy.getCredential().getUpdateMethod();
@@ -1420,14 +1429,14 @@ public class WifiPasspointStateMachine extends StateMachine {
         for (ScanResult sr : srlist) {
             if (sr.passpoint == null) continue;
             if ("includeSubdomains".equalsIgnoreCase(matchType)) {
-                for (String name : sr.passpoint.domainName) {
+                for (String name : sr.passpoint.domainNameList) {
                     if (name.contains(fqdn)) {
                         ssidlist.add(sr.SSID);
                         break;
                     }
                 }
             } else if ("exactMatch".equalsIgnoreCase(matchType)) {
-                for (String name : sr.passpoint.domainName) {
+                for (String name : sr.passpoint.domainNameList) {
                     if (name.equals(fqdn)) {
                         ssidlist.add(sr.SSID);
                         break;
@@ -1448,8 +1457,8 @@ public class WifiPasspointStateMachine extends StateMachine {
         switch(match) {
             case REALM:
                 for (ScanResult sr : srlist) {
-                    if (sr.passpoint == null || sr.passpoint.naiRealm == null) continue;
-                    for (WifiPasspointInfo.NaiRealm realm : sr.passpoint.naiRealm) {
+                    if (sr.passpoint == null || sr.passpoint.naiRealmList == null) continue;
+                    for (WifiPasspointInfo.NaiRealm realm : sr.passpoint.naiRealmList) {
                         Log.d(TAG, "cred_realm = " + cred.getRealm() + " sr_realm = " + realm.realm);
                         if (cred.getRealm().equals(realm.realm)) {
                             ssidlist.add(sr.SSID);
@@ -1460,8 +1469,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                 break;
             case PLMN:
                 for (ScanResult sr : srlist) {
-                    if (sr.passpoint == null || sr.passpoint.cellularNetwork == null) continue;
-                    for (WifiPasspointInfo.CellularNetwork network : sr.passpoint.cellularNetwork) {
+                    if (sr.passpoint == null || sr.passpoint.cellularNetworkList == null) continue;
+                    for (WifiPasspointInfo.CellularNetwork network : sr.passpoint.cellularNetworkList) {
                         Log.d(TAG, "cred_mccmnc = " + cred.getMcc() + cred.getMnc()
                             + " network_mccmnc = " + network.mcc + network.mnc);
                         if (cred.getMcc().equals(network.mcc) && cred.getMnc().equals(network.mnc)) {
@@ -1473,8 +1482,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                 break;
             case HOMESP_FQDN:
                 for (ScanResult sr : srlist) {
-                    if (sr.passpoint == null || sr.passpoint.domainName == null) continue;
-                    for (String name : sr.passpoint.domainName) {
+                    if (sr.passpoint == null || sr.passpoint.domainNameList == null) continue;
+                    for (String name : sr.passpoint.domainNameList) {
                         Log.d(TAG, "cred_fqdn = " + cred.getHomeSpFqdn() + " sr_fqdn = " + name);
                         if (cred.getHomeSpFqdn().equals(name)) {
                             ssidlist.add(sr.SSID);
@@ -1486,9 +1495,9 @@ public class WifiPasspointStateMachine extends StateMachine {
             case HOMESP_OTHER_HOME_PARTNER:
                 Collection<WifiPasspointDmTree.OtherHomePartners> otherHomePartnerList = cred.getOtherHomePartnerList();
                 for (ScanResult sr : srlist) {
-                    if (sr.passpoint == null || sr.passpoint.domainName == null) continue;
+                    if (sr.passpoint == null || sr.passpoint.domainNameList == null) continue;
                     for (WifiPasspointDmTree.OtherHomePartners partner : otherHomePartnerList) {
-                        for (String name : sr.passpoint.domainName) {
+                        for (String name : sr.passpoint.domainNameList) {
                             if (partner.FQDN.equals(name)) {
                                 ssidlist.add(sr.SSID);
                                 break;
@@ -1500,8 +1509,8 @@ public class WifiPasspointStateMachine extends StateMachine {
             case HOME_OI:
                 Collection<WifiPasspointDmTree.HomeOIList> homeOiList = cred.getHomeOiList();
                 for (ScanResult sr : srlist) {
-                    if (sr.passpoint == null || sr.passpoint.roamingConsortium == null) continue;
-                    for (String oi : sr.passpoint.roamingConsortium) {
+                    if (sr.passpoint == null || sr.passpoint.roamingConsortiumList == null) continue;
+                    for (String oi : sr.passpoint.roamingConsortiumList) {
                         for (WifiPasspointDmTree.HomeOIList homeOi : homeOiList) {
                             if (homeOi.HomeOIRequired && homeOi.HomeOI.equals(oi)) {
                                 ssidlist.add(sr.SSID);
@@ -1694,10 +1703,10 @@ public class WifiPasspointStateMachine extends StateMachine {
                 for (Iterator<WifiPasspointPolicy> it = mNetworkPolicy.iterator(); it.hasNext(); ) {
                     WifiPasspointPolicy policy = it.next();
                     if (sr.SSID.equals(policy.getSsid()) && policy.getCredential().equals(credential)) {
-                        if (sr.passpoint == null || sr.passpoint.connectionCapability == null) {
+                        if (sr.passpoint == null || sr.passpoint.connectionCapabilityList == null) {
                             Log.d(TAG, "passpoint info not available = " + sr.SSID);
                             it.remove();
-                        } else if (!isTupleMatched(tupleList, sr.passpoint.connectionCapability)) {
+                        } else if (!isTupleMatched(tupleList, sr.passpoint.connectionCapabilityList)) {
                             Log.d(TAG, "remove policy = " + policy);
                             it.remove();
                         }
@@ -2169,9 +2178,12 @@ public class WifiPasspointStateMachine extends StateMachine {
 
     }
 
-    private void startHttpServer(int port) {
-        SimpleHttpServer httpServer = new SimpleHttpServer(port);
+    private String startHttpServer() {
+        SimpleHttpServer httpServer = new SimpleHttpServer(HS_LISTEN_PORT);
         httpServer.startListener();
+        String redirectUri = "http://127.0.0.1:" + HS_LISTEN_PORT + "/";
+        if (VDBG) logd("[startHttpServer] redirectUri=" + redirectUri);
+        return redirectUri;
     }
 
     //TODO: change to random number
@@ -2189,45 +2201,46 @@ public class WifiPasspointStateMachine extends StateMachine {
 
                 public void run() {
                     Log.d(TAG, "[HttpServer] >> enter");
-                        try {
+                    try {
                         if (mRedirectServerSocket == null) {
                             mRedirectServerSocket = new ServerSocket(serverPort);
                             Log.d(TAG, "[HttpServer] The server is running on " + serverPort
                                     + " mRedirectServerSocket:" + mRedirectServerSocket);
-                            } else {
-                            Log.d(TAG, "[HttpServer] The server is running already:"+ mRedirectServerSocket);
-                                return;
-                            }
-                        } catch (SocketException e) {
-                        Log.e(TAG, "[HttpServer] SocketException:" +e);
-                        } catch (IOException e) {
-                        Log.e(TAG, "[HttpServer] IOException:" +e);
+                        } else {
+                            Log.d(TAG, "[HttpServer] The server is running already:"
+                                    + mRedirectServerSocket);
+                            return;
                         }
+                    } catch (SocketException e) {
+                        Log.e(TAG, "[HttpServer] SocketException:" + e);
+                    } catch (IOException e) {
+                        Log.e(TAG, "[HttpServer] IOException:" + e);
+                    }
 
-                        try {
-                            // Accept incoming connections.
-                            Log.d(TAG, "[HttpServer] accepting");
-                            Socket clientSocket;
+                    try {
+                        // Accept incoming connections.
+                        Log.d(TAG, "[HttpServer] accepting");
+                        Socket clientSocket;
                         clientSocket = mRedirectServerSocket.accept();
-                            Log.d(TAG, "[HttpServer] accepted clientSocket:" + clientSocket);
+                        Log.d(TAG, "[HttpServer] accepted clientSocket:" + clientSocket);
 
                         handleResponseToClient(clientSocket);
-                            clientSocket.close();
-                        } catch (Exception ioe) {
-                            Log.d(TAG,
-                                    "[HttpServer] Exception encountered on accept. Ignoring. Stack Trace :");
-                            ioe.printStackTrace();
-                        }
+                        clientSocket.close();
+                    } catch (Exception ioe) {
+                        Log.d(TAG,
+                                "[HttpServer] Exception encountered on accept. Ignoring. Stack Trace :");
+                        ioe.printStackTrace();
+                    }
 
-                        try {
+                    try {
                         mRedirectServerSocket.close();
-                            Log.d(TAG, "[HttpServer] ServerSocket closed");
-                        } catch (Exception ioe) {
-                            Log.d(TAG, "[HttpServer] Problem stopping server socket");
-                            ioe.printStackTrace();
-                        }
+                        Log.d(TAG, "[HttpServer] ServerSocket closed");
+                    } catch (Exception ioe) {
+                        Log.d(TAG, "[HttpServer] Problem stopping server socket");
+                        ioe.printStackTrace();
+                    }
                     mRedirectServerSocket = null;
-                        Log.d(TAG, "[HttpServer] << exit");
+                    Log.d(TAG, "[HttpServer] << exit");
                 }// end of run()
             }).start();
         }
