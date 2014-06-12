@@ -19,7 +19,9 @@ package com.android.server.wifi.passpoint;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.net.wifi.IWifiManager;
+import android.net.wifi.ScanResult;
 import android.net.wifi.passpoint.IWifiPasspointManager;
+import android.net.wifi.passpoint.WifiPasspointPolicy;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
@@ -33,6 +35,7 @@ import com.android.server.wifi.WifiServiceImpl;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.util.List;
 
 /**
  * TODO: doc
@@ -89,6 +92,19 @@ public final class WifiPasspointServiceImpl extends IWifiPasspointManager.Stub {
     @Override
     public int getPasspointState() {
         return mSm.syncGetPasspointState();
+    }
+
+    @Override
+    public List<WifiPasspointPolicy> requestCredentialMatch(List<ScanResult> requested) {
+        return mSm.syncRequestCredentialMatch(requested);
+    }
+
+    public WifiPasspointPolicy getCurrentUsedPolicy() {
+        return mSm.syncGetCurrentUsedPolicy();
+    }
+
+    public void setCurrentUsedPolicy(WifiPasspointPolicy policy) {
+        mSm.syncSetCurrentUsedPolicy(policy);
     }
 
     @Override

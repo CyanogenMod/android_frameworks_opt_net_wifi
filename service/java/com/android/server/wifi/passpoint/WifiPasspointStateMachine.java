@@ -32,6 +32,7 @@ import android.net.wifi.passpoint.WifiPasspointInfo;
 import android.net.wifi.passpoint.WifiPasspointPolicy;
 import android.net.wifi.passpoint.WifiPasspointOsuProvider;
 import android.net.wifi.passpoint.WifiPasspointManager;
+import android.net.wifi.passpoint.WifiPasspointManager.ParcelableString;
 import android.net.wifi.passpoint.WifiPasspointDmTree;
 import android.os.Handler;
 import android.os.IBinder;
@@ -85,26 +86,31 @@ public class WifiPasspointStateMachine extends StateMachine {
 
     private static final int BASE = Protocol.BASE_WIFI_PASSPOINT_SERVICE;
 
-    protected static final int CMD_ENABLE_PASSPOINT = BASE + 1;
-    protected static final int CMD_DISABLE_PASSPOINT = BASE + 2;
-    protected static final int CMD_GAS_QUERY_TIMEOUT = BASE + 3;
-    protected static final int CMD_START_OSU = BASE + 4;
-    protected static final int CMD_START_REMEDIATION = BASE + 5;
-    protected static final int CMD_START_POLICY_UPDATE = BASE + 6;
-    protected static final int CMD_LAUNCH_BROWSER = BASE + 7;
-    protected static final int CMD_ENROLL_CERTIFICATE = BASE + 8;
-    protected static final int CMD_OSU_DONE = BASE + 9;
-    protected static final int CMD_REMEDIATION_DONE = BASE + 10;
-    protected static final int CMD_POLICY_UPDATE_DONE = BASE + 11;
-    protected static final int CMD_SIM_PROVISION_DONE = BASE + 12;
-    protected static final int CMD_BROWSER_REDIRECTED = BASE + 13;
-    protected static final int CMD_ENROLLMENT_DONE = BASE + 14;
-    private static final int CMD_WIFI_CONNECTED = BASE + 15;
-    private static final int CMD_WIFI_DISCONNECTED = BASE + 16;
+    static final int CMD_ENABLE_PASSPOINT               = BASE + 1;
+    static final int CMD_DISABLE_PASSPOINT              = BASE + 2;
+    static final int CMD_GAS_QUERY_TIMEOUT              = BASE + 3;
+    static final int CMD_START_OSU                      = BASE + 4;
+    static final int CMD_START_REMEDIATION              = BASE + 5;
+    static final int CMD_START_POLICY_UPDATE            = BASE + 6;
+    static final int CMD_LAUNCH_BROWSER                 = BASE + 7;
+    static final int CMD_ENROLL_CERTIFICATE             = BASE + 8;
+    static final int CMD_OSU_DONE                       = BASE + 9;
+    static final int CMD_OSU_FAIL                       = BASE + 10;
+    static final int CMD_REMEDIATION_DONE               = BASE + 11;
+    static final int CMD_POLICY_UPDATE_DONE             = BASE + 12;
+    static final int CMD_SIM_PROVISION_DONE             = BASE + 13;
+    static final int CMD_BROWSER_REDIRECTED             = BASE + 14;
+    static final int CMD_ENROLLMENT_DONE                = BASE + 15;
+    static final int CMD_WIFI_CONNECTED                 = BASE + 16;
+    static final int CMD_WIFI_DISCONNECTED              = BASE + 17;
 
     private static final int ANQP_TIMEOUT_MS = 5000;
-    public static final String ACTION_NETWORK_POLICY_POLL = "com.android.intent.action.PASSPOINT_POLICY_POLL";
-    public static final String ACTION_NETWORK_REMEDIATION_POLL = "com.android.intent.action.PASSPOINT_REMEDIATION_POLL";
+
+    public static final String
+            ACTION_NETWORK_POLICY_POLL = "com.android.intent.action.PASSPOINT_POLICY_POLL";
+
+    public static final
+            String ACTION_NETWORK_REMEDIATION_POLL = "com.android.intent.action.PASSPOINT_REMEDIATION_POLL";
 
     private static final String DEFAULT_LANGUAGE_CODE = "zxx";
 
@@ -121,7 +127,6 @@ public class WifiPasspointStateMachine extends StateMachine {
     private Context mContext;
     private IntentFilter mIntentFilter;
     private BroadcastReceiver mBroadcastReceiver;
-
 
     private String mLanguageCode; // TODO: update this when language changes
 
@@ -230,7 +235,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         mDmClient.init(WifiPasspointStateMachine.this);
         mDmClient.setWifiTree(mWifiTree);
 
-        mSoapClient = new WifiPasspointSoapClient(mDmClient);
+        mSoapClient = new WifiPasspointSoapClient(mContext, mDmClient);
         mSoapClient.init(WifiPasspointStateMachine.this);
         mSoapClient.setWifiTree(mWifiTree);
 
@@ -245,8 +250,7 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         setLogRecSize(1000);
         setLogOnlyTransitions(false);
-        if (DBG)
-            setDbg(true);
+        if (DBG) setDbg(true);
     }
 
     public void systemServiceReady() {
@@ -255,7 +259,77 @@ public class WifiPasspointStateMachine extends StateMachine {
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
     }
 
-    class DefaultState extends State {
+    public int syncGetPasspointState() {
+        synchronized (mStateLock) {
+            return mState;
+        }
+    }
+
+    public List<WifiPasspointPolicy> syncRequestCredentialMatch(List<ScanResult> srlist) {
+        mNetworkPolicy.clear();
+        List<String> ssidlist = null;
+
+        for (WifiPasspointCredential credential : mCredentialList) {
+            if (isSimCredential(credential.getType())) {
+                ssidlist = getSsidMatchPasspointInfo(MatchSubscription.PLMN, srlist, credential);
+                createDefaultPolicies(ssidlist, credential);
+            } else if(credential.getRealm() != null) {
+                ssidlist = getSsidMatchPasspointInfo(MatchSubscription.REALM, srlist, credential);
+                createDefaultPolicies(ssidlist, credential);
+            } else {
+                continue;
+            }
+
+            int homeSpNumber = 0;
+            int homeSpOtherHomePartnerNumber = 0;
+
+            //Match HomeSP FQDN
+            if (credential.getHomeSpFqdn() != null) {
+                homeSpNumber = matchHomeSpFqdn(credential, srlist);
+                Log.d(TAG, "[createPolicyByCredential] homeSpNumber:" + homeSpNumber);
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.FQDN)");
+            }
+            //Match HomeSP OtherHomePartner
+            if (!credential.getOtherHomePartnerList().isEmpty()) {
+                homeSpOtherHomePartnerNumber = matchHomeSpOtherHomePartner(credential, srlist);
+                Log.d(TAG, "[createPolicyByCredential] homeSpOtherHomePartnerNumber:" + homeSpOtherHomePartnerNumber);
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.OtherHomePartner)");
+            }
+            //Match HomeOI
+            if (!credential.getHomeOiList().isEmpty() && (homeSpNumber > 0 || homeSpOtherHomePartnerNumber > 0)) {
+                Log.d(TAG, "[createPolicyByCredential] matchHomeOi");
+                if (matchHomeOi(credential, srlist)) {
+                    continue;
+                }
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.HomeOI)");
+            }
+            //Match Preferred Roaming Partner
+            if(!credential.getPreferredRoamingPartnerList().isEmpty()){
+                Log.d(TAG, "[createPolicyByCredential] matchRoamingPartner");
+                matchPreferredRoamingPartner(credential, srlist);
+            } else {
+                Log.d(TAG, "[createPolicyByCredential] skip inspection (Policy.PreferredRoamingPartenerList)");
+            }
+
+            //Match Policy
+            policyInspection(credential, srlist);
+        }
+
+        return mNetworkPolicy;
+    }
+
+    public WifiPasspointPolicy syncGetCurrentUsedPolicy() {
+        return mCurrentUsedPolicy;
+    }
+
+    public void syncSetCurrentUsedPolicy(WifiPasspointPolicy policy) {
+        mCurrentUsedPolicy = policy;
+    }
+
+    private class DefaultState extends State {
         @Override
         public boolean processMessage(Message message) {
             if (VDBG)
@@ -271,7 +345,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                     break;
                 case WifiPasspointManager.REQUEST_ANQP_INFO:
                     replyToMessage(message, WifiPasspointManager.REQUEST_ANQP_INFO_FAILED,
-                            WifiPasspointManager.BUSY);
+                            WifiPasspointManager.REASON_BUSY);
                     break;
                 default:
                     loge("Unhandled message " + message);
@@ -281,7 +355,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
     }
 
-    class DisabledState extends State {
+    private class DisabledState extends State {
 
         @Override
         public void enter() {
@@ -291,7 +365,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
     }
 
-    class EnabledState extends State {
+    private class EnabledState extends State {
 
         @Override
         public boolean processMessage(Message message) {
@@ -317,8 +391,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                 case CMD_GAS_QUERY_TIMEOUT:
                     if (message.arg1 == mAnqpTimeoutToken) {
                         // TODO: handle timeout
-                        if (VDBG)
-                            logd("ANQP fetch timeout");
+                        if (VDBG) logd("ANQP fetch timeout");
                         finishAnqpFetch(null);
                     }
                     break;
@@ -328,13 +401,11 @@ public class WifiPasspointStateMachine extends StateMachine {
                     Message msg = new Message();
                     msg.copyFrom(message);
                     if (mIsAnqpOngoing) {
-                        if (VDBG)
-                            logd("new anqp request buffered");
+                        if (VDBG) logd("new anqp request buffered");
                         logd("added msg.what = " + message.what);
                         mAnqpRequestQueue.add(msg);
                     } else {
-                        if (VDBG)
-                            logd("new anqp request started");
+                        if (VDBG) logd("new anqp request started");
                         startAnqpFetch(msg);
                     }
                     break;
@@ -349,7 +420,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
     }
 
-    class DiscoveryState extends State {
+    private class DiscoveryState extends State {
         @Override
         public void enter() {
             synchronized (mStateLock) {
@@ -364,17 +435,28 @@ public class WifiPasspointStateMachine extends StateMachine {
                 logd(getName() + message.toString());
             switch (message.what) {
                 case CMD_WIFI_CONNECTED:
-                    if (mCurrentUsedPolicy != null) {
+                    if (mCurrentUsedPolicy == null) {
+                        // sometimes we get wifi connect before get scan result.
+                        // skip connected event if no policy is used.
+                        Log.d(TAG, "skip CMD_WIFI_CONNECTED");
+                    } else if (mCurrentUsedPolicy.getCredential() == null) {
+                        Log.d(TAG, "The policy credential is null");
+                        deferMessage(message);
+                        transitionTo(mProvisionState);
+                    } else {
                         transitionTo(mAccessState);
                     }
                     break;
-                case CMD_START_OSU:
+                case WifiPasspointManager.START_OSU:
                     deferMessage(message);
                     transitionTo(mProvisionState);
                     break;
                 case CMD_START_REMEDIATION:
                 case CMD_START_POLICY_UPDATE:
                     deferMessage(message);
+                case CMD_WIFI_DISCONNECTED:
+                    // ignore
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -382,7 +464,14 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
     }
 
-    class ProvisionState extends State {
+    private class ProvisionState extends State {
+        private static final int MAX_OSU_CONNECT_ATTEMPT = 3;
+
+        private WifiPasspointOsuProvider mOsu;
+        private Message mOsuMessage;
+        private String mOsuMethod;
+        private int mRetryCount;
+
         @Override
         public void enter() {
             synchronized (mStateLock) {
@@ -395,35 +484,107 @@ public class WifiPasspointStateMachine extends StateMachine {
             if (VDBG)
                 logd(getName() + message.toString());
             switch (message.what) {
-                case CMD_START_OSU:
-                    String ssid = null;//TODO: get ssid form app layer
-                    mCurrentUsedPolicy = buildPolicy(ssid, null, null, WifiPasspointPolicy.UNRESTRICTED, false);
+                case WifiPasspointManager.START_OSU:
+                    // fail previous ongoing OSU (if any)
+                    if (mOsuMessage != null)
+                        replyToMessage(mOsuMessage, WifiPasspointManager.START_OSU_FAILED,
+                                WifiPasspointManager.REASON_BUSY);
+
+                    // check parameters
+                    mOsu = (WifiPasspointOsuProvider) message.obj;
+                    if (mOsu == null) {
+                        finishOsu(false, WifiPasspointManager.REASON_INVALID_PARAMETER);
+                        break;
+                    }
+                    mOsuMethod = null;
+                    switch (mOsu.osuMethod) {
+                        case WifiPasspointOsuProvider.OSU_METHOD_OMADM:
+                            mOsuMethod = WifiPasspointManager.PROTOCOL_DM;
+                            break;
+                        case WifiPasspointOsuProvider.OSU_METHOD_SOAP:
+                            mOsuMethod = WifiPasspointManager.PROTOCOL_SOAP;
+                            break;
+                    }
+                    if (mOsuMethod == null) {
+                        finishOsu(false, WifiPasspointManager.REASON_INVALID_PARAMETER);
+                        break;
+                    }
+
+                    if (VDBG) logd("START_OSU, osu=" + mOsu.toString());
+                    // make a copy of the message for reply use
+                    mOsuMessage = new Message();
+                    mOsuMessage.copyFrom(message);
+
+                    // connect to OSU SSID
+                    mRetryCount = 0;
+                    mCurrentUsedPolicy = buildPolicy(mOsu.ssid, null, null,
+                            WifiPasspointPolicy.UNRESTRICTED, false);
                     ConnectToPasspoint(mCurrentUsedPolicy);
                     break;
+
                 case CMD_WIFI_CONNECTED:
-                    String serverurl = null;//TODO: get osu server url from app layer
-                    String method = null;//TODO: get osu server url from app layer
-                    startSubscriptionProvision(serverurl, method);
+                    String connected = WifiInfo.removeDoubleQuotes(
+                            mWifiMgr.getConnectionInfo().getSSID());
+                    if (mOsu == null || !connected.equals(mCurrentUsedPolicy.getSsid())) {
+                        logd("Not connected to the expected OSU SSID, abort OSU");
+                        finishOsu(false, WifiPasspointManager.REASON_ERROR);
+                        break;
+                    }
+                    startSubscriptionProvision(mOsu.serverUri, mOsuMethod);
                     break;
+
+                case CMD_WIFI_DISCONNECTED:
+                    if (++mRetryCount < MAX_OSU_CONNECT_ATTEMPT) {
+                        if (VDBG) logd("mRetryCount=" + mRetryCount + ", retry");
+                        ConnectToPasspoint(mCurrentUsedPolicy);
+                    } else {
+                        if (VDBG) logd("mRetryCount=" + mRetryCount + ", fail");
+                        finishOsu(false, WifiPasspointManager.REASON_ERROR);
+                    }
+                    break;
+
                 case CMD_OSU_DONE:
                     int result = message.arg1;
                     WifiPasspointDmTree tree = (WifiPasspointDmTree) message.obj;
                     handleProvisionDone(result, tree);
+                    finishOsu(true, 0);
                     break;
+
+                case CMD_OSU_FAIL:
+                    int reason = message.arg1;
+                    finishOsu(false, reason);
+                    break;
+
                 case CMD_LAUNCH_BROWSER:
-                    //TODO: notify app to launch browser
+                    ParcelableString str = (ParcelableString) message.obj;
+                    replyToMessage(mOsuMessage, WifiPasspointManager.START_OSU_BROWSER, str);
                     break;
+
                 case CMD_BROWSER_REDIRECTED:
+                    replyToMessage(mOsuMessage, WifiPasspointManager.START_OSU_BROWSER, null);
                     handleBrowserRedirected();
                     break;
+
                 default:
                     return NOT_HANDLED;
             }
             return HANDLED;
         }
 
-        private void startSubscriptionProvision(String url, String updateMethod) {
+        private void finishOsu(boolean succeeded, int reason) {
+            if (succeeded) {
+                replyToMessage(mOsuMessage, WifiPasspointManager.START_OSU_SUCCEEDED);
+            } else {
+                replyToMessage(mOsuMessage, WifiPasspointManager.START_OSU_FAILED, reason);
+            }
+            mOsu = null;
+            mOsuMessage = null;
+            mOsuMethod = null;
+            mRetryCount = 0;
+            transitionTo(mDiscoveryState);
+        }
 
+        private void startSubscriptionProvision(String url, String updateMethod) {
             if (url == null || updateMethod == null) {
                 return;
             }
@@ -456,7 +617,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
     }
 
-    class AccessState extends State {
+    private class AccessState extends State {
         @Override
         public void enter() {
             synchronized (mStateLock) {
@@ -666,11 +827,6 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
     }
 
-    public int syncGetPasspointState() {
-        synchronized (mStateLock) {
-            return mState;
-        }
-    }
 
     private BroadcastReceiver mAlarmReceiver = new BroadcastReceiver() {
         @Override
@@ -738,7 +894,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                     logd("wifinative fetch anqp bssid=" + sr.BSSID + " mask=" + mask);
                 mWifiNative.fetchAnqp(sr.BSSID, WifiPasspointInfo.toAnqpSubtypes(mask));
                 break;
-            case WifiPasspointManager.REQUEST_OSU_INFO:
+            case WifiPasspointManager.REQUEST_OSU_ICON:
                 // TODO
                 break;
             default:
@@ -810,6 +966,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         }
 
         private String readStr(int len) {
+            if (current + len > bytes.length) throw new ArrayIndexOutOfBoundsException();
             String str = new String(bytes, current, len);
             current += len;
             return str;
@@ -856,11 +1013,10 @@ public class WifiPasspointStateMachine extends StateMachine {
         try {
             int n = frame.readInt(2); // venue info
             n = frame.getLeft(); // venue info
-            passpoint.venueName =
-                    frame.readStrLanguage(n, mLanguageCode, DEFAULT_LANGUAGE_CODE);
-            if (VDBG) logd("passpoint.venueName" + passpoint.venueName);
+            passpoint.venueName = frame.readStrLanguage(n, mLanguageCode, DEFAULT_LANGUAGE_CODE);
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseVenueName: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.venueName = null;
         }
     }
@@ -877,7 +1033,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                 passpoint.networkAuthType.add(auth);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseNetworkAuthType: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.networkAuthType = null;
         }
     }
@@ -890,11 +1047,12 @@ public class WifiPasspointStateMachine extends StateMachine {
                 int n = frame.readInt(1);
                 String oi = "";
                 for (int i = 0; i < n; i++)
-                    oi += String.format("%02X", frame.readInt(1));
+                    oi += String.format("%02x", frame.readInt(1));
                 passpoint.roamingConsortium.add(oi);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseRoamingConsortium: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.roamingConsortium = null;
         }
     }
@@ -905,7 +1063,8 @@ public class WifiPasspointStateMachine extends StateMachine {
             passpoint.ipAddrTypeAvailability = new WifiPasspointInfo.IpAddressType();
             passpoint.ipAddrTypeAvailability.availability = frame.readInt(1);
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseIpAddrType: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.ipAddrTypeAvailability = null;
         }
     }
@@ -926,7 +1085,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                 passpoint.naiRealm.add(realm);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseNaiRealm: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.naiRealm = null;
         }
     }
@@ -946,9 +1106,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                     WifiPasspointInfo.CellularNetwork plmn = new WifiPasspointInfo.CellularNetwork();
 
                     StringBuilder sb = new StringBuilder();
-                    for (int j = 0; j < 3; j++) {
-                        sb.append(String.format("%02X", frame.readInt(1)));
-                    }
+                    for (int j = 0; j < 3; j++) sb.append(String.format("%02x", frame.readInt(1)));
                     String plmn_mix = sb.toString();
 
                     plmn.mcc = "";
@@ -959,15 +1117,14 @@ public class WifiPasspointStateMachine extends StateMachine {
                     plmn.mnc = "";
                     plmn.mnc += plmn_mix.charAt(5);
                     plmn.mnc += plmn_mix.charAt(4);
-                    if (plmn_mix.charAt(2) != 'F') {
-                        plmn.mnc += plmn_mix.charAt(2);
-                    }
+                    if (plmn_mix.charAt(2) != 'f') plmn.mnc += plmn_mix.charAt(2);
 
                     passpoint.cellularNetwork.add(plmn);
                 }
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseCellularNetwork: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.cellularNetwork = null;
         }
     }
@@ -981,7 +1138,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                 passpoint.domainName.add(frame.readStr(n));
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseDomainName: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.domainName = null;
         }
     }
@@ -993,7 +1151,8 @@ public class WifiPasspointStateMachine extends StateMachine {
             passpoint.operatorFriendlyName =
                     frame.readStrLanguage(n, mLanguageCode, DEFAULT_LANGUAGE_CODE);
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseOperatorFriendlyName: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.operatorFriendlyName = null;
         }
     }
@@ -1009,7 +1168,8 @@ public class WifiPasspointStateMachine extends StateMachine {
             passpoint.wanMetrics.uplinkLoad = frame.readInt(1);
             passpoint.wanMetrics.lmd = frame.readInt(1);
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseWanMetrics: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.wanMetrics = null;
         }
     }
@@ -1026,7 +1186,8 @@ public class WifiPasspointStateMachine extends StateMachine {
                 passpoint.connectionCapability.add(ip);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseConnectionCapability: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.connectionCapability = null;
         }
     }
@@ -1039,7 +1200,6 @@ public class WifiPasspointStateMachine extends StateMachine {
             // osu ssid
             int n = frame.readInt(1);
             String osuSSID = frame.readStr(n);
-            if (VDBG) logd("osu_SSID=" + osuSSID);
 
             // osu provider list
             n = frame.readInt(1);
@@ -1048,24 +1208,20 @@ public class WifiPasspointStateMachine extends StateMachine {
                 osu.ssid = osuSSID;
 
                 int m = frame.readInt(2);
-                if (VDBG) logd("osu_len=" + m);
 
                 // osu friendly name
                 m = frame.readInt(2);
                 osu.friendlyName = frame.readStrLanguage(m, mLanguageCode, DEFAULT_LANGUAGE_CODE);
-                if (VDBG) logd("fri_name=" + osu.friendlyName);
 
                 // osu server uri
                 m = frame.readInt(1);
                 osu.serverUri = frame.readStr(m);
-                if (VDBG) logd("uri=" + osu.serverUri);
 
                 // osu method
                 m = frame.readInt(1);
                 frame.setCount(m);
                 osu.osuMethod = frame.readInt(1);
                 frame.clearCount();
-                if (VDBG) logd("method=" + osu.osuMethod);
 
                 // osu icons
                 m = frame.readInt(2);
@@ -1087,23 +1243,20 @@ public class WifiPasspointStateMachine extends StateMachine {
                     }
                 }
                 frame.clearCount();
-                if (VDBG) logd("icon=" + osu.iconWidth + "x" + osu.iconHeight + " " + osu.iconType
-                        + " " + osu.iconFileName);
 
                 // osu nai
                 m = frame.readInt(1);
                 if (m > 0) osu.osuNai = frame.readStr(m);
-                if (VDBG) logd("nai=" + osu.osuNai);
 
                 // osu service
                 m = frame.readInt(2);
                 osu.osuService = frame.readStrLanguage(m, mLanguageCode, DEFAULT_LANGUAGE_CODE);
-                if (VDBG) logd("service=" + osu.osuService);
 
                 passpoint.osuProviderList.add(osu);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
-            if (VDBG) logd("ArrayIndexOutOfBoundsException");
+            if (VDBG) logd("parseOsuProvider: ArrayIndexOutOfBoundsException");
+            e.printStackTrace();
             passpoint.osuProviderList = null;
         }
     }
@@ -1116,7 +1269,6 @@ public class WifiPasspointStateMachine extends StateMachine {
         for (String line : lines) {
             String[] tokens = line.split("=");
             if (tokens.length < 2) continue;
-            logd("got variable: " + tokens[0]);
             AnqpFrame frame = new AnqpFrame();
             if (!frame.init(tokens[1])) continue;
             if (tokens[0].equals("anqp_venue_name")) {
@@ -1149,16 +1301,14 @@ public class WifiPasspointStateMachine extends StateMachine {
     /* State machine initiated requests can have replyTo set to null indicating
      * there are no recipients, we ignore those reply actions */
     private void replyToMessage(Message msg, int what) {
-        if (msg.replyTo == null)
-            return;
+        if (msg == null || msg.replyTo == null) return;
         Message dstMsg = obtainMessage(msg);
         dstMsg.what = what;
         mReplyChannel.replyToMessage(msg, dstMsg);
     }
 
     private void replyToMessage(Message msg, int what, int arg1) {
-        if (msg.replyTo == null)
-            return;
+        if (msg == null || msg.replyTo == null) return;
         Message dstMsg = obtainMessage(msg);
         dstMsg.what = what;
         dstMsg.arg1 = arg1;
@@ -1166,8 +1316,7 @@ public class WifiPasspointStateMachine extends StateMachine {
     }
 
     private void replyToMessage(Message msg, int what, Object obj) {
-        if (msg.replyTo == null)
-            return;
+        if (msg == null || msg.replyTo == null) return;
         Message dstMsg = obtainMessage(msg);
         dstMsg.what = what;
         dstMsg.obj = obj;
@@ -1201,7 +1350,7 @@ public class WifiPasspointStateMachine extends StateMachine {
             return;
         }
 
-        client.setBrowserRedirected();
+        client.notifyBrowserRedirected();
 
     }
 
@@ -1364,62 +1513,6 @@ public class WifiPasspointStateMachine extends StateMachine {
 
     private boolean isTtlsCredential(String type) {
         return "TTLS".equals(mIANA_EAPmethod[Integer.parseInt(type)]);
-    }
-
-    public List<WifiPasspointPolicy> requestCredentialMatch(List<ScanResult> srlist) {
-        mNetworkPolicy.clear();
-        List<String> ssidlist = null;
-
-        for (WifiPasspointCredential credential : mCredentialList) {
-            if (isSimCredential(credential.getType())) {
-                ssidlist = getSsidMatchPasspointInfo(MatchSubscription.PLMN, srlist, credential);
-                createDefaultPolicies(ssidlist, credential);
-            } else if(credential.getRealm() != null) {
-                ssidlist = getSsidMatchPasspointInfo(MatchSubscription.REALM, srlist, credential);
-                createDefaultPolicies(ssidlist, credential);
-            } else {
-                continue;
-            }
-
-            int homeSpNumber = 0;
-            int homeSpOtherHomePartnerNumber = 0;
-
-            //Match HomeSP FQDN
-            if (credential.getHomeSpFqdn() != null) {
-                homeSpNumber = matchHomeSpFqdn(credential, srlist);
-                Log.d(TAG, "[createPolicyByCredential] homeSpNumber:" + homeSpNumber);
-            } else {
-                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.FQDN)");
-            }
-            //Match HomeSP OtherHomePartner
-            if (!credential.getOtherHomePartnerList().isEmpty()) {
-                homeSpOtherHomePartnerNumber = matchHomeSpOtherHomePartner(credential, srlist);
-                Log.d(TAG, "[createPolicyByCredential] homeSpOtherHomePartnerNumber:" + homeSpOtherHomePartnerNumber);
-            } else {
-                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.OtherHomePartner)");
-            }
-            //Match HomeOI
-            if (!credential.getHomeOiList().isEmpty() && (homeSpNumber > 0 || homeSpOtherHomePartnerNumber > 0)) {
-                Log.d(TAG, "[createPolicyByCredential] matchHomeOi");
-                if (matchHomeOi(credential, srlist)) {
-                    continue;
-                }
-            } else {
-                Log.d(TAG, "[createPolicyByCredential] skip inspection (HomeSP.HomeOI)");
-            }
-            //Match Preferred Roaming Partner
-            if(!credential.getPreferredRoamingPartnerList().isEmpty()){
-                Log.d(TAG, "[createPolicyByCredential] matchRoamingPartner");
-                matchPreferredRoamingPartner(credential, srlist);
-            } else {
-                Log.d(TAG, "[createPolicyByCredential] skip inspection (Policy.PreferredRoamingPartenerList)");
-            }
-
-            //Match Policy
-            policyInspection(credential, srlist);
-        }
-
-        return mNetworkPolicy;
     }
 
     private int matchHomeSpFqdn(WifiPasspointCredential credential, List<ScanResult> srlist){
@@ -1955,12 +2048,6 @@ public class WifiPasspointStateMachine extends StateMachine {
             mWifiMgr.updateNetwork(wfg);
         }
 
-        /*
-         * For applying WifiStateTracker design change by Mediatek. The device
-         * can't reconnect if auth. failed over max retry
-         * count.("mediatek.wlan.hs20.reauth") If the network was configured and
-         * disabled, don't enable it again.
-         */
         /*if (configuredWfg != null && mIsEapFailureOverCount) {
             Log.d(TAG, "[ConnectToPasspoint] mIsEapFailureOverCount:true");
             List<WifiConfiguration> configuredList = mWifiMgr.getConfiguredNetworks();
@@ -1974,7 +2061,7 @@ public class WifiPasspointStateMachine extends StateMachine {
             }
         }*/
 
-        mWifiMgr.enableNetwork(netid, false);
+        mWifiMgr.enableNetwork(netid, true);
     }
 
     private WifiConfiguration findConfiguredNetworks(WifiConfiguration wfg) {
@@ -2058,14 +2145,14 @@ public class WifiPasspointStateMachine extends StateMachine {
     //TODO: change to random number
     private int HS_LISTEN_PORT = 8899;
 
-    class SimpleHttpServer {
+    private class SimpleHttpServer {
         private int serverPort;
 
-        SimpleHttpServer(int port) {
+        private SimpleHttpServer(int port) {
             serverPort = port;
         }
 
-        public void startListener() {
+        private void startListener() {
             new Thread(new Runnable() {
 
                 public void run() {

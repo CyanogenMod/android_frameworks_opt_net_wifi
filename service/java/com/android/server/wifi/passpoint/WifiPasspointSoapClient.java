@@ -18,6 +18,7 @@ package com.android.server.wifi.passpoint;
 
 import android.net.wifi.passpoint.WifiPasspointCredential;
 import android.net.wifi.passpoint.WifiPasspointDmTree;
+import android.net.wifi.passpoint.WifiPasspointManager;
 import android.os.*;
 import android.util.Log;
 import android.net.Uri;
@@ -40,11 +41,11 @@ import com.android.org.bouncycastle.asn1.x509.*;
 import com.android.org.bouncycastle.jce.PKCS10CertificationRequest;
 import com.android.org.bouncycastle.jce.provider.BouncyCastleProvider;
 import com.android.org.bouncycastle.jce.exception.ExtCertPathValidatorException;
+
 import org.ksoap2.*;
 import org.ksoap2.serialization.*;
 import org.ksoap2.transport.*;
 import org.ksoap2.kobjects.base64.Base64;
-
 import org.w3c.dom.*;
 import org.xml.sax.*;
 import org.apache.harmony.security.x509.OtherName;
@@ -208,10 +209,12 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     private WifiPasspointCertificate.FileOperationUtil mFileOperation;
 
-    public WifiPasspointSoapClient(WifiPasspointClient.DmClient client) {
+    public WifiPasspointSoapClient(Context context, WifiPasspointClient.DmClient client) {
+        mContext = context;
         mDmClient = client;
     }
 
+    @Override
     public void init(StateMachine target) {
         Log.d(TAG, "[init]");
         mTarget = target;
@@ -230,8 +233,100 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         mFileOperation = mPasspointCertificate.new FileOperationUtil();
     }
 
+    @Override
+    public void startSubscriptionProvision(String serverUrl) {
+        Log.d(TAG, "Run startSubscriptionProvision with " + serverUrl);
+        mProcedureType = SUBSCRIPTION_PROVISION;
+        mOSUServerUrl = serverUrl;
+        mSoapWebUrl = serverUrl;
+        mSpFqdnFromMo = null;
+        mRequestReason = SUB_REGISTER;
+        subscriptionProvision();
+    }
+
+    @Override
+    public void startRemediation(final String serverUrl, WifiPasspointCredential cred) {
+        Log.d(TAG, "Run startRemediation with " + serverUrl);
+        mProcedureType = SUBSCRIPTION_REMEDIATION;
+        mSoapWebUrl = serverUrl;
+        mREMServerUrl = serverUrl;
+        mSpFqdnFromMo = null;
+
+        if ("SIM".equals(cred.getType())) {
+            mRequestReason = SUB_PROVISION;
+        } else {
+            mRequestReason = SUB_REMEDIATION;
+        }
+
+        if (cred != null) {
+            mCred = cred;
+        } else {
+            Log.d(TAG, "cred is null");
+            return;
+        }
+
+        remediation();
+    }
+
+    @Override
+    public void startPolicyProvision(final String serverUrl, WifiPasspointCredential cred) {
+        Log.d(TAG, "Run startPolicyProvision with " + serverUrl);
+        mProcedureType = POLICY_UPDATE;
+        mSoapWebUrl = serverUrl;
+        mSpFqdnFromMo = null;
+        mRequestReason = POL_UPDATE;
+
+        if (cred != null) {
+            mCred = cred;
+        } else {
+            Log.d(TAG, "cred is null");
+            return;
+        }
+
+        policyProvision();
+    }
+
+    @Override
     public void setWifiTree(WifiPasspointDmTree tree) {
         mSoapTree = tree;
+    }
+
+    @Override
+    public void notifyBrowserRedirected() {
+        mRequestReason = USER_INPUT_COMPLETED;
+        if (mProcedureType == SUBSCRIPTION_PROVISION) {
+            subscriptionProvision();
+        } else if (mProcedureType == SUBSCRIPTION_REMEDIATION) {
+            remediation();
+        }
+    }
+
+    @Override
+    public void setBrowserRedirectUri(String uri) {
+        mRedirectUrl = uri;
+    }
+
+    @Override
+    public void setAuthenticationElement(AuthenticationElement ae) {
+        Log.d(TAG, "set SPFQDN:" + ae.spFqdn);
+        Log.d(TAG, "OSU Friendly Name:" + ae.osuFriendlyName);
+        Log.d(TAG, "Default language name:" + ae.osuDefaultLanguage);
+
+        mSoapWebUrl = null;
+        mOSUServerUrl = null;
+        mREMServerUrl = null;
+        mSpFqdn = ae.spFqdn;
+        mOSUFriendlyName = ae.osuFriendlyName;
+        mOSULanguage = ae.osuDefaultLanguage;
+        try {
+            iconFileName = ae.osuIconfileName;
+            iconHash = mPasspointCertificate.computeHash(
+                    mFileOperation.Read(new File("/data/misc/wifi/icon/" + iconFileName)),
+                    "SHA-256");// ext: image/xxx
+            Log.d(TAG, "Icon file name:" + iconFileName + " icon hash:" + iconHash);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void setRemediationHttpDigest() {
@@ -307,32 +402,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     }
 
-    public void setBrowserRedirectUri(String uri) {
-        mRedirectUrl = uri;
-    }
-
-    public void setAuthenticationElement(AuthenticationElement ae) {
-        Log.d(TAG, "set SPFQDN:" + ae.spFqdn);
-        Log.d(TAG, "OSU Friendly Name:" + ae.osuFriendlyName);
-        Log.d(TAG, "Default language name:" + ae.osuDefaultLanguage);
-
-        mSoapWebUrl = null;
-        mOSUServerUrl = null;
-        mREMServerUrl = null;
-        mSpFqdn = ae.spFqdn;
-        mOSUFriendlyName = ae.osuFriendlyName;
-        mOSULanguage = ae.osuDefaultLanguage;
-        try {
-            iconFileName = ae.osuIconfileName;
-            iconHash = mPasspointCertificate.computeHash(
-                    mFileOperation.Read(new File("/data/misc/wifi/icon/" + iconFileName)),
-                    "SHA-256");// ext: image/xxx
-            Log.d(TAG, "Icon file name:" + iconFileName + " icon hash:" + iconHash);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
     private String getDeviceId() {
         TelephonyManager tm =
                 (TelephonyManager) (mContext.getSystemService(Context.TELEPHONY_SERVICE));
@@ -404,25 +473,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 remediation();
             }
         }
-    }
-
-    public void setBrowserRedirected() {
-        mRequestReason = USER_INPUT_COMPLETED;
-        if (mProcedureType == SUBSCRIPTION_PROVISION) {
-            subscriptionProvision();
-        } else if (mProcedureType == SUBSCRIPTION_REMEDIATION) {
-            remediation();
-        }
-    }
-
-    public void startSubscriptionProvision(String serverUrl) {
-        Log.d(TAG, "Run startSubscriptionProvision with " + serverUrl);
-        mProcedureType = SUBSCRIPTION_PROVISION;
-        mOSUServerUrl = serverUrl;
-        mSoapWebUrl = serverUrl;
-        mSpFqdnFromMo = null;
-        mRequestReason = SUB_REGISTER;
-        subscriptionProvision();
     }
 
     private void subscriptionProvision() {
@@ -517,29 +567,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 }
             }
         }).start();
-    }
-
-    public void startRemediation(final String serverUrl, WifiPasspointCredential cred) {
-        Log.d(TAG, "Run startRemediation with " + serverUrl);
-        mProcedureType = SUBSCRIPTION_REMEDIATION;
-        mSoapWebUrl = serverUrl;
-        mREMServerUrl = serverUrl;
-        mSpFqdnFromMo = null;
-
-        if ("SIM".equals(cred.getType())) {
-            mRequestReason = SUB_PROVISION;
-        } else {
-            mRequestReason = SUB_REMEDIATION;
-        }
-
-        if (cred != null) {
-            mCred = cred;
-        } else {
-            Log.d(TAG, "cred is null");
-            return;
-        }
-
-        remediation();
     }
 
     private void remediation() {
@@ -701,23 +728,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 }
             }
         }).start();
-    }
-
-    public void startPolicyProvision(final String serverUrl, WifiPasspointCredential cred) {
-        Log.d(TAG, "Run startPolicyProvision with " + serverUrl);
-        mProcedureType = POLICY_UPDATE;
-        mSoapWebUrl = serverUrl;
-        mSpFqdnFromMo = null;
-        mRequestReason = POL_UPDATE;
-
-        if (cred != null) {
-            mCred = cred;
-        } else {
-            Log.d(TAG, "cred is null");
-            return;
-        }
-
-        policyProvision();
     }
 
     private void policyProvision() {
@@ -2473,7 +2483,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
      * A helper class for accessing the raw data in the intent extra and handling
      * certificates.
      */
-    class PpsmoParser {
+    private class PpsmoParser {
         private static final String TAG = "PasspointPpsmoParser";
 
         PpsmoParser() {
@@ -2650,7 +2660,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         }
     }
 
-    class CertTrustManager implements X509TrustManager {
+    private class CertTrustManager implements X509TrustManager {
         public void checkClientTrusted(X509Certificate[] arg0, String arg1) {
             Log.d(TAG, "[checkClientTrusted] " + arg0 + arg1);
         }
