@@ -26,6 +26,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 
 import android.os.SystemClock;
+import android.os.Process;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -67,6 +68,11 @@ public class WifiAutoJoinController {
     private final static long loseBlackListHardMilli = 1000 * 60 * 60 * 8;
     //lose some temporary blacklisting after 30 minutes
     private final static long loseBlackListSoftMilli = 1000 * 60 * 30;
+
+    public static final int AUTO_JOIN_IDLE = 0;
+    public static final int AUTO_JOIN_ROAMING = 1;
+    public static final int AUTO_JOIN_EXTENDED_ROAMING = 2;
+    public static final int AUTO_JOIN_OUT_OF_NETWORK_ROAMING = 3;
 
     WifiAutoJoinController(Context c, WifiStateMachine w, WifiConfigStore s,
                            WifiTrafficPoller t, WifiNative n) {
@@ -112,8 +118,7 @@ public class WifiAutoJoinController {
         if (delay <= 0) {
             delay = mScanResultMaximumAge; //something sane
         }
-        Date now = new Date();
-        long milli = now.getTime();
+        long milli = System.currentTimeMillis();
         if (VDBG) {
             logDbg("ageScanResultsOut delay " + Integer.valueOf(delay) + " size "
                     + Integer.valueOf(scanResultCache.size()) + " now " + Long.valueOf(milli));
@@ -276,6 +281,9 @@ public class WifiAutoJoinController {
      * the delta will be infinite, else compare Kepler scores etc…
      ***/
     private int compareNetwork(WifiConfiguration candidate) {
+        if (candidate == null)
+            return -1;
+
         WifiConfiguration currentNetwork = mWifiStateMachine.getCurrentWifiConfiguration();
         if (currentNetwork == null)
             return 1000;
@@ -712,22 +720,40 @@ public class WifiAutoJoinController {
         return order;
     }
 
-    /* attemptAutoJoin function implement the core of the a network switching algorithm */
-    ScanResult attemptRoam(WifiConfiguration candidate, int age) {
+    /* attemptRoam function implement the core of the same SSID switching algorithm */
+    ScanResult attemptRoam(WifiConfiguration current, int age) {
         ScanResult a = null;
-        String currentBSSID = mWifiStateMachine.getCurrentBSSID();
-        if (candidate == null) {
+        if (current == null) {
+            if (VDBG)   {
+                logDbg("attemptRoam not associated");
+            }
             return null;
         }
-        if (candidate.scanResultCache == null) {
+        if (current.scanResultCache == null) {
+            if (VDBG)   {
+                logDbg("attemptRoam no scan cache");
+            }
             return null;
         }
-        if (candidate.scanResultCache.size() > 4) {
+        if (current.scanResultCache.size() > 4) {
+            if (VDBG)   {
+                logDbg("attemptRoam scan cache size " + current.scanResultCache.size() + " --> bail");
+            }
             //implement same SSID roaming only for configuration that have less than 4 BSSIDs
             return null;
         }
-        if (candidate.visibility.num5 == 0) {
-            //implement same SSID roaming only for configuration that have 5GHz BSSIDs
+        String currentBSSID = mWifiStateMachine.getCurrentBSSID();
+        if (currentBSSID == null) {
+            if (DBG)   {
+                logDbg("attemptRoam currentBSSID unknown");
+            }
+            return null;
+        }
+
+        if (current.bssidOwnerUid!= 0 && current.bssidOwnerUid != Process.WIFI_UID) {
+            if (DBG)   {
+                logDbg("attemptRoam BSSID owner is " + Long.toString(current.bssidOwnerUid) + " -> bail");
+            }
             return null;
         }
 
@@ -737,7 +763,7 @@ public class WifiAutoJoinController {
         int aRssiBoost5 = 0;
         int bRssiBoost = 0;
         int aRssiBoost = 0;
-        for (ScanResult b : candidate.scanResultCache.values()) {
+        for (ScanResult b : current.scanResultCache.values()) {
 
             if (b.seen == 0)
                 continue;
@@ -753,10 +779,10 @@ public class WifiAutoJoinController {
                 continue;
             }
 
-            if (currentBSSID != null && currentBSSID.equals(b.BSSID)) {
+            if (currentBSSID.equals(b.BSSID)) {
                 bRssiBoost = +10;
             }
-            if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
+            if (currentBSSID.equals(a.BSSID)) {
                 aRssiBoost = +10;
             }
             if (b.is5GHz() && (b.level+bRssiBoost) > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
@@ -774,7 +800,7 @@ public class WifiAutoJoinController {
                 logDbg("attemptRoam: "
                                 + b.BSSID + "rssi=" + b.level + " freq=" + b.frequency + " versus "
                                 + a.BSSID + "rssi=" + a.level + " freq=" + a.frequency
-                                );
+                                + " use " + a);
             }
         }
         if (VDBG)  {
@@ -782,7 +808,7 @@ public class WifiAutoJoinController {
                     + a.BSSID + "rssi=" + a.level + " freq=" + a.frequency
                     + " Current: " + currentBSSID);
         }
-        if (currentBSSID!= null && currentBSSID.equals(a.BSSID)) {
+        if (currentBSSID.equals(a.BSSID)) {
             return null;
         } else {
             return a;
@@ -791,7 +817,7 @@ public class WifiAutoJoinController {
 
     /* attemptAutoJoin function implement the core of the a network switching algorithm */
     void attemptAutoJoin() {
-        int isRoaming = 0;
+        int networkSwitchType = AUTO_JOIN_IDLE;
 
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
 
@@ -845,11 +871,8 @@ public class WifiAutoJoinController {
                 logDbg("attemptAutoJoin() ERROR wpa_supplicant out of sync nid="
                         + Integer.toString(currentNetId) + " WifiStateMachine="
                         + Integer.toString(currentConfiguration.networkId));
-                //I think this can happen due do race conditions, now what to do??
-                // -> throw an exception, or,
-                // -> dont use the current configuration at all for autojoin
-                //and hope that autojoining will kick us out of this state.
-                currentConfiguration = null;
+                mWifiStateMachine.disconnectCommand();
+                return;
             } else {
                 mCurrentConfigurationKey = currentConfiguration.configKey();
             }
@@ -862,14 +885,14 @@ public class WifiAutoJoinController {
             if ((config.status == WifiConfiguration.Status.DISABLED)
                     && (config.disableReason == WifiConfiguration.DISABLED_AUTH_FAILURE)) {
                 if (DBG) {
-                    logDbg("attemptAutoJoin skip candidate due to auth failure key "
+                    logDbg("attemptAutoJoin skip candidate due to auth failure: "
                             + config.configKey(true));
                 }
                 continue;
             }
 
             if (config.SSID == null) {
-                return;
+                continue;
             }
 
             if (config.autoJoinStatus >=
@@ -983,7 +1006,7 @@ public class WifiAutoJoinController {
             }
 
             if (DBG) {
-                logDbg("attemptAutoJoin trying candidate id=" + config.networkId + " "
+                logDbg("attemptAutoJoin trying candidate id=" + Integer.toString(config.networkId) + " "
                         + config.SSID + " key " + config.configKey(true)
                         + " status=" + config.autoJoinStatus);
             }
@@ -1015,8 +1038,7 @@ public class WifiAutoJoinController {
             }
 
             //get current date
-            Date now = new Date();
-            long now_ms = now.getTime();
+            long now_ms = System.currentTimeMillis();
 
             if (rssi5 < -60 && rssi24 < -70) {
                 for (ScanResult result : scanResultCache.values()) {
@@ -1053,73 +1075,67 @@ public class WifiAutoJoinController {
                 }
             }
         }
-        if (candidate != null) {
-            ScanResult roamCandidate = null;
-            /* if candidate is found, check the state of the connection so as
+
+        /* if candidate is found, check the state of the connection so as
             to decide if we should be acting on this candidate and switching over */
-            if (currentConfiguration != null && currentConfiguration.isLinked(candidate)) {
-                isRoaming = 2;
-            }
-            int networkDelta = compareNetwork(candidate);
-            if (DBG && (networkDelta > 0)) {
-                String roam = "";
-                if (isRoaming == 1)
-                    roam = "roaming";
-                if (isRoaming == 2)
-                    roam = "extended-roaming";
-                logDbg("attemptAutoJoin did find candidate " + candidate.configKey()
-                        + " for delta " + Integer.toString(networkDelta)
-                        + roam);
-            }
+        int networkDelta = compareNetwork(candidate);
+        if (DBG && (networkDelta > 0)) {
+            logDbg("attemptAutoJoin did find SSID candidate " + candidate.configKey()
+                    + " for delta " + Integer.toString(networkDelta)
+                    + " linked=" + (currentConfiguration != null && currentConfiguration.isLinked(candidate)));
+        }
 
-            if (networkDelta <= 0) {
-                roamCandidate = attemptRoam(currentConfiguration, 3000);
-                if (roamCandidate != null)
-                    networkDelta = 10; //TODO: adjust this based on RSSI difference?
-            }
-
-            /* ASK traffic poller permission to switch:
-                for instance,
-                if user is currently streaming voice traffic,
-                then don’t switch regardless of the delta */
-
-            if (mWifiStateMachine.shouldSwitchNetwork(networkDelta)) {
-                if (mStaStaSupported) {
-                    logDbg("mStaStaSupported --> error do nothing now ");
+        /* ASK WifiStateMachine permission to switch:
+            for instance,
+            if user is currently streaming voice traffic,
+            then don’t switch regardless of the delta
+            */
+        if (mWifiStateMachine.shouldSwitchNetwork(networkDelta)) {
+            if (mStaStaSupported) {
+                logDbg("mStaStaSupported --> error do nothing now ");
+            } else {
+                if (currentConfiguration != null && currentConfiguration.isLinked(candidate)) {
+                    networkSwitchType = AUTO_JOIN_EXTENDED_ROAMING;
                 } else {
-                    if (roamCandidate != null) {
-                        if (DBG) {
-                            logDbg("AutoJoin auto roam with netId "
-                                    + Integer.toString(currentConfiguration.networkId)
-                                    + " " + candidate.configKey() + " to BSSID="
-                                    + roamCandidate.BSSID + " freq=" + roamCandidate.frequency
-                                    + " RSSI=" + roamCandidate.frequency);
-                        }
-                        if (roamCandidate.is5GHz()) {
-                            mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
-                                    candidate.networkId, 2, roamCandidate.BSSID);
-                        } else {
-                            //if we want to autoroam to 2.4GHz then force reassociate without locking the
-                            //BSSID, the wifi chipset should normally select a 2.4GHz BSSID as RSSI will be stronger,
-                            //or otherwise fall back normally thru the firmware roam.
-                            //Hence, roaming between 2.4GHz BSSIDs will be handled by firmware
-                            //whereas roaming onto 5GHz BSSIDs will be handled by framework
-                            mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
-                                    candidate.networkId, 2, "any");
-                        }
-                    } else {
-                        if (DBG) {
-                            logDbg("AutoJoin auto connect with netId "
-                                    + Integer.toString(candidate.networkId)
-                                    + " to " + candidate.configKey());
-                        }
-                        mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
-                                candidate.networkId, isRoaming, candidate);
-                    }
+                    networkSwitchType = AUTO_JOIN_OUT_OF_NETWORK_ROAMING;
+                }
+                if (DBG) {
+                    logDbg("AutoJoin auto connect with netId "
+                            + Integer.toString(candidate.networkId)
+                            + " to " + candidate.configKey());
+                }
+                mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
+                        candidate.networkId, networkSwitchType, candidate);
+            }
+        }
+
+        if (networkSwitchType == AUTO_JOIN_IDLE) {
+            //attempt same WifiConfiguration roaming
+            ScanResult roamCandidate = attemptRoam(currentConfiguration, 3000);
+            if (roamCandidate != null) {
+                if (DBG) {
+                    logDbg("AutoJoin auto roam with netId "
+                            + Integer.toString(currentConfiguration.networkId)
+                            + " " + currentConfiguration.configKey() + " to BSSID="
+                            + roamCandidate.BSSID + " freq=" + roamCandidate.frequency
+                            + " RSSI=" + roamCandidate.frequency);
+                }
+                networkSwitchType = AUTO_JOIN_ROAMING;
+                if (roamCandidate.is5GHz()) {
+                    mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
+                            candidate.networkId, 1, roamCandidate.BSSID);
+                } else {
+                    //if we want to autoroam to 2.4GHz then force reassociate without locking the
+                    //BSSID, the wifi chipset should normally select a 2.4GHz BSSID as RSSI will be stronger,
+                    //or otherwise fall back normally thru the firmware roam.
+                    //Hence, roaming between 2.4GHz BSSIDs will be handled by firmware
+                    //whereas roaming onto 5GHz BSSIDs will be handled by framework
+                    mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
+                            candidate.networkId, 1, "any");
                 }
             }
         }
-        if (VDBG) logDbg("Done attemptAutoJoin");
+        if (VDBG) logDbg("Done attemptAutoJoin status=" + Integer.toString(networkSwitchType));
     }
 }
 

@@ -1544,13 +1544,15 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
-            if (config.BSSID != null &&
-                    !mWifiNative.setNetworkVariable(
+            if (config.BSSID != null) {
+                loge("Setting BSSID for " + config.configKey() + " to " + config.BSSID);
+                if (!mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.bssidVarName,
                         config.BSSID)) {
-                loge("failed to set BSSID: "+config.BSSID);
-                break setVariables;
+                    loge("failed to set BSSID: " + config.BSSID);
+                    break setVariables;
+                }
             }
 
             String allowedKeyManagementString =
@@ -1953,7 +1955,7 @@ public class WifiConfigStore extends IpConfigStore {
         return config;
     }
 
-    public Set<Integer> makeChannelList(WifiConfiguration config, int age) {
+    public HashSet<Integer> makeChannelList(WifiConfiguration config, int age) {
         if (config == null)
             return null;
         long now_ms = System.currentTimeMillis();
@@ -1967,7 +1969,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         if (VDBG) {
             StringBuilder dbg = new StringBuilder();
-            dbg.append("makeChannelList for " + config.configKey());
+            dbg.append("makeChannelList age=" + Integer.toString(age) + " for " + config.configKey());
             if (config.scanResultCache != null) {
                 dbg.append(" bssids=" + config.scanResultCache.size());
             }
@@ -1976,13 +1978,20 @@ public class WifiConfigStore extends IpConfigStore {
             }
             loge(dbg.toString());
         }
+
         if (config.scanResultCache != null && config.scanResultCache.size() > 0) {
             for (ScanResult result : config.scanResultCache.values()) {
+                if (VDBG) {
+                    boolean test = (now_ms - result.seen) < age;
+                    loge("has " + result.BSSID + " freq=" + Integer.toString(result.frequency)
+                            + " age=" + Long.toString(now_ms - result.seen) + " ?=" + test);
+                }
                 if ((now_ms - result.seen) < age) {
                     channels.add(result.frequency);
                 }
             }
         }
+
         //get channels for linked configurations
         if (config.linkedConfigurations != null) {
             for (String key : config.linkedConfigurations.keySet()) {
@@ -1990,9 +1999,13 @@ public class WifiConfigStore extends IpConfigStore {
                 if (linked == null)
                     continue;
                 if (linked.scanResultCache == null) {
-                    return null;
+                    continue;
                 }
                 for (ScanResult result : linked.scanResultCache.values()) {
+                    if (VDBG) {
+                        loge("has link: " + result.BSSID + " freq=" + Integer.toString(result.frequency)
+                                + " age=" + Long.toString(now_ms - result.seen));
+                    }
                     if ((now_ms - result.seen) < age) {
                         channels.add(result.frequency);
                     }
@@ -2633,6 +2646,10 @@ public class WifiConfigStore extends IpConfigStore {
                                 config.setAutoJoinStatus(4 + config.autoJoinStatus * 4);
                                 if (config.autoJoinStatus > WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
                                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
+                            }
+                            if (DBG) {
+                                loge("blacklisted " + config.configKey() + " to "
+                                        + Integer.toString(config.autoJoinStatus));
                             }
                         }
                         message.replace("\n", "");
