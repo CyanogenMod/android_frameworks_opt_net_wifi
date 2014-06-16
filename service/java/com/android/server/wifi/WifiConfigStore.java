@@ -267,13 +267,10 @@ public class WifiConfigStore extends IpConfigStore {
         enableAllNetworks();
     }
 
-    /**
-     * Fetch the list of currently configured networks
-     * @return List of networks
-     */
-    List<WifiConfiguration> getConfiguredNetworks() {
-        List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
+    private List<WifiConfiguration> getConfiguredNetworks(Map<String, String> pskMap) {
+        List<WifiConfiguration> networks = new ArrayList<>();
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
+            WifiConfiguration newConfig = new WifiConfiguration(config);
             if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
                 //do not enumerate and return this configuration to any one,
                 //for instance WiFi Picker.
@@ -281,9 +278,39 @@ public class WifiConfigStore extends IpConfigStore {
                 //directly by the key or networkId
                 continue;
             }
-            networks.add(new WifiConfiguration(config));
+            if (pskMap != null && config.allowedKeyManagement != null
+                    && config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK)
+                    && pskMap.containsKey(config.SSID)) {
+                newConfig.preSharedKey = pskMap.get(config.SSID);
+            }
+            networks.add(newConfig);
         }
         return networks;
+    }
+
+    /**
+     * Fetch the list of currently configured networks
+     * @return List of networks
+     */
+    List<WifiConfiguration> getConfiguredNetworks() {
+        return getConfiguredNetworks(null);
+    }
+
+    /**
+     * Fetch the list of currently configured networks, filled with real preSharedKeys
+     * @return List of networks
+     */
+    List<WifiConfiguration> getPrivilegedConfiguredNetworks() {
+        Map<String, String> pskMap = getCredentialsBySsidMap();
+        return getConfiguredNetworks(pskMap);
+    }
+
+    /**
+     * Fetch the preSharedKeys for all networks.
+     * @return a map from Ssid to preSharedKey.
+     */
+    private Map<String, String> getCredentialsBySsidMap() {
+        return readNetworkVariablesFromSupplicantFile("psk");
     }
 
     /**
@@ -979,44 +1006,40 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
-    private String readNetworkVariableFromSupplicantFile(String ssid, String key) {
+    private Map<String, String> readNetworkVariablesFromSupplicantFile(String key) {
+        Map<String, String> result = new HashMap<>();
         BufferedReader reader = null;
-        if (VDBG) loge("readNetworkVariableFromSupplicantFile ssid=[" + ssid + "] key=" + key);
+        if (VDBG) loge("readNetworkVariablesFromSupplicantFile key=" + key);
 
-        String value = null;
         try {
             reader = new BufferedReader(new FileReader(SUPPLICANT_CONFIG_FILE));
             boolean found = false;
-            boolean networkMatched = false;
+            String networkSsid = null;
+            String value = null;
+
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                 if (VDBG) loge(line);
 
                 if (line.matches("[ \\t]*network=\\{")) {
                     found = true;
-                    networkMatched = false;
+                    networkSsid = null;
+                    value = null;
                 } else if (line.matches("[ \\t]*\\{")) {
                     found = false;
-                    networkMatched = false;
+                    networkSsid = null;
+                    value = null;
                 }
 
                 if (found) {
                     int index;
                     if ((index = line.indexOf("ssid=")) >= 0) {
-                        String networkSSid = line.substring(index + 5);
-                        if (networkSSid.regionMatches(0, ssid, 0, ssid.length())) {
-                            networkMatched = true;
-                        } else {
-                            networkMatched = false;
-                        }
+                        networkSsid = line.substring(index + 5);
+                    } else if ((index = line.indexOf(key + "=")) >= 0) {
+                        value = line.substring(index + key.length() + 1);
                     }
 
-                    if (networkMatched) {
-                        if ((index = line.indexOf(key + "=")) >= 0) {
-
-                            value = line.substring(index + key.length() + 1);
-                            if (VDBG) loge("found key " + value);
-
-                        }
+                    if (networkSsid != null && value != null) {
+                        result.put(networkSsid, value);
                     }
                 }
             }
@@ -1034,7 +1057,13 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
-        return value;
+        return result;
+    }
+
+    private String readNetworkVariableFromSupplicantFile(String ssid, String key) {
+        Map<String, String> data = readNetworkVariablesFromSupplicantFile(key);
+        if (VDBG) loge("readNetworkVariableFromSupplicantFile ssid=[" + ssid + "] key=" + key);
+        return data.get(ssid);
     }
 
     /* Mark all networks except specified netId as disabled */

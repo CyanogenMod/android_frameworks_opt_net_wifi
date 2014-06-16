@@ -418,6 +418,8 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_GET_CAPABILITY_FREQ              = BASE + 60;
     /* Get adaptors */
     static final int CMD_GET_ADAPTORS                     = BASE + 61;
+    /* Get configured networks with real preSharedKey */
+    static final int CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS = BASE + 62;
 
     /* Supplicant commands after driver start*/
     /* Initiate a scan */
@@ -1773,6 +1775,14 @@ public class WifiStateMachine extends StateMachine {
 
     public List<WifiConfiguration> syncGetConfiguredNetworks(AsyncChannel channel) {
         Message resultMsg = channel.sendMessageSynchronously(CMD_GET_CONFIGURED_NETWORKS);
+        List<WifiConfiguration> result = (List<WifiConfiguration>) resultMsg.obj;
+        resultMsg.recycle();
+        return result;
+    }
+
+    public List<WifiConfiguration> syncGetPrivilegedConfiguredNetwork(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(
+                CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS);
         List<WifiConfiguration> result = (List<WifiConfiguration>) resultMsg.obj;
         resultMsg.recycle();
         return result;
@@ -3518,6 +3528,9 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_GET_CONFIGURED_NETWORKS:
                     replyToMessage(message, message.what, (List<WifiConfiguration>) null);
                     break;
+                case CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS:
+                    replyToMessage(message, message.what, (List<WifiConfiguration>) null);
+                    break;
                 case CMD_ENABLE_RSSI_POLL:
                     mEnableRssiPolling = (message.arg1 == 1);
                     break;
@@ -4620,6 +4633,8 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_GET_ADAPTORS:
                 s="CMD_GET_ADAPTORS";
+            case CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS:
+                s="CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS";
                 break;
             case CMD_DISCONNECT:
                 s="CMD_DISCONNECT";
@@ -4933,6 +4948,11 @@ public class WifiStateMachine extends StateMachine {
                     }
                     //disconnect now, as we don't have any way to fullfill the  supplicant request
                     //fall thru
+                case CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS:
+                    replyToMessage(message, message.what,
+                            mWifiConfigStore.getPrivilegedConfiguredNetworks());
+                    break;
+                    /* Do a redundant disconnect without transition */
                 case CMD_DISCONNECT:
                     mWifiConfigStore.setLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
