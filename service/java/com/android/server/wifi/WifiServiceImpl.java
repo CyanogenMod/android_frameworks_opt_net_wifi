@@ -609,6 +609,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     }
 
+    private void enforceReadCredentialPermission() {
+        mContext.enforceCallingOrSelfPermission(android.Manifest.permission.READ_WIFI_CREDENTIAL,
+                                                "WifiService");
+    }
+
     private void enforceWorkSourcePermission() {
         mContext.enforceCallingPermission(android.Manifest.permission.UPDATE_DEVICE_STATS,
                 "WifiService");
@@ -785,6 +790,21 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceAccessPermission();
         if (mWifiStateMachineChannel != null) {
             return mWifiStateMachine.syncGetConfiguredNetworks(mWifiStateMachineChannel);
+        } else {
+            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
+            return null;
+        }
+    }
+
+    /**
+     * see {@link android.net.wifi.WifiManager#getPrivilegedConfiguredNetworks()}
+     * @return the list of configured networks with real preSharedKey
+     */
+    public List<WifiConfiguration> getPrivilegedConfiguredNetworks() {
+        enforceReadCredentialPermission();
+        enforceAccessPermission();
+        if (mWifiStateMachineChannel != null) {
+            return mWifiStateMachine.syncGetPrivilegedConfiguredNetwork(mWifiStateMachineChannel);
         } else {
             Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
             return null;
