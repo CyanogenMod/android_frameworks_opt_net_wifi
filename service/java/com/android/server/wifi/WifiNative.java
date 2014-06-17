@@ -936,18 +936,27 @@ public class WifiNative {
     }
 
     public String p2pGetDeviceAddress() {
-        String status = status();
-        if (status == null) return "";
+        Log.d(TAG, "p2pGetDeviceAddress");
 
-        String[] tokens = status.split("\n");
-        for (String token : tokens) {
-            if (token.startsWith("p2p_device_address=")) {
-                String[] nameValue = token.split("=");
-                if (nameValue.length != 2) break;
-                return nameValue[1];
+        /* Explicitly calling the API without IFNAME= prefix to take care of the devices that
+        don't have p2p0 interface. Supplicant seems to be returning the correct address anyway. */
+        String status = doStringCommandNative("STATUS");
+        String result = "";
+
+        if (status != null) {
+            String[] tokens = status.split("\n");
+            for (String token : tokens) {
+                if (token.startsWith("p2p_device_address=")) {
+                    String[] nameValue = token.split("=");
+                    if (nameValue.length != 2)
+                        break;
+                    result = nameValue[1];
+                }
             }
         }
-        return "";
+
+        Log.d(TAG, "p2pGetDeviceAddress returning " + result);
+        return result;
     }
 
     public int getGroupCapability(String deviceAddress) {
