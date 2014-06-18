@@ -1666,4 +1666,24 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceAccessPermission();
         return mWifiStateMachine.getVerboseLoggingLevel();
     }
+
+    public void enableAggressiveHandover(int enabled) {
+        enforceAccessPermission();
+        mWifiStateMachine.enableAggressiveHandover(enabled);
+    }
+
+    public int getAggressiveHandover() {
+        enforceAccessPermission();
+        return mWifiStateMachine.getAggressiveHandover();
+    }
+
+    public void setAllowScansWithTraffic(int enabled) {
+        enforceAccessPermission();
+        mWifiStateMachine.setAllowScansWithTraffic(enabled);
+    }
+
+    public int getAllowScansWithTraffic() {
+        enforceAccessPermission();
+        return mWifiStateMachine.getAllowScansWithTraffic();
+    }
 }

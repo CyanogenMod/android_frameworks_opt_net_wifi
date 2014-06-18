@@ -1955,7 +1955,7 @@ public class WifiConfigStore extends IpConfigStore {
         return config;
     }
 
-    public HashSet<Integer> makeChannelList(WifiConfiguration config, int age) {
+    public HashSet<Integer> makeChannelList(WifiConfiguration config, int age, boolean restrict) {
         if (config == null)
             return null;
         long now_ms = System.currentTimeMillis();
@@ -1986,7 +1986,7 @@ public class WifiConfigStore extends IpConfigStore {
                     loge("has " + result.BSSID + " freq=" + Integer.toString(result.frequency)
                             + " age=" + Long.toString(now_ms - result.seen) + " ?=" + test);
                 }
-                if ((now_ms - result.seen) < age) {
+                if (((now_ms - result.seen) < age)/*||(!restrict || result.is24GHz())*/) {
                     channels.add(result.frequency);
                 }
             }
@@ -2003,10 +2003,11 @@ public class WifiConfigStore extends IpConfigStore {
                 }
                 for (ScanResult result : linked.scanResultCache.values()) {
                     if (VDBG) {
-                        loge("has link: " + result.BSSID + " freq=" + Integer.toString(result.frequency)
+                        loge("has link: " + result.BSSID
+                                + " freq=" + Integer.toString(result.frequency)
                                 + " age=" + Long.toString(now_ms - result.seen));
                     }
-                    if ((now_ms - result.seen) < age) {
+                    if (((now_ms - result.seen) < age)/*||(!restrict || result.is24GHz())*/) {
                         channels.add(result.frequency);
                     }
                 }
