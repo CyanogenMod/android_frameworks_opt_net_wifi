@@ -36,7 +36,7 @@ static int cmdId = 0;
 static int ioctl_sock = 0;
 static int max_event_wait = 5;
 static int stest_max_ap = 10;
-static int stest_base_period = 1000;
+static int stest_base_period = 5000;
 static int stest_threshold = 80;
 static int swctest_rssi_sample_size =  3;
 static int swctest_rssi_lost_ap =  3;
@@ -46,7 +46,9 @@ static int htest_low_threshold =  90;
 static int htest_high_threshold =  10;
 
 mac_addr hotlist_bssids[16];
+int channel_list[16];
 int num_hotlist_bssids = 0;
+int num_channels = 0;
 
 int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
 {
@@ -291,36 +293,55 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
     wifi_scan_cmd_params params;
     memset(&params, 0, sizeof(params));
 
-    /* create a schedule to scan channels 1, 6, 11 every 5 second and
-     * scan 36, 40, 44, 149, 153, 157, 161 165 every 10 second */
+    if(num_channels > 0){
+      params.max_ap_per_scan = max_ap_per_scan;
+      params.base_period = base_period;                      // 5 second by default
+      params.report_threshold = report_threshold;
+      params.num_buckets = 1;
 
-    params.max_ap_per_scan = max_ap_per_scan;
-    params.base_period = base_period;                      // 5 second
-    params.report_threshold = report_threshold;
-    params.num_buckets = 2;
+      params.buckets[0].bucket = 0;
+      params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
+      params.buckets[0].period = base_period;
+      params.buckets[0].num_channels = num_channels;
 
-    params.buckets[0].bucket = 0;
-    params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
-    params.buckets[0].period = 5000;                // 5 second
-    params.buckets[0].num_channels = 3;
+      for(int i = 0; i < num_channels; i++){
+        params.buckets[0].channels[i].channel = channel_list[i];
+      }
 
-    params.buckets[0].channels[0].channel = 2412;
-    params.buckets[0].channels[1].channel = 2437;
-    params.buckets[0].channels[2].channel = 2462;
+    } else {
 
-    params.buckets[1].bucket = 1;
-    params.buckets[1].band = WIFI_BAND_UNSPECIFIED;
-    params.buckets[1].period = 10000;               // 10 second
-    params.buckets[1].num_channels = 8;
+      /* create a schedule to scan channels 1, 6, 11 every 5 second and
+       * scan 36, 40, 44, 149, 153, 157, 161 165 every 10 second */
 
-    params.buckets[1].channels[0].channel = 5180;
-    params.buckets[1].channels[1].channel = 5200;
-    params.buckets[1].channels[2].channel = 5220;
-    params.buckets[1].channels[3].channel = 5745;
-    params.buckets[1].channels[4].channel = 5765;
-    params.buckets[1].channels[5].channel = 5785;
-    params.buckets[1].channels[6].channel = 5805;
-    params.buckets[1].channels[7].channel = 5825;
+      params.max_ap_per_scan = max_ap_per_scan;
+      params.base_period = base_period;                      // 5 second
+      params.report_threshold = report_threshold;
+      params.num_buckets = 2;
+
+      params.buckets[0].bucket = 0;
+      params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
+      params.buckets[0].period = 5000;                // 5 second
+      params.buckets[0].num_channels = 3;
+
+      params.buckets[0].channels[0].channel = 2412;
+      params.buckets[0].channels[1].channel = 2437;
+      params.buckets[0].channels[2].channel = 2462;
+
+      params.buckets[1].bucket = 1;
+      params.buckets[1].band = WIFI_BAND_UNSPECIFIED;
+      params.buckets[1].period = 10000;               // 10 second
+      params.buckets[1].num_channels = 8;
+
+      params.buckets[1].channels[0].channel = 5180;
+      params.buckets[1].channels[1].channel = 5200;
+      params.buckets[1].channels[2].channel = 5220;
+      params.buckets[1].channels[3].channel = 5745;
+      params.buckets[1].channels[4].channel = 5765;
+      params.buckets[1].channels[5].channel = 5785;
+      params.buckets[1].channels[6].channel = 5805;
+      params.buckets[1].channels[7].channel = 5825;
+
+    }
 
     wifi_scan_result_handler handler;
     memset(&handler, 0, sizeof(handler));
@@ -703,6 +724,12 @@ void readTestOptions(int argc, char *argv[]){
        j++;
        for (num_hotlist_bssids = 0; j < argc && isxdigit(argv[j][0]); j++, num_hotlist_bssids++) {
          parseMacAddress(argv[j], hotlist_bssids[num_hotlist_bssids]);
+       }
+       j -= 1;
+     } else if (strcmp(argv[j], "-channel_list") == 0 && isxdigit(argv[j+1][0])) {
+       j++;
+       for (num_channels = 0; j < argc && isxdigit(argv[j][0]); j++, num_channels++) {
+         channel_list[num_channels] = atoi(argv[j]);
        }
        j -= 1;
      }
