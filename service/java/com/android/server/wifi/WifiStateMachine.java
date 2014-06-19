@@ -2411,7 +2411,8 @@ public class WifiStateMachine extends StateMachine {
                     + Integer.toString(newLinkSpeed));
         }
 
-        if (newRssi > WifiInfo.INVALID_RSSI && newRssi < WifiInfo.MAX_RSSI) { // screen out invalid values
+        if (newRssi > WifiInfo.INVALID_RSSI && newRssi < WifiInfo.MAX_RSSI) {
+        // screen out invalid values
             /* some implementations avoid negative values by adding 256
              * so we need to adjust for that here.
              */
@@ -2495,13 +2496,46 @@ public class WifiStateMachine extends StateMachine {
                 && mWifiInfo.getLinkSpeed() >= 24)
                 || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed() >= 48);
 
-        int rssi = mWifiInfo.getRssi() - 5 * mAggressiveHandover;
-        boolean isBadRSSI = (mWifiInfo.is24GHz() && rssi < WifiConfiguration.BAD_RSSI_24 )
-                || (mWifiInfo.is5GHz() && rssi < WifiConfiguration.BAD_RSSI_5);
-        boolean isLowRSSI = (mWifiInfo.is24GHz() && rssi < WifiConfiguration.LOW_RSSI_24)
-                || (mWifiInfo.is5GHz() && mWifiInfo.getRssi() < WifiConfiguration.LOW_RSSI_5);
-        boolean isHighRSSI = (mWifiInfo.is24GHz() && rssi >= WifiConfiguration.GOOD_RSSI_24)
-                || (mWifiInfo.is5GHz() && mWifiInfo.getRssi() >= WifiConfiguration.GOOD_RSSI_5);
+
+        //we want to make sure that we use the 24GHz RSSI thresholds is
+        //there are 2.4GHz scan results
+        //otherwise we end up lowering the score based on 5GHz values
+        //which may cause a switch to LTE before roaming has a chance to try 2.4GHz
+        //We also might unblacklist the configuation based on 2.4GHz
+        //thresholds but joining 5GHz anyhow, and failing over to 2.4GHz because 5GHz is not good
+        boolean use24Thresholds = false;
+        boolean homeNetworkBoost = false;
+        WifiConfiguration currentConfiguration = getCurrentWifiConfiguration();
+        if (currentConfiguration != null
+                && currentConfiguration.scanResultCache != null) {
+            currentConfiguration.setVisibility(12000);
+            if (currentConfiguration.visibility != null) {
+                if (currentConfiguration.visibility.rssi24 != WifiConfiguration.INVALID_RSSI
+                        && currentConfiguration.visibility.rssi24
+                        >= (currentConfiguration.visibility.rssi5-2)) {
+                    use24Thresholds = true;
+                }
+            }
+            if (currentConfiguration.scanResultCache.size() <= 4
+                && currentConfiguration.allowedKeyManagement.cardinality() == 1
+                && currentConfiguration.allowedKeyManagement.
+                    get(WifiConfiguration.KeyMgmt.WPA_PSK) == true) {
+                //a PSK network with less than 4 known BSSIDs
+                //This is most likely a home network and thus we want to stick to wifi more
+                homeNetworkBoost = true;
+            }
+        }
+
+        int rssi = mWifiInfo.getRssi() - 6 * mAggressiveHandover
+                + (homeNetworkBoost ? WifiConfiguration.HOME_NETWORK_RSSI_BOOST : 0);
+        boolean is24GHz = use24Thresholds || mWifiInfo.is24GHz();
+
+        boolean isBadRSSI = (is24GHz && rssi < WifiConfiguration.BAD_RSSI_24 )
+                || (!is24GHz && rssi < WifiConfiguration.BAD_RSSI_5);
+        boolean isLowRSSI = (is24GHz && rssi < WifiConfiguration.LOW_RSSI_24)
+                || (!is24GHz && mWifiInfo.getRssi() < WifiConfiguration.LOW_RSSI_5);
+        boolean isHighRSSI = (is24GHz && rssi >= WifiConfiguration.GOOD_RSSI_24)
+                || (!is24GHz && mWifiInfo.getRssi() >= WifiConfiguration.GOOD_RSSI_5);
 
         if (PDBG) {
             String rssiStatus = "";
@@ -2525,11 +2559,13 @@ public class WifiStateMachine extends StateMachine {
             //link is stuck
             if (mWifiInfo.linkStuckCount < 5)
                 mWifiInfo.linkStuckCount += 1;
-            if (PDBG) loge(" bad link stuck count =" + Integer.toString(mWifiInfo.linkStuckCount));
+            if (PDBG) loge(" bad link -> stuck count ="
+                    + Integer.toString(mWifiInfo.linkStuckCount));
         } else if (mWifiInfo.txSuccessRate > 2 || mWifiInfo.txBadRate < 0.1) {
             if (mWifiInfo.linkStuckCount > 0)
                 mWifiInfo.linkStuckCount -= 1;
-            if (PDBG) loge(" good link stuck count =" + Integer.toString(mWifiInfo.linkStuckCount));
+            if (PDBG) loge(" good link -> stuck count ="
+                    + Integer.toString(mWifiInfo.linkStuckCount));
 
         }
 
