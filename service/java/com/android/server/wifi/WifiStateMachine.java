@@ -2804,6 +2804,11 @@ public class WifiStateMachine extends StateMachine {
     }
 
     private void sendRssiChangeBroadcast(final int newRssi) {
+        try {
+            mBatteryStats.noteWifiRssiChanged(newRssi);
+        } catch (RemoteException e) {
+            // Won't happen.
+        }
         Intent intent = new Intent(WifiManager.RSSI_CHANGED_ACTION);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.putExtra(WifiManager.EXTRA_NEW_RSSI, newRssi);

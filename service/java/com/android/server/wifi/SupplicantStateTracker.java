@@ -16,6 +16,11 @@
 
 package com.android.server.wifi;
 
+import android.os.BatteryStats;
+import android.os.RemoteException;
+import android.os.ServiceManager;
+import android.util.Slog;
+import com.android.internal.app.IBatteryStats;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 
@@ -44,8 +49,9 @@ class SupplicantStateTracker extends StateMachine {
     private static final String TAG = "SupplicantStateTracker";
     private static boolean DBG = false;
 
-    private WifiStateMachine mWifiStateMachine;
-    private WifiConfigStore mWifiConfigStore;
+    private final WifiStateMachine mWifiStateMachine;
+    private final WifiConfigStore mWifiConfigStore;
+    private final IBatteryStats mBatteryStats;
     private int mAuthenticationFailuresCount = 0;
     private int mAssociationRejectCount = 0;
     /* Indicates authentication failure in supplicant broadcast.
@@ -62,16 +68,16 @@ class SupplicantStateTracker extends StateMachine {
     /* Tracks if networks have been disabled during a connection */
     private boolean mNetworksDisabledDuringConnect = false;
 
-    private Context mContext;
+    private final Context mContext;
 
-    private State mUninitializedState = new UninitializedState();
-    private State mDefaultState = new DefaultState();
-    private State mInactiveState = new InactiveState();
-    private State mDisconnectState = new DisconnectedState();
-    private State mScanState = new ScanState();
-    private State mHandshakeState = new HandshakeState();
-    private State mCompletedState = new CompletedState();
-    private State mDormantState = new DormantState();
+    private final State mUninitializedState = new UninitializedState();
+    private final State mDefaultState = new DefaultState();
+    private final State mInactiveState = new InactiveState();
+    private final State mDisconnectState = new DisconnectedState();
+    private final State mScanState = new ScanState();
+    private final State mHandshakeState = new HandshakeState();
+    private final State mCompletedState = new CompletedState();
+    private final State mDormantState = new DormantState();
 
     void enableVerboseLogging(int verbose) {
         if (verbose > 0) {
@@ -91,6 +97,7 @@ class SupplicantStateTracker extends StateMachine {
         mContext = c;
         mWifiStateMachine = wsm;
         mWifiConfigStore = wcs;
+        mBatteryStats = (IBatteryStats)ServiceManager.getService(BatteryStats.SERVICE_NAME);
         addState(mDefaultState);
             addState(mUninitializedState, mDefaultState);
             addState(mInactiveState, mDefaultState);
@@ -165,6 +172,33 @@ class SupplicantStateTracker extends StateMachine {
     }
 
     private void sendSupplicantStateChangedBroadcast(SupplicantState state, boolean failedAuth) {
+        int supplState;
+        switch (state) {
+            case DISCONNECTED: supplState = BatteryStats.WIFI_SUPPL_STATE_DISCONNECTED; break;
+            case INTERFACE_DISABLED:
+                supplState = BatteryStats.WIFI_SUPPL_STATE_INTERFACE_DISABLED; break;
+            case INACTIVE: supplState = BatteryStats.WIFI_SUPPL_STATE_INACTIVE; break;
+            case SCANNING: supplState = BatteryStats.WIFI_SUPPL_STATE_SCANNING; break;
+            case AUTHENTICATING: supplState = BatteryStats.WIFI_SUPPL_STATE_AUTHENTICATING; break;
+            case ASSOCIATING: supplState = BatteryStats.WIFI_SUPPL_STATE_ASSOCIATING; break;
+            case ASSOCIATED: supplState = BatteryStats.WIFI_SUPPL_STATE_ASSOCIATED; break;
+            case FOUR_WAY_HANDSHAKE:
+                supplState = BatteryStats.WIFI_SUPPL_STATE_FOUR_WAY_HANDSHAKE; break;
+            case GROUP_HANDSHAKE: supplState = BatteryStats.WIFI_SUPPL_STATE_GROUP_HANDSHAKE; break;
+            case COMPLETED: supplState = BatteryStats.WIFI_SUPPL_STATE_COMPLETED; break;
+            case DORMANT: supplState = BatteryStats.WIFI_SUPPL_STATE_DORMANT; break;
+            case UNINITIALIZED: supplState = BatteryStats.WIFI_SUPPL_STATE_UNINITIALIZED; break;
+            case INVALID: supplState = BatteryStats.WIFI_SUPPL_STATE_INVALID; break;
+            default:
+                Slog.w(TAG, "Unknown supplicant state " + state);
+                supplState = BatteryStats.WIFI_SUPPL_STATE_INVALID;
+                break;
+        }
+        try {
+            mBatteryStats.noteWifiSupplicantStateChanged(supplState, failedAuth);
+        } catch (RemoteException e) {
+            // Won't happen.
+        }
         Intent intent = new Intent(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT
                 | Intent.FLAG_RECEIVER_REPLACE_PENDING);
