@@ -69,9 +69,10 @@ LOCAL_C_INCLUDES += \
 LOCAL_SHARED_LIBRARIES += \
 	libcutils \
 	libnl \
-	libandroid_runtime
+	libandroid_runtime \
+	libutils
 
-LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL) libc libutils
+LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
 LOCAL_SRC_FILES := \
 	tools/halutil/halutil.cpp
