@@ -1228,6 +1228,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     public void enableTdls(String remoteAddress, boolean enable) {
+        if (remoteAddress == null) {
+          throw new IllegalArgumentException("remoteAddress cannot be null");
+        }
+
         TdlsTaskParams params = new TdlsTaskParams();
         params.remoteIpAddress = remoteAddress;
         params.enable = enable;
@@ -1236,6 +1240,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
 
     public void enableTdlsWithMacAddress(String remoteMacAddress, boolean enable) {
+        if (remoteMacAddress == null) {
+          throw new IllegalArgumentException("remoteMacAddress cannot be null");
+        }
+
         mWifiStateMachine.enableTdls(remoteMacAddress, enable);
     }
 
