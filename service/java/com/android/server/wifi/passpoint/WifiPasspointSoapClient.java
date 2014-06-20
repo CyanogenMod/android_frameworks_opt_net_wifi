@@ -16,20 +16,21 @@
 
 package com.android.server.wifi.passpoint;
 
+import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.net.wifi.passpoint.WifiPasspointCredential;
 import android.net.wifi.passpoint.WifiPasspointDmTree;
 import android.net.wifi.passpoint.WifiPasspointManager;
-import android.os.*;
-import android.util.Log;
 import android.net.Uri;
-import android.net.wifi.*;
+import android.net.wifi.passpoint.WifiPasspointManager.ParcelableString;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.os.Message;
+import android.os.SystemProperties;
+import android.security.Credentials;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.Context;
-import android.content.BroadcastReceiver;
-import android.security.Credentials;
+import android.util.Log;
 
 import com.android.internal.util.StateMachine;
 import com.android.server.wifi.passpoint.WifiPasspointClient.AuthenticationElement;
@@ -170,7 +171,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     private static String mSoapWebUrl;
     private static String mOSUServerUrl;
     private static String mREMServerUrl;
-    private String mImsi;
     private String mEnrollmentServerURI;
     private String mEnrollmentServerCert;
 
@@ -197,13 +197,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     private WifiPasspointDmTree mSoapTree;
     private WifiPasspointDmTreeHelper mTreeHelper;
     private WifiPasspointCredential mCred;
-
-    // UploadMO
-    private static String mUploadMO;
-
-    // soap dump
-    private String timeString;
-
     private static int procedureDone;
     private static int managementTreeUpdateCount = 0;
 
@@ -499,13 +492,11 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     // page to do user-managed user/pass credential
                     // registration again
                     if (WIFI_SOAP_SPP_STATUS_OK.equals(status)) {
-                        if (getSubscriptionSignUpAndUserUpdate(doc)) {
+                        if (isLaunchBrowserExecution(doc)) {
                             Log.d(TAG, "[New] redirect to browser");
-                            // useClientCertTLS
-                        } else if (getUseClientCertTLS(doc)) {
-                            Log.d(TAG,
-                                    "Provisioning using client certificate through TLS (useClientCertTLS)");
-                        } else if (getEnrollmentInfo(doc)) {
+                        } else if (isUseClientCertTlsExecution(doc)) {
+                            // to use pre-installed client certificate
+                        } else if (isEnrollmentExecution(doc)) {
                             startCertificateEnroll(mPasspointCertificate.ENROLL);
                         }
                     }
@@ -516,7 +507,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     // machine-managed user/pass credential, then send
                     // sppUpdateResponse
                     else if (WIFI_SOAP_SPP_STATUS_PROVISION_COMPLETE.equals(status)) {
-                        if (checkWifiSpFqdnForAddMo(doc)) {
+                        if (isWifiSpFqdnForAddMo(doc)) {
                             Document docMgmtTree = mPpsmoParser.extractMgmtTree(response);
                             String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                             String treeUri = getSPPTreeUri(doc, "addMO");
@@ -548,7 +539,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     } else {
                         status = checkStatus(doc, NAMESPACE_NS, WIFI_SOAP_USER_INPUT_RESPONSE);
                         if (WIFI_SOAP_SPP_STATUS_OK.equals(status)) {
-                            if (getEnrollmentInfo(doc)) {
+                            if (isEnrollmentExecution(doc)) {
                                 startCertificateEnroll(mPasspointCertificate.ENROLL);
                             }
                         } else if (WIFI_SOAP_SPP_STATUS_ERROR_OCCURRED.equals(status)) {
@@ -622,12 +613,12 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     Document doc = mPpsmoParser.getDocument(response);
                     String status = checkStatus(doc);
                     if (WIFI_SOAP_SPP_STATUS_REMEDIATION_COMPLETE.equals(status)) {
-                        if (getNoMoUpdate(doc)) {
+                        if (isNoMoUpdate(doc)) {
                             Log.d(TAG, WIFI_SOAP_SPP_NOMOUPDATE);
-                        } else if (getSubscriptionSignUpAndUserUpdate(doc)) {
-                            Log.d(TAG, "[New] redirect to browser");
+                        } else if (isLaunchBrowserExecution(doc)) {
+                            Log.d(TAG, "[New] launch browser");
                         } else {
-                            if (checkWifiSpFqdnForUpdateMo(doc)) {
+                            if (isWifiSpFqdnForUpdateMo(doc)) {
                                 Vector<Document> sppUpdateNodes = mPpsmoParser.getSPPNodes(doc,
                                         NAMESPACE_NS, "updateNode");
                                 for (Document docNodes : sppUpdateNodes) {
@@ -658,15 +649,15 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                             }
                         }
                     } else if (WIFI_SOAP_SPP_STATUS_OK.equals(status)) {
-                        if (getUploadMO(doc)) {
+                        if (isUploadMO(doc)) {
                             mRequestReason = SUB_MO_UPLOAD;
                             remediation();
-                        } else if (getSubscriptionSignUpAndUserUpdate(doc)) {
+                        } else if (isLaunchBrowserExecution(doc)) {
                             Log.d(TAG, "[New] redirect to browser");
-                        } else if (getEnrollmentInfo(doc)) {
+                        } else if (isEnrollmentExecution(doc)) {
                             startCertificateEnroll(mPasspointCertificate.REENROLL);
                         } else {
-                            if (checkWifiSpFqdnForUpdateMo(doc)) {
+                            if (isWifiSpFqdnForUpdateMo(doc)) {
                                 Vector<Document> sppUpdateNodes = mPpsmoParser.getSPPNodes(doc,
                                         NAMESPACE_NS, "updateNode");
                                 for (Document docNodes : sppUpdateNodes) {
@@ -753,8 +744,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         Document doc = mPpsmoParser.getDocument(response);
                         String status = checkStatus(doc);
                         if (WIFI_SOAP_SPP_STATUS_OK.equals(status)) {
-                            if (getUploadMO(doc)) {
-                                if (checkWifiSpFqdnForUploadMo(doc)) {
+                            if (isUploadMO(doc)) {
+                                if (isWifiSpFqdnForUploadMo(doc)) {
                                     mRequestReason = POL_MO_UPLOAD;
                                     policyProvision();
                                     return;
@@ -765,7 +756,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                                 }
                             }
                         } else if (WIFI_SOAP_SPP_STATUS_UPDATE_COMPLETE.equals(status)) {
-                            if (checkWifiSpFqdnForUpdateMo(doc)) {
+                            if (isWifiSpFqdnForUpdateMo(doc)) {
                                 Vector<Document> sppUpdateNodes = mPpsmoParser.getSPPNodes(doc,
                                         NAMESPACE_NS, "updateNode");
                                 for (Document docNodes : sppUpdateNodes) {
@@ -1739,10 +1730,10 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             if (credInfo != null &&
                     credInfo.credential != null &&
                     credInfo.credential.sim != null) {
-                mImsi = credInfo.credential.sim.IMSI;
+                String imsi = credInfo.credential.sim.IMSI;
                 SoapObject imsiRequest = new SoapObject(null, "Node");
                 imsiRequest.addProperty("NodeName", "IMSI");
-                imsiRequest.addProperty("Value", mImsi);
+                imsiRequest.addProperty("Value", imsi);
                 wifiRequest.addSoapObject(imsiRequest);
             }
         } else {
@@ -1907,8 +1898,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return null;
     }
 
-    private boolean getNoMoUpdate(Document doc) {
-        Log.d(TAG, "[getNoMoUpdate]");
+    private boolean isNoMoUpdate(Document doc) {
+        Log.d(TAG, "[isNoMoUpdate]");
         NodeList list = doc.getElementsByTagNameNS(NAMESPACE_NS, WIFI_SOAP_SPP_NOMOUPDATE);
         if (list.getLength() != 0) {
             mTarget.sendMessage(
@@ -1918,14 +1909,14 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return false;
     }
 
-    private Boolean getUploadMO(Document doc) {
-        Log.d(TAG, "[getUploadMO]");
+    private boolean isUploadMO(Document doc) {
+        Log.d(TAG, "[isUploadMO]");
         NodeList list = doc.getElementsByTagNameNS(NAMESPACE_NS, "uploadMO");
         if (list.getLength() != 0) {
             Element element = (Element) list.item(0);
-            mUploadMO = element.getAttributeNS(NAMESPACE_NS, WIFI_SOAP_MO_URN);
-            Log.d(TAG, "Upload MO: " + mUploadMO);
-            if (mUploadMO != null || !mUploadMO.isEmpty()) {
+            String uploadMO = element.getAttributeNS(NAMESPACE_NS, WIFI_SOAP_MO_URN);
+            Log.d(TAG, "Upload MO: " + uploadMO);
+            if (uploadMO != null || !uploadMO.isEmpty()) {
                 return true;
             }
         }
@@ -1933,12 +1924,12 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return false;
     }
 
-    private Boolean getEnrollmentInfo(Document doc) {
-        Log.d(TAG, "[getEnrollmentInfo]");
+    private boolean isEnrollmentExecution(Document doc) {
+        Log.d(TAG, "[isEnrollmentExecution]");
         try {
             NodeList list = doc.getElementsByTagNameNS(NAMESPACE_NS, "getCertificate");
             if (list.getLength() != 0) {
-                Log.d(TAG, "[getEnrollmentInfo] got getCertificate:");
+                Log.d(TAG, "[isEnrollmentExecution] got getCertificate:");
                 Element eElement = (Element) list.item(0);
                 String att = eElement.getAttribute("enrollmentProtocol");
                 if (!"EST".equals(att)) { // EST is allowed only
@@ -1974,8 +1965,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         }
     }
 
-    private Boolean getUseClientCertTLS(Document doc) {
-        Log.d(TAG, "[getUseClientCertTLS]");
+    private boolean isUseClientCertTlsExecution(Document doc) {
+        Log.d(TAG, "[isUseClientCertTlsExecution]");
         try {
             NodeList list = doc.getElementsByTagNameNS(NAMESPACE_NS, "useClientCertTLS");
             if (list.getLength() != 0) {
@@ -2033,44 +2024,44 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return null;
     }
 
-    private boolean checkWifiSpFqdnForAddMo(Document doc) {
-        Log.d(TAG, "[checkWifiSpFqdnForAddMo]");
+    private boolean isWifiSpFqdnForAddMo(Document doc) {
+        Log.d(TAG, "[isWifiSpFqdnForAddMo]");
         mSpFqdnFromMo = getWifiSpFqdnFromMoTree(doc, "addMO");
         Log.d(TAG, "current wifiSPFQDN: " + mSpFqdn + ", wifiSPFQDN From MO: " + mSpFqdnFromMo);
         if (mSpFqdnFromMo != null && mSpFqdn.endsWith(mSpFqdnFromMo)) {
-            Log.d(TAG, "[checkWifiSpFqdnForAddMo] pass");
+            Log.d(TAG, "[isWifiSpFqdnForAddMo] pass");
             return true;
         }
-        Log.d(TAG, "[checkWifiSpFqdnForAddMo] fail");
+        Log.d(TAG, "[isWifiSpFqdnForAddMo] fail");
         return false;
     }
 
-    private boolean checkWifiSpFqdnForUpdateMo(Document doc) {
-        Log.d(TAG, "[checkWifiSpFqdnForUpdateMo]");
+    private boolean isWifiSpFqdnForUpdateMo(Document doc) {
+        Log.d(TAG, "[isWifiSpFqdnForUpdateMo]");
         mSpFqdnFromMo = getWifiSpFqdnFromMoTree(doc, "updateNode");
         Log.d(TAG, "current wifiSPFQDN: " + mSpFqdn + ", wifiSPFQDN From MO: " + mSpFqdnFromMo);
         if (mSpFqdnFromMo != null && mSpFqdn.endsWith(mSpFqdnFromMo)) {
-            Log.d(TAG, "[checkWifiSpFqdnForUpdateMo] pass");
+            Log.d(TAG, "[isWifiSpFqdnForUpdateMo] pass");
             return true;
         }
-        Log.d(TAG, "[checkWifiSpFqdnForUpdateMo] fail");
+        Log.d(TAG, "[isWifiSpFqdnForUpdateMo] fail");
         return false;
     }
 
-    private boolean checkWifiSpFqdnForUploadMo(Document doc) {
-        Log.d(TAG, "[checkWifiSpFqdnForUploadMo]");
+    private boolean isWifiSpFqdnForUploadMo(Document doc) {
+        Log.d(TAG, "[isWifiSpFqdnForUploadMo]");
         mSpFqdnFromMo = getWifiSpFqdnFromMoTree(doc, "uploadMO");
         Log.d(TAG, "current wifiSPFQDN: " + mSpFqdn + ", wifiSPFQDN From MO: " + mSpFqdnFromMo);
         if (mSpFqdnFromMo != null && mSpFqdn.endsWith(mSpFqdnFromMo)) {
-            Log.d(TAG, "[checkWifiSpFqdnForUploadMo] pass");
+            Log.d(TAG, "[isWifiSpFqdnForUploadMo] pass");
             return true;
         }
-        Log.d(TAG, "[checkWifiSpFqdnForUploadMo] fail");
+        Log.d(TAG, "[isWifiSpFqdnForUploadMo] fail");
         return false;
     }
 
-    private Boolean getSubscriptionSignUpAndUserUpdate(Document doc) {
-        Log.d(TAG, "[getSubscriptionSignUpAndUserUpdate]");
+    private boolean isLaunchBrowserExecution(Document doc) {
+        Log.d(TAG, "[isLaunchBrowserExecution]");
         NodeList list = doc.getElementsByTagNameNS(NAMESPACE_NS, "exec");
 
         for (int tmp = 0; tmp < list.getLength(); tmp++) {
@@ -2078,20 +2069,18 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             if (nNode.getNodeType() == Node.ELEMENT_NODE) {
                 try {
                     Element eElement = (Element) nNode;
-                    Log.d(TAG,
-                            "launchBrowserToURI : "
-                                    + mPpsmoParser.getTagValue(NAMESPACE_NS,
-                                            "launchBrowserToURI", eElement));
+                    Log.d(TAG, "launchBrowserToURI : " +
+                        mPpsmoParser.getTagValue(NAMESPACE_NS, "launchBrowserToURI", eElement));
                     String uri = mPpsmoParser.getTagValue(NAMESPACE_NS,
                             "launchBrowserToURI", eElement);
                     if (uri == null) {
                         return false;
                     }
-                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    mContext.startActivity(intent);
+                    ParcelableString launchBrowserUri = new WifiPasspointManager.ParcelableString();
+                    launchBrowserUri.string = uri;
+                    mTarget.sendMessage(WifiPasspointStateMachine.CMD_LAUNCH_BROWSER, launchBrowserUri);
 
-                    Log.d(TAG, "value : " + uri);
+                    Log.d(TAG, "value : " + launchBrowserUri);
                     return true;
                 } catch (Exception ee) {
                     ee.printStackTrace();
@@ -2113,7 +2102,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return filename;
     }
 
-    private boolean checkExtendedKeyUsageIdKpClientAuth(final X509Certificate x509Cert) {
+    private boolean isServerAuthMatched(final X509Certificate x509Cert) {
         boolean result = true;
         try {
             List<String> extKeyUsages = x509Cert.getExtendedKeyUsage();
@@ -2139,7 +2128,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     }
 
-    private boolean checkSubjectAltNameOtherNameSPLangFriendlyName(final X509Certificate x509Cert) {
+    private boolean isLanguageAndNamesMatched(final X509Certificate x509Cert) {
         boolean result = false;
 
         if (mOSUFriendlyName == null) {
@@ -2226,7 +2215,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return result;
     }
 
-    private boolean checkSubjectAltNameDNSName(final X509Certificate x509Cert, final String fqdn,
+    private boolean isDnsNameMatched(final X509Certificate x509Cert, final String fqdn,
             boolean suffixMatch) {
         boolean result = false;
 
@@ -2265,7 +2254,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return result;
     }
 
-    private boolean checkLogotypeExtn(final X509Certificate x509Cert) {
+    private boolean isLogoTypeExtensionMatched(final X509Certificate x509Cert) {
         if (iconHash == null) { // icon doesn't successfully downloaded and
                                 // displayed, bypass the check
             return true;
@@ -2691,22 +2680,22 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 // only check on OSU
                 if (mOSUServerUrl != null && !mOSUServerUrl.isEmpty()) {
                     // check SP friendly name and Language code
-                    if (!checkSubjectAltNameOtherNameSPLangFriendlyName(arg0[0])) {
+                    if (!isLanguageAndNamesMatched(arg0[0])) {
                         throw new RuntimeException("id-wfa-hotspot-friendly-name check fail");
                     }
 
                     // check icon type hash value
-                    if (!checkLogotypeExtn(arg0[0])) {
+                    if (!isLogoTypeExtensionMatched(arg0[0])) {
                         throw new RuntimeException("Certificate Logo icon hash doesn't match");
                     }
                 }
 
-                // check id-kp-clientAuth
-                if (!checkExtendedKeyUsageIdKpClientAuth(arg0[0])) {
-                    throw new RuntimeException("id-kp-clientAuth found");
+                // check id-kp-serverAuth
+                if (!isServerAuthMatched(arg0[0])) {
+                    throw new RuntimeException("id-kp-serverAuth found");
                 }
 
-                // check SP-FQDN
+                // check SPFQDN
                 boolean suffixMatch;
 
                 // check complete host name on OSU server
@@ -2716,7 +2705,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     // check SPFQDN on subscription and policy server
                     suffixMatch = true;
                 }
-                if (!checkSubjectAltNameDNSName(arg0[0], mSpFqdn, suffixMatch)) {
+                if (!isDnsNameMatched(arg0[0], mSpFqdn, suffixMatch)) {
                     throw new RuntimeException(
                             "Certificate Subject Alternative Name doesn't include SP-FQDN");
                 }
