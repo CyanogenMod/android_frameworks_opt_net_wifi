@@ -2849,7 +2849,7 @@ public class WifiStateMachine extends StateMachine {
      * - Interface name: set in the constructor.
      * - IPv4 and IPv6 addresses: netlink, passed in by mNetlinkTracker.
      * - IPv4 routes, DNS servers, and domains: DHCP.
-     * - IPv6 routes: netlink, passed in by mNetlinkTracker.
+     * - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
      * - HTTP proxy: the wifi config store.
      */
     private void updateLinkProperties() {
@@ -2859,15 +2859,17 @@ public class WifiStateMachine extends StateMachine {
         newLp.setInterfaceName(mInterfaceName);
         newLp.setHttpProxy(mWifiConfigStore.getProxyProperties(mLastNetworkId));
 
-        // IPv4/v6 addresses and IPv6 routes come from netlink.
+        // IPv4/v6 addresses, IPv6 routes and IPv6 DNS servers come from netlink.
         LinkProperties netlinkLinkProperties = mNetlinkTracker.getLinkProperties();
         newLp.setLinkAddresses(netlinkLinkProperties.getLinkAddresses());
         for (RouteInfo route : netlinkLinkProperties.getRoutes()) {
             newLp.addRoute(route);
         }
+        for (InetAddress dns : netlinkLinkProperties.getDnsServers()) {
+            newLp.addDnsServer(dns);
+        }
 
-        // For now, DNS only comes from DHCP or static configuration. In the future, we'll need to
-        // merge IPv6 DNS servers and domains coming from netlink.
+        // IPv4 routes, DNS servers and domains come from mDhcpResults.
         synchronized (mDhcpResultsLock) {
             // Even when we're using static configuration, we don't need to look at the config
             // store, because static IP configuration also populates mDhcpResults.
