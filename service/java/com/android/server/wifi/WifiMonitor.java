@@ -792,6 +792,9 @@ public class WifiMonitor {
      * event name and &quot;&#8195;&#8212;&#8195;&quot;
      */
     void handleEvent(int event, String remainder) {
+        if (DBG) {
+            logDbg("handleEvent " + Integer.toString(event) + "  " + remainder);
+        }
         switch (event) {
             case DISCONNECTED:
                 handleNetworkStateChange(NetworkInfo.DetailedState.DISCONNECTED, remainder);
@@ -806,6 +809,9 @@ public class WifiMonitor {
                 break;
 
             case UNKNOWN:
+                if (DBG) {
+                    logDbg("handleEvent unknown: " + Integer.toString(event) + "  " + remainder);
+                }
                 break;
         }
     }
@@ -1068,10 +1074,12 @@ public class WifiMonitor {
     private void handleNetworkStateChange(NetworkInfo.DetailedState newState, String data) {
         String BSSID = null;
         int networkId = -1;
-        if (newState == NetworkInfo.DetailedState.CONNECTED) {
+        int reason = 0;
+        if (newState == NetworkInfo.DetailedState.CONNECTED
+                || newState == NetworkInfo.DetailedState.DISCONNECTED) {
             Matcher match = mConnectedEventPattern.matcher(data);
             if (!match.find()) {
-                if (DBG) Log.d(TAG, "Could not find BSSID in CONNECTED event string");
+                if (DBG) Log.d(TAG, "handleNetworkStateChange: Could not find BSSID in event string");
             } else {
                 BSSID = match.group(1);
                 try {
@@ -1079,8 +1087,12 @@ public class WifiMonitor {
                 } catch (NumberFormatException e) {
                     networkId = -1;
                 }
+                int ind = data.indexOf("reason=");
+                if (ind > 0) {
+                    reason = Integer.parseInt(data.substring(ind+7));
+                }
             }
-            notifyNetworkStateChange(newState, BSSID, networkId);
+            notifyNetworkStateChange(newState, BSSID, networkId, reason);
         }
     }
 
@@ -1093,14 +1105,18 @@ public class WifiMonitor {
      * is {@code null}.
      * @param netId the configured network on which the state change occurred
      */
-    void notifyNetworkStateChange(NetworkInfo.DetailedState newState, String BSSID, int netId) {
+    void notifyNetworkStateChange(NetworkInfo.DetailedState newState, String BSSID, int netId, int reason) {
         if (newState == NetworkInfo.DetailedState.CONNECTED) {
             Message m = mStateMachine.obtainMessage(NETWORK_CONNECTION_EVENT,
-                    netId, 0, BSSID);
+                    netId, reason, BSSID);
             mStateMachine.sendMessage(m);
         } else {
+
             Message m = mStateMachine.obtainMessage(NETWORK_DISCONNECTION_EVENT,
-                    netId, 0, BSSID);
+                    netId, reason, BSSID);
+            if (DBG) logDbg("WifiMonitor notify network disconnect: "
+                    + BSSID + " id=" + Integer.toString(netId)
+                    + " reason=" + Integer.toString(reason));
             mStateMachine.sendMessage(m);
         }
     }

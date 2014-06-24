@@ -737,7 +737,7 @@ public class WifiAutoJoinController {
             }
             return null;
         }
-        if (current.scanResultCache.size() > 4) {
+        if (current.scanResultCache.size() > 6) {
             if (VDBG)   {
                 logDbg("attemptRoam scan cache size "
                         + current.scanResultCache.size() + " --> bail");
@@ -1155,19 +1155,8 @@ public class WifiAutoJoinController {
                             + " RSSI=" + roamCandidate.frequency);
                 }
                 networkSwitchType = AUTO_JOIN_ROAMING;
-                if (roamCandidate.is5GHz()) {
-                    mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
-                            currentConfiguration.networkId, 1, roamCandidate.BSSID);
-                } else {
-                    //if we want to autoroam to 2.4GHz then force reassociate without locking the
-                    //BSSID, the wifi chipset should normally select a 2.4GHz BSSID as RSSI
-                    //will be stronger,
-                    //or otherwise fall back normally thru the firmware roam.
-                    //Hence, roaming between 2.4GHz BSSIDs will be handled by firmware
-                    //whereas roaming onto 5GHz BSSIDs will be handled by framework
-                    mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
-                            currentConfiguration.networkId, 1, "any");
-                }
+                mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
+                            currentConfiguration.networkId, 1, roamCandidate);
             }
         }
         if (VDBG) logDbg("Done attemptAutoJoin status=" + Integer.toString(networkSwitchType));
