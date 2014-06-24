@@ -5437,6 +5437,14 @@ public class WifiStateMachine extends StateMachine {
                         + " static=" + mWifiConfigStore.isUsingStaticIp(mLastNetworkId));
             }
 
+            try {
+                mNwService.enableIpv6(mInterfaceName);
+            } catch (RemoteException re) {
+                loge("Failed to enable IPv6: " + re);
+            } catch (IllegalStateException e) {
+                loge("Failed to enable IPv6: " + e);
+            }
+
             if (!mWifiConfigStore.isUsingStaticIp(mLastNetworkId)) {
                 // TODO: If we're switching between static IP configuration and DHCP, remove the
                 // static configuration first.
@@ -5529,17 +5537,6 @@ public class WifiStateMachine extends StateMachine {
                     mWifiConfigStore.updateStatus(mLastNetworkId,
                             DetailedState.CAPTIVE_PORTAL_CHECK);
                     sendNetworkStateChangeBroadcast(mLastBssid);
-
-                    // NOTE: This might look like an odd place to enable IPV6 but this is in
-                    // response to transitioning into GOOD_LINK_DETECTED. Similarly, we disable
-                    // ipv6 when we transition into POOR_LINK_DETECTED in mConnectedState.
-                    try {
-                        mNwService.enableIpv6(mInterfaceName);
-                    } catch (RemoteException re) {
-                        loge("Failed to enable IPv6: " + re);
-                    } catch (IllegalStateException e) {
-                        loge("Failed to enable IPv6: " + e);
-                    }
 
                     log(getName() + " GOOD_LINK_DETECTED: transition to CONNECTED");
                     setNetworkDetailedState(DetailedState.CONNECTED);
@@ -5668,13 +5665,6 @@ public class WifiStateMachine extends StateMachine {
             switch (message.what) {
                 case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
                     if (DBG) log("Watchdog reports poor link");
-                    try {
-                        mNwService.disableIpv6(mInterfaceName);
-                    } catch (RemoteException re) {
-                        loge("Failed to disable IPv6: " + re);
-                    } catch (IllegalStateException e) {
-                        loge("Failed to disable IPv6: " + e);
-                    }
                     /* Report a disconnect */
                     setNetworkDetailedState(DetailedState.DISCONNECTED);
                     mWifiConfigStore.updateStatus(mLastNetworkId, DetailedState.DISCONNECTED);
