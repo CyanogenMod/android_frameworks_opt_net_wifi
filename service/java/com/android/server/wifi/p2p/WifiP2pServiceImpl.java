@@ -76,7 +76,6 @@ import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
-import com.android.server.SystemService;
 import com.android.server.wifi.WifiMonitor;
 import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.WifiStateMachine;
@@ -217,7 +216,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
     private NetworkInfo mNetworkInfo;
 
-    private boolean mTempoarilyDisconnectedWifi = false;
+    private boolean mTemporarilyDisconnectedWifi = false;
 
     /* The transaction Id of service discovery request */
     private byte mServiceTransactionId = 0;
@@ -450,7 +449,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         pw.println("mJoinExistingGroup " + mJoinExistingGroup);
         pw.println("mDiscoveryStarted " + mDiscoveryStarted);
         pw.println("mNetworkInfo " + mNetworkInfo);
-        pw.println("mTempoarilyDisconnectedWifi " + mTempoarilyDisconnectedWifi);
+        pw.println("mTemporarilyDisconnectedWifi " + mTemporarilyDisconnectedWifi);
         pw.println("mServiceDiscReqId " + mServiceDiscReqId);
         pw.println();
     }
@@ -672,6 +671,15 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                 case WifiP2pManager.START_WPS:
                     replyToMessage(message, WifiP2pManager.START_WPS_FAILED,
                         WifiP2pManager.BUSY);
+                    break;
+                case WifiP2pManager.GET_HANDOVER_REQUEST:
+                case WifiP2pManager.GET_HANDOVER_SELECT:
+                    replyToMessage(message, WifiP2pManager.RESPONSE_GET_HANDOVER_MESSAGE, null);
+                    break;
+                case WifiP2pManager.INITIATOR_REPORT_NFC_HANDOVER:
+                case WifiP2pManager.RESPONDER_REPORT_NFC_HANDOVER:
+                    replyToMessage(message, WifiP2pManager.REPORT_NFC_HANDOVER_FAILED,
+                            WifiP2pManager.BUSY);
                     break;
                     // Ignore
                 case WifiMonitor.P2P_INVITATION_RESULT_EVENT:
@@ -1149,6 +1157,20 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         }
                     }
                     break;
+                case WifiP2pManager.GET_HANDOVER_REQUEST:
+                    Bundle requestBundle = new Bundle();
+                    requestBundle.putString(WifiP2pManager.EXTRA_HANDOVER_MESSAGE,
+                            mWifiNative.getNfcHandoverRequest());
+                    replyToMessage(message, WifiP2pManager.RESPONSE_GET_HANDOVER_MESSAGE,
+                            requestBundle);
+                    break;
+                case WifiP2pManager.GET_HANDOVER_SELECT:
+                    Bundle selectBundle = new Bundle();
+                    selectBundle.putString(WifiP2pManager.EXTRA_HANDOVER_MESSAGE,
+                            mWifiNative.getNfcHandoverSelect());
+                    replyToMessage(message, WifiP2pManager.RESPONSE_GET_HANDOVER_MESSAGE,
+                            selectBundle);
+                    break;
                 default:
                    return NOT_HANDLED;
             }
@@ -1330,6 +1352,38 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         replyToMessage(message, WifiP2pManager.SET_CHANNEL_FAILED);
                     }
                     break;
+                case WifiP2pManager.INITIATOR_REPORT_NFC_HANDOVER:
+                    String handoverSelect = null;
+
+                    if (message.obj != null) {
+                        handoverSelect = ((Bundle) message.obj)
+                                .getString(WifiP2pManager.EXTRA_HANDOVER_MESSAGE);
+                    }
+
+                    if (handoverSelect != null
+                            && mWifiNative.initiatorReportNfcHandover(handoverSelect)) {
+                        replyToMessage(message, WifiP2pManager.REPORT_NFC_HANDOVER_SUCCEEDED);
+                        transitionTo(mGroupCreatingState);
+                    } else {
+                        replyToMessage(message, WifiP2pManager.REPORT_NFC_HANDOVER_FAILED);
+                    }
+                    break;
+                case WifiP2pManager.RESPONDER_REPORT_NFC_HANDOVER:
+                    String handoverRequest = null;
+
+                    if (message.obj != null) {
+                        handoverRequest = ((Bundle) message.obj)
+                                .getString(WifiP2pManager.EXTRA_HANDOVER_MESSAGE);
+                    }
+
+                    if (handoverRequest != null
+                            && mWifiNative.responderReportNfcHandover(handoverRequest)) {
+                        replyToMessage(message, WifiP2pManager.REPORT_NFC_HANDOVER_SUCCEEDED);
+                        transitionTo(mGroupCreatingState);
+                    } else {
+                        replyToMessage(message, WifiP2pManager.REPORT_NFC_HANDOVER_FAILED);
+                    }
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -1387,6 +1441,11 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     handleGroupCreationFailure();
                     transitionTo(mInactiveState);
                     replyToMessage(message, WifiP2pManager.CANCEL_CONNECT_SUCCEEDED);
+                    break;
+                case WifiMonitor.P2P_GO_NEGOTIATION_SUCCESS_EVENT:
+                    // We hit this scenario when NFC handover is invoked.
+                    mAutonomousGroup = false;
+                    transitionTo(mGroupNegotiationState);
                     break;
                 default:
                     ret = NOT_HANDLED;
@@ -1734,7 +1793,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                 case DROP_WIFI_USER_ACCEPT:
                     // User accepted dropping wifi in favour of p2p
                     mWifiChannel.sendMessage(WifiP2pServiceImpl.DISCONNECT_WIFI_REQUEST, 1);
-                    mTempoarilyDisconnectedWifi = true;
+                    mTemporarilyDisconnectedWifi = true;
                     break;
                 case DISCONNECT_WIFI_RESPONSE:
                     // Got a response from wifistatemachine, retry p2p
@@ -2647,7 +2706,8 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         // Remove only the peer we failed to connect to so that other devices discovered
         // that have not timed out still remain in list for connection
         boolean peersChanged = mPeers.remove(mPeersLostDuringConnection);
-        if (mPeers.remove(mSavedPeerConfig.deviceAddress) != null) {
+        if (mSavedPeerConfig.deviceAddress != null &&
+                mPeers.remove(mSavedPeerConfig.deviceAddress) != null) {
             peersChanged = true;
         }
         if (peersChanged) {
@@ -2696,9 +2756,9 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         mPeersLostDuringConnection.clear();
         mServiceDiscReqId = null;
 
-        if (mTempoarilyDisconnectedWifi) {
+        if (mTemporarilyDisconnectedWifi) {
             mWifiChannel.sendMessage(WifiP2pServiceImpl.DISCONNECT_WIFI_REQUEST, 0);
-            mTempoarilyDisconnectedWifi = false;
+            mTemporarilyDisconnectedWifi = false;
         }
    }
 
