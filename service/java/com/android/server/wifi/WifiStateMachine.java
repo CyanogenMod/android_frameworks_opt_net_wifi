@@ -5482,10 +5482,6 @@ public class WifiStateMachine extends StateMachine {
         @Override
         public void exit() {
             loge("WifiStateMachine: Leaving Roaming state");
-
-            /* Request a CS wakelock during transition to mobile */
-            //checkAndSetConnectivityInstance();
-            //mCm.requestNetworkTransitionWakelock(getName());
         }
     }
 
@@ -5602,12 +5598,6 @@ public class WifiStateMachine extends StateMachine {
         public void exit() {
             loge("WifiStateMachine: Leaving Connected state");
             setScanAlarm(false);
-
-            /* Request a CS wakelock during transition to mobile */
-            checkAndSetConnectivityInstance();
-            mCm.requestNetworkTransitionWakelock(getName());
-            loge("WifiStateMachine: Left Connected state");
-
         }
     }
 
