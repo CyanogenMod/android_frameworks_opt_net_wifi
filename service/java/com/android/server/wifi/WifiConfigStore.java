@@ -1816,7 +1816,7 @@ public class WifiConfigStore extends IpConfigStore {
                 // hoping that WifiConfigurations are indeed behind the same gateway
                 // once both WifiConfiguration will have been tried we will know
                 // the default gateway and revisit the choice of linking them
-                if ((config.scanResultCache != null) && (config.scanResultCache.size() <= 5)
+                if ((config.scanResultCache != null) && (config.scanResultCache.size() <= 6)
                         && (link.scanResultCache != null) && (link.scanResultCache.size() <= 5)) {
                     String abssid = "";
                     String bbssid = "";
@@ -1827,7 +1827,7 @@ public class WifiConfigStore extends IpConfigStore {
                         bbssid = key;
                     }
                     if (VDBG) {
-                        loge("linkConfiguration link due to DBDC BSSID match " + link.SSID +
+                        loge("linkConfiguration try to link due to DBDC BSSID match " + link.SSID +
                                 " and " + config.SSID + " bssida " + abssid + " bssidb " + bbssid);
                     }
                     if (abssid.regionMatches(true, 0, bbssid, 0, 16)) {
@@ -2046,11 +2046,12 @@ public class WifiConfigStore extends IpConfigStore {
             config = mConfiguredNetworks.get(netId);
             if (config != null) {
                 if (config.scanResultCache != null) {
-                    loge("                    tested " + scanResult.SSID + " " +
+                    loge("                    got known scan result " +
                             scanResult.BSSID + " key : " + key + " num: " +
-                            Integer.toString(config.scanResultCache.size()));
+                            Integer.toString(config.scanResultCache.size())
+                            + " rssi=" + Integer.toString(scanResult.level));
                 } else {
-                    loge("                    tested " + scanResult.SSID + " " +
+                    loge("                    got known scan result and no cache" +
                             scanResult.BSSID + " key : " + key);
                 }
             }

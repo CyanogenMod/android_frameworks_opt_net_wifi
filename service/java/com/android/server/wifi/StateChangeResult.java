@@ -38,4 +38,15 @@ public class StateChangeResult {
     WifiSsid wifiSsid;
     String BSSID;
     SupplicantState state;
+
+    @Override
+    public String toString() {
+        StringBuffer sb = new StringBuffer();
+
+        sb.append(" SSID: ").append(wifiSsid.toString());
+        sb.append(" BSSID: ").append(BSSID);
+        sb.append(" nid: ").append(networkId);
+        sb.append(" state: ").append(state);
+        return sb.toString();
+    }
 }
