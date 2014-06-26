@@ -1711,6 +1711,10 @@ public class WifiConfigStore extends IpConfigStore {
                 HashMap<String, String> enterpriseFields = enterpriseConfig.getFields();
                 for (String key : enterpriseFields.keySet()) {
                         String value = enterpriseFields.get(key);
+                        if (key.equals("password") && value != null && value.equals("*")) {
+                            //no need to try to set an obfuscated password, which will fail
+                            continue;
+                        }
                         if (!mWifiNative.setNetworkVariable(
                                     netId,
                                     key,
