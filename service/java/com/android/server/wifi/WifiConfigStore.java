@@ -1817,7 +1817,7 @@ public class WifiConfigStore extends IpConfigStore {
                 // once both WifiConfiguration will have been tried we will know
                 // the default gateway and revisit the choice of linking them
                 if ((config.scanResultCache != null) && (config.scanResultCache.size() <= 6)
-                        && (link.scanResultCache != null) && (link.scanResultCache.size() <= 5)) {
+                        && (link.scanResultCache != null) && (link.scanResultCache.size() <= 6)) {
                     String abssid = "";
                     String bbssid = "";
                     for (String key : config.scanResultCache.keySet()) {

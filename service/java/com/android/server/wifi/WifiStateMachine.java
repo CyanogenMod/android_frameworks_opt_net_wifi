@@ -2283,7 +2283,7 @@ public class WifiStateMachine extends StateMachine {
                     +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
                     +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
         }
-        mWifiNative.setSuspendOptimizations(enabled);
+        //mWifiNative.setSuspendOptimizations(enabled);
 
         if (enabled) {
             mSuspendOptNeedsDisabled &= ~reason;
