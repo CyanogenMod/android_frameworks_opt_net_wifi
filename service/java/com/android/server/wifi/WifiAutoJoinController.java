@@ -279,17 +279,20 @@ public class WifiAutoJoinController {
      * If not associated, and the candidate will always be better
      * For instance if the candidate is a home network versus an unknown public wifi,
      * the delta will be infinite, else compare Kepler scores etc…
+     * Negatve return values from this functions are meaningless per se, just trying to
+     * keep them distinct for debug purpose (i.e. -1, -2 etc...)
      ***/
     private int compareNetwork(WifiConfiguration candidate) {
         if (candidate == null)
-            return -1;
+            return -3;
 
         WifiConfiguration currentNetwork = mWifiStateMachine.getCurrentWifiConfiguration();
-        if (currentNetwork == null)
-            return 1000;
+        if (currentNetwork == null) {
+           return 1000;
+        }
 
         if (candidate.configKey(true).equals(currentNetwork.configKey(true))) {
-            return -1;
+            return -2;
         }
 
         int order = compareWifiConfigurations(currentNetwork, candidate);
@@ -873,17 +876,17 @@ public class WifiAutoJoinController {
                     + Integer.toString(status.length));
         }
 
-        int currentNetId = -1;
+        int supplicantNetId = -1;
         for (String key : status) {
             if (key.regionMatches(0, "id=", 0, 3)) {
                 int idx = 3;
-                currentNetId = 0;
+                supplicantNetId = 0;
                 while (idx < key.length()) {
                     char c = key.charAt(idx);
 
                     if ((c >= 0x30) && (c <= 0x39)) {
-                        currentNetId *= 10;
-                        currentNetId += c - 0x30;
+                        supplicantNetId *= 10;
+                        supplicantNetId += c - 0x30;
                         idx++;
                     } else {
                         break;
@@ -893,19 +896,26 @@ public class WifiAutoJoinController {
         }
         if (DBG) {
             logDbg("attemptAutoJoin() num recent config " + Integer.toString(list.size())
-                    + " ---> currentId=" + Integer.toString(currentNetId));
+                    + " ---> suppId=" + Integer.toString(supplicantNetId));
         }
 
         if (currentConfiguration != null) {
-            if (currentNetId != currentConfiguration.networkId) {
+            if (supplicantNetId != currentConfiguration.networkId) {
                 logDbg("attemptAutoJoin() ERROR wpa_supplicant out of sync nid="
-                        + Integer.toString(currentNetId) + " WifiStateMachine="
+                        + Integer.toString(supplicantNetId) + " WifiStateMachine="
                         + Integer.toString(currentConfiguration.networkId));
                 mWifiStateMachine.disconnectCommand();
                 return;
             } else {
                 mCurrentConfigurationKey = currentConfiguration.configKey();
             }
+        }
+
+        int currentNetId = -1;
+        if (currentConfiguration != null) {
+            // if we are associated to a configuration, it will
+            // be compared thru the compareNetwork function
+            currentNetId = currentConfiguration.networkId;
         }
 
         /* run thru all visible configurations without looking at the one we
@@ -1112,9 +1122,10 @@ public class WifiAutoJoinController {
         /* if candidate is found, check the state of the connection so as
             to decide if we should be acting on this candidate and switching over */
         int networkDelta = compareNetwork(candidate);
-        if (DBG && (networkDelta > 0)) {
-            logDbg("attemptAutoJoin did find SSID candidate " + candidate.configKey()
-                    + " for delta " + Integer.toString(networkDelta)
+        if (DBG && candidate != null) {
+            logDbg("attemptAutoJoin compare SSID candidate : delta="
+                    + Integer.toString(networkDelta) + " "
+                    + candidate.configKey()
                     + " linked=" + (currentConfiguration != null
                     && currentConfiguration.isLinked(candidate)));
         }

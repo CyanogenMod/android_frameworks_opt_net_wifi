@@ -106,6 +106,9 @@ public class WifiMonitor {
     private static final String HS20_SUB_REM_STR = "HS20-SUBSCRIPTION-REMEDIATION";
     private static final String HS20_DEAUTH_STR = "HS20-DEAUTH-IMMINENT-NOTICE";
 
+    //used to debug and detect if we miss an event
+    private static int eventLogCounter = 0;
+
     /**
      * Names of events from wpa_supplicant (minus the prefix). In the
      * format descriptions, * &quot;<code>x</code>&quot;
@@ -197,6 +200,15 @@ public class WifiMonitor {
      */
     private static Pattern mConnectedEventPattern =
         Pattern.compile("((?:[0-9a-f]{2}:){5}[0-9a-f]{2}) .* \\[id=([0-9]+) ");
+
+    /**
+     * Regex pattern for extracting an Ethernet-style MAC address from a string.
+     * Matches a strings like the following:<pre>
+     * CTRL-EVENT-DISCONNECTED - bssid=ac:22:0b:24:70:74 reason=3 locally_generated=1
+     */
+    private static Pattern mDisconnectedEventPattern =
+            Pattern.compile("((?:[0-9a-f]{2}:){5}[0-9a-f]{2}) +" +
+                    "reason=([0-9]+) +locally_generated=([0-1])");
 
     /** P2P events */
     private static final String P2P_EVENT_PREFIX_STR = "P2P";
@@ -618,21 +630,25 @@ public class WifiMonitor {
     }
 
     private void logDbg(String debug) {
-        Log.e(TAG, debug+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
+        Log.e(TAG, debug/*+ " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
                 +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName()
                 +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
-                +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
+                +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName()*/);
     }
 
     /* @return true if the event was supplicant disconnection */
     private boolean dispatchEvent(String eventStr, String iface) {
 
-        if (DBG) logDbg("WifiMonitor:" + iface + " dispatchEvent: " + eventStr);
+        if (DBG) {
+            logDbg("WifiMonitor:" + iface + " cnt=" + Integer.toString(eventLogCounter)
+                    + " dispatchEvent: " + eventStr);
+            eventLogCounter++;
+        }
 
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
             if (eventStr.startsWith(WPA_EVENT_PREFIX_STR) &&
                     0 < eventStr.indexOf(PASSWORD_MAY_BE_INCORRECT_STR)) {
-               mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
+               mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT, eventLogCounter);
             } else if (eventStr.startsWith(WPS_SUCCESS_STR)) {
                 mStateMachine.sendMessage(WPS_SUCCESS_EVENT);
             } else if (eventStr.startsWith(WPS_FAIL_STR)) {
@@ -760,15 +776,15 @@ public class WifiMonitor {
             }
 
             // notify and exit
-            mStateMachine.sendMessage(SUP_DISCONNECTION_EVENT);
+            mStateMachine.sendMessage(SUP_DISCONNECTION_EVENT, eventLogCounter);
             return true;
         } else if (event == EAP_FAILURE) {
             if (eventData.startsWith(EAP_AUTH_FAILURE_STR)) {
                 logDbg("WifiMonitor send auth failure (EAP_AUTH_FAILURE) ");
-                mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
+                mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT, eventLogCounter);
             }
         } else if (event == ASSOC_REJECT) {
-            mStateMachine.sendMessage(ASSOCIATION_REJECTION_EVENT);
+            mStateMachine.sendMessage(ASSOCIATION_REJECTION_EVENT, eventLogCounter);
         } else {
             handleEvent(event, eventData);
         }
@@ -1075,11 +1091,13 @@ public class WifiMonitor {
         String BSSID = null;
         int networkId = -1;
         int reason = 0;
-        if (newState == NetworkInfo.DetailedState.CONNECTED
-                || newState == NetworkInfo.DetailedState.DISCONNECTED) {
-            Matcher match = mConnectedEventPattern.matcher(data);
+        int ind = -1;
+        int local = 0;
+        Matcher match;
+        if (newState == NetworkInfo.DetailedState.CONNECTED) {
+            match = mConnectedEventPattern.matcher(data);
             if (!match.find()) {
-                if (DBG) Log.d(TAG, "handleNetworkStateChange: Could not find BSSID in event string");
+               if (DBG) Log.d(TAG, "handleNetworkStateChange: Couldnt find BSSID in event string");
             } else {
                 BSSID = match.group(1);
                 try {
@@ -1087,12 +1105,26 @@ public class WifiMonitor {
                 } catch (NumberFormatException e) {
                     networkId = -1;
                 }
-                int ind = data.indexOf("reason=");
-                if (ind > 0) {
-                    reason = Integer.parseInt(data.substring(ind+7));
-                }
             }
             notifyNetworkStateChange(newState, BSSID, networkId, reason);
+        } else if (newState == NetworkInfo.DetailedState.DISCONNECTED) {
+            match = mDisconnectedEventPattern.matcher(data);
+            if (!match.find()) {
+               if (DBG) Log.d(TAG, "handleNetworkStateChange: Could not parse disconnect string");
+            } else {
+                BSSID = match.group(1);
+                try {
+                    reason = Integer.parseInt(match.group(2));
+                } catch (NumberFormatException e) {
+                    reason = -1;
+                }
+                try {
+                    local = Integer.parseInt(match.group(3));
+                } catch (NumberFormatException e) {
+                    local = -1;
+                }
+            }
+            notifyNetworkStateChange(newState, BSSID, local, reason);
         }
     }
 
@@ -1105,7 +1137,8 @@ public class WifiMonitor {
      * is {@code null}.
      * @param netId the configured network on which the state change occurred
      */
-    void notifyNetworkStateChange(NetworkInfo.DetailedState newState, String BSSID, int netId, int reason) {
+    void notifyNetworkStateChange(NetworkInfo.DetailedState newState,
+                                  String BSSID, int netId, int reason) {
         if (newState == NetworkInfo.DetailedState.CONNECTED) {
             Message m = mStateMachine.obtainMessage(NETWORK_CONNECTION_EVENT,
                     netId, reason, BSSID);
@@ -1115,7 +1148,7 @@ public class WifiMonitor {
             Message m = mStateMachine.obtainMessage(NETWORK_DISCONNECTION_EVENT,
                     netId, reason, BSSID);
             if (DBG) logDbg("WifiMonitor notify network disconnect: "
-                    + BSSID + " id=" + Integer.toString(netId)
+                    + BSSID
                     + " reason=" + Integer.toString(reason));
             mStateMachine.sendMessage(m);
         }
@@ -1132,6 +1165,7 @@ public class WifiMonitor {
     void notifySupplicantStateChange(int networkId, WifiSsid wifiSsid, String BSSID,
             SupplicantState newState) {
         mStateMachine.sendMessage(mStateMachine.obtainMessage(SUPPLICANT_STATE_CHANGE_EVENT,
+                eventLogCounter, 0,
                 new StateChangeResult(networkId, wifiSsid, BSSID, newState)));
     }
 }
