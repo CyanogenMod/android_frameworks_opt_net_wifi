@@ -34,6 +34,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.Log;
 import android.util.Slog;
 
@@ -57,6 +58,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final String TAG = "WifiScanningService";
     private static final boolean DBG = true;
     private static final int INVALID_KEY = 0;                               // same as WifiScanner
+    private static final int MIN_PERIOD_PER_CHANNEL_MS = 200;               // DFS needs 120 ms
 
     @Override
     public Messenger getMessenger() {
@@ -313,16 +315,17 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         replyFailed(msg, WifiScanner.REASON_UNSPECIFIED, "not implemented");
                         break;
                     case WifiScanner.CMD_START_BACKGROUND_SCAN:
-                        addScanRequest(ci, msg.arg2, (ScanSettings) msg.obj);
-                        replySucceeded(msg, null);
+                        if (addScanRequest(ci, msg.arg2, (ScanSettings) msg.obj)) {
+                            replySucceeded(msg, null);
+                        } else {
+                            replyFailed(msg, WifiScanner.REASON_INVALID_REQUEST, "bad request");
+                        }
                         break;
                     case WifiScanner.CMD_STOP_BACKGROUND_SCAN:
                         removeScanRequest(ci, msg.arg2);
                         break;
-                    case WifiScanner.CMD_GET_SCAN_RESULTS: {
-                            ScanResult[] results = getScanResults(ci);
-                            replySucceeded(msg, results);
-                        }
+                    case WifiScanner.CMD_GET_SCAN_RESULTS:
+                        replySucceeded(msg, getScanResults(ci));
                         break;
                     case WifiScanner.CMD_SET_HOTLIST:
                         setHotlist(ci, msg.arg2, (WifiScanner.HotlistSettings) msg.obj);
@@ -691,17 +694,17 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         private static final TimeBucket[] mTimeBuckets = new TimeBucket[] {
-                new TimeBucket( 5, 0, 10 ),
+                new TimeBucket( 1, 0, 5 ),
+                new TimeBucket( 5, 5, 10 ),
                 new TimeBucket( 10, 10, 25 ),
                 new TimeBucket( 30, 25, 55 ),
                 new TimeBucket( 60, 55, 100),
-                new TimeBucket( 120, 100, 240),
                 new TimeBucket( 300, 240, 500),
                 new TimeBucket( 600, 500, 1500),
                 new TimeBucket( 1800, 1500, WifiScanner.MAX_SCAN_PERIOD_MS) };
 
         private static final int MAX_BUCKETS = 8;
-        private static final int MAX_CHANNELS = 16;
+        private static final int MAX_CHANNELS = 8;
 
         private WifiNative.ScanSettings mSettings;
         {
@@ -899,7 +902,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
-    void resetBuckets() {
+    boolean resetBuckets() {
         SettingsComputer c = new SettingsComputer();
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci : clients) {
@@ -917,7 +920,11 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 int id = entry.getKey();
                 ScanSettings s = entry.getValue();
                 int newPeriodInMs = c.addScanRequestToBucket(s);
-                if (newPeriodInMs  != -1 && newPeriodInMs != s.periodInMs) {
+                if (newPeriodInMs  == -1) {
+                    if (DBG) Log.d(TAG, "could not find a good bucket");
+                    return false;
+                }
+                if (newPeriodInMs != s.periodInMs) {
                     ci.reportPeriodChanged(id, s, newPeriodInMs);
                 }
             }
@@ -929,18 +936,58 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         if (s.num_buckets == 0) {
             if (DBG) Log.d(TAG, "Stopping scan because there are no buckets");
             WifiNative.stopScan();
+            return true;
         } else {
             if (WifiNative.startScan(s, mStateMachine)) {
-                if (DBG) Log.d(TAG, "Successfully started scan of " + s.num_buckets + " buckets");
+                if (DBG) Log.d(TAG, "Successfully started scan of " + s.num_buckets + " buckets at"
+                        + "time = " + SystemClock.elapsedRealtimeNanos()/1000);
+                return true;
             } else {
                 if (DBG) Log.d(TAG, "Failed to start scan of " + s.num_buckets + " buckets");
+                return false;
             }
         }
     }
 
-    void addScanRequest(ClientInfo ci, int handler, ScanSettings settings) {
+    boolean addScanRequest(ClientInfo ci, int handler, ScanSettings settings) {
+        // sanity check the input
+        if (settings.periodInMs < WifiScanner.MIN_SCAN_PERIOD_MS) {
+            Log.d(TAG, "Failing scan request because periodInMs is " + settings.periodInMs);
+            return false;
+        }
+
+        int minSupportedPeriodMs = 0;
+        if (settings.channels != null) {
+            minSupportedPeriodMs = settings.channels.length * MIN_PERIOD_PER_CHANNEL_MS;
+        } else {
+            if ((settings.band & WifiScanner.WIFI_BAND_24_GHZ) == 0) {
+                /* 2.4 GHz band has 11 to 13 channels */
+                minSupportedPeriodMs += 1000;
+            }
+            if ((settings.band & WifiScanner.WIFI_BAND_5_GHZ) == 0) {
+                /* 5 GHz band has another 10 channels */
+                minSupportedPeriodMs += 1000;
+            }
+            if ((settings.band & WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY) == 0) {
+                /* DFS requires passive scan which takes longer time */
+                minSupportedPeriodMs += 2000;
+            }
+        }
+
+        if (settings.periodInMs < minSupportedPeriodMs) {
+            Log.d(TAG, "Failing scan request because minSupportedPeriodMs is "
+                    + minSupportedPeriodMs + " but the request wants " + settings.periodInMs);
+            return false;
+        }
+
         ci.addScanRequest(settings, handler);
-        resetBuckets();
+        if (resetBuckets()) {
+            return true;
+        } else {
+            ci.removeScanRequest(handler);
+            Log.d(TAG, "Failing scan request because failed to reset scan");
+            return false;
+        }
     }
 
     void removeScanRequest(ClientInfo ci, int handler) {
