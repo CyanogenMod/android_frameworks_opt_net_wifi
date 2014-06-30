@@ -516,6 +516,25 @@ static void parseMacAddress(const char *str, mac_addr addr) {
     addr[5] = parseHexByte(str);
 }
 
+static bool parseMacAddress(JNIEnv *env, jobject obj, mac_addr addr) {
+    jstring macAddrString = (jstring) getObjectField(
+            env, obj, "bssid", "Ljava/lang/String;");
+
+    if (macAddrString == NULL) {
+        ALOGE("Error getting bssid field");
+        return false;
+    }
+
+    const char *bssid = env->GetStringUTFChars(macAddrString, NULL);
+    if (bssid == NULL) {
+        ALOGE("Error getting bssid");
+        return false;
+    }
+
+    parseMacAddress(bssid, addr);
+    return true;
+}
+
 static void onHotlistApFound(wifi_request_id id,
         unsigned num_results, wifi_scan_result *results) {
 
@@ -826,6 +845,100 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls) {
     }
 }
 
+static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_result results[]) {
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onRttResults called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+
+    jclass clsRttResult = (env)->FindClass("android/net/wifi/RttManager$RttResult");
+    if (clsRttResult == NULL) {
+        ALOGE("Error in accessing class");
+        return;
+    }
+
+    jobjectArray rttResults = env->NewObjectArray(num_results, clsRttResult, NULL);
+    if (rttResults == NULL) {
+        ALOGE("Error in allocating array");
+        return;
+    }
+
+    for (unsigned i = 0; i < num_results; i++) {
+
+        wifi_rtt_result& result = results[i];
+
+        jobject rttResult = createObject(env, "android/net/wifi/RttManager$RttResult");
+        if (rttResult == NULL) {
+            ALOGE("Error in creating rtt result");
+            return;
+        }
+
+        // setStringField(env, scanResult, "SSID", results[i].ssid);
+
+        char bssid[32];
+        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result.addr[0], result.addr[1],
+            result.addr[2], result.addr[3], result.addr[4], result.addr[5]);
+
+        setStringField(env, rttResult, "bssid", bssid);
+
+        setIntField(env, rttResult, "status",               result.status);
+        setIntField(env, rttResult, "ts",                   result.ts);
+        setIntField(env, rttResult, "rssi",                 result.rssi);
+        setIntField(env, rttResult, "rssi_spread",          result.rssi_spread);
+        setIntField(env, rttResult, "tx_rate",              result.tx_rate.bitrate);
+        setIntField(env, rttResult, "rtt_ns",               result.rtt);
+        setIntField(env, rttResult, "rtt_sd_ns",            result.rtt_sd);
+        setIntField(env, rttResult, "rtt_spread_ns",        result.rtt_spread);
+        setIntField(env, rttResult, "distance_ns",          result.distance);
+        setIntField(env, rttResult, "distance_sd_ns",       result.distance_sd);
+        setIntField(env, rttResult, "distance_spread_ns",   result.distance_spread);
+
+        env->SetObjectArrayElement(rttResults, i, rttResult);
+    }
+
+    reportEvent(env, mCls, "onRttResults", "(I[Landroid/net/wifi/RttManager$RttResult;)V",
+        id, rttResults);
+}
+
+static jboolean android_net_wifi_requestRange(
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject params)  {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("sending rtt request [%d] = %p", id, handle);
+
+    wifi_rtt_config config;
+    memset(&config, 0, sizeof(config));
+
+    parseMacAddress(env, params, config.addr);
+    config.type = (wifi_rtt_type)getIntField(env, params, "requestType");
+    config.peer = (wifi_peer_type)getIntField(env, params, "deviceType");
+    config.channel.center_freq = getIntField(env, params, "frequency");
+    config.channel.width = (wifi_channel_width)getIntField(env, params, "channelWidth");
+    config.num_samples_per_measurement = getIntField(env, params, "num_samples");
+    config.num_retries_per_measurement = getIntField(env, params, "num_retries");
+
+    wifi_rtt_event_handler handler;
+    handler.on_rtt_results = &onRttResults;
+
+    return wifi_rtt_range_request(id, handle, 1, &config, handler) == WIFI_SUCCESS;
+}
+
+static jboolean android_net_wifi_cancelRange(
+        JNIEnv *env, jclass cls, jint iface, int id, jobject params)  {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("cancelling rtt request [%d] = %p", id, handle);
+
+    wifi_rtt_config config;
+    memset(&config, 0, sizeof(config));
+
+    parseMacAddress(env, params, config.addr);
+    mac_addr addrs[1];
+    memcpy(&addrs[0], config.addr, sizeof(mac_addr));
+
+    return wifi_rtt_range_cancel(id, handle, 1, addrs) == WIFI_SUCCESS;
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -869,7 +982,11 @@ static JNINativeMethod gWifiMethods[] = {
     { "getWifiLinkLayerStatsNative", "(I)Landroid/net/wifi/WifiLinkLayerStats;",
             (void*) android_net_wifi_getLinkLayerStats},
     { "getSupportedFeatureSetNative", "()I",
-            (void*) android_net_wifi_getSupportedFeatures}
+            (void*) android_net_wifi_getSupportedFeatures},
+    { "requestRangeNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
+            (void*) android_net_wifi_requestRange},
+    { "cancelRangeRequestNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
+            (void*) android_net_wifi_cancelRange}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
