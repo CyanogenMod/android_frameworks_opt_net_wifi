@@ -2179,21 +2179,44 @@ public class WifiPasspointStateMachine extends StateMachine {
     }
 
     private String startHttpServer() {
-        SimpleHttpServer httpServer = new SimpleHttpServer(HS_LISTEN_PORT);
+        SimpleHttpServer httpServer = null;
+        int port = 0;
+        for (int i = 0; i < 5; i ++) {
+            logd("[startHttpServer] try startHttpServer " + i);
+            httpServer = new SimpleHttpServer();
+            port = httpServer.getLocalPort();
+            if (port != 0) {
+                logd("[startHttpServer] port =" + port);
+                break;
+            }
+        }
         httpServer.startListener();
-        String redirectUri = "http://127.0.0.1:" + HS_LISTEN_PORT + "/";
-        if (VDBG) logd("[startHttpServer] redirectUri=" + redirectUri);
-        return redirectUri;
+
+        return "http://127.0.0.1:" + port + "/";
     }
 
-    //TODO: change to random number
-    private int HS_LISTEN_PORT = 8899;
-
     private class SimpleHttpServer {
-        private int serverPort;
+        private int serverPort = 0;
 
-        private SimpleHttpServer(int port) {
-            serverPort = port;
+        private SimpleHttpServer() {
+            try {
+                if (mRedirectServerSocket == null) {
+                    mRedirectServerSocket = new ServerSocket(0);
+                    serverPort = mRedirectServerSocket.getLocalPort();
+                    Log.d(TAG, "[HttpServer] The server is running on " + serverPort
+                            + " mRedirectServerSocket:" + mRedirectServerSocket);
+                } else {
+                    Log.d(TAG, "[HttpServer] The server is running already:"
+                            + mRedirectServerSocket);
+                    return;
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "[HttpServer] err = " + e);
+            }
+        }
+
+        public int getLocalPort() {
+            return serverPort;
         }
 
         private void startListener() {
@@ -2201,21 +2224,6 @@ public class WifiPasspointStateMachine extends StateMachine {
 
                 public void run() {
                     Log.d(TAG, "[HttpServer] >> enter");
-                    try {
-                        if (mRedirectServerSocket == null) {
-                            mRedirectServerSocket = new ServerSocket(serverPort);
-                            Log.d(TAG, "[HttpServer] The server is running on " + serverPort
-                                    + " mRedirectServerSocket:" + mRedirectServerSocket);
-                        } else {
-                            Log.d(TAG, "[HttpServer] The server is running already:"
-                                    + mRedirectServerSocket);
-                            return;
-                        }
-                    } catch (SocketException e) {
-                        Log.e(TAG, "[HttpServer] SocketException:" + e);
-                    } catch (IOException e) {
-                        Log.e(TAG, "[HttpServer] IOException:" + e);
-                    }
 
                     try {
                         // Accept incoming connections.
