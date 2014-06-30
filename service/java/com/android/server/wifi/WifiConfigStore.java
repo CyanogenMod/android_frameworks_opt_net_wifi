@@ -1673,6 +1673,24 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
+            if (config.requirePMF && !mWifiNative.setNetworkVariable(
+                        netId,
+                        WifiConfiguration.pmfVarName,
+                        "2")) {
+                loge(config.SSID + ": failed to set requirePMF: "+
+                        config.requirePMF);
+                break setVariables;
+            }
+
+            if (config.updateIdentifier != null && !mWifiNative.setNetworkVariable(
+                    netId,
+                    WifiConfiguration.updateIdentiferVarName,
+                    config.updateIdentifier)) {
+                loge(config.SSID + ": failed to set updateIdentifier: "+
+                        config.updateIdentifier);
+                break setVariables;
+            }
+
             if (config.enterpriseConfig != null &&
                     config.enterpriseConfig.getEapMethod() != WifiEnterpriseConfig.Eap.NONE) {
 
