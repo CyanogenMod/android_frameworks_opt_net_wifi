@@ -37,6 +37,7 @@ import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.IWifiManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
+import android.net.wifi.WifiAdapter;
 import android.net.wifi.WifiChannel;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
@@ -74,8 +75,6 @@ import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
-import com.android.server.wifi.passpoint.WifiPasspointServiceImpl;
-import com.android.server.wifi.passpoint.WifiPasspointStateMachine;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -605,7 +604,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     private void enforceAccessPermission() {
         mContext.enforceCallingOrSelfPermission(android.Manifest.permission.ACCESS_WIFI_STATE,
-                                                "WifiService");
+                "WifiService");
     }
 
     private void enforceChangePermission() {
@@ -616,7 +615,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     private void enforceWorkSourcePermission() {
         mContext.enforceCallingPermission(android.Manifest.permission.UPDATE_DEVICE_STATS,
-                                                "WifiService");
+                "WifiService");
 
     }
 
@@ -767,6 +766,19 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public void reassociate() {
         enforceChangePermission();
         mWifiStateMachine.reassociateCommand();
+    }
+
+    /**
+     * see {@link android.net.wifi.WifiManager#getAdaptors}
+     */
+    public List<WifiAdapter> getAdaptors() {
+        enforceAccessPermission();
+        if (mWifiStateMachineChannel != null) {
+            return mWifiStateMachine.syncGetAdaptors(mWifiStateMachineChannel);
+        } else {
+            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
+            return null;
+        }
     }
 
     /**

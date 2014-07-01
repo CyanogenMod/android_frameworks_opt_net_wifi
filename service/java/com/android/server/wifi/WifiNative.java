@@ -1141,13 +1141,16 @@ public class WifiNative {
     synchronized public static int getInterfaces() {
         synchronized (mLock) {
             int num = getInterfacesNative();
+            int wifi_num = 0;
             for (int i = 0; i < num; i++) {
                 String name = getInterfaceNameNative(i);
                 Log.i(TAG, "interface[" + i + "] = " + name);
                 if (name.equals("wlan0")) {
                     sWlan0Index = i;
+                    wifi_num++;
                 } else if (name.equals("p2p0")) {
                     sP2p0Index = i;
+                    wifi_num++;
                 }
             }
             return num;
@@ -1155,14 +1158,8 @@ public class WifiNative {
     }
 
     private static native String getInterfaceNameNative(int index);
-
-    public static void printInterfaceNames() {
-        synchronized (mLock) {
-            for (int i = 0; i < sWifiIfaceHandles.length; i++) {
-                String name = getInterfaceNameNative(i);
-                Log.i(TAG, "interface[" + i + "] = " + name);
-            }
-        }
+    synchronized public static String getInterfaceName(int index) {
+        return getInterfaceNameNative(index);
     }
 
     public static class ScanCapabilities {
@@ -1424,7 +1421,6 @@ public class WifiNative {
         return null;
     }
 
-
     /*
      * NFC-related calls
      */
@@ -1448,4 +1444,8 @@ public class WifiNative {
         return doBooleanCommand("NFC_REPORT_HANDOVER RESP P2P " + requestMessage + " 00");
     }
 
+    public static native int getSupportedFeatureSetNative();
+    synchronized public static int getSupportedFeatureSet() {
+        return getSupportedFeatureSetNative();
+    }
 }

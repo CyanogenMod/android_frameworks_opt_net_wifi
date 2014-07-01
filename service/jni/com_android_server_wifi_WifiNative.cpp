@@ -801,6 +801,31 @@ static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint
     return wifiLinkLayerStats;
 }
 
+static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls) {
+    wifi_handle handle = getWifiHandle(env, cls);
+    feature_set set = 0;
+
+    wifi_error result = WIFI_SUCCESS;
+    set = WIFI_FEATURE_INFRA
+        | WIFI_FEATURE_INFRA_5G
+        | WIFI_FEATURE_HOTSPOT
+        | WIFI_FEATURE_P2P
+        | WIFI_FEATURE_SOFT_AP
+        | WIFI_FEATURE_GSCAN
+        | WIFI_FEATURE_PNO
+        | WIFI_FEATURE_TDLS
+        | WIFI_FEATURE_EPR;
+
+    //wifi_error result = wifi_get_supported_feature_set(handle, &set);
+    ALOGD("wifi_get_supported_feature_set returned 0x%x, set = 0x%x", result, set);
+
+    if (result == WIFI_SUCCESS) {
+        return set;
+    } else {
+        return 0;
+    }
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -842,8 +867,9 @@ static JNINativeMethod gWifiMethods[] = {
     { "untrackSignificantWifiChangeNative", "(II)Z",
             (void*) android_net_wifi_untrackSignificantWifiChange},
     { "getWifiLinkLayerStatsNative", "(I)Landroid/net/wifi/WifiLinkLayerStats;",
-            (void*) android_net_wifi_getLinkLayerStats}
-
+            (void*) android_net_wifi_getLinkLayerStats},
+    { "getSupportedFeatureSetNative", "()I",
+            (void*) android_net_wifi_getSupportedFeatures}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

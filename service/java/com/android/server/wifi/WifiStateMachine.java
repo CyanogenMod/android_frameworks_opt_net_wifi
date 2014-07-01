@@ -42,8 +42,20 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
-import android.net.*;
+import android.net.ConnectivityManager;
+import android.net.DhcpResults;
+import android.net.DhcpStateMachine;
+import android.net.InterfaceConfiguration;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
+import android.net.NetworkAgent;
+import android.net.NetworkCapabilities;
+import android.net.NetworkFactory;
+import android.net.NetworkInfo;
 import android.net.NetworkInfo.DetailedState;
+import android.net.NetworkUtils;
+import android.net.RouteInfo;
+import android.net.TrafficStats;
 import android.net.wifi.BatchedScanResult;
 import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.RssiPacketCountInfo;
@@ -51,6 +63,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
 import android.net.wifi.WifiChannel;
 import android.net.wifi.SupplicantState;
+import android.net.wifi.WifiAdapter;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiLinkLayerStats;
@@ -61,8 +74,21 @@ import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.net.wifi.passpoint.IWifiPasspointManager;
-import android.os.*;
+import android.os.BatteryStats;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.os.INetworkManagementService;
+import android.os.Looper;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.PowerManager;
 import android.os.Process;
+import android.os.RemoteException;
+import android.os.ServiceManager;
+import android.os.SystemClock;
+import android.os.SystemProperties;
+import android.os.UserHandle;
+import android.os.WorkSource;
 import android.provider.Settings;
 import android.util.LruCache;
 import android.text.TextUtils;
@@ -79,7 +105,6 @@ import com.android.server.net.NetlinkTracker;
 
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 import com.android.server.wifi.passpoint.WifiPasspointServiceImpl;
-import com.android.server.wifi.passpoint.WifiPasspointStateMachine;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -92,9 +117,7 @@ import java.io.FileReader;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.Inet4Address;
-import java.net.Inet6Address;
 
 /**
  * Track the state of Wifi connectivity. All event handling is done here,
@@ -393,6 +416,8 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_GET_CONFIGURED_NETWORKS          = BASE + 59;
     /* Get available frequencies */
     static final int CMD_GET_CAPABILITY_FREQ              = BASE + 60;
+    /* Get adaptors */
+    static final int CMD_GET_ADAPTORS                     = BASE + 61;
 
     /* Supplicant commands after driver start*/
     /* Initiate a scan */
@@ -1740,9 +1765,26 @@ public class WifiStateMachine extends StateMachine {
         return result;
     }
 
+    /**
+     * Get configured networks synchronously
+     * @param channel
+     * @return
+     */
+
     public List<WifiConfiguration> syncGetConfiguredNetworks(AsyncChannel channel) {
         Message resultMsg = channel.sendMessageSynchronously(CMD_GET_CONFIGURED_NETWORKS);
         List<WifiConfiguration> result = (List<WifiConfiguration>) resultMsg.obj;
+        resultMsg.recycle();
+        return result;
+    }
+
+    /**
+     * Get adaptors synchronously
+     */
+
+    public List<WifiAdapter> syncGetAdaptors(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_ADAPTORS);
+        List<WifiAdapter> result = (List<WifiAdapter>) resultMsg.obj;
         resultMsg.recycle();
         return result;
     }
@@ -3872,6 +3914,31 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_SET_OPERATIONAL_MODE:
                     mOperationalMode = message.arg1;
                     break;
+                case CMD_GET_ADAPTORS:
+                    if (WifiNative.startHal()) {
+                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
+                        int featureSet = WifiNative.getSupportedFeatureSet();
+                        /* TODO: Get capabilities from adaptors themselves */
+                        for (int i = 0; i < WifiNative.getInterfaces(); i++) {
+                            String name = WifiNative.getInterfaceName(i);
+                            WifiAdapter adaptor;
+                            if (name.startsWith("wlan")) {
+                                adaptor = new WifiAdapter(
+                                        name, featureSet & ~WifiAdapter.WIFI_FEATURE_P2P);
+                            } else if (name.startsWith("p2p")) {
+                                adaptor = new WifiAdapter(
+                                        name, featureSet & WifiAdapter.WIFI_FEATURE_P2P);
+                            } else {
+                                logd("Ignoring adaptor with name" + name);
+                                continue;
+                            }
+                            adaptors.add(adaptor);
+                        }
+                        replyToMessage(message, message.what, adaptors);
+                    } else {
+                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
+                        replyToMessage(message, message.what, adaptors);
+                    }
                 default:
                     return NOT_HANDLED;
             }
@@ -4547,6 +4614,9 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_GET_CONFIGURED_NETWORKS:
                 s="CMD_GET_CONFIGURED_NETWORKS";
+                break;
+            case CMD_GET_ADAPTORS:
+                s="CMD_GET_ADAPTORS";
                 break;
             case CMD_DISCONNECT:
                 s="CMD_DISCONNECT";
