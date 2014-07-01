@@ -70,6 +70,11 @@ public class WifiMonitor {
     private static final String EVENT_PREFIX_STR = "CTRL-EVENT-";
     private static final int EVENT_PREFIX_LEN_STR = EVENT_PREFIX_STR.length();
 
+    /** All events coming from the supplicant start with this prefix */
+    private static final String REQUEST_PREFIX_STR = "CTRL-REQ-";
+    private static final int REQUEST_PREFIX_LEN_STR = REQUEST_PREFIX_STR.length();
+
+
     /** All WPA events coming from the supplicant start with this prefix */
     private static final String WPA_EVENT_PREFIX_STR = "WPA:";
     private static final String PASSWORD_MAY_BE_INCORRECT_STR =
@@ -105,6 +110,9 @@ public class WifiMonitor {
     private static final String HS20_PREFIX_STR = "HS20-";
     private static final String HS20_SUB_REM_STR = "HS20-SUBSCRIPTION-REMEDIATION";
     private static final String HS20_DEAUTH_STR = "HS20-DEAUTH-IMMINENT-NOTICE";
+
+    private static final String IDENTITY_STR = "IDENTITY";
+
 
     //used to debug and detect if we miss an event
     private static int eventLogCounter = 0;
@@ -209,6 +217,23 @@ public class WifiMonitor {
     private static Pattern mDisconnectedEventPattern =
             Pattern.compile("((?:[0-9a-f]{2}:){5}[0-9a-f]{2}) +" +
                     "reason=([0-9]+) +locally_generated=([0-1])");
+
+    /**
+     * Regex pattern for extracting an Ethernet-style MAC address from a string.
+     * Matches a strings like the following:<pre>
+     * CTRL-EVENT-ASSOC-REJECT - bssid=ac:22:0b:24:70:74 status_code=1
+     */
+    private static Pattern mAssocRejectEventPattern =
+            Pattern.compile("((?:[0-9a-f]{2}:){5}[0-9a-f]{2}) +" +
+                    "status_code=([0-9]+)");
+
+    /**
+     * Regex pattern for extracting SSIDs from request identity string.
+     * Matches a strings like the following:<pre>
+     * CTRL-REQ-IDENTITY-1:Identity needed for SSID XXXX</pre>
+     */
+    private static Pattern mRequestIdentityPattern =
+            Pattern.compile("IDENTITY-[0-9]:Identity needed for SSID (.+)");
 
     /** P2P events */
     private static final String P2P_EVENT_PREFIX_STR = "P2P";
@@ -353,8 +378,11 @@ public class WifiMonitor {
     /* SSID was disabled due to auth failure or excessive
      * connection failures */
     public static final int SSID_TEMP_DISABLED                   = BASE + 13;
-    /* SSID was reenabled */
+    /* SSID reenabled by supplicant */
     public static final int SSID_REENABLED                       = BASE + 14;
+
+    /* Request Identity */
+    public static final int SUP_REQUEST_IDENTITY                 = BASE + 15;
 
     /* P2P events */
     public static final int P2P_DEVICE_FOUND_EVENT               = BASE + 21;
@@ -642,7 +670,6 @@ public class WifiMonitor {
         if (DBG) {
             logDbg("WifiMonitor:" + iface + " cnt=" + Integer.toString(eventLogCounter)
                     + " dispatchEvent: " + eventStr);
-            eventLogCounter++;
         }
 
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
@@ -669,9 +696,12 @@ public class WifiMonitor {
                             eventStr.substring(RX_HS20_ANQP_ICON_STR_LEN + 1));
             } else if (eventStr.startsWith(HS20_PREFIX_STR)) {
                 handleHs20Events(eventStr);
+            } else if (eventStr.startsWith(REQUEST_PREFIX_STR)) {
+                handleRequests(eventStr);
             } else {
                 if (DBG) Log.w(TAG, "couldn't identify event type - " + eventStr);
             }
+            eventLogCounter++;
             return false;
         }
 
@@ -681,6 +711,7 @@ public class WifiMonitor {
             eventName = eventName.substring(0, nameEnd);
         if (eventName.length() == 0) {
             if (DBG) Log.i(TAG, "Received wpa_supplicant event with empty event name");
+            eventLogCounter++;
             return false;
         }
         /*
@@ -771,6 +802,7 @@ public class WifiMonitor {
                         Log.d(TAG, "too many recv errors, closing connection");
                     }
                 } else {
+                    eventLogCounter++;
                     return false;
                 }
             }
@@ -784,11 +816,25 @@ public class WifiMonitor {
                 mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT, eventLogCounter);
             }
         } else if (event == ASSOC_REJECT) {
-            mStateMachine.sendMessage(ASSOCIATION_REJECTION_EVENT, eventLogCounter);
+            Matcher match = mAssocRejectEventPattern.matcher(eventData);
+            String BSSID = "";
+            int status = -1;
+            if (!match.find()) {
+                if (DBG) Log.d(TAG, "Assoc Reject: Could not parse assoc reject string");
+            } else {
+                BSSID = match.group(1);
+                try {
+                    status = Integer.parseInt(match.group(2));
+                } catch (NumberFormatException e) {
+                    status = -1;
+                }
+            }
+            mStateMachine.sendMessage(ASSOCIATION_REJECTION_EVENT, eventLogCounter, status, BSSID);
         } else {
             handleEvent(event, eventData);
         }
         sRecvErrors = 0;
+        eventLogCounter++;
         return false;
     }
 
@@ -1027,6 +1073,28 @@ public class WifiMonitor {
             mStateMachine2.sendMessage(HS20_DEAUTH_EVENT, code, delay, url);
         } else {
             if (DBG) Log.d(TAG, "Unknown HS20 event: " + dataString);
+        }
+    }
+
+    /**
+     * Handle Supplicant Requests
+     */
+    private void handleRequests(String dataString) {
+        String SSID = null;
+        String requestName = dataString.substring(REQUEST_PREFIX_LEN_STR);
+        if (requestName == null || requestName.length() == 0) {
+            return;
+        }
+        if (requestName.startsWith(IDENTITY_STR)) {
+            Matcher match = mRequestIdentityPattern.matcher(requestName);
+            if (match.find()) {
+                SSID = match.group(1);
+            } else {
+                Log.e(TAG, "didnt find SSID " + requestName);
+            }
+            mStateMachine.sendMessage(SUP_REQUEST_IDENTITY, eventLogCounter, 0, SSID);
+        } else {
+            if (DBG) Log.w(TAG, "couldn't identify request type - " + dataString);
         }
     }
 

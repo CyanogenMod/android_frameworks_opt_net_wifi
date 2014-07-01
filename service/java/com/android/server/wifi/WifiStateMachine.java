@@ -164,7 +164,7 @@ public class WifiStateMachine extends StateMachine {
 
     private int mLastSignalLevel = -1;
     private String mLastBssid;
-    private int mLastNetworkId;
+    private int mLastNetworkId; //The network Id we successfully joined
     private boolean mEnableRssiPolling = false;
     private boolean mEnableBackgroundScan = false;
     private int mRssiPollToken = 0;
@@ -264,6 +264,8 @@ public class WifiStateMachine extends StateMachine {
     private int mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
 
     private String mTargetRoamBSSID = "any";
+
+    private WifiConfiguration targetWificonfiguration = null;
 
     boolean isRoaming() {
         return mAutoRoaming == WifiAutoJoinController.AUTO_JOIN_ROAMING
@@ -543,12 +545,14 @@ public class WifiStateMachine extends StateMachine {
     private long lastFullBandConnectedTimeMilli;
 
     /**
-     * time interval to the next full band scan we will perform for autojoin while connected with screen lit
+     * time interval to the next full band scan we will perform for
+     * autojoin while connected with screen lit
      */
     private long fullBandConnectedTimeIntervalMilli;
 
     /**
-     * max time interval to the next full band scan we will perform for autojoin while connected with screen lit
+     * max time interval to the next full band scan we will perform for
+     * autojoin while connected with screen lit
      * Max time is 5 minutes
      */
     private static final long  maxFullBandConnectedTimeIntervalMilli = 1000 * 60 * 5;
@@ -708,7 +712,7 @@ public class WifiStateMachine extends StateMachine {
 
     private AtomicBoolean mFrameworkAutoJoin = new AtomicBoolean(true); //enable by default
 
-    public WifiStateMachine(Context context, String wlanInterface, WifiTrafficPoller trafficPoller) {
+    public WifiStateMachine(Context context, String wlanInterface, WifiTrafficPoller trafficPoller){
         super("WifiStateMachine");
         mContext = context;
         mInterfaceName = wlanInterface;
@@ -2049,6 +2053,17 @@ public class WifiStateMachine extends StateMachine {
                 StateChangeResult stateChangeResult = (StateChangeResult) msg.obj;
                 if (stateChangeResult != null) {
                     sb.append(stateChangeResult.toString());
+                }
+                break;
+            case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                String bssid = (String)msg.obj;
+                if (bssid != null && bssid.length()>0) {
+                    sb.append(" ");
+                    sb.append(bssid);
                 }
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
@@ -3516,6 +3531,7 @@ public class WifiStateMachine extends StateMachine {
                 case WifiWatchdogStateMachine.GOOD_LINK_DETECTED:
                 case CMD_NO_NETWORKS_PERIODIC_SCAN:
                 case CMD_DISABLE_P2P_RSP:
+                case WifiMonitor.SUP_REQUEST_IDENTITY:
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
                     mDhcpStateMachine = null;
@@ -4585,11 +4601,17 @@ public class WifiStateMachine extends StateMachine {
             case WifiMonitor.WPS_FAIL_EVENT:
                 s= "WPS_FAIL_EVENT";
                 break;
+            case WifiMonitor.SUP_REQUEST_IDENTITY:
+                s = "SUP_REQUEST_IDENTITY";
+                break;
             case WifiMonitor.NETWORK_CONNECTION_EVENT:
                 s= "NETWORK_CONNECTION_EVENT";
                 break;
             case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                 s="NETWORK_DISCONNECTION_EVENT";
+                break;
+            case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
+                s ="ASSOCIATION_REJECTION_EVENT";
                 break;
             case CMD_SET_OPERATIONAL_MODE:
                 s="CMD_SET_OPERATIONAL_MODE";
@@ -4605,6 +4627,12 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_DISABLE_P2P_REQ:
                 s="CMD_DISABLE_P2P_REQ";
+                break;
+            case WifiWatchdogStateMachine.GOOD_LINK_DETECTED:
+                s = "GOOD_LINK_DETECTED";
+                break;
+            case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
+                s = "POOR_LINK_DETECTED";
                 break;
             default:
                 s = "what:" + Integer.toString(message.what);
@@ -4654,11 +4682,19 @@ public class WifiStateMachine extends StateMachine {
             WifiConfiguration config;
             int netId;
             boolean ok;
+            String bssid;
+            String ssid;
             NetworkUpdateResult result;
             logStateAndMessage(message, getClass().getSimpleName());
 
             switch(message.what) {
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
+                    bssid = (String)message.obj;
+                    if (bssid == null || bssid.length() == 0)
+                        bssid = mTargetRoamBSSID;
+                    if (bssid != null) {
+                        mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, bssid, false);
+                    }
                     mSupplicantStateTracker.sendMessage(WifiMonitor.ASSOCIATION_REJECTION_EVENT);
                     break;
                 case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
@@ -4778,7 +4814,18 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, message.what,
                             mWifiConfigStore.getConfiguredNetworks());
                     break;
-                    /* Do a redundant disconnect without transition */
+                case WifiMonitor.SUP_REQUEST_IDENTITY:
+                    //supplicant lacks credentials to connect to that network, hence black list
+                    ssid = (String)message.obj;
+
+                    if (targetWificonfiguration != null && ssid != null
+                            && targetWificonfiguration.SSID != null
+                            && targetWificonfiguration.SSID.equals("\"" + ssid + "\"")) {
+                        mWifiConfigStore.handleSSIDStateChange(targetWificonfiguration.networkId,
+                                false, "AUTH_FAILED no identity");
+                    }
+                    //disconnect now, as we don't have any way to fullfill the  supplicant request
+                    //fall thru
                 case CMD_DISCONNECT:
                     mWifiConfigStore.setLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
@@ -4841,7 +4888,7 @@ public class WifiStateMachine extends StateMachine {
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
-
+                        targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
                         // we selected a better config,
                         // maybe because we could not see the last user
                         // selection, then forget it. We will remember the selection
@@ -4911,6 +4958,7 @@ public class WifiStateMachine extends StateMachine {
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
+                        targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
                         /* The state tracker handles enabling networks upon completion/failure */
                         mSupplicantStateTracker.sendMessage(WifiManager.CONNECT_NETWORK);
@@ -5511,6 +5559,7 @@ public class WifiStateMachine extends StateMachine {
 
                    mWifiInfo.setBSSID(mLastBssid);
                    mWifiInfo.setNetworkId(mLastNetworkId);
+                   mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, mLastBssid, true);
                     /* send event to CM & network change broadcast */
                    setNetworkDetailedState(DetailedState.OBTAINING_IPADDR);
                    sendNetworkStateChangeBroadcast(mLastBssid);
@@ -5528,7 +5577,7 @@ public class WifiStateMachine extends StateMachine {
                    }
                    break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
-                    //auith error while roaming
+                    //auth error while roaming
                     if (message.arg1 == mLastNetworkId) {
                         loge("DISABLED while roaming nid=" + Integer.toString(mLastNetworkId));
                         sendMessage(CMD_DISCONNECT);
@@ -5568,6 +5617,8 @@ public class WifiStateMachine extends StateMachine {
             }
             registerConnected();
             lastConnectAttempt = 0;
+            targetWificonfiguration = null;
+
         }
         @Override
         public boolean processMessage(Message message) {
@@ -5641,6 +5692,8 @@ public class WifiStateMachine extends StateMachine {
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reassociate()) {
                         lastConnectAttempt = System.currentTimeMillis();
+                        targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
+
                         /* The state tracker handles enabling networks upon completion/failure */
                         mSupplicantStateTracker.sendMessage(WifiManager.CONNECT_NETWORK);
                         //replyToMessage(message, WifiManager.CONNECT_NETWORK_SUCCEEDED);

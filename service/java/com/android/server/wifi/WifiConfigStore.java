@@ -172,6 +172,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String AUTH_KEY = "AUTH:  ";
     private static final String SEPARATOR_KEY = "\n";
     private static final String STATUS_KEY = "AUTO_JOIN_STATUS:  ";
+    private static final String BSSID_STATUS_KEY = "BSSID_STATUS:  ";
     private static final String SELF_ADDED_KEY = "SELF_ADDED:  ";
     private static final String FAILURE_KEY = "FAILURE:  ";
     private static final String DID_SELF_ADD_KEY = "DID_SELF_ADD:  ";
@@ -1180,6 +1181,9 @@ public class WifiConfigStore extends IpConfigStore {
                             out.writeUTF(RSSI_KEY + Integer.toString(result.level)
                                     + SEPARATOR_KEY);
 
+                            out.writeUTF(BSSID_STATUS_KEY + Integer.toString(result.status)
+                                    + SEPARATOR_KEY);
+
                             if (result.seen != 0) {
                                 out.writeUTF(MILLI_KEY + Long.toString(result.seen)
                                         + SEPARATOR_KEY);
@@ -1236,6 +1240,7 @@ public class WifiConfigStore extends IpConfigStore {
                 String ssid = null;
 
                 int freq = 0;
+                int status = 0;
                 long seen = 0;
                 int rssi = WifiConfiguration.INVALID_RSSI;
                 String caps = null;
@@ -1262,6 +1267,7 @@ public class WifiConfigStore extends IpConfigStore {
                                 + n.toString()
                                 + " key: " + configKey);
                     }
+                    status = 0;
                     ssid = null;
                     bssid = null;
                     freq = 0;
@@ -1289,9 +1295,9 @@ public class WifiConfigStore extends IpConfigStore {
                     }
 
                     if (key.startsWith(STATUS_KEY)) {
-                        String status = key.replace(STATUS_KEY, "");
-                        status = status.replace(SEPARATOR_KEY, "");
-                        config.autoJoinStatus = Integer.parseInt(status);
+                        String st = key.replace(STATUS_KEY, "");
+                        st = st.replace(SEPARATOR_KEY, "");
+                        config.autoJoinStatus = Integer.parseInt(st);
                     }
 
                     /*
@@ -1382,12 +1388,19 @@ public class WifiConfigStore extends IpConfigStore {
                             seen = 0;
                             rssi = WifiConfiguration.INVALID_RSSI;
                             caps = "";
+                            status = 0;
                         }
 
                         if (key.startsWith(RSSI_KEY)) {
                             String lvl = key.replace(RSSI_KEY, "");
                             lvl = lvl.replace(SEPARATOR_KEY, "");
                             rssi = Integer.parseInt(lvl);
+                        }
+
+                        if (key.startsWith(BSSID_STATUS_KEY)) {
+                            String st = key.replace(BSSID_STATUS_KEY, "");
+                            st = st.replace(SEPARATOR_KEY, "");
+                            status = Integer.parseInt(st);
                         }
 
                         if (key.startsWith(FREQ_KEY)) {
@@ -1420,6 +1433,7 @@ public class WifiConfigStore extends IpConfigStore {
                                         caps, rssi, freq, (long) 0);
                                 result.seen = seen;
                                 config.scanResultCache.put(bssid, result);
+                                result.status = status;
                             }
                         }
                     }
@@ -2068,10 +2082,16 @@ public class WifiConfigStore extends IpConfigStore {
             config = mConfiguredNetworks.get(netId);
             if (config != null) {
                 if (config.scanResultCache != null) {
+                    String status = "";
+                    if (scanResult.status > 0) {
+                        status = " status=" + Integer.toString(scanResult.status);
+                    }
                     loge("                    got known scan result " +
                             scanResult.BSSID + " key : " + key + " num: " +
                             Integer.toString(config.scanResultCache.size())
-                            + " rssi=" + Integer.toString(scanResult.level));
+                            + " rssi=" + Integer.toString(scanResult.level)
+                            + " freq=" + Integer.toString(scanResult.frequency)
+                            + status);
                 } else {
                     loge("                    got known scan result and no cache" +
                             scanResult.BSSID + " key : " + key);
@@ -2623,6 +2643,25 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    void handleBSSIDBlackList(int netId, String BSSID, boolean enable) {
+        if (BSSID == null)
+            return;
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        if (config != null && config.scanResultCache != null) {
+            for (ScanResult result: config.scanResultCache.values()) {
+                if (result.BSSID.equals(BSSID)) {
+                    if (enable) {
+                        result.status = ScanResult.ENABLED;
+                    } else {
+                        //black list the BSSID we we were trying to join so as the Roam state machine
+                        //doesn't pick it up over and over
+                        result.status = ScanResult.AUTO_ROAM_DISABLED;
+                    }
+                }
+            }
+        }
+    }
+
     void handleSSIDStateChange(int netId, boolean enabled, String message) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
@@ -2630,7 +2669,8 @@ public class WifiConfigStore extends IpConfigStore {
                 loge("SSID re-enabled for  " + config.configKey() +
                         " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
                         + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
-                //TODO: really I don't know if re-enabling is right but we should err on the side of trying to connect
+                //TODO: really I don't know if re-enabling is right but we
+                //TODO: should err on the side of trying to connect
                 //TODO: even if the attempt will fail
                 if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
@@ -2640,12 +2680,12 @@ public class WifiConfigStore extends IpConfigStore {
                         " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
                         + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
                 if (message != null) {
-                    loge(" wpa_supplicant message=" + message);
+                    loge(" message=" + message);
                 }
                 if (config.selfAdded && config.lastConnected == 0) {
                     //this is a network we self added, and we never succeeded,
-                    //the user did not create this network and never entered its credentials, so we want
-                    //to be very aggressive in disabling it completely.
+                    //the user did not create this network and never entered its credentials,
+                    //so we want to be very aggressive in disabling it completely.
                     disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
                     config.disableReason = WifiConfiguration.DISABLED_AUTH_FAILURE;
@@ -2658,18 +2698,23 @@ public class WifiConfigStore extends IpConfigStore {
                             //this network may be re-enabled by the "usual"
                             // enableAllNetwork function
                             //TODO: resolve interpretation of WRONG_KEY and AUTH_FAILURE:
-                            //TODO: if we could count on the wrong_ley or auth_failure message to be correct
-                            //TODO: then we could just mark the configuration as DISABLED_ON_AUTH_FAILURE
-                            //TODO: and the configuration will stay there until user enter new credentials
-                            //TODO: It is not the case however, so instead  of disabling, let's start
-                            //TODO: blacklisting hard
+                            //TODO: if we could count on the wrong_ley or auth_failure
+                            //TODO: message to be correct
+                            //TODO: then we could just mark the configuration as
+                            //TODO: DISABLED_ON_AUTH_FAILURE
+                            //TODO: and the configuration will stay there until
+                            //TODO: user enter new credentials
+                            //TODO: It is not the case however, so instead  of disabling, let's
+                            //TODO: start blacklisting hard
                             if (config.autoJoinStatus <=
                                     WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
                                 //4 auth failure will reach 128 and disable permanently
                                 //autoJoinStatus: 0 -> 4 -> 20 -> 84 -> 128
                                 config.setAutoJoinStatus(4 + config.autoJoinStatus * 4);
-                                if (config.autoJoinStatus > WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
-                                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
+                                if (config.autoJoinStatus >
+                                        WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
+                                    config.setAutoJoinStatus
+                                            (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
                             }
                             if (DBG) {
                                 loge("blacklisted " + config.configKey() + " to "

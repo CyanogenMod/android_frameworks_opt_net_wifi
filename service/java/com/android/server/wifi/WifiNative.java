@@ -190,8 +190,12 @@ public class WifiNative {
             int cmdId = getNewCmdIdLocked();
             localLog(cmdId + "->" + mInterfacePrefix + command);
             String result = doStringCommandNative(mInterfacePrefix + command);
-            localLog(cmdId + "<-" + result);
-            if (DBG) Log.d(mTAG, "   returned " + result.replace("\n", " "));
+            if (result == null) {
+                if (DBG) Log.d(mTAG, "doStringCommandNative no result");
+            } else {
+                localLog(cmdId + "<-" + result);
+                if (DBG) Log.d(mTAG, "   returned " + result.replace("\n", " "));
+            }
             return result;
         }
     }

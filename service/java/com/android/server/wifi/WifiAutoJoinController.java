@@ -780,6 +780,9 @@ public class WifiAutoJoinController {
             if (b.BSSID == null)
                 continue;
 
+            if (b.status != ScanResult.ENABLED)
+                continue;
+
             if ((now_ms - b.seen) > age) continue;
 
             //pick first one
