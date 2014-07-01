@@ -81,6 +81,10 @@ public class WifiPasspointHttpClient {
     private static final int SOCKET_OPERATION_TIMEOUT = 30 * 1000;
     private static final int MAX_SOCKET_CONNECTION = 30;
 
+    public WifiPasspointHttpClient() {
+        this(null, null);
+    }
+
     public WifiPasspointHttpClient(KeyStore clientCertStore, char[] passwd) {
         HttpParams params = new BasicHttpParams();
 
@@ -164,9 +168,8 @@ public class WifiPasspointHttpClient {
         });
     }
 
-    // CLIENT MANAGEMENT
-
-    public void setAuthenticationCredentials(UsernamePasswordCredentials credentials) {
+    public WifiPasspointHttpClient(UsernamePasswordCredentials credentials) {
+        this(null, null);
         mCredentials = credentials;
     }
 

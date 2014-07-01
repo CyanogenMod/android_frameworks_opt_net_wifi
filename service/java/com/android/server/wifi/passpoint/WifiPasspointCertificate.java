@@ -1106,15 +1106,12 @@ public class WifiPasspointCertificate {
                         Log.d(TAG, "client cert is not installed in passpoint PKCS12 keystore");
                         return null;
                     }
-                } else {
+                } else if (digestUsername != null && digestPassword != null) {
                     Log.d(TAG, "[estHttpClient]: enroll");
-                    hc = new WifiPasspointHttpClient(null, null);
-                }
-
-                if (digestUsername != null && digestPassword != null) {
-                    hc.setAuthenticationCredentials(new UsernamePasswordCredentials(digestUsername,
+                    hc = new WifiPasspointHttpClient(new UsernamePasswordCredentials(digestUsername,
                             digestPassword));
-
+                } else {
+                    hc = new WifiPasspointHttpClient();
                 }
 
                 HttpResponse httpResp = null;
@@ -1194,11 +1191,8 @@ public class WifiPasspointCertificate {
                     }
                 }
             } else {
-                hc = new WifiPasspointHttpClient(null, null);
-                if (digestUsername != null && digestPassword != null) {
-                    hc.setAuthenticationCredentials(new UsernamePasswordCredentials(digestUsername,
+                hc = new WifiPasspointHttpClient(new UsernamePasswordCredentials(digestUsername,
                             digestPassword));
-                }
 
                 HttpResponse httpResp = null;
                 Header[] requestHeaders;

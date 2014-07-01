@@ -1813,7 +1813,6 @@ public class WifiPasspointStateMachine extends StateMachine {
         String simEapType = null;
         String digiCredSha256FingerPrint = null;
         String aaaRootCertSha256FingerPrint = null;
-
         if (tree == null) {
             return;
         }
@@ -1874,7 +1873,9 @@ public class WifiPasspointStateMachine extends StateMachine {
                 if (isTtlsCredential(unpwEapType)) {
                     String aaaRootCertSha1FingerPrint = null;
 
-                    if (!mKeyStore.contains(Credentials.WIFI + aaaRootCertSha256FingerPrint)) {
+                    if (aaaRootCertSha256FingerPrint != null
+                        && !aaaRootCertSha256FingerPrint.isEmpty()
+                        && !mKeyStore.contains(Credentials.WIFI + aaaRootCertSha256FingerPrint)) {
                         Log.e(TAG, "AAA trust root is not existed in keystore");
                         return;
                     } else {

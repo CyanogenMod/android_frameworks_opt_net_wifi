@@ -21,54 +21,71 @@ import android.content.BroadcastReceiver;
 import android.net.wifi.passpoint.WifiPasspointCredential;
 import android.net.wifi.passpoint.WifiPasspointDmTree;
 import android.net.wifi.passpoint.WifiPasspointManager;
-import android.net.Uri;
 import android.net.wifi.passpoint.WifiPasspointManager.ParcelableString;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.net.Uri;
 import android.os.Message;
 import android.os.SystemProperties;
 import android.security.Credentials;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.util.Log;
 
-import com.android.internal.util.StateMachine;
-import com.android.server.wifi.passpoint.WifiPasspointClient.AuthenticationElement;
-import com.android.org.conscrypt.TrustManagerImpl;
-import com.android.org.bouncycastle.asn1.*;
+import com.android.org.bouncycastle.asn1.ASN1Encodable;
+import com.android.org.bouncycastle.asn1.ASN1InputStream;
+import com.android.org.bouncycastle.asn1.ASN1Object;
+
+import com.android.org.bouncycastle.asn1.DERIA5String;
+import com.android.org.bouncycastle.asn1.DERObjectIdentifier;
+import com.android.org.bouncycastle.asn1.DEROctetString;
+import com.android.org.bouncycastle.asn1.DERSequence;
+import com.android.org.bouncycastle.asn1.DERTaggedObject;
+import com.android.org.bouncycastle.asn1.DERUTF8String;
 import com.android.org.bouncycastle.asn1.util.ASN1Dump;
 import com.android.org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
-import com.android.org.bouncycastle.asn1.x509.*;
+import com.android.org.bouncycastle.asn1.x509.KeyPurposeId;
+import com.android.org.bouncycastle.asn1.x509.GeneralName;
+
 import com.android.org.bouncycastle.jce.PKCS10CertificationRequest;
 import com.android.org.bouncycastle.jce.provider.BouncyCastleProvider;
 import com.android.org.bouncycastle.jce.exception.ExtCertPathValidatorException;
 
-import org.ksoap2.*;
-import org.ksoap2.serialization.*;
-import org.ksoap2.transport.*;
-import org.ksoap2.kobjects.base64.Base64;
-import org.w3c.dom.*;
-import org.xml.sax.*;
-import org.apache.harmony.security.x509.OtherName;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.HttpResponse;
-import org.apache.http.message.BasicHeader;
-import org.apache.http.Header;
+import com.android.internal.util.StateMachine;
+import com.android.server.wifi.passpoint.WifiPasspointClient.AuthenticationElement;
+import com.android.org.conscrypt.TrustManagerImpl;
 
-import java.util.*;
-import java.util.zip.GZIPInputStream;
-import java.math.BigInteger;
-import java.io.*;
-import java.net.*;
-import java.security.cert.*;
-import java.security.*;
-import java.security.KeyStore.PasswordProtection;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Enumeration;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Vector;
 
-import javax.net.ssl.*;
-import javax.xml.parsers.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringReader;
+import java.io.StringWriter;
+
+import java.net.UnknownHostException;
+import java.net.URI;
+
+import java.security.cert.X509Certificate;
+import java.security.cert.CertificateException;
+import java.security.KeyStore;
+import java.security.cert.CertStore;
+import java.security.cert.CertificateFactory;
+import java.security.cert.CertificateParsingException;
+
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+
 import javax.xml.transform.TransformerException;
-import javax.security.auth.callback.*;
-import javax.security.auth.x500.X500Principal;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.dom.DOMSource;
@@ -77,6 +94,25 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
+
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.Header;
+import org.apache.http.HttpResponse;
+import org.apache.http.message.BasicHeader;
+
+import org.ksoap2.SoapEnvelope;
+import org.ksoap2.serialization.AttributeInfo;
+import org.ksoap2.serialization.SoapObject;
+import org.ksoap2.serialization.SoapSerializationEnvelope;
+import org.ksoap2.transport.HttpTransportSE;
+
+import org.w3c.dom.Element;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
+import org.xml.sax.InputSource;
+import org.xml.sax.SAXException;
 
 /**
  * TODO: doc
@@ -121,13 +157,14 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     private static final String DEVICE_OBJECT = "The interior node holding all devinfo objects";
     private static final String CONTENT_TYPE_XML_CHARSET_UTF_8 = "text/xml;charset=utf-8";
     private static final String CONTENT_TYPE_SOAP_XML_CHARSET_UTF_8 = "application/soap+xml;charset=utf-8";
-    private String mRedirectUrl;
+
     // Subscription Provisioning request reason
     public static final String SUB_REGISTER = "Subscription registration";
     public static final String CERT_ENROLL_SUCCESS = "Certificate enrollment completed";
     public static final String CERT_ENROLL_FAIL = "Certificate enrollment failed";
     public static final String USER_INPUT_COMPLETED = "User input completed";
     public static final String SUB_REMEDIATION = "Subscription remediation";
+
     // for EAP-SIM
     public static final String SUB_PROVISION = "Subscription provisioning";
     public static final String SUB_MO_UPLOAD = "MO upload";
@@ -139,14 +176,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     // send response error message
     public static final String WIFI_SOAP_UPDATE_RESPONSE_OK = "OK";
     public static final String WIFI_SOAP_UPDATE_RESPONSE_PERMISSION_DENY = "Permission denied";
-    public static final String WIFI_SOAP_UPDATE_RESPONSE_COMMAND_FAILED = "Command failed";
     public static final String WIFI_SOAP_UPDATE_RESPONSE_MO_ADD_UPDATE_FAIL = "MO addition or update failed";
-    public static final String WIFI_SOAP_UPDATE_RESPONSE_DEVICE_FULL = "Device full";
-    public static final String WIFI_SOAP_UPDATE_RESPONSE_BAD_MGMTREE_URI = "Bad management tree URI";
-    public static final String WIFI_SOAP_UPDATE_RESPONSE_REQUEST_ENTITY_TOO_LARGE = "Requested entity too large";
-    public static final String WIFI_SOAP_UPDATE_RESPONSE_COMMAND_NOT_ALLOWED = "Command not allowed";
-    public static final String WIFI_SOAP_UPDATE_RESPONSE_COMMAND_NOT_EXEC_DUE_TO_USER = "Command not executed due to user";
-    public static final String WIFI_SOAP_UPDATE_RESPONSE_NOT_FOUND = "Not found";
 
     private int mProcedureType;
     private static final int SUBSCRIPTION_PROVISION = 1;
@@ -156,25 +186,15 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     private PpsmoParser mPpsmoParser = new PpsmoParser();
 
     private Context mContext;
-
-    // HTTP digest
+    private String mRedirectUrl;
     private String mDigestUsername;
     private String mDigestPassword;
-
-    // Settion ID
     private String mSessionID;
-
-    // Policy
     private String mRequestReason;
-
-    // Credential
-    private static String mSoapWebUrl;
-    private static String mOSUServerUrl;
-    private static String mREMServerUrl;
     private String mEnrollmentServerURI;
     private String mEnrollmentServerCert;
-
     private String mOSUFriendlyName;
+    private String mServerUrl;
 
     TrustManager[] myTrustManagerArray = new TrustManager[] {
             new CertTrustManager()
@@ -197,9 +217,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     private WifiPasspointDmTree mSoapTree;
     private WifiPasspointDmTreeHelper mTreeHelper;
     private WifiPasspointCredential mCred;
-    private static int procedureDone;
-    private static int managementTreeUpdateCount = 0;
-
     private WifiPasspointCertificate.FileOperationUtil mFileOperation;
 
     public WifiPasspointSoapClient(Context context, WifiPasspointClient.DmClient client) {
@@ -217,10 +234,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         mDigestPassword = null;
 
         // Credential
-        mSoapWebUrl = null;
-        mOSUServerUrl = null;
-        mREMServerUrl = null;
-
+        mServerUrl = null;
         // Certificate
         mPasspointCertificate = WifiPasspointCertificate.getInstance(null);
         mFileOperation = mPasspointCertificate.new FileOperationUtil();
@@ -230,19 +244,17 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     public void startSubscriptionProvision(String serverUrl) {
         Log.d(TAG, "Run startSubscriptionProvision with " + serverUrl);
         mProcedureType = SUBSCRIPTION_PROVISION;
-        mOSUServerUrl = serverUrl;
-        mSoapWebUrl = serverUrl;
+        mServerUrl = serverUrl;
         mSpFqdnFromMo = null;
         mRequestReason = SUB_REGISTER;
-        subscriptionProvision();
+        subscriptionProvision(serverUrl);
     }
 
     @Override
-    public void startRemediation(final String serverUrl, WifiPasspointCredential cred) {
+    public void startRemediation(String serverUrl, WifiPasspointCredential cred) {
         Log.d(TAG, "Run startRemediation with " + serverUrl);
         mProcedureType = SUBSCRIPTION_REMEDIATION;
-        mSoapWebUrl = serverUrl;
-        mREMServerUrl = serverUrl;
+        mServerUrl = serverUrl;
         mSpFqdnFromMo = null;
 
         if ("SIM".equals(cred.getType())) {
@@ -258,16 +270,16 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             return;
         }
 
-        remediation();
+        remediation(serverUrl);
     }
 
     @Override
-    public void startPolicyProvision(final String serverUrl, WifiPasspointCredential cred) {
+    public void startPolicyProvision(String serverUrl, WifiPasspointCredential cred) {
         Log.d(TAG, "Run startPolicyProvision with " + serverUrl);
         mProcedureType = POLICY_UPDATE;
-        mSoapWebUrl = serverUrl;
         mSpFqdnFromMo = null;
         mRequestReason = POL_UPDATE;
+        mServerUrl = serverUrl;
 
         if (cred != null) {
             mCred = cred;
@@ -276,7 +288,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             return;
         }
 
-        policyProvision();
+        policyProvision(serverUrl);
     }
 
     @Override
@@ -288,9 +300,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
     public void notifyBrowserRedirected() {
         mRequestReason = USER_INPUT_COMPLETED;
         if (mProcedureType == SUBSCRIPTION_PROVISION) {
-            subscriptionProvision();
+            subscriptionProvision(mServerUrl);
         } else if (mProcedureType == SUBSCRIPTION_REMEDIATION) {
-            remediation();
+            remediation(mServerUrl);
         }
     }
 
@@ -305,9 +317,6 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         Log.d(TAG, "OSU Friendly Name:" + ae.osuFriendlyName);
         Log.d(TAG, "Default language name:" + ae.osuDefaultLanguage);
 
-        mSoapWebUrl = null;
-        mOSUServerUrl = null;
-        mREMServerUrl = null;
         mSpFqdn = ae.spFqdn;
         mOSUFriendlyName = ae.osuFriendlyName;
         mOSULanguage = ae.osuDefaultLanguage;
@@ -410,7 +419,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return imei;
     }
 
-    private void startCertificateEnroll(final String operation) {
+    private void startCertificateEnroll(String serverUrl, String operation) {
         Log.d(TAG, "enrollmentServerURI: " + mEnrollmentServerURI + ", operation: " + operation);
         WifiManager wifiManager = (WifiManager) mContext.getSystemService(Context.WIFI_SERVICE);
         boolean enrollSuccess;
@@ -453,29 +462,29 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             // success
             mRequestReason = CERT_ENROLL_SUCCESS;
             if (mProcedureType == SUBSCRIPTION_PROVISION) {
-                subscriptionProvision();
+                subscriptionProvision(serverUrl);
             } else if (mProcedureType == SUBSCRIPTION_REMEDIATION) {
-                remediation();
+                remediation(serverUrl);
             }
         } else {
             // fail
             mRequestReason = CERT_ENROLL_FAIL;
             if (mProcedureType == SUBSCRIPTION_PROVISION) {
-                subscriptionProvision();
+                subscriptionProvision(serverUrl);
             } else if (mProcedureType == SUBSCRIPTION_REMEDIATION) {
-                remediation();
+                remediation(serverUrl);
             }
         }
     }
 
-    private void subscriptionProvision() {
+    private void subscriptionProvision(final String serverUrl) {
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    SoapObject request = getSubRegistration(mRequestReason);
+                    SoapObject request = createOsuRequest(mRequestReason);
                     String response = null;
 
-                    response = connectSoapServer(request, null, null, NO_CLIENT_AUTH);
+                    response = connectSoapServer(serverUrl, request, null, null, NO_CLIENT_AUTH);
 
                     if (response == null) {
                         Log.e(TAG, "[startSubscriptionProvisioning] Fail to get soap resonse");
@@ -497,7 +506,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         } else if (isUseClientCertTlsExecution(doc)) {
                             // to use pre-installed client certificate
                         } else if (isEnrollmentExecution(doc)) {
-                            startCertificateEnroll(mPasspointCertificate.ENROLL);
+                            startCertificateEnroll(serverUrl, mPasspointCertificate.ENROLL);
                         }
                     }
                     // addMO from server
@@ -510,25 +519,24 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         if (isWifiSpFqdnForAddMo(doc)) {
                             Document docMgmtTree = mPpsmoParser.extractMgmtTree(response);
                             String moTree = mPpsmoParser.xmlToString(docMgmtTree);
-                            String treeUri = getSPPTreeUri(doc, "addMO");
+                            String treeUri = getSppTreeUri(doc, "addMO");
                             int injStatus = mDmClient.injectSoapPackage(treeUri, "addMO", moTree);
 
                             if (injStatus == 0) {
                                 mSoapTree = mDmClient.getWifiTree();
-                                sendUpdateResponse(true, SUBSCRIPTION_PROVISION,
+                                sendUpdateResponse(serverUrl, true, SUBSCRIPTION_PROVISION,
                                         WIFI_SOAP_UPDATE_RESPONSE_OK);
                             } else {
-                                sendUpdateResponse(true, SUBSCRIPTION_PROVISION,
+                                sendUpdateResponse(serverUrl, true, SUBSCRIPTION_PROVISION,
                                         WIFI_SOAP_UPDATE_RESPONSE_MO_ADD_UPDATE_FAIL);
                             }
                         } else {
-                            sendUpdateResponse(false, SUBSCRIPTION_PROVISION,
+                            sendUpdateResponse(serverUrl, false, SUBSCRIPTION_PROVISION,
                                     WIFI_SOAP_UPDATE_RESPONSE_PERMISSION_DENY);
                         }
-                    }
-                    // abort provisioning
-                    // while certificate enrollment fail
-                    else if (WIFI_SOAP_SPP_STATUS_EXCHANGE_COMPLETE.equals(status)) {
+                    } else if (WIFI_SOAP_SPP_STATUS_EXCHANGE_COMPLETE.equals(status)) {
+                        // abort provisioning
+                        // while certificate enrollment fail
                         String err = checkErrorCode(doc);
                         Log.e(TAG,
                                 "[startSubscriptionProvisioning] Exchange complete, release TLS connection error occurred: "
@@ -540,7 +548,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         status = checkStatus(doc, NAMESPACE_NS, WIFI_SOAP_USER_INPUT_RESPONSE);
                         if (WIFI_SOAP_SPP_STATUS_OK.equals(status)) {
                             if (isEnrollmentExecution(doc)) {
-                                startCertificateEnroll(mPasspointCertificate.ENROLL);
+                                startCertificateEnroll(serverUrl, mPasspointCertificate.ENROLL);
                             }
                         } else if (WIFI_SOAP_SPP_STATUS_ERROR_OCCURRED.equals(status)) {
                             Log.e(TAG,
@@ -560,15 +568,16 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         }).start();
     }
 
-    private void remediation() {
+    private void remediation(final String serverUrl) {
         if (!USER_INPUT_COMPLETED.equals(mRequestReason) && !SUB_MO_UPLOAD.equals(mRequestReason)) {
             setRemediationHttpDigest();
         }
 
         new Thread(new Runnable() {
             public void run() {
+                int managementTreeUpdateCount = 0;
                 try {
-                    SoapObject request = getSubRemediation(mRequestReason);
+                    SoapObject request = createRemediationRequest(serverUrl, mRequestReason);
                     String response = null;
 
                     String eapType = null;
@@ -578,13 +587,13 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                     if ("SIM".equals(eapType)) {
                         Log.d(TAG, "EAP-SIM, no digest or client certifcate");
-                        response = connectSoapServer(request, "", "", NO_CLIENT_AUTH);
+                        response = connectSoapServer(serverUrl, request, null, null, NO_CLIENT_AUTH);
                     } else if ("TTLS".equals(eapType)) {
                         if (mDigestUsername != null && !mDigestUsername.isEmpty()) {
                             Log.d(TAG,
                                     "digest using U/P or Subscription update credential, mDigestUsername/mDigestPassword: "
                                             + mDigestUsername + "/" + mDigestPassword);
-                            response = connectSoapServer(request, mDigestUsername,
+                            response = connectSoapServer(serverUrl, request, mDigestUsername,
                                     mDigestPassword, NO_CLIENT_AUTH);
                         }
                     } else if ("TLS".equals(eapType)) {
@@ -596,13 +605,13 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                                 .getCredentialCertKeyStore(credentialCertSHA256Fingerprint);
 
                         if (sHs20Pkcs12KeyStore != null) {
-                            response = connectSoapServer(request, null, null, CLIENT_CERT);
+                            response = connectSoapServer(serverUrl, request, null, null, CLIENT_CERT);
                         } else {
                             Log.d(TAG, "client certifcate not found");
                         }
                     } else {
-                        Log.d(TAG, "no digest or client certifcate");
-                        response = connectSoapServer(request, "", "", NO_CLIENT_AUTH);
+                        Log.d(TAG, "unknow credential type");
+                        return;
                     }
 
                     if (response == null) {
@@ -626,7 +635,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                                     Document docMgmtTree = mPpsmoParser.extractMgmtTree(docNodes);
                                     String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                                     Log.d(TAG2, moTree);
-                                    String sppTreeUri = getSPPTreeUri(docNodes, "updateNode");
+                                    String sppTreeUri = getSppTreeUri(docNodes, "updateNode");
                                     int injStatus = mDmClient.injectSoapPackage(sppTreeUri,
                                             "updateNode", moTree);
 
@@ -637,25 +646,25 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                                 if (sppUpdateNodes.size() != 0 && managementTreeUpdateCount == 0) {
                                     mSoapTree = mDmClient.getWifiTree();
-                                    sendUpdateResponse(true, SUBSCRIPTION_REMEDIATION,
+                                    sendUpdateResponse(serverUrl, true, SUBSCRIPTION_REMEDIATION,
                                             WIFI_SOAP_UPDATE_RESPONSE_OK);
                                 } else {
-                                    sendUpdateResponse(false, SUBSCRIPTION_REMEDIATION,
+                                    sendUpdateResponse(serverUrl, false, SUBSCRIPTION_REMEDIATION,
                                             WIFI_SOAP_UPDATE_RESPONSE_MO_ADD_UPDATE_FAIL);
                                 }
                             } else {
-                                sendUpdateResponse(false, SUBSCRIPTION_REMEDIATION,
+                                sendUpdateResponse(serverUrl, false, SUBSCRIPTION_REMEDIATION,
                                         WIFI_SOAP_UPDATE_RESPONSE_PERMISSION_DENY);
                             }
                         }
                     } else if (WIFI_SOAP_SPP_STATUS_OK.equals(status)) {
                         if (isUploadMO(doc)) {
                             mRequestReason = SUB_MO_UPLOAD;
-                            remediation();
+                            remediation(serverUrl);
                         } else if (isLaunchBrowserExecution(doc)) {
                             Log.d(TAG, "[New] redirect to browser");
                         } else if (isEnrollmentExecution(doc)) {
-                            startCertificateEnroll(mPasspointCertificate.REENROLL);
+                            startCertificateEnroll(serverUrl, mPasspointCertificate.REENROLL);
                         } else {
                             if (isWifiSpFqdnForUpdateMo(doc)) {
                                 Vector<Document> sppUpdateNodes = mPpsmoParser.getSPPNodes(doc,
@@ -665,7 +674,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                                     Document docMgmtTree = mPpsmoParser.extractMgmtTree(docNodes);
                                     String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                                     Log.d(TAG2, moTree);
-                                    String sppTreeUri = getSPPTreeUri(docNodes, "updateNode");
+                                    String sppTreeUri = getSppTreeUri(docNodes, "updateNode");
                                     int injStatus = mDmClient.injectSoapPackage(sppTreeUri,
                                             "updateNode", moTree);
 
@@ -676,29 +685,29 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                                 if (sppUpdateNodes.size() != 0 && managementTreeUpdateCount == 0) {
                                     mSoapTree = mDmClient.getWifiTree();
-                                    sendUpdateResponse(true, SUBSCRIPTION_REMEDIATION,
+                                    sendUpdateResponse(serverUrl, true, SUBSCRIPTION_REMEDIATION,
                                             WIFI_SOAP_UPDATE_RESPONSE_OK);
                                 } else {
-                                    sendUpdateResponse(false, SUBSCRIPTION_REMEDIATION,
+                                    sendUpdateResponse(serverUrl, false, SUBSCRIPTION_REMEDIATION,
                                             WIFI_SOAP_UPDATE_RESPONSE_MO_ADD_UPDATE_FAIL);
                                 }
                             } else {
-                                sendUpdateResponse(false, SUBSCRIPTION_REMEDIATION,
+                                sendUpdateResponse(serverUrl, false, SUBSCRIPTION_REMEDIATION,
                                         WIFI_SOAP_UPDATE_RESPONSE_PERMISSION_DENY);
                             }
                         }
                     } else if (WIFI_SOAP_SPP_STATUS_PROVISION_COMPLETE.equals(status)) {
                         Document docMgmtTree = mPpsmoParser.extractMgmtTree(response);
                         String moTree = mPpsmoParser.xmlToString(docMgmtTree);
-                        String treeUri = getSPPTreeUri(doc, "addMO");
+                        String treeUri = getSppTreeUri(doc, "addMO");
                         int injStatus = mDmClient.injectSoapPackage(treeUri, "addMO", moTree);
 
                         if (injStatus == 0) {
                             mSoapTree = mDmClient.getWifiTree();
-                            sendUpdateResponse(true, SUBSCRIPTION_SIM_PROVISION,
+                            sendUpdateResponse(serverUrl, true, SUBSCRIPTION_SIM_PROVISION,
                                     WIFI_SOAP_UPDATE_RESPONSE_OK);
                         } else {
-                            sendUpdateResponse(false, SUBSCRIPTION_SIM_PROVISION,
+                            sendUpdateResponse(serverUrl, false, SUBSCRIPTION_SIM_PROVISION,
                                     WIFI_SOAP_UPDATE_RESPONSE_MO_ADD_UPDATE_FAIL);
 
                         }
@@ -721,22 +730,23 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         }).start();
     }
 
-    private void policyProvision() {
+    private void policyProvision(final String serverUrl) {
         if (POL_UPDATE.equals(mRequestReason)) {
             setPolicyUpdateHttpDigest();
         }
 
         new Thread(new Runnable() {
             public void run() {
+                int managementTreeUpdateCount = 0;
                 try {
-                    SoapObject request = getPolicyUpdateRequest(mRequestReason);
+                    SoapObject request = createPolicyUpdateRequest(serverUrl, mRequestReason);
                     String response = null;
 
                     if (mDigestUsername != null && !mDigestUsername.isEmpty()) {
                         Log.d(TAG,
                                 "digest using U/P Credential or Policy update, mDigestUsername/mDigestPassword: "
                                         + mDigestUsername + "/" + mDigestPassword);
-                        response = connectSoapServer(request, mDigestUsername, mDigestPassword,
+                        response = connectSoapServer(serverUrl, request, mDigestUsername, mDigestPassword,
                                 NO_CLIENT_AUTH);
                     }
 
@@ -747,10 +757,10 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                             if (isUploadMO(doc)) {
                                 if (isWifiSpFqdnForUploadMo(doc)) {
                                     mRequestReason = POL_MO_UPLOAD;
-                                    policyProvision();
+                                    policyProvision(serverUrl);
                                     return;
                                 } else {
-                                    sendUpdateResponse(false, POLICY_UPDATE,
+                                    sendUpdateResponse(serverUrl, false, POLICY_UPDATE,
                                             WIFI_SOAP_UPDATE_RESPONSE_PERMISSION_DENY);
                                     return;
                                 }
@@ -764,7 +774,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                                     Document docMgmtTree = mPpsmoParser.extractMgmtTree(docNodes);
                                     String moTree = mPpsmoParser.xmlToString(docMgmtTree);
                                     Log.d(TAG2, moTree);
-                                    String sppTreeUri = getSPPTreeUri(docNodes, "updateNode");
+                                    String sppTreeUri = getSppTreeUri(docNodes, "updateNode");
                                     int injStatus = mDmClient.injectSoapPackage(sppTreeUri,
                                             "updateNode", moTree);
 
@@ -775,14 +785,14 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                                 if (sppUpdateNodes.size() != 0 && managementTreeUpdateCount == 0) {
                                     mSoapTree = mDmClient.getWifiTree();
-                                    sendUpdateResponse(true, POLICY_UPDATE,
+                                    sendUpdateResponse(serverUrl, true, POLICY_UPDATE,
                                             WIFI_SOAP_UPDATE_RESPONSE_OK);
                                 } else {
-                                    sendUpdateResponse(false, POLICY_UPDATE,
+                                    sendUpdateResponse(serverUrl, false, POLICY_UPDATE,
                                             WIFI_SOAP_UPDATE_RESPONSE_MO_ADD_UPDATE_FAIL);
                                 }
                             } else {
-                                sendUpdateResponse(false, POLICY_UPDATE,
+                                sendUpdateResponse(serverUrl, false, POLICY_UPDATE,
                                         WIFI_SOAP_UPDATE_RESPONSE_PERMISSION_DENY);
                             }
 
@@ -814,8 +824,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         }).start();
     }
 
-    private String connectSoapServer(SoapObject request, final String digestUsername,
-            final String digestPassword, final int clientCertType) {
+    private String connectSoapServer(String serverUrl, SoapObject request, String digestUsername,
+            String digestPassword, int clientCertType) {
         if (mRedirectUrl == null) {
             Log.e(TAG, "Failed to connect due to null redirect URL");
             return null;
@@ -829,9 +839,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         envelope.dotNet = false;
         envelope.setOutputSoapObject(request);
 
-        Log.d(TAG, "Server url:" + mSoapWebUrl);
+        Log.d(TAG, "Server url:" + serverUrl);
 
-        if (mSoapWebUrl.startsWith("HTTPS://") || mSoapWebUrl.startsWith("https://")) {
+        if (serverUrl.startsWith("HTTPS://") || serverUrl.startsWith("https://")) {
             try {
                 int retryCount = 5;
                 boolean isConnected = false;
@@ -841,28 +851,25 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
                 if (digestUsername != null && digestPassword != null) {
                     credentials = new UsernamePasswordCredentials(digestUsername, digestPassword);
-                    hc = new WifiPasspointHttpClient(null, null);
-                    hc.setAuthenticationCredentials(credentials);
-                } else {
-                    if (clientCertType == CLIENT_CERT) {
-                        if (sHs20Pkcs12KeyStore.aliases().hasMoreElements()) {
-                            hc = new WifiPasspointHttpClient(sHs20Pkcs12KeyStore,
-                                    mPasspointCertificate.passWord.toCharArray());
-                        } else {
-                            Log.d(TAG, "client cert is not installed in passpoint PKCS12 keystore");
-                            hc = new WifiPasspointHttpClient(null, null);
-                        }
+                    hc = new WifiPasspointHttpClient(credentials);
+                } else if (clientCertType == CLIENT_CERT) {
+                    if (sHs20Pkcs12KeyStore.aliases().hasMoreElements()) {
+                        hc = new WifiPasspointHttpClient(sHs20Pkcs12KeyStore,
+                                mPasspointCertificate.passWord.toCharArray());
                     } else {
-                        hc = new WifiPasspointHttpClient(null, null);
+                        Log.d(TAG, "client cert is not installed in passpoint PKCS12 keystore");
+                        return null;
                     }
+                } else {
+                    hc = new WifiPasspointHttpClient();
                 }
 
                 while (retryCount > 0 && !isConnected) {
                     try {
-                        URI requestUri = new URI(mSoapWebUrl);
+                        URI requestUri = new URI(serverUrl);
                         HttpResponse httpResp = null;
                         byte[] requestData =
-                                (new HttpTransportSE(mSoapWebUrl))
+                                (new HttpTransportSE(serverUrl))
                                         .getRequestData(envelope, "UTF-8");
                         Header[] requestHeaders;
                         List<BasicHeader> basicHeaders = new ArrayList<BasicHeader>();
@@ -920,16 +927,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return response;
     }
 
-    private void sendUpdateResponse(final boolean success, final int procedureType,
-            final String reason) {
+    private void sendUpdateResponse(final String serverUrl, final boolean success, final int procedureType, final String reason) {
         Log.d(TAG, "[sendUpdateResponse] start, success = " + success + ", procedureType = "
                 + procedureType + ", reason = " + reason);
-        if (procedureType == SUBSCRIPTION_PROVISION) {
-            mSoapWebUrl = mOSUServerUrl;
-        } else if (procedureType == SUBSCRIPTION_SIM_PROVISION) {
-            // SIM provision through remediation procedure
-            mSoapWebUrl = mREMServerUrl;
-        }
 
         new Thread(new Runnable() {
             public void run() {
@@ -938,9 +938,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     String response = null;
 
                     if (success == true) {
-                        request = getUpdateResponse(false, null);
+                        request = createUpdateResponseRequest(false, null);
                     } else {
-                        request = getUpdateResponse(true, reason);
+                        request = createUpdateResponseRequest(true, reason);
                     }
 
                     if (procedureType == POLICY_UPDATE || procedureType == SUBSCRIPTION_REMEDIATION) {
@@ -951,19 +951,19 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                             Log.d(TAG,
                                     "digest using U/P or Policy update credential, mDigestUsername/mDigestPassword: "
                                             + mDigestUsername + "/" + mDigestPassword);
-                            response = connectSoapServer(request, mDigestUsername, mDigestPassword,
+                            response = connectSoapServer(serverUrl, request, mDigestUsername, mDigestPassword,
                                     NO_CLIENT_AUTH);
                         }
                         else if ("TLS".equals(eapType)) {
                             Log.d(TAG, "digest using client cert credential, SHA256 fingerprint: "
                                     + credentialCertSHA256Fingerprint);
-                            response = connectSoapServer(request, null, null, CLIENT_CERT);
+                            response = connectSoapServer(serverUrl, request, null, null, CLIENT_CERT);
                         }
                     } else {
                         // procedureType == SUBSCRIPTION_PROVISION ||
                         // procedureType == SUBSCRIPTION_SIM_PROVISION
                         Log.d(TAG, "OSU, no need to set digest");
-                        response = connectSoapServer(request, null, null, NO_CLIENT_AUTH);
+                        response = connectSoapServer(serverUrl, request, null, null, NO_CLIENT_AUTH);
                     }
 
                     if (response == null || response.isEmpty()) {
@@ -1113,7 +1113,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     }
 
-    private SoapObject getSubRegistration(String requestReason) {
+    private SoapObject createOsuRequest(String requestReason) {
         // Construct sppPostDevData element
         SoapObject request = new SoapObject(NAMESPACE_NS, WIFI_SOAP_POST_DEV_DATA);
         AttributeInfo attributeInfo = new AttributeInfo();
@@ -1148,15 +1148,15 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
         //New moContainer
         //Construct moContainer
-        SoapObject moInfo = getMoInfo();
-        SoapObject moDetail = getMoDetail();
+        SoapObject moInfo = createDevInfo();
+        SoapObject moDetail = createDevDetail();
         request.addSoapObject(moInfo);
         request.addSoapObject(moDetail);
 
         return request;
     }
 
-    private SoapObject getSubRemediation(String requestReason) {
+    private SoapObject createRemediationRequest(String serverUrl, String requestReason) {
         // Construct sppPostDevData element
         SoapObject request = new SoapObject(NAMESPACE_NS, WIFI_SOAP_POST_DEV_DATA);
         //sppVersion
@@ -1191,22 +1191,22 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
         //New moContainer
         //Construct moContainer
-        SoapObject moInfo = getMoInfo();
-        SoapObject moDetail = getMoDetail();
+        SoapObject moInfo = createDevInfo();
+        SoapObject moDetail = createDevDetail();
         request.addSoapObject(moInfo);
         request.addSoapObject(moDetail);
 
         //New moContainer
         //Construct moContainer
         if (SUB_MO_UPLOAD.equals(requestReason)) {
-            SoapObject moSub = getSubscription();
+            SoapObject moSub = createSubscription(serverUrl);
             request.addSoapObject(moSub);
         }
 
         return request;
     }
 
-    private SoapObject getSubscription() {
+    private SoapObject createSubscription(String serverUrl) {
         WifiPasspointDmTree.CredentialInfo credInfo = mTreeHelper.getCredentialInfo(mSoapTree,
                 mCred.getWifiSpFqdn(), mCred.getCredName());
         SoapObject nsRequest = new SoapObject(NAMESPACE_NS, WIFI_SOAP_MO_CONTAINER);
@@ -1248,7 +1248,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
         SoapObject RemURIRequest = new SoapObject(null, "Node");
         RemURIRequest.addProperty("NodeName", "URI");
-        RemURIRequest.addProperty("Value", mSoapWebUrl);
+        RemURIRequest.addProperty("Value", serverUrl);
         SubscriptionRemediationRequest.addSoapObject(RemURIRequest);
 
         SoapObject certURLRequest = new SoapObject(null, "Node");
@@ -1391,7 +1391,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return nsRequest;
     }
 
-    private SoapObject getPolicyUpdateRequest(String requestReason) {
+    private SoapObject createPolicyUpdateRequest(String serverUrl, String requestReason) {
         // Construct sppPostDevData element
         SoapObject request = new SoapObject(NAMESPACE_NS, WIFI_SOAP_POST_DEV_DATA);
         //sppVersion
@@ -1423,21 +1423,21 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
         //New moContainer
         //Construct moContainer
-        SoapObject moInfo = getMoInfo();
-        SoapObject moDetail = getMoDetail();
+        SoapObject moInfo = createDevInfo();
+        SoapObject moDetail = createDevDetail();
         request.addSoapObject(moInfo);
         request.addSoapObject(moDetail);
 
         //New moContainer
         //Construct moContainer
         if (POL_MO_UPLOAD.equals(requestReason)) {
-            SoapObject subscription = getSubscription();
+            SoapObject subscription = createSubscription(serverUrl);
             request.addSoapObject(subscription);
         }
         return request;
     }
 
-    private SoapObject getUpdateResponse(boolean errorOccur, String reason) {
+    private SoapObject createUpdateResponseRequest(boolean errorOccur, String reason) {
         // Construct sppUpdateResponse element
         SoapObject request = new SoapObject(NAMESPACE_NS, WIFI_SOAP_UPDATE_RESPONSE);
         //sppVersion
@@ -1483,7 +1483,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return request;
     }
 
-    private SoapObject getMoInfo() {
+    private SoapObject createDevInfo() {
         //New moContainer
         //Construct moContainer
         SoapObject dmMoRequest = new SoapObject(NAMESPACE_NS, WIFI_SOAP_MO_CONTAINER);
@@ -1583,10 +1583,10 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return dmMoRequest;
     }
 
-    private SoapObject getMoDetail() {
+    private SoapObject createDevDetail() {
         //New moContainer
         //Construct moContainer
-        Log.d(TAG, "[getMoDetail]");
+        Log.d(TAG, "[createDevDetail]");
         SoapObject dmMoRequest = new SoapObject(NAMESPACE_NS, WIFI_SOAP_MO_CONTAINER);
         AttributeInfo attributeInfo = new AttributeInfo();
         attributeInfo.setName(WIFI_SOAP_MO_URN);
@@ -1952,7 +1952,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 if (enrollDigestPasswordBase64 == null) {
                     enrollDigestPassword = null;
                 } else {
-                    enrollDigestPassword = new String(Base64.decode(enrollDigestPasswordBase64));
+                    enrollDigestPassword = new String(Base64.decode(enrollDigestPasswordBase64, Base64.DEFAULT));
                 }
                 Log.d(TAG, "enrollDigestPassword: " + enrollDigestPassword);
             } else {
@@ -1991,10 +1991,10 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         }
     }
 
-    private String getSPPTreeUri(Document doc, String execution) {
+    private String getSppTreeUri(Document doc, String execution) {
         // ex: spp:addMO
         // spp:managementTreeURI="./Wi-Fi/wi-fi.org/PerProviderSubscription"
-        Log.d(TAG, "[getSPPTreeUri]");
+        Log.d(TAG, "[getSppTreeUri]");
         NodeList list = doc.getElementsByTagNameNS(NAMESPACE_NS, execution);
         if (list.getLength() != 0) {
             Element element = (Element) list.item(0);
@@ -2013,7 +2013,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         // ex: spp:addMO
         // spp:managementTreeURI="./Wi-Fi/wi-fi.org/PerProviderSubscription"
         Log.d(TAG, "[getWifiSpFqdnFromMoTree]");
-        String sppTreeUri = getSPPTreeUri(doc, execution);
+        String sppTreeUri = getSppTreeUri(doc, execution);
 
         if (sppTreeUri != null && !sppTreeUri.isEmpty()) {
             String[] words = sppTreeUri.split("/");
@@ -2102,7 +2102,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return filename;
     }
 
-    private boolean isServerAuthMatched(final X509Certificate x509Cert) {
+    private boolean isServerAuthMatched(X509Certificate x509Cert) {
         boolean result = true;
         try {
             List<String> extKeyUsages = x509Cert.getExtendedKeyUsage();
@@ -2128,7 +2128,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
 
     }
 
-    private boolean isLanguageAndNamesMatched(final X509Certificate x509Cert) {
+    private boolean isLanguageAndNamesMatched(X509Certificate x509Cert) {
         boolean result = false;
 
         if (mOSUFriendlyName == null) {
@@ -2215,7 +2215,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return result;
     }
 
-    private boolean isDnsNameMatched(final X509Certificate x509Cert, final String fqdn,
+    private boolean isDnsNameMatched(X509Certificate x509Cert, String fqdn,
             boolean suffixMatch) {
         boolean result = false;
 
@@ -2254,7 +2254,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
         return result;
     }
 
-    private boolean isLogoTypeExtensionMatched(final X509Certificate x509Cert) {
+    private boolean isLogoTypeExtensionMatched(X509Certificate x509Cert) {
         if (iconHash == null) { // icon doesn't successfully downloaded and
                                 // displayed, bypass the check
             return true;
@@ -2475,10 +2475,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
      * certificates.
      */
     private class PpsmoParser {
-        private static final String TAG = "PasspointPpsmoParser";
 
-        PpsmoParser() {
-        }
+        PpsmoParser() {}
 
         public Document getDocument(String XML) {
 
@@ -2498,9 +2496,9 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 try {
                     doc = (Document) builder.parse(is);
                 } catch (IOException e) {
-                    Log.e(TAG, "getDocument IOException:" + e);
+                    Log.e("PasspointPpsmoParser", "getDocument IOException:" + e);
                 } catch (SAXException e) {
-                    Log.e(TAG, "getDocument SAXException:" + e);
+                    Log.e("PasspointPpsmoParser", "getDocument SAXException:" + e);
                 }
 
                 return doc;
@@ -2656,7 +2654,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
             Log.d(TAG, "[checkClientTrusted] " + arg0 + arg1);
         }
 
-        public void checkServerTrusted(final X509Certificate[] arg0, String arg1)
+        public void checkServerTrusted(X509Certificate[] arg0, String arg1)
                 throws CertificateException {
             Log.d(TAG, "[checkServerTrusted] X509Certificate amount:" + arg0.length
                     + ", cryptography: " + arg1);
@@ -2678,7 +2676,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 tm.checkServerTrusted(arg0, arg0[0].getPublicKey().getAlgorithm());
 
                 // only check on OSU
-                if (mOSUServerUrl != null && !mOSUServerUrl.isEmpty()) {
+                if (mServerUrl != null && !mServerUrl.isEmpty()) {
                     // check SP friendly name and Language code
                     if (!isLanguageAndNamesMatched(arg0[0])) {
                         throw new RuntimeException("id-wfa-hotspot-friendly-name check fail");
@@ -2699,7 +2697,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 boolean suffixMatch;
 
                 // check complete host name on OSU server
-                if (mOSUServerUrl != null && !mOSUServerUrl.isEmpty()) {
+                if (mServerUrl != null && !mServerUrl.isEmpty()) {
                     suffixMatch = false;
                 } else {
                     // check SPFQDN on subscription and policy server
