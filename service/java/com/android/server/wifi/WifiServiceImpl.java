@@ -679,6 +679,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public void setWifiApEnabled(WifiConfiguration wifiConfig, boolean enabled) {
         enforceChangePermission();
+        UserManager um = UserManager.get(mContext);
+        if (um.hasUserRestriction(UserManager.DISALLOW_CONFIG_TETHERING)) {
+            throw new SecurityException("DISALLOW_CONFIG_TETHERING is enabled for this user.");
+        }
         // null wifiConfig is a meaningful input for CMD_SET_AP
         if (wifiConfig == null || wifiConfig.isValid()) {
             mWifiController.obtainMessage(CMD_SET_AP, enabled ? 1 : 0, 0, wifiConfig).sendToTarget();
