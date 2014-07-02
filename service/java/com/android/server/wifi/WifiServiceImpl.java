@@ -211,14 +211,24 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     } else {
                         Slog.e(TAG, "ClientHandler.handleMessage ignoring invalid msg=" + msg);
                         if (msg.what == WifiManager.CONNECT_NETWORK) {
-                            replyFailed(msg, WifiManager.CONNECT_NETWORK_FAILED);
+                            replyFailed(msg, WifiManager.CONNECT_NETWORK_FAILED,
+                                    WifiManager.INVALID_ARGS);
                         } else {
-                            replyFailed(msg, WifiManager.SAVE_NETWORK_FAILED);
+                            replyFailed(msg, WifiManager.SAVE_NETWORK_FAILED,
+                                    WifiManager.INVALID_ARGS);
                         }
                     }
                     break;
                 }
                 case WifiManager.FORGET_NETWORK:
+                    if(isCurrentProfile()) {
+                        mWifiStateMachine.sendMessage(Message.obtain(msg));
+                    } else {
+                        Slog.e(TAG, "Forget is not authorized for user");
+                        replyFailed(msg, WifiManager.FORGET_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                    }
+                    break;
                 case WifiManager.START_WPS:
                 case WifiManager.CANCEL_WPS:
                 case WifiManager.DISABLE_NETWORK:
@@ -233,10 +243,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             }
         }
 
-        private void replyFailed(Message msg, int what) {
+        private void replyFailed(Message msg, int what, int why) {
             Message reply = msg.obtain();
             reply.what = what;
-            reply.arg1 = WifiManager.INVALID_ARGS;
+            reply.arg1 = why;
             try {
                 msg.replyTo.send(reply);
             } catch (RemoteException e) {
@@ -483,9 +493,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         try {
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
                     != AppOpsManager.MODE_ALLOWED) {
-                return new ArrayList<BatchedScanResult>();
-            }
-            if (!isCurrentProfile()) {
                 return new ArrayList<BatchedScanResult>();
             }
             return mWifiStateMachine.syncGetBatchedScanResultsList();
@@ -813,6 +820,12 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public boolean removeNetwork(int netId) {
         enforceChangePermission();
+
+        if(!isCurrentProfile()) {
+            Slog.e(TAG, "Remove is not authorized for user");
+            return false;
+        }
+
         if (mWifiStateMachineChannel != null) {
             return mWifiStateMachine.syncRemoveNetwork(mWifiStateMachineChannel, netId);
         } else {
@@ -881,9 +894,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         try {
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
                     != AppOpsManager.MODE_ALLOWED) {
-                return new ArrayList<ScanResult>();
-            }
-            if (!isCurrentProfile()) {
                 return new ArrayList<ScanResult>();
             }
             return mWifiStateMachine.syncGetScanResultsList();
