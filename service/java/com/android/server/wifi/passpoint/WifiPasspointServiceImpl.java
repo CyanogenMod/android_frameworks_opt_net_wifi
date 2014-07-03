@@ -22,6 +22,7 @@ import android.net.wifi.IWifiManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.passpoint.IWifiPasspointManager;
 import android.net.wifi.passpoint.WifiPasspointPolicy;
+import android.net.wifi.passpoint.WifiPasspointCredential;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
@@ -121,4 +122,23 @@ public final class WifiPasspointServiceImpl extends IWifiPasspointManager.Stub {
         pw.println();
     }
 
+    @Override
+    public List<WifiPasspointCredential> getCredentials() {
+        return mSm.getCredentials();
+    }
+
+    @Override
+    public boolean addCredential(WifiPasspointCredential cred) {
+        return mSm.addCredential(cred);
+    }
+
+    @Override
+    public boolean updateCredential(WifiPasspointCredential cred) {
+        return mSm.updateCredential(cred);
+    }
+
+    @Override
+    public boolean removeCredential(WifiPasspointCredential cred) {
+        return mSm.removeCredential(cred);
+    }
 }

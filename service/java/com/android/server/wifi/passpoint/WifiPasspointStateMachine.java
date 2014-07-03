@@ -114,13 +114,14 @@ public class WifiPasspointStateMachine extends StateMachine {
             String ACTION_NETWORK_REMEDIATION_POLL = "com.android.intent.action.PASSPOINT_REMEDIATION_POLL";
 
     private static final String DEFAULT_LANGUAGE_CODE = "zxx";
+    private static final String R1_NODE_NAME = "WifiPasspointR1";
 
     private String mInterface;
     private WifiNative mWifiNative;
     private int mState = WifiPasspointManager.PASSPOINT_STATE_UNKNOWN;
     private Object mStateLock = new Object();
     private Object mPolicyLock = new Object();
-    private ArrayList<WifiPasspointCredential> mCredentialList = new ArrayList<WifiPasspointCredential>();
+    private ArrayList<WifiPasspointCredential> mCredentialList;
     private ArrayList<WifiPasspointPolicy> mNetworkPolicy = new ArrayList<WifiPasspointPolicy>();
 
     private AsyncChannel mReplyChannel = new AsyncChannel();
@@ -430,7 +431,7 @@ public class WifiPasspointStateMachine extends StateMachine {
             synchronized (mStateLock) {
                 mState = WifiPasspointManager.PASSPOINT_STATE_DISCOVERY;
             }
-            createCredentialList(mWifiTree);
+            mCredentialList = createCredentialList(mWifiTree);
         }
 
         @Override
@@ -1805,7 +1806,7 @@ public class WifiPasspointStateMachine extends StateMachine {
         return false;
     }
 
-    private void createCredentialList(final WifiPasspointDmTree tree) {
+    private ArrayList<WifiPasspointCredential> createCredentialList(final WifiPasspointDmTree tree) {
         Log.d(TAG, "createCredentialFromTree");
         WifiPasspointCredential pc = null;
         String digiCertType = null;
@@ -1813,8 +1814,10 @@ public class WifiPasspointStateMachine extends StateMachine {
         String simEapType = null;
         String digiCredSha256FingerPrint = null;
         String aaaRootCertSha256FingerPrint = null;
+        ArrayList<WifiPasspointCredential> credentialList = new ArrayList<WifiPasspointCredential>();
+
         if (tree == null) {
-            return;
+            return null;
         }
 
         WifiPasspointDmTree.CredentialInfo info = null;
@@ -1834,7 +1837,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                 Map.Entry entry2 = (Map.Entry) credinfoItr.next();
                 info = (WifiPasspointDmTree.CredentialInfo) entry2.getValue();
                 if (info == null) {
-                    return;
+                    return credentialList;
                 }
                 Log.d(TAG, "Credential:" + info.nodeName);
 
@@ -1867,7 +1870,7 @@ public class WifiPasspointStateMachine extends StateMachine {
 
                 if (mKeyStore == null) {
                     Log.d(TAG, "mKeyStore is null");
-                    return;
+                    return credentialList;
                 }
 
                 if (isTtlsCredential(unpwEapType)) {
@@ -1877,7 +1880,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                         && !aaaRootCertSha256FingerPrint.isEmpty()
                         && !mKeyStore.contains(Credentials.WIFI + aaaRootCertSha256FingerPrint)) {
                         Log.e(TAG, "AAA trust root is not existed in keystore");
-                        return;
+                        return credentialList;
                     } else {
                         aaaRootCertSha1FingerPrint = new String(mKeyStore.get(Credentials.WIFI
                                 + aaaRootCertSha256FingerPrint));
@@ -1890,7 +1893,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                             info);
 
                     pc.setUserPreference(isUserPreferred);
-                    mCredentialList.add(pc);
+                    credentialList.add(pc);
                 } else if ("x509v3".equals(digiCertType)) {
                     if (mKeyStore.contains(Credentials.WIFI + digiCredSha256FingerPrint)) {
                         Log.d(TAG, "load client cert");
@@ -1905,7 +1908,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                             if (!mKeyStore
                                     .contains(Credentials.WIFI + aaaRootCertSha256FingerPrint)) {
                                 Log.e(TAG, "AAA trust root is not existed in keystore");
-                                return;
+                                return credentialList;
                             } else {
                                 aaaRootCertSha1FingerPrint = new String(
                                         mKeyStore.get(Credentials.WIFI
@@ -1923,7 +1926,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                                 sp,
                                 info);
                         pc.setUserPreference(isUserPreferred);
-                        mCredentialList.add(pc);
+                        credentialList.add(pc);
                     } else {
                         Log.d(TAG, "client cert doesn't exist");
                     }
@@ -1941,7 +1944,7 @@ public class WifiPasspointStateMachine extends StateMachine {
                             } else {
                                 Log.d(TAG,
                                         "[createCredentialFromMO] fail due to not getting MCC MNC");
-                                return;
+                                return credentialList;
                             }
                         } else {
                             Log.d(TAG, "[createCredentialFromMO] simulate SIM");
@@ -1960,13 +1963,15 @@ public class WifiPasspointStateMachine extends StateMachine {
                                 sp,
                                 info);
                         pc.setUserPreference(isUserPreferred);
-                        mCredentialList.add(pc);
+                        credentialList.add(pc);
                     }
 
                 }
 
             }
         }
+
+        return credentialList;
     }
 
     private WifiConfiguration CreateOpenConfig(WifiPasspointPolicy pp) {
@@ -2177,6 +2182,131 @@ public class WifiPasspointStateMachine extends StateMachine {
             }
         }
 
+    }
+
+    public List<WifiPasspointCredential> getCredentials() {
+        ArrayList<WifiPasspointCredential> result;
+        WifiPasspointDmTree tree = mDmClient.getWifiTree();
+
+        result = createCredentialList(tree);
+        for (Iterator<WifiPasspointCredential> it = result.iterator(); it.hasNext(); ) {
+            WifiPasspointCredential credential = it.next();
+            if(!R1_NODE_NAME.equals(credential.getWifiSpFqdn())) {
+                it.remove();
+            }
+        }
+        return result;
+    }
+
+    public boolean addCredential(WifiPasspointCredential cred) {
+        int result = mDmClient.injectSoapPackage("./Wi-Fi/" + R1_NODE_NAME, "addMO", createR1CredentialPackage(cred));
+        return result == 0 ? true : false;
+    }
+
+    public boolean updateCredential(WifiPasspointCredential cred) {
+        int result = mDmClient.injectSoapPackage("./Wi-Fi/" + R1_NODE_NAME, "updateMO", createR1CredentialPackage(cred));
+        return result == 0 ? true : false;
+    }
+
+    public boolean removeCredential(WifiPasspointCredential cred) {
+        int result = mDmClient.injectSoapPackage("./Wi-Fi/" + R1_NODE_NAME, "deleteMO", createR1CredentialPackage(cred));
+        return result == 0 ? true : false;
+    }
+
+    private String createR1CredentialPackage (WifiPasspointCredential cred) {
+
+        StringBuffer sb = new StringBuffer();
+
+        sb.append("<MgmtTree>")
+        .append("<VerDTD>1.2</VerDTD>")
+        .append("<Node>")
+        .append("<NodeName>PerProviderSubscription</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>" + cred.getCredName() + "</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>Credential</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>UsernamePassword</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>Username</NodeName>")
+        .append("<Value>" + cred.getUserName() + "</Value>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>Password</NodeName>")
+        .append("<Value>" + cred.getPassword() + "</Value>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>EAPMethod</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>EAPType</NodeName>");
+        if ("TTLS".equals(cred.getType())) {
+            sb.append("<Value>21</Value>");
+        } else {
+            sb.append("<Value>null</Value>");
+        }
+        sb.append("<Value>EAP-TTLS</Value>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>DigitalCertificate</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>CertificateType</NodeName>");
+        if ("TLS".equals(cred.getType())) {
+            sb.append("<Value>x509v3</Value>");
+        } else {
+            sb.append("<Value>null</Value>");
+        }
+        sb.append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>CertSHA256Fingerprint</NodeName>")
+        .append("<Value>"+ cred.getClientCertPath() +"</Value>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>Realm</NodeName>")
+        .append("<Value>" + cred.getRealm() + "</Value>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>SIM</NodeName>")
+        .append("<Node>")
+        .append("<Node>")
+        .append("<NodeName>IMSI</NodeName>")
+        .append("<Value>" + cred.getImsi() + "</Value>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>EAPType</NodeName>");
+        if ("SIM".equals(cred.getType())) {
+            sb.append("<Value>18</Value>");
+        } else {
+            sb.append("<Value>null</Value>");
+        }
+        sb.append("</Node>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>HomeSP</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>FQDN</NodeName>")
+        .append("<Value>" + cred.getHomeSpFqdn() + "</Value>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("<Node>")
+        .append("<NodeName>AAAServerTrustRoot</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>RootCA</NodeName>")
+        .append("<Node>")
+        .append("<NodeName>CertSHA256Fingerprint</NodeName>")
+        .append("<Value>" + cred.getCaRootCertPath() + "</Value>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("</Node>")
+        .append("</MgmtTree>");
+
+        return sb.toString();
     }
 
     private String startHttpServer() {
