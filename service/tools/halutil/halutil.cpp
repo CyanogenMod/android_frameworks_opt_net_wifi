@@ -26,6 +26,8 @@ void printMsg(const char *fmt, ...)
 
 
 #define EVENT_BUF_SIZE 2048
+#define MAX_CH_BUF_SIZE  64
+#define MAX_FEATURE_SET  8
 
 static wifi_handle halHandle;
 static wifi_interface_handle *ifaceHandles;
@@ -44,6 +46,7 @@ static int swctest_rssi_min_breaching =  2;
 static int swctest_rssi_ch_threshold =  1;
 static int htest_low_threshold =  90;
 static int htest_high_threshold =  10;
+static wifi_band band = WIFI_BAND_UNSPECIFIED;
 
 mac_addr hotlist_bssids[16];
 int channel_list[16];
@@ -197,8 +200,9 @@ void printSignificantChangeResult(wifi_significant_change_result *res) {
     printMsg("%d\t", result.channel);
 
     for (int i = 0; i < result.num_rssi; i++) {
-        printMsg(",%d", result.rssi[i]);
+        printMsg("%d,", result.rssi[i]);
     }
+    printMsg("\n");
 }
 
 void printScanCapabilities(wifi_gscan_capabilities capabilities)
@@ -220,7 +224,8 @@ void printScanCapabilities(wifi_gscan_capabilities capabilities)
 typedef enum {
     EVENT_TYPE_SCAN_RESULTS_AVAILABLE = 1000,
     EVENT_TYPE_HOTLIST_AP_FOUND = 1001,
-    EVENT_TYPE_SIGNIFICANT_WIFI_CHANGE = 1002
+    EVENT_TYPE_SIGNIFICANT_WIFI_CHANGE = 1002,
+    EVENT_TYPE_RTT_RESULTS = 1003
 } EventType;
 
 typedef struct {
@@ -273,9 +278,19 @@ static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
     putEventInCache(EVENT_TYPE_SCAN_RESULTS_AVAILABLE, "New scan results are available");
 }
 
+static void on_scan_event(wifi_scan_event event, unsigned status) {
+
+    if(event == WIFI_SCAN_BUFFER_FULL)
+        printMsg("Received scan complete event - WIFI_SCAN_BUFFER_FULL \n");
+    else if(event == WIFI_SCAN_COMPLETE)
+        printMsg("Received scan complete event  - WIFI_SCAN_COMPLETE\n");
+}
+
 static int scanCmdId;
 static int hotlistCmdId;
 static int significantChangeCmdId;
+static int rttCmdId;
+
 
 static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
                        int max_ap_per_scan, int base_period, int report_threshold) {
@@ -316,21 +331,23 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
       params.max_ap_per_scan = max_ap_per_scan;
       params.base_period = base_period;                      // 5 second
       params.report_threshold = report_threshold;
-      params.num_buckets = 2;
+      params.num_buckets = 3;
 
       params.buckets[0].bucket = 0;
       params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
       params.buckets[0].period = 5000;                // 5 second
-      params.buckets[0].num_channels = 3;
+      params.buckets[0].report_events = 0;
+      params.buckets[0].num_channels = 2;
 
       params.buckets[0].channels[0].channel = 2412;
       params.buckets[0].channels[1].channel = 2437;
-      params.buckets[0].channels[2].channel = 2462;
 
       params.buckets[1].bucket = 1;
-      params.buckets[1].band = WIFI_BAND_UNSPECIFIED;
+      params.buckets[1].band = WIFI_BAND_A;
       params.buckets[1].period = 10000;               // 10 second
-      params.buckets[1].num_channels = 8;
+      params.buckets[1].report_events = 1;
+      params.buckets[1].num_channels = 8;   // driver should ignore list since band is specified
+
 
       params.buckets[1].channels[0].channel = 5180;
       params.buckets[1].channels[1].channel = 5200;
@@ -341,11 +358,20 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
       params.buckets[1].channels[6].channel = 5805;
       params.buckets[1].channels[7].channel = 5825;
 
+      params.buckets[2].bucket = 2;
+      params.buckets[2].band = WIFI_BAND_UNSPECIFIED;
+      params.buckets[2].period = 15000;                // 15 second
+      params.buckets[2].report_events = 2;
+      params.buckets[2].num_channels = 1;
+
+      params.buckets[2].channels[0].channel = 2462;
+
     }
 
     wifi_scan_result_handler handler;
     memset(&handler, 0, sizeof(handler));
     handler.on_scan_results_available = pfnOnResultsAvailable;
+    handler.on_scan_event = on_scan_event;
 
     scanCmdId = getNewCmdId();
     printMsg("Starting scan --->\n");
@@ -353,37 +379,12 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
 }
 
 static void stopScan() {
-    if (scanCmdId != 0) {
-        wifi_stop_gscan(scanCmdId, wlan0Handle);
-        scanCmdId = 0;
-    } else {
-        wifi_scan_cmd_params params;
-        memset(&params, 0, sizeof(params));
-        /* create a schedule to scan channels 1, 6, 11 every 5 second */
+    wifi_request_id id = scanCmdId;
+    if (id == 0)
+        id = -1;
 
-        params.max_ap_per_scan = 10;
-        params.base_period = 5000;                      // 5 second
-        params.report_threshold = 80;
-        params.num_buckets = 1;
-
-        params.buckets[0].bucket = 0;
-        params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
-        params.buckets[0].period = 5000;                // 5 second
-        params.buckets[0].num_channels = 3;
-
-        params.buckets[0].channels[0].channel = 2412;
-        params.buckets[0].channels[1].channel = 2437;
-        params.buckets[0].channels[2].channel = 2462;
-
-        wifi_scan_result_handler handler;
-        memset(&handler, 0, sizeof(handler));
-        handler.on_scan_results_available = &onScanResultsAvailable;
-
-        scanCmdId = getNewCmdId();
-        if (wifi_start_gscan(scanCmdId, wlan0Handle, params, handler) == WIFI_SUCCESS) {
-            wifi_stop_gscan(scanCmdId, wlan0Handle);
-        }
-    }
+    wifi_stop_gscan(id, wlan0Handle);
+    scanCmdId = 0;
 }
 
 static void retrieveScanResults() {
@@ -406,6 +407,21 @@ static void retrieveScanResults() {
     }
 }
 
+static void onRTTResults (wifi_request_id id, unsigned num_results, wifi_rtt_result result[]) {
+    printMsg("RTT results!!\n");
+    for (unsigned i = 0; i < num_results; i++) {
+        printMsg("%02x:%02x:%02x:%02x:%02x:%02x\n", result[i].addr[0], result[i].addr[1],
+                result[i].addr[2], result[i].addr[3], result[i].addr[4], result[i].addr[5]);
+        printMsg("RSSI %d    rssi spread %d    ts %lld\n", result[i].rssi, result[i].rssi_spread,
+                result[i].ts);
+        printMsg("rtt %d    rtt_sd %d   rtt_spread %d\n", result[i].rtt,
+               result[i].rtt_sd, result[i].rtt_spread);
+        printMsg("distance %d    distance_sd %d   distance_spread %d\n", result[i].distance,
+               result[i].distance_sd, result[i].distance_spread);
+    }
+    putEventInCache(EVENT_TYPE_RTT_RESULTS, "RTT results");
+}
+
 static void onHotlistAPFound(wifi_request_id id, unsigned num_results, wifi_scan_result *results) {
 
     printMsg("Found hotlist APs\n");
@@ -414,6 +430,67 @@ static void onHotlistAPFound(wifi_request_id id, unsigned num_results, wifi_scan
     }
     putEventInCache(EVENT_TYPE_HOTLIST_AP_FOUND, "Found a hotlist AP");
 }
+
+static wifi_error setRTTAPsUsingScanResult(wifi_rtt_config *params, unsigned *num_ap){
+    printMsg("testRTT Scan started, waiting for event ...\n");
+    EventInfo info;
+    memset(&info, 0, sizeof(info));
+    getEventFromCache(info);
+
+    wifi_scan_result results[256];
+    memset(results, 0, sizeof(wifi_scan_result) * 256);
+
+    printMsg("Retrieving scan results for RTT setting\n");
+    int num_results = 256;
+    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
+    if (result < 0) {
+        printMsg("failed to fetch scan results : %d\n", result);
+        return WIFI_ERROR_UNKNOWN;
+    } else {
+        printMsg("fetched %d scan results\n", num_results);
+    }
+
+    for (int i = 0; i < num_results; i++) {
+        printScanResult(results[i]);
+    }
+    // Hardcoded values as of now
+    for (int i = 0; i < stest_max_ap; i++) {
+        memcpy(params[i].addr, results[i].bssid, sizeof(mac_addr));
+        params[i].type  = RTT_TYPE_1_SIDED;
+        params[i].channel.center_freq = results[i].channel;
+        params[i].channel.width = WIFI_CHAN_WIDTH_20;
+        params[i].peer  = WIFI_PEER_INVALID;
+        params[i].continuous = 1;
+        params[i].interval = 1000;
+        params[i].num_samples_per_measurement = 2;
+        params[i].num_retries_per_measurement = 2;
+    }
+    *num_ap = stest_max_ap;
+    return WIFI_SUCCESS;
+}
+
+static wifi_error setRTTAPs() {
+    wifi_rtt_config params[10];
+    unsigned num_ap = 0;
+    memset(params, 0, sizeof(wifi_rtt_config) * 10);
+    setRTTAPsUsingScanResult(params, &num_ap);
+
+    printMsg("RTT APs\n");
+    for (unsigned i = 0; i < num_ap; i++) {
+        mac_addr &addr = params[i].addr;
+        printMsg("%02x:%02x:%02x:%02x:%02x:%02x\n", addr[0],
+                addr[1], addr[2], addr[3], addr[4], addr[5]);
+    }
+
+    wifi_rtt_event_handler handler;
+    handler.on_rtt_results = &onRTTResults;
+
+    rttCmdId = getNewCmdId();
+    printMsg("Setting RTT CFG\n");
+    return wifi_rtt_range_request(rttCmdId, wlan0Handle, num_ap,
+             params, handler);
+}
+
 
 static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params){
     printMsg("testHotlistAPs Scan started, waiting for event ...\n");
@@ -515,6 +592,40 @@ static void testHotlistAPs(){
       resetHotlistAPs();
     } else {
       printMsg("Could not set AP hotlist : %d\n", result);
+    }
+
+}
+
+static void testRTTAPs(){
+
+    EventInfo info;
+    memset(&info, 0, sizeof(info));
+
+    printMsg("starting RTT test\n");
+    if (!startScan(&onScanResultsAvailable, stest_max_ap,stest_base_period, stest_threshold)) {
+      printMsg("RTT test failed to start scan!!\n");
+      return;
+    }
+
+    int result = setRTTAPs();
+    if (result == WIFI_SUCCESS) {
+      printMsg("Waiting for RTT results\n");
+      while (true) {
+        memset(&info, 0, sizeof(info));
+        getEventFromCache(info);
+
+        if (info.type == EVENT_TYPE_SCAN_RESULTS_AVAILABLE) {
+            retrieveScanResults();
+        } else if (info.type == EVENT_TYPE_RTT_RESULTS) {
+            printMsg("RTT results!");
+            if (--max_event_wait > 0)
+              printMsg(", waiting for more event ::%d\n", max_event_wait);
+            else
+              break;
+        }
+      }
+    } else {
+      printMsg("Could not set setRTTAPs : %d\n", result);
     }
 
 }
@@ -732,6 +843,21 @@ void readTestOptions(int argc, char *argv[]){
          channel_list[num_channels] = atoi(argv[j]);
        }
        j -= 1;
+     } else if ((strcmp(argv[j], "-get_ch_list") == 0)) {
+       if(strcmp(argv[j + 1], "a") == 0) {
+           band = WIFI_BAND_A_WITH_DFS;
+       } else if(strcmp(argv[j + 1], "bg") == 0) {
+           band = WIFI_BAND_BG;
+       } else if(strcmp(argv[j + 1], "abg") == 0) {
+           band = WIFI_BAND_ABG_WITH_DFS;
+       } else if(strcmp(argv[j + 1], "a_nodfs") == 0) {
+           band = WIFI_BAND_A;
+       } else if(strcmp(argv[j + 1], "dfs") == 0) {
+           band = WIFI_BAND_A_DFS;
+       } else if(strcmp(argv[j + 1], "abg_nodfs") == 0) {
+           band = WIFI_BAND_ABG;
+       }
+       j++;
      }
 
    }
@@ -744,6 +870,25 @@ void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
     memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
 }
 
+void printFeatureListBitMask(void)
+{
+    printMsg("WIFI_FEATURE_INFRA              0x0001      - Basic infrastructure mode\n");
+    printMsg("WIFI_FEATURE_INFRA_5G           0x0002      - Support for 5 GHz Band\n");
+    printMsg("WIFI_FEATURE_HOTSPOT            0x0004      - Support for GAS/ANQP\n");
+    printMsg("WIFI_FEATURE_P2P                0x0008      - Wifi-Direct\n");
+    printMsg("WIFI_FEATURE_SOFT_AP            0x0010      - Soft AP\n");
+    printMsg("WIFI_FEATURE_GSCAN              0x0020      - Google-Scan APIs\n");
+    printMsg("WIFI_FEATURE_NAN                0x0040      - Neighbor Awareness Networking\n");
+    printMsg("WIFI_FEATURE_D2D_RTT            0x0080      - Device-to-device RTT\n");
+    printMsg("WIFI_FEATURE_D2AP_RTT           0x0100      - Device-to-AP RTT\n");
+    printMsg("WIFI_FEATURE_BATCH_SCAN         0x0200      - Batched Scan (legacy)\n");
+    printMsg("WIFI_FEATURE_PNO                0x0400      - Preferred network offload\n");
+    printMsg("WIFI_FEATURE_ADDITIONAL_STA     0x0800      - Support for two STAs\n");
+    printMsg("WIFI_FEATURE_TDLS               0x1000      - Tunnel directed link setup\n");
+    printMsg("WIFI_FEATURE_TDLS_OFFCHANNEL    0x2000      - Support for TDLS off channel\n");
+    printMsg("WIFI_FEATURE_EPR                0x4000      - Enhanced power reporting\n");
+    printMsg("WIFI_FEATURE_AP_STA             0x8000      - Support for AP STA Concurrency\n");
+}
 void printLinkStats(wifi_iface_stat link_stat)
 {
     printMsg("printing link layer statistics:\n");
@@ -781,6 +926,52 @@ void getLinkStats(void)
     }
 }
 
+void getChannelList(void)
+{
+    wifi_channel channel[MAX_CH_BUF_SIZE];
+    int num_channels = 0, i;
+
+    int result = wifi_get_valid_channels(wlan0Handle, band, MAX_CH_BUF_SIZE,
+                     channel, &num_channels);
+    printMsg("Number of channels - %d\nChannel List:\n",num_channels);
+    for (i = 0; i < num_channels; i++) {
+        printMsg("%d MHz\n", channel[i]);
+    }
+}
+
+void getFeatureSet(void)
+{
+    feature_set set;
+    int result = wifi_get_supported_feature_set(wlan0Handle, &set);
+
+    if (result < 0) {
+        printMsg("Error %d\n",result);
+        return;
+    }
+    printFeatureListBitMask();
+    printMsg("Supported feature set bit mask - %x\n", set);
+    return;
+}
+
+void getFeatureSetMatrix(void)
+{
+    feature_set set[MAX_FEATURE_SET];
+    int size;
+
+    int result = wifi_get_concurrency_matrix(wlan0Handle, MAX_FEATURE_SET, set, &size);
+
+    if (result < 0) {
+        printMsg("Error %d\n",result);
+        return;
+    }
+    printFeatureListBitMask();
+    for (int i = 0; i < size; i++)
+        printMsg("Concurrent feature set - %x\n", set[i]);
+    return;
+}
+
+
+
 int main(int argc, char *argv[]) {
 
     pthread_mutex_init(&printMutex, NULL);
@@ -817,7 +1008,10 @@ int main(int argc, char *argv[]) {
         printf(" -low_th          Low threshold for hotlist APs\n");
         printf(" -hight_th        High threshold for hotlist APs\n");
         printf(" -hotlist_bssids  BSSIDs for hotlist test\n");
-        printf(" -stats  	  print link layer statistics\n");
+        printf(" -stats       print link layer statistics\n");
+        printf(" -get_ch_list <a/bg/abg/a_nodfs/abg_nodfs/dfs>  Get channel list\n");
+        printf(" -get_feature_set  Get Feature set\n");
+        printf(" -get_feature_matrix  Get concurrent feature matrix\n");
         goto cleanup;
     }
 
@@ -829,11 +1023,22 @@ int main(int argc, char *argv[]) {
         trackSignificantChange();
     }else if (strcmp(argv[1], "-ss") == 0) {
         testStopScan();
-    }else if(strcmp(argv[1], "-h") == 0) {
+    }else if ((strcmp(argv[1], "-h") == 0)  ||
+              (strcmp(argv[1], "-hotlist_bssids") == 0)) {
         readTestOptions(argc, argv);
         testHotlistAPs();
     }else if (strcmp(argv[1], "-stats") == 0) {
-	getLinkStats();
+        getLinkStats();
+    } else if ((strcmp(argv[1], "-rtt") == 0)) {
+        readTestOptions(argc, argv);
+        testRTTAPs();
+    } else if ((strcmp(argv[1], "-get_ch_list") == 0)) {
+        readTestOptions(argc, argv);
+        getChannelList();
+    } else if ((strcmp(argv[1], "-get_feature_set") == 0)) {
+        getFeatureSet();
+    } else if ((strcmp(argv[1], "-get_feature_matrix") == 0)) {
+        getFeatureSetMatrix();
     }
 
 cleanup:

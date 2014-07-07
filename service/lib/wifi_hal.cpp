@@ -16,11 +16,12 @@ void wifi_get_error_info(wifi_error err, const char **msg) {
     *msg = NULL;
 }
 
-wifi_error wifi_get_supported_feature_set(wifi_handle handle, feature_set *set) {
+wifi_error wifi_get_supported_feature_set(wifi_interface_handle handle, feature_set *set) {
     return WIFI_ERROR_UNINITIALIZED;
 }
 
-wifi_error wifi_get_concurrency_matrix(wifi_handle handle, int *size, feature_set **matrix) {
+wifi_error wifi_get_concurrency_matrix(wifi_interface_handle handle, int max_size,
+        feature_set *matrix, int *size) {
     return WIFI_ERROR_UNINITIALIZED;
 }
 
@@ -108,4 +109,15 @@ wifi_error wifi_clear_link_stats(wifi_interface_handle iface,
     return WIFI_ERROR_UNINITIALIZED;
 }
 
+/* API to request RTT measurement */
+wifi_error wifi_rtt_range_request(wifi_request_id id, wifi_interface_handle iface,
+        unsigned num_rtt_config, wifi_rtt_config rtt_config[], wifi_rtt_event_handler handler) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+/* API to cancel RTT measurements */
+wifi_error wifi_rtt_range_cancel(wifi_request_id id,  wifi_interface_handle iface,
+        unsigned num_devices, mac_addr addr[]) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
 
