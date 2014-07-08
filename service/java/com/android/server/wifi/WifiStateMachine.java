@@ -5117,6 +5117,7 @@ public class WifiStateMachine extends StateMachine {
                     result = mWifiConfigStore.saveNetwork(config);
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
+                        broadcastWifiCredentialChanged(WifiManager.WIFI_CREDENTIAL_SAVED, config);
                         if (VDBG) {
                             loge("Success save network nid="
                                     + Integer.toString(result.getNetworkId())
@@ -5137,6 +5138,8 @@ public class WifiStateMachine extends StateMachine {
                 case WifiManager.FORGET_NETWORK:
                     if (mWifiConfigStore.forgetNetwork(message.arg1)) {
                         replyToMessage(message, WifiManager.FORGET_NETWORK_SUCCEEDED);
+                        broadcastWifiCredentialChanged(WifiManager.WIFI_CREDENTIAL_FORGOT,
+                                (WifiConfiguration) message.obj);
                     } else {
                         loge("Failed to forget network");
                         replyToMessage(message, WifiManager.FORGET_NETWORK_FAILED,
@@ -5443,6 +5446,7 @@ public class WifiStateMachine extends StateMachine {
 
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
+                        broadcastWifiCredentialChanged(WifiManager.WIFI_CREDENTIAL_SAVED, config);
                         if (VDBG) {
                             loge("Success save network l2 nid="
                                     + Integer.toString(result.getNetworkId())
@@ -6421,27 +6425,26 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
-    //State machine initiated requests can have replyTo set to null indicating
-    //there are no recepients, we ignore those reply actions
+    /**
+     * State machine initiated requests can have replyTo set to null indicating
+     * there are no recepients, we ignore those reply actions.
+     */
     private void replyToMessage(Message msg, int what) {
         if (msg.replyTo == null) return;
-        Message dstMsg = obtainMessageWithArg2(msg);
-        dstMsg.what = what;
+        Message dstMsg = obtainMessageWithWhatAndArg2(msg, what);
         mReplyChannel.replyToMessage(msg, dstMsg);
     }
 
     private void replyToMessage(Message msg, int what, int arg1) {
         if (msg.replyTo == null) return;
-        Message dstMsg = obtainMessageWithArg2(msg);
-        dstMsg.what = what;
+        Message dstMsg = obtainMessageWithWhatAndArg2(msg, what);
         dstMsg.arg1 = arg1;
         mReplyChannel.replyToMessage(msg, dstMsg);
     }
 
     private void replyToMessage(Message msg, int what, Object obj) {
         if (msg.replyTo == null) return;
-        Message dstMsg = obtainMessageWithArg2(msg);
-        dstMsg.what = what;
+        Message dstMsg = obtainMessageWithWhatAndArg2(msg, what);
         dstMsg.obj = obj;
         mReplyChannel.replyToMessage(msg, dstMsg);
     }
@@ -6449,12 +6452,28 @@ public class WifiStateMachine extends StateMachine {
     /**
      * arg2 on the source message has a unique id that needs to be retained in replies
      * to match the request
-
-     * see WifiManager for details
+     * <p>see WifiManager for details
      */
-    private Message obtainMessageWithArg2(Message srcMsg) {
+    private Message obtainMessageWithWhatAndArg2(Message srcMsg, int what) {
         Message msg = Message.obtain();
+        msg.what = what;
         msg.arg2 = srcMsg.arg2;
         return msg;
+    }
+
+    /**
+     * @param wifiCredentialEventType WIFI_CREDENTIAL_SAVED or WIFI_CREDENTIAL_FORGOT
+     * @param msg Must have a WifiConfiguration obj to succeed
+     */
+    private void broadcastWifiCredentialChanged(int wifiCredentialEventType,
+            WifiConfiguration config) {
+        if (config != null && config.preSharedKey != null) {
+            Intent intent = new Intent(WifiManager.WIFI_CREDENTIAL_CHANGED_ACTION);
+            intent.putExtra(WifiManager.EXTRA_WIFI_CREDENTIAL_SSID, config.SSID);
+            intent.putExtra(WifiManager.EXTRA_WIFI_CREDENTIAL_EVENT_TYPE,
+                    wifiCredentialEventType);
+            mContext.sendBroadcastAsUser(intent, UserHandle.CURRENT,
+                    android.Manifest.permission.RECEIVE_WIFI_CREDENTIAL_CHANGE);
+        }
     }
 }
