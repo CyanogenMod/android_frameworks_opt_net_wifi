@@ -228,9 +228,8 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     /* clients(application) information list. */
     private HashMap<Messenger, ClientInfo> mClientInfoList = new HashMap<Messenger, ClientInfo>();
 
-    /* Is chosen as a unique range to avoid conflict with
-       the range defined in Tethering.java */
-    private static final String[] DHCP_RANGE = {"192.168.49.2", "192.168.49.254"};
+    /* Is chosen as a unique address to avoid conflict with
+       the ranges defined in Tethering.java */
     private static final String SERVER_ADDRESS = "192.168.49.1";
 
     /**
@@ -2192,7 +2191,15 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
             ifcg.setInterfaceUp();
             mNwService.setInterfaceConfig(intf, ifcg);
             /* This starts the dnsmasq server */
-            mNwService.startTethering(DHCP_RANGE);
+            ConnectivityManager cm = (ConnectivityManager) mContext.getSystemService(
+                    Context.CONNECTIVITY_SERVICE);
+            String[] tetheringDhcpRanges = cm.getTetheredDhcpRanges();
+            if (mNwService.isTetheringStarted()) {
+                if (DBG) logd("Stop existing tethering and restart it");
+                mNwService.stopTethering();
+            }
+            mNwService.tetherInterface(intf);
+            mNwService.startTethering(tetheringDhcpRanges);
         } catch (Exception e) {
             loge("Error configuring interface " + intf + ", :" + e);
             return;
@@ -2203,13 +2210,21 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
     private void stopDhcpServer(String intf) {
         try {
+            mNwService.untetherInterface(intf);
+            for (String temp : mNwService.listTetheredInterfaces()) {
+                logd("List all interfaces " + temp);
+                if (temp.compareTo(intf) != 0) {
+                    logd("Found other tethering interfaces, so keep tethering alive");
+                    return;
+                }
+            }
             mNwService.stopTethering();
         } catch (Exception e) {
             loge("Error stopping Dhcp server" + e);
             return;
+        } finally {
+            logd("Stopped Dhcp server");
         }
-
-        logd("Stopped Dhcp server");
     }
 
     private void notifyP2pEnableFailure() {
