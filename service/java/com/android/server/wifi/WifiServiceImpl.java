@@ -220,14 +220,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     break;
                 }
                 case WifiManager.FORGET_NETWORK:
-                    if(isCurrentProfile()) {
-                        mWifiStateMachine.sendMessage(Message.obtain(msg));
-                    } else {
-                        Slog.e(TAG, "Forget is not authorized for user");
-                        replyFailed(msg, WifiManager.FORGET_NETWORK_FAILED,
-                                WifiManager.NOT_AUTHORIZED);
-                    }
-                    break;
                 case WifiManager.START_WPS:
                 case WifiManager.CANCEL_WPS:
                 case WifiManager.DISABLE_NETWORK:
@@ -488,10 +480,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceAccessPermission();
         if (mBatchedScanSupported == false) return new ArrayList<BatchedScanResult>();
         int uid = Binder.getCallingUid();
+        int userId = UserHandle.getCallingUserId();
         long ident = Binder.clearCallingIdentity();
         try {
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
                     != AppOpsManager.MODE_ALLOWED) {
+                return new ArrayList<BatchedScanResult>();
+            }
+            if (!isCurrentProfile(userId)) {
                 return new ArrayList<BatchedScanResult>();
             }
             return mWifiStateMachine.syncGetBatchedScanResultsList();
@@ -833,11 +829,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public boolean removeNetwork(int netId) {
         enforceChangePermission();
 
-        if(!isCurrentProfile()) {
-            Slog.e(TAG, "Remove is not authorized for user");
-            return false;
-        }
-
         if (mWifiStateMachineChannel != null) {
             return mWifiStateMachine.syncRemoveNetwork(mWifiStateMachineChannel, netId);
         } else {
@@ -908,6 +899,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<ScanResult>();
             }
+            if (!isCurrentProfile(userId)) {
+                return new ArrayList<ScanResult>();
+            }
             return mWifiStateMachine.syncGetScanResultsList();
         } finally {
             Binder.restoreCallingIdentity(ident);
@@ -918,8 +912,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      * Returns true if the calling user is the current one or a profile of the
      * current user..
      */
-    private boolean isCurrentProfile() {
-        int userId = UserHandle.getCallingUserId();
+    private boolean isCurrentProfile(int userId) {
         int currentUser = ActivityManager.getCurrentUser();
         if (userId == currentUser) {
             return true;
