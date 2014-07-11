@@ -774,11 +774,13 @@ public class WifiAutoJoinController {
         int aRssiBoost = 0;
         for (ScanResult b : current.scanResultCache.values()) {
 
-            if (b.seen == 0)
+            if ((b.seen == 0) || (b.BSSID == null)) {
                 continue;
+            }
 
-            if (b.BSSID == null)
+            if (b.status != ScanResult.ENABLED) {
                 continue;
+            }
 
             if ((now_ms - b.seen) > age) continue;
 
@@ -836,16 +838,17 @@ public class WifiAutoJoinController {
                 a = b;
             }
         }
-        if (VDBG)  {
-            logDbg("attemptRoam: Found "
-                    + a.BSSID + " rssi=" + a.level + " freq=" + a.frequency
-                    + " Current: " + currentBSSID);
+        if (a != null) {
+            if (VDBG)  {
+                logDbg("attemptRoam: Found "
+                        + a.BSSID + " rssi=" + a.level + " freq=" + a.frequency
+                        + " Current: " + currentBSSID);
+            }
+            if (currentBSSID.equals(a.BSSID)) {
+                return null;
+            }
         }
-        if (currentBSSID.equals(a.BSSID)) {
-            return null;
-        } else {
-            return a;
-        }
+        return a;
     }
 
     /* attemptAutoJoin function implement the core of the a network switching algorithm */
