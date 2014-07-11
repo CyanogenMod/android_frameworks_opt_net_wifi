@@ -220,6 +220,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     break;
                 }
                 case WifiManager.FORGET_NETWORK:
+                    if (isOwner(UserHandle.getUserId(msg.sendingUid))) {
+                        mWifiStateMachine.sendMessage(Message.obtain(msg));
+                    } else {
+                        Slog.e(TAG, "Forget is not authorized for user");
+                        replyFailed(msg, WifiManager.FORGET_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                    }
+                    break;
                 case WifiManager.START_WPS:
                 case WifiManager.CANCEL_WPS:
                 case WifiManager.DISABLE_NETWORK:
@@ -829,6 +837,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public boolean removeNetwork(int netId) {
         enforceChangePermission();
 
+        if (!isOwner(Binder.getCallingUid())) {
+            Slog.e(TAG, "Remove is not authorized for user");
+            return false;
+        }
+
         if (mWifiStateMachineChannel != null) {
             return mWifiStateMachine.syncRemoveNetwork(mWifiStateMachineChannel, netId);
         } else {
@@ -925,6 +938,32 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         }
         return false;
     }
+
+    /**
+     * Returns true if the calling user is the owner or a profile of the owner.
+     *
+     * Note: Should not be called if identity is cleared.
+     */
+    private boolean isOwner(int userId) {
+        long ident = Binder.clearCallingIdentity();
+        try {
+            int ownerUser = UserHandle.USER_OWNER;
+            if (userId == ownerUser) {
+                return true;
+            }
+            List<UserInfo> profiles = UserManager.get(mContext).getProfiles(ownerUser);
+            for (UserInfo profile : profiles) {
+                if (userId == profile.id) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        finally {
+            Binder.restoreCallingIdentity(ident);
+        }
+    }
+
 
     /**
      * Tell the supplicant to persist the current list of configured networks.
