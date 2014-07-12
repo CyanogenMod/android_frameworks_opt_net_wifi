@@ -109,6 +109,11 @@ wifi_error wifi_clear_link_stats(wifi_interface_handle iface,
     return WIFI_ERROR_UNINITIALIZED;
 }
 
+wifi_error wifi_get_valid_channels(wifi_interface_handle handle,
+        int band, int max_channels, wifi_channel *channels, int *num_channels) {
+    return WIFI_ERROR_UNINITIALIZED;
+}
+
 /* API to request RTT measurement */
 wifi_error wifi_rtt_range_request(wifi_request_id id, wifi_interface_handle iface,
         unsigned num_rtt_config, wifi_rtt_config rtt_config[], wifi_rtt_event_handler handler) {
@@ -120,4 +125,3 @@ wifi_error wifi_rtt_range_cancel(wifi_request_id id,  wifi_interface_handle ifac
         unsigned num_devices, mac_addr addr[]) {
     return WIFI_ERROR_NOT_SUPPORTED;
 }
-
