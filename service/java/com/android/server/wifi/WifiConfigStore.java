@@ -1038,7 +1038,7 @@ public class WifiConfigStore extends IpConfigStore {
                         value = line.substring(index + key.length() + 1);
                     }
 
-                    if (networkSSid != null && value != null) {
+                    if (networkSsid != null && value != null) {
                         result.put(networkSsid, value);
                     }
                 }
