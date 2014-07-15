@@ -2226,6 +2226,17 @@ public class WifiConfigStore extends IpConfigStore {
         return linkProperties;
     }
 
+    /** Returns true if a particular config key needs to be quoted when passed to the supplicant. */
+    private boolean enterpriseConfigKeyShouldBeQuoted(String key) {
+        switch (key) {
+            case WifiEnterpriseConfig.EAP_KEY:
+            case WifiEnterpriseConfig.ENGINE_KEY:
+                return false;
+            default:
+                return true;
+        }
+    }
+
     /**
      * Read the variables from the supplicant daemon that are needed to
      * fill in the WifiConfiguration object.
@@ -2381,7 +2392,10 @@ public class WifiConfigStore extends IpConfigStore {
         for (String key : ENTERPRISE_CONFIG_SUPPLICANT_KEYS) {
             value = mWifiNative.getNetworkVariable(netId, key);
             if (!TextUtils.isEmpty(value)) {
-                enterpriseFields.put(key, removeDoubleQuotes(value));
+                if (!enterpriseConfigKeyShouldBeQuoted(key)) {
+                    value = removeDoubleQuotes(value);
+                }
+                enterpriseFields.put(key, value);
             } else {
                 enterpriseFields.put(key, EMPTY_VALUE);
             }
