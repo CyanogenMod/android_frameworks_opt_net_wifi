@@ -252,7 +252,98 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         setLogRecSize(1000);
         setLogOnlyTransitions(false);
-        if (DBG) setDbg(true);
+        if (VDBG) setDbg(true);
+    }
+
+    String smToString(Message message) {
+        String s = "unknown";
+        switch (message.what) {
+            case CMD_ENABLE_PASSPOINT:
+                s = "CMD_ENABLE_PASSPOINT";
+                break;
+            case CMD_DISABLE_PASSPOINT:
+                s = "CMD_DISABLE_PASSPOINT";
+                break;
+            case CMD_GAS_QUERY_TIMEOUT:
+                s = "CMD_GAS_QUERY_TIMEOUT";
+                break;
+            case CMD_START_OSU:
+                s = "CMD_START_OSU";
+                break;
+            case CMD_START_REMEDIATION:
+                s = "CMD_START_REMEDIATION";
+                break;
+            case CMD_START_POLICY_UPDATE:
+                s = "CMD_START_POLICY_UPDATE";
+                break;
+            case CMD_LAUNCH_BROWSER:
+                s = "CMD_LAUNCH_BROWSER";
+                break;
+            case CMD_ENROLL_CERTIFICATE:
+                s = "CMD_ENROLL_CERTIFICATE";
+                break;
+            case CMD_OSU_DONE:
+                s = "CMD_OSU_DONE";
+                break;
+            case CMD_OSU_FAIL:
+                s = "CMD_OSU_FAIL";
+                break;
+            case CMD_REMEDIATION_DONE:
+                s = "CMD_REMEDIATION_DONE";
+                break;
+            case CMD_POLICY_UPDATE_DONE:
+                s = "CMD_POLICY_UPDATE_DONE";
+                break;
+            case CMD_SIM_PROVISION_DONE:
+                s = "CMD_SIM_PROVISION_DONE";
+                break;
+            case CMD_BROWSER_REDIRECTED:
+                s = "CMD_BROWSER_REDIRECTED";
+                break;
+            case CMD_ENROLLMENT_DONE:
+                s = "CMD_ENROLLMENT_DONE";
+                break;
+            case CMD_WIFI_CONNECTED:
+                s = "CMD_WIFI_CONNECTED";
+                break;
+            case CMD_WIFI_DISCONNECTED:
+                s = "CMD_WIFI_DISCONNECTED";
+                break;
+        }
+        return s;
+    }
+
+
+    /**
+     * Return the additional string to be logged by LogRec, default
+     *
+     * @param msg that was processed
+     * @return information to be logged as a String
+     */
+    protected String getLogRecString(Message msg) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(smToString(msg));
+
+        switch (msg.what) {
+            default:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                break;
+        }
+        return sb.toString();
+    }
+
+    private void logStateAndMessage(Message message, String state) {
+        StringBuilder sb = new StringBuilder();
+        if (DBG) {
+            sb.append( " " + state + " " + getLogRecString(message));
+        }
+        if (VDBG && message != null) {
+            sb.append(" " + message.toString());
+        }
+        loge(sb.toString());
     }
 
     public void systemServiceReady() {
@@ -337,8 +428,7 @@ public class WifiPasspointStateMachine extends StateMachine {
     private class DefaultState extends State {
         @Override
         public boolean processMessage(Message message) {
-            if (VDBG)
-                logd(getName() + message.toString());
+            if (DBG) logStateAndMessage(message, getClass().getSimpleName());
             switch (message.what) {
                 case CMD_ENABLE_PASSPOINT:
                     transitionTo(mDiscoveryState);
@@ -374,8 +464,7 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         @Override
         public boolean processMessage(Message message) {
-            if (VDBG)
-                logd(getName() + message.toString());
+            if (DBG) logStateAndMessage(message, getClass().getSimpleName());
             switch (message.what) {
                 case WifiMonitor.GAS_QUERY_START_EVENT:
                     logd("got GAS_QUERY_START_EVENT");
@@ -436,8 +525,7 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         @Override
         public boolean processMessage(Message message) {
-            if (VDBG)
-                logd(getName() + message.toString());
+            if (DBG) logStateAndMessage(message, getClass().getSimpleName());
             switch (message.what) {
                 case CMD_WIFI_CONNECTED:
                     if (mCurrentUsedPolicy == null) {
@@ -487,8 +575,7 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         @Override
         public boolean processMessage(Message message) {
-            if (VDBG)
-                logd(getName() + message.toString());
+            if (DBG) logStateAndMessage(message, getClass().getSimpleName());
             switch (message.what) {
                 case WifiPasspointManager.START_OSU:
                     // fail previous ongoing OSU (if any)
@@ -641,8 +728,7 @@ public class WifiPasspointStateMachine extends StateMachine {
 
         @Override
         public boolean processMessage(Message message) {
-            if (VDBG)
-                logd(getName() + message.toString());
+            if (DBG) logStateAndMessage(message, getClass().getSimpleName());
             switch (message.what) {
                 case CMD_START_REMEDIATION:
                     String serverurl = null;//TODO: get osu server url from app layer
@@ -2104,6 +2190,8 @@ public class WifiPasspointStateMachine extends StateMachine {
             Log.d(TAG, "The passpoint is configed but disconnected, netid:" + netid + " ssid:"
                     + configuredWfg.SSID);
         } else {
+            //mark connection as ephemeral so as to make sure it doesn't get autojoined
+            wfg.ephemeral = true;
             netid = mWifiMgr.addNetwork(wfg);
             Log.d(TAG, "The passpoint is not configed, addNetwork:" + netid + " ssid:" + wfg.SSID);
         }
