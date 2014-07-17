@@ -27,6 +27,7 @@ import android.net.wifi.p2p.WifiP2pProvDiscEvent;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Message;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.server.wifi.p2p.WifiP2pServiceImpl.P2pStatus;
@@ -1082,7 +1083,7 @@ public class WifiMonitor {
     private void handleRequests(String dataString) {
         String SSID = null;
         String requestName = dataString.substring(REQUEST_PREFIX_LEN_STR);
-        if (requestName == null || requestName.length() == 0) {
+        if (TextUtils.isEmpty(requestName)) {
             return;
         }
         if (requestName.startsWith(IDENTITY_STR)) {

@@ -191,12 +191,13 @@ public class WifiConfigStore extends IpConfigStore {
      */
     public static final String OLD_PRIVATE_KEY_NAME = "private_key";
 
-    /** This represents an empty value of an enterprise field.
+    /**
+     * This represents an empty value of an enterprise field.
      * NULL is used at wpa_supplicant to indicate an empty value
      */
     static final String EMPTY_VALUE = "NULL";
 
-    /** Internal use only */
+    // Internal use only
     private static final String[] ENTERPRISE_CONFIG_SUPPLICANT_KEYS = new String[] {
             WifiEnterpriseConfig.EAP_KEY, WifiEnterpriseConfig.PHASE2_KEY,
             WifiEnterpriseConfig.IDENTITY_KEY, WifiEnterpriseConfig.ANON_IDENTITY_KEY,
@@ -211,8 +212,8 @@ public class WifiConfigStore extends IpConfigStore {
     private WifiNative mWifiNative;
     private final KeyStore mKeyStore = KeyStore.getInstance();
 
-    /*
-     * lastSelectedConfiguration is used to remember which network was selected last by the user.
+    /**
+     * The lastSelectedConfiguration is used to remember which network was selected last by the user.
      * The connection to this network may not be successful, as well
      * the selection (i.e. network priority) might not be persisted.
      * WiFi state machine is the only object that sets this variable.
@@ -265,6 +266,10 @@ public class WifiConfigStore extends IpConfigStore {
         if (DBG) log("Loading config and enabling all networks ");
         loadConfiguredNetworks();
         enableAllNetworks();
+    }
+
+    int getConfiguredNetworksSize() {
+        return mConfiguredNetworks.size();
     }
 
     private List<WifiConfiguration> getConfiguredNetworks(Map<String, String> pskMap) {
@@ -2682,8 +2687,9 @@ public class WifiConfigStore extends IpConfigStore {
                     if (enable) {
                         result.status = ScanResult.ENABLED;
                     } else {
-                        //black list the BSSID we we were trying to join so as the Roam state machine
-                        //doesn't pick it up over and over
+                        // Black list the BSSID we we were trying to join
+                        // so as the Roam state machine
+                        // doesn't pick it up over and over
                         result.status = ScanResult.AUTO_ROAM_DISABLED;
                     }
                 }
@@ -2698,6 +2704,7 @@ public class WifiConfigStore extends IpConfigStore {
                 loge("SSID re-enabled for  " + config.configKey() +
                         " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
                         + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
+                //TODO: http://b/16381983 Fix Wifi Network Blacklisting
                 //TODO: really I don't know if re-enabling is right but we
                 //TODO: should err on the side of trying to connect
                 //TODO: even if the attempt will fail
@@ -2712,9 +2719,9 @@ public class WifiConfigStore extends IpConfigStore {
                     loge(" message=" + message);
                 }
                 if (config.selfAdded && config.lastConnected == 0) {
-                    //this is a network we self added, and we never succeeded,
-                    //the user did not create this network and never entered its credentials,
-                    //so we want to be very aggressive in disabling it completely.
+                    // This is a network we self added, and we never succeeded,
+                    // the user did not create this network and never entered its credentials,
+                    // so we want to be very aggressive in disabling it completely.
                     disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
                     config.disableReason = WifiConfiguration.DISABLED_AUTH_FAILURE;
@@ -2722,9 +2729,9 @@ public class WifiConfigStore extends IpConfigStore {
                     if (message != null) {
                         if (message.contains("WRONG_KEY")
                                 || message.contains("AUTH_FAILED")) {
-                            //This configuration has received an auth failure, so disable it
-                            //temporarily because we don't want auto-join to try it out.
-                            //this network may be re-enabled by the "usual"
+                            // This configuration has received an auth failure, so disable it
+                            // temporarily because we don't want auto-join to try it out.
+                            // this network may be re-enabled by the "usual"
                             // enableAllNetwork function
                             //TODO: resolve interpretation of WRONG_KEY and AUTH_FAILURE:
                             //TODO: if we could count on the wrong_ley or auth_failure
@@ -2735,10 +2742,11 @@ public class WifiConfigStore extends IpConfigStore {
                             //TODO: user enter new credentials
                             //TODO: It is not the case however, so instead  of disabling, let's
                             //TODO: start blacklisting hard
+                            //TODO: http://b/16381983 Fix Wifi Network Blacklisting
                             if (config.autoJoinStatus <=
                                     WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
-                                //4 auth failure will reach 128 and disable permanently
-                                //autoJoinStatus: 0 -> 4 -> 20 -> 84 -> 128
+                                // 4 auth failure will reach 128 and disable permanently
+                                // autoJoinStatus: 0 -> 4 -> 20 -> 84 -> 128
                                 config.setAutoJoinStatus(4 + config.autoJoinStatus * 4);
                                 if (config.autoJoinStatus >
                                         WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
