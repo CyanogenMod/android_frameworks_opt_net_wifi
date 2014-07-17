@@ -2952,31 +2952,34 @@ public class WifiStateMachine extends StateMachine {
             }
         }
 
-        if (!newLp.equals(mLinkProperties)) {
+        final boolean linkChanged = !newLp.equals(mLinkProperties);
+        final boolean wasProvisioned = mLinkProperties.isProvisioned();
+        final boolean isProvisioned = newLp.isProvisioned();
+        final DetailedState detailedState = getNetworkDetailedState();
+
+        if (linkChanged) {
             if (DBG) {
                 log("Link configuration changed for netId: " + mLastNetworkId
                         + " old: " + mLinkProperties + "new: " + newLp);
             }
-
-            boolean wasProvisioned = mLinkProperties.isProvisioned();
-            boolean isProvisioned = newLp.isProvisioned();
-
             mLinkProperties = newLp;
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
+        }
 
-            // If we just configured or lost IP configuration, do the needful.
-            // We don't just call handleSuccessfulIpConfiguration() or handleIpConfigurationLost()
-            // here because those should only be called if we're attempting to connect or already
-            // connected, whereas updateLinkProperties can be called at any time.
-            if (!wasProvisioned && isProvisioned) {
-                sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
-            } else if (wasProvisioned && !isProvisioned) {
-                sendMessage(CMD_IP_CONFIGURATION_LOST);
-            } else if (getNetworkDetailedState() == DetailedState.CONNECTED) {
-                // If anything has changed, and we're already connected, send out a notification.
-                sendLinkConfigurationChangedBroadcast();
-            }
-
+        // If we just configured or lost IP configuration, do the needful.
+        // We don't just call handleSuccessfulIpConfiguration() or handleIpConfigurationLost()
+        // here because those should only be called if we're attempting to connect or already
+        // connected, whereas updateLinkProperties can be called at any time.
+        // Also, when roaming we don't pass through a not-provisioned state but
+        // still need to realize we have an IP_CONFIGURATION_SUCCESSFUL.
+        if (isProvisioned &&
+                (!wasProvisioned || detailedState == DetailedState.OBTAINING_IPADDR)) {
+            sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
+        } else if (wasProvisioned && !isProvisioned) {
+            sendMessage(CMD_IP_CONFIGURATION_LOST);
+        } else if (linkChanged && getNetworkDetailedState() == DetailedState.CONNECTED) {
+            // If anything has changed, and we're already connected, send out a notification.
+            sendLinkConfigurationChangedBroadcast();
         }
     }
 
