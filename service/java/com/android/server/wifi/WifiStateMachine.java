@@ -4886,6 +4886,9 @@ public class WifiStateMachine extends StateMachine {
                         // Set the last selected configuration so as to allow the system to
                         // stick the last user choice without persisting the choice
                         mWifiConfigStore.setLastSelectedConfiguration(message.arg1);
+
+                        //remember time of last connection attempt
+                        lastConnectAttempt = System.currentTimeMillis();
                     }
                     //cancel auto roam requests
                     autoRoamSetBSSID(message.arg1, "any");
