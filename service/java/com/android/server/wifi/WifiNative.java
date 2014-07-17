@@ -17,6 +17,7 @@
 package com.android.server.wifi;
 
 import android.net.wifi.BatchedScanSettings;
+import android.net.wifi.RttManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiLinkLayerStats;
 import android.net.wifi.WifiScanner;
@@ -1447,5 +1448,55 @@ public class WifiNative {
     public static native int getSupportedFeatureSetNative();
     synchronized public static int getSupportedFeatureSet() {
         return getSupportedFeatureSetNative();
+    }
+
+    /* Rtt related commands/events */
+    public static interface RttEventHandler {
+        void onRttResults(RttManager.RttResult[] result);
+    }
+
+    private static RttEventHandler sRttEventHandler;
+    private static int sRttCmdId;
+
+    synchronized private static void onRttResults(int id, RttManager.RttResult[] results) {
+        if (id == sRttCmdId) {
+            sRttEventHandler.onRttResults(results);
+            sRttCmdId = 0;
+        } else {
+            Log.d(TAG, "Received event for unknown cmd = " + id + ", current id = " + sRttCmdId);
+        }
+    }
+
+    private static native boolean requestRangeNative(
+            int iface, int id, RttManager.RttParams[] params);
+    private static native boolean cancelRangeRequestNative(
+            int iface, int id, RttManager.RttParams[] params);
+
+    synchronized public static boolean requestRtt(
+            RttManager.RttParams[] params, RttEventHandler handler) {
+        synchronized (mLock) {
+            if (sRttCmdId != 0) {
+                return false;
+            } else {
+                sRttCmdId = getNewCmdIdLocked();
+            }
+            sRttEventHandler = handler;
+            return requestRangeNative(sWlan0Index, sRttCmdId, params);
+        }
+    }
+
+    synchronized public static boolean cancelRtt(RttManager.RttParams[] params) {
+        synchronized(mLock) {
+            if (sRttCmdId == 0) {
+                return false;
+            }
+
+            if (cancelRangeRequestNative(sWlan0Index, sRttCmdId, params)) {
+                sRttEventHandler = null;
+                return true;
+            } else {
+                return false;
+            }
+        }
     }
 }
