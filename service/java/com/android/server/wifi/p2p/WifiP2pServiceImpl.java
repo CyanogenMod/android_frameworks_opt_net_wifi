@@ -575,6 +575,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         private final WifiP2pInfo mWifiP2pInfo = new WifiP2pInfo();
         private WifiP2pGroup mGroup;
         private boolean mIsBTCoexDisabled = false;
+        private boolean mPendingReformGroupIndication = false;
 
         // Saved WifiP2pConfig for an ongoing peer connection. This will never be null.
         // The deviceAddress will be an empty string when the device is inactive
@@ -1730,6 +1731,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         @Override
         public void enter() {
             if (DBG) logd(getName());
+             mPendingReformGroupIndication = false;
         }
 
         @Override
@@ -1741,6 +1743,13 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                 case WifiMonitor.P2P_GO_NEGOTIATION_SUCCESS_EVENT:
                 case WifiMonitor.P2P_GROUP_FORMATION_SUCCESS_EVENT:
                     if (DBG) logd(getName() + " go success");
+                    break;
+                // Action of removing and reforming group will be taken
+                // when we enter in GroupCreatedState
+                case WifiMonitor.P2P_REMOVE_AND_REFORM_GROUP_EVENT:
+                    logd("P2P_REMOVE_AND_REFORM_GROUP_EVENT event received"
+                         + " in GroupNegotiationState state");
+                    mPendingReformGroupIndication = true;
                     break;
                 case WifiMonitor.P2P_GROUP_STARTED_EVENT:
                     mGroup = (WifiP2pGroup) message.obj;
@@ -1946,24 +1955,50 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     }
 
     class GroupCreatedState extends State {
+
+        private boolean handlP2pGroupRestart() {
+            boolean remove = true;
+            if (mWifiNative.p2pGroupRemove(mGroup.getInterface())) {
+                Slog.d(TAG, "Removed P2P group successfully");
+                transitionTo(mOngoingGroupRemovalState);
+            } else {
+                Slog.d(TAG, "Failed to remove the P2P group");
+                handleGroupRemoved();
+                transitionTo(mInactiveState);
+                remove = false;
+            }
+            if (mAutonomousGroup) {
+                Slog.d(TAG, "AutonomousGroup is set, reform P2P Group");
+                sendMessage(WifiP2pManager.CREATE_GROUP);
+            } else {
+                Slog.d(TAG, "AutonomousGroup is not set, will not reform P2P Group");
+            }
+            return remove;
+        }
+
         @Override
         public void enter() {
-            if (DBG) logd(getName());
-            // Once connected, peer config details are invalid
-            mSavedPeerConfig.invalidate();
-            mNetworkInfo.setDetailedState(NetworkInfo.DetailedState.CONNECTED, null, null);
+            logd(getName() + "mPendingReformGroupIndication=" + mPendingReformGroupIndication);
+            if (mPendingReformGroupIndication) {
+                mPendingReformGroupIndication = false;
+                handlP2pGroupRestart();
+            } else {
+                // Once connected, peer config details are invalid
+                mSavedPeerConfig.invalidate();
+                mNetworkInfo.setDetailedState(NetworkInfo.DetailedState.CONNECTED, null, null);
 
-            updateThisDevice(WifiP2pDevice.CONNECTED);
+                updateThisDevice(WifiP2pDevice.CONNECTED);
 
-            //DHCP server has already been started if I am a group owner
-            if (mGroup.isGroupOwner()) {
-                setWifiP2pInfoOnGroupFormation(NetworkUtils.numericToInetAddress(SERVER_ADDRESS));
-            }
+                //DHCP server has already been started if I am a group owner
+                if (mGroup.isGroupOwner()) {
+                    setWifiP2pInfoOnGroupFormation(NetworkUtils.numericToInetAddress(SERVER_ADDRESS));
+                }
 
-            // In case of a negotiation group, connection changed is sent
-            // after a client joins. For autonomous, send now
-            if (mAutonomousGroup) {
-                sendP2pConnectionChangedBroadcast();
+                // In case of a negotiation group, connection changed is sent
+                // after a client joins. For autonomous, send now
+                if (mAutonomousGroup) {
+                    sendP2pConnectionChangedBroadcast();
+                }
             }
         }
 
@@ -2083,6 +2118,20 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     handleGroupRemoved();
                     mWifiNative.p2pFlush();
                     transitionTo(mInactiveState);
+                    break;
+                case WifiMonitor.P2P_REMOVE_AND_REFORM_GROUP_EVENT:
+                    /* First remove p2p group and then restart only if
+                     * autonoums group formation is set to true
+                     */
+                    Slog.d(TAG, "Received event P2P_REMOVE_AND_REFORM_GROUP, remove P2P group");
+                    if (handlP2pGroupRestart()) {
+                        replyToMessage(message,
+                            WifiP2pManager.REMOVE_GROUP_SUCCEEDED);
+                    } else {
+                        replyToMessage(message,
+                            WifiP2pManager.REMOVE_GROUP_FAILED,
+                            WifiP2pManager.ERROR);
+                    }
                     break;
                 case WifiMonitor.P2P_DEVICE_LOST_EVENT:
                     device = (WifiP2pDevice) message.obj;
