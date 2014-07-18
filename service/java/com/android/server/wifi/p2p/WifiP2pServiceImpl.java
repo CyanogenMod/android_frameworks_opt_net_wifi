@@ -1893,6 +1893,12 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         sendP2pConnectionChangedBroadcast();
                         //Turn on power save on client
                         mWifiNative.setP2pPowerSave(mGroup.getInterface(), true);
+                        try {
+                            mNwService.addInterfaceToLocalNetwork(mGroup.getInterface(),
+                                    dhcpResults.linkProperties.getRoutes());
+                        } catch (RemoteException e) {
+                            loge("Failed to add iface to local network " + e);
+                        }
                     } else {
                         loge("DHCP failed");
                         mWifiNative.p2pGroupRemove(mGroup.getInterface());
@@ -2742,6 +2748,11 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
             mDhcpStateMachine.sendMessage(DhcpStateMachine.CMD_STOP_DHCP);
             mDhcpStateMachine.doQuit();
             mDhcpStateMachine = null;
+            try {
+                mNwService.removeInterfaceFromLocalNetwork(mGroup.getInterface());
+            } catch (RemoteException e) {
+                loge("Failed to remove iface from local network " + e);
+            }
         }
 
         try {
