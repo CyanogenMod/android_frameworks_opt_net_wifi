@@ -225,7 +225,8 @@ void printScanCapabilities(wifi_gscan_capabilities capabilities)
     printMsg("max_rssi_sample_size = %d\n", capabilities.max_rssi_sample_size);
     printMsg("max_scan_reporting_threshold = %d\n", capabilities.max_scan_reporting_threshold);
     printMsg("max_hotlist_aps = %d\n", capabilities.max_hotlist_aps);
-    printMsg("max_significant_wifi_change_aps = %d\n", capabilities.max_significant_wifi_change_aps);
+    printMsg("max_significant_wifi_change_aps = %d\n",
+    capabilities.max_significant_wifi_change_aps);
 }
 
 
@@ -790,7 +791,8 @@ static int SelectSignificantAPsFromScanResults() {
     params.num_ap = stest_max_ap;
 
     printMsg("Settting Significant change params rssi_sample_size#%d lost_ap_sample_size#%d"
-        " and min_breaching#%d\n", params.rssi_sample_size, params.lost_ap_sample_size , params.min_breaching);
+        " and min_breaching#%d\n", params.rssi_sample_size,
+        params.lost_ap_sample_size , params.min_breaching);
     printMsg("BSSID\t\t\tHIGH\tLOW\n");
     for (int i = 0; i < params.num_ap; i++) {
         mac_addr &addr = params.ap[i].bssid;
@@ -947,7 +949,9 @@ void readTestOptions(int argc, char *argv[]){
             printf(" high_threshold #-%d\n", htest_high_threshold);
         } else if (strcmp(argv[j], "-hotlist_bssids") == 0 && isxdigit(argv[j+1][0])) {
             j++;
-            for (num_hotlist_bssids = 0; j < argc && isxdigit(argv[j][0]); j++, num_hotlist_bssids++) {
+            for (num_hotlist_bssids = 0;
+                        j < argc && isxdigit(argv[j][0]);
+                        j++, num_hotlist_bssids++) {
                 parseMacAddress(argv[j], hotlist_bssids[num_hotlist_bssids]);
             }
             j -= 1;
@@ -980,10 +984,18 @@ void readTestOptions(int argc, char *argv[]){
 }
 
 wifi_iface_stat link_stat;
+wifi_radio_stat trx_stat;
+wifi_peer_info peer_info;
+wifi_rate_stat rate_stat[32];
 void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
          int num_radios, wifi_radio_stat *radio_stat)
 {
+    int num_peer = iface_stat->num_peers;
+    memcpy(&trx_stat, radio_stat, sizeof(wifi_radio_stat));
     memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
+    memcpy(&peer_info, iface_stat->peer_info, num_peer*sizeof(wifi_peer_info));
+    int num_rate = peer_info.num_rate;
+    memcpy(&rate_stat, iface_stat->peer_info->rate_stats, num_rate*sizeof(wifi_rate_stat));
 }
 
 void printFeatureListBitMask(void)
@@ -1005,10 +1017,48 @@ void printFeatureListBitMask(void)
     printMsg("WIFI_FEATURE_EPR                0x4000      - Enhanced power reporting\n");
     printMsg("WIFI_FEATURE_AP_STA             0x8000      - Support for AP STA Concurrency\n");
 }
-void printLinkStats(wifi_iface_stat link_stat)
+
+char *rates[] = {
+    "1Mbps",
+    "2Mbps",
+	"5.5Mbps",
+	"6Mbps",
+	"9Mbps",
+	"11Mbps",
+	"12Mbps",
+	"18Mbps",
+	"24Mbps",
+	"36Mbps",
+	"48Mbps",
+	"54Mbps",
+	"VHT MCS0 ss1",
+	"VHT MCS1 ss1",
+	"VHT MCS2 ss1",
+	"VHT MCS3 ss1",
+	"VHT MCS4 ss1",
+	"VHT MCS5 ss1",
+	"VHT MCS6 ss1",
+	"VHT MCS7 ss1",
+    "VHT MCS8 ss1",
+	"VHT MCS9 ss1",
+	"VHT MCS0 ss2",
+	"VHT MCS1 ss2",
+	"VHT MCS2 ss2",
+	"VHT MCS3 ss2",
+	"VHT MCS4 ss2",
+	"VHT MCS5 ss2",
+	"VHT MCS6 ss2",
+	"VHT MCS7 ss2",
+	"VHT MCS8 ss2",
+	"VHT MCS9 ss2"
+	};
+
+void printLinkStats(wifi_iface_stat link_stat, wifi_radio_stat trx_stat)
 {
-    printMsg("printing link layer statistics:\n");
+    printMsg("Printing link layer statistics:\n");
+    printMsg("-------------------------------\n");
     printMsg("beacon_rx = %d\n", link_stat.beacon_rx);
+    printMsg("RSSI = %d\n", link_stat.rssi_mgmt);
     printMsg("AC_BE:\n");
     printMsg("txmpdu = %d\n", link_stat.ac[WIFI_AC_BE].tx_mpdu);
     printMsg("rxmpdu = %d\n", link_stat.ac[WIFI_AC_BE].rx_mpdu);
@@ -1026,6 +1076,21 @@ void printLinkStats(wifi_iface_stat link_stat)
     printMsg("txmpdu = %d\n", link_stat.ac[WIFI_AC_VO].tx_mpdu);
     printMsg("rxmpdu = %d\n", link_stat.ac[WIFI_AC_VO].rx_mpdu);
     printMsg("mpdu_lost = %d\n", link_stat.ac[WIFI_AC_VO].mpdu_lost);
+    printMsg("\n");
+    printMsg("Printing radio statistics:\n");
+    printMsg("--------------------------\n");
+    printMsg("on time = %d\n", trx_stat.on_time);
+    printMsg("tx time = %d\n", trx_stat.tx_time);
+    printMsg("rx time = %d\n", trx_stat.rx_time);
+    printMsg("\n");
+    printMsg("Printing rate statistics:\n");
+    printMsg("-------------------------\n");
+    printMsg("%27s %12s %14s %15s\n", "TX",  "RX", "LOST", "RETRIES");
+    for (int i=0; i < 32; i++) {
+        printMsg("%-15s  %10d   %10d    %10d    %10d\n",
+	    rates[i], rate_stat[i].tx_mpdu, rate_stat[i].rx_mpdu,
+	    rate_stat[i].mpdu_lost, rate_stat[i].retries);
+    }
 }
 
 void getLinkStats(void)
@@ -1038,7 +1103,7 @@ void getLinkStats(void)
     if (result < 0) {
         printMsg("failed to get link statistics - %d\n", result);
     } else {
-        printLinkStats(link_stat);
+        printLinkStats(link_stat, trx_stat);
     }
 }
 
