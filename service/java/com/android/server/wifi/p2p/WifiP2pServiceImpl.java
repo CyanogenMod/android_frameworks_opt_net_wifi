@@ -2147,7 +2147,13 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     } else {
                         mSavedPeerConfig.wps.setup = WpsInfo.PBC;
                     }
-                    transitionTo(mUserAuthorizingJoinState);
+                    if (DBG) logd("mGroup.isGroupOwner()" + mGroup.isGroupOwner());
+                    if (mGroup.isGroupOwner()) {
+                        if (DBG) {
+                            logd("Device is GO, going to mUserAuthorizingJoinState");
+                        }
+                        transitionTo(mUserAuthorizingJoinState);
+                    }
                     break;
                 case WifiMonitor.P2P_GROUP_STARTED_EVENT:
                     loge("Duplicate group creation event notice, ignore");
