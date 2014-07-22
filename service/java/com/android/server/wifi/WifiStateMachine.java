@@ -5308,7 +5308,8 @@ public class WifiStateMachine extends StateMachine {
                   break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                     handleSuccessfulIpConfiguration();
-                    transitionTo(mVerifyingLinkState);
+                    sendConnectedState();
+                    transitionTo(mConnectedState);
                     break;
                 case CMD_IP_CONFIGURATION_LOST:
                     handleIpConfigurationLost();
@@ -5652,20 +5653,10 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiWatchdogStateMachine.GOOD_LINK_DETECTED:
                     log(getName() + " GOOD_LINK_DETECTED: transition to captive portal check");
-                    // Send out a broadcast with the CAPTIVE_PORTAL_CHECK to preserve
-                    // existing behaviour. The captive portal check really happens after we
-                    // transition into DetailedState.CONNECTED.
-                    setNetworkDetailedState(DetailedState.CAPTIVE_PORTAL_CHECK);
-                    mWifiConfigStore.updateStatus(mLastNetworkId,
-                            DetailedState.CAPTIVE_PORTAL_CHECK);
-                    sendNetworkStateChangeBroadcast(mLastBssid);
 
                     log(getName() + " GOOD_LINK_DETECTED: transition to CONNECTED");
-                    setNetworkDetailedState(DetailedState.CONNECTED);
-                    mWifiConfigStore.updateStatus(mLastNetworkId, DetailedState.CONNECTED);
-                    sendNetworkStateChangeBroadcast(mLastBssid);
+                    sendConnectedState();
                     transitionTo(mConnectedState);
-
                     break;
                 case CMD_START_SCAN:
                     deferMessage(message);
@@ -5676,6 +5667,20 @@ public class WifiStateMachine extends StateMachine {
             }
             return HANDLED;
         }
+    }
+
+    private void sendConnectedState() {
+        // Send out a broadcast with the CAPTIVE_PORTAL_CHECK to preserve
+        // existing behaviour. The captive portal check really happens after we
+        // transition into DetailedState.CONNECTED.
+        setNetworkDetailedState(DetailedState.CAPTIVE_PORTAL_CHECK);
+        mWifiConfigStore.updateStatus(mLastNetworkId,
+        DetailedState.CAPTIVE_PORTAL_CHECK);
+        sendNetworkStateChangeBroadcast(mLastBssid);
+
+        setNetworkDetailedState(DetailedState.CONNECTED);
+        mWifiConfigStore.updateStatus(mLastNetworkId, DetailedState.CONNECTED);
+        sendNetworkStateChangeBroadcast(mLastBssid);
     }
 
     class RoamingState extends State {
@@ -5788,11 +5793,6 @@ public class WifiStateMachine extends StateMachine {
             switch (message.what) {
                 case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
                     if (DBG) log("Watchdog reports poor link");
-                    /* Report a disconnect */
-                    setNetworkDetailedState(DetailedState.DISCONNECTED);
-                    mWifiConfigStore.updateStatus(mLastNetworkId, DetailedState.DISCONNECTED);
-                    sendNetworkStateChangeBroadcast(mLastBssid);
-
                     transitionTo(mVerifyingLinkState);
                     break;
                 case CMD_UNWANTED_NETWORK:
