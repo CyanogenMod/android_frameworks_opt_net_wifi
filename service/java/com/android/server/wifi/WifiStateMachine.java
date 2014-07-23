@@ -141,6 +141,12 @@ public class WifiStateMachine extends StateMachine {
 
     /* temporary debug flag - best network selection development */
     private static boolean PDBG = false;
+
+    /* debug flag, indicating if handling of ASSOCIATION_REJECT ended up blacklisting
+     * the corresponding BSSID.
+     */
+    private boolean didBlackListBSSID = false;
+
     /**
      * Log with error attribute
      *
@@ -941,7 +947,7 @@ public class WifiStateMachine extends StateMachine {
 
         setInitialState(mInitialState);
 
-        setLogRecSize(3000);
+        setLogRecSize(5000);
         setLogOnlyTransitions(false);
         if (VDBG) setDbg(true);
 
@@ -2122,6 +2128,7 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" ");
                     sb.append(bssid);
                 }
+                sb.append(" blacklist=" + Boolean.toString(didBlackListBSSID));
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
                 sb.append(" ");
@@ -2221,6 +2228,34 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 sb.append(" num=").append(mWifiConfigStore.getConfiguredNetworksSize());
+                break;
+            case DhcpStateMachine.CMD_POST_DHCP_ACTION:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                if (msg.arg1 == DhcpStateMachine.DHCP_SUCCESS) {
+                    sb.append(" OK ");
+                } else if (msg.arg1 == DhcpStateMachine.DHCP_FAILURE) {
+                    sb.append(" FAIL ");
+                }
+                break;
+            case WifiP2pServiceImpl.P2P_CONNECTION_CHANGED:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                if (msg.obj != null) {
+                    NetworkInfo info = (NetworkInfo)msg.obj;
+                    NetworkInfo.State state = info.getState();
+                    NetworkInfo.DetailedState detailedState = info.getDetailedState();
+                    if (state != null) {
+                        sb.append(" st=").append(state);
+                    }
+                    if (detailedState != null) {
+                        sb.append("/").append(detailedState);
+                    }
+                }
                 break;
             default:
                 sb.append(" ");
@@ -4841,6 +4876,7 @@ public class WifiStateMachine extends StateMachine {
 
             switch(message.what) {
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
+                    didBlackListBSSID = false;
                     bssid = (String)message.obj;
                     if (bssid == null || TextUtils.isEmpty(bssid)) {
                         // If BSSID is null, use the target roam BSSID
@@ -4848,7 +4884,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     if (bssid != null) {
                         // If we have a BSSID, tell configStore to black list it
-                        mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, bssid, false);
+                        didBlackListBSSID = mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, bssid, false);
                     }
                     mSupplicantStateTracker.sendMessage(WifiMonitor.ASSOCIATION_REJECTION_EVENT);
                     break;
@@ -5164,9 +5200,10 @@ public class WifiStateMachine extends StateMachine {
                                     + " autojoin " + mFrameworkAutoJoin.get());
                         }
                         if (mFrameworkAutoJoin.get()) {
-                            /* Tell autojoin the user did try to modify and save that network */
+                            /* Tell autojoin the user did try to modify and save that network,
+                             * and interpret the SAVE_NETWORK as a request to connect */
                             mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
-                                    ,true, false);
+                                    ,true, true);
                             mWifiAutoJoinController.attemptAutoJoin();
                         }
                     } else {
@@ -5479,9 +5516,10 @@ public class WifiStateMachine extends StateMachine {
                                     + " autojoin " + mFrameworkAutoJoin.get());
                         }
                         if (mFrameworkAutoJoin.get()) {
-                            /* Tell autojoin the user did try to modify and save that network */
+                            /* Tell autojoin the user did try to modify and save that network.
+                             * and interpret the SAVE network command as a manual request to connect */
                             mWifiAutoJoinController.updateConfigurationHistory(config.networkId,
-                                    true, false);
+                                    true, true);
                             mWifiAutoJoinController.attemptAutoJoin();
                         }
                     } else {

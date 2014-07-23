@@ -30,11 +30,9 @@ import android.os.Process;
 import android.util.Log;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Date;
 
 /**
  * AutoJoin controller is responsible for WiFi Connect decision
@@ -47,7 +45,6 @@ public class WifiAutoJoinController {
     private Context mContext;
     private WifiStateMachine mWifiStateMachine;
     private WifiConfigStore mWifiConfigStore;
-    private WifiTrafficPoller mWifiTrafficPoller;
     private WifiNative mWifiNative;
 
     private NetworkScoreManager scoreManager;
@@ -79,7 +76,6 @@ public class WifiAutoJoinController {
         mContext = c;
         mWifiStateMachine = w;
         mWifiConfigStore = s;
-        mWifiTrafficPoller = t;
         mWifiNative = n;
         mNetworkScoreCache = null;
         scoreManager =
@@ -187,7 +183,7 @@ public class WifiAutoJoinController {
                     }
                     if (wkey != null) {
                         NetworkKey nkey = new NetworkKey(wkey);
-                        //if we don't know this scan result then request a score to Herrevad
+                        //if we don't know this scan result then request a score from the scorer
                         unknownScanResults.add(nkey);
                     }
                 }
@@ -350,6 +346,7 @@ public class WifiAutoJoinController {
 
         if (connect && userTriggered) {
             boolean found = false;
+            int choice = 0;
             List<WifiConfiguration> networks =
                     mWifiConfigStore.getRecentConfiguredNetworks(12000, false);
             if (networks != null) {
@@ -364,14 +361,30 @@ public class WifiAutoJoinController {
                         continue;
                     }
 
-                    int rssi = WifiConfiguration.INVALID_RSSI;
-                    if (config.visibility != null) {
-                        rssi = config.visibility.rssi5;
-                        if (config.visibility.rssi24 > rssi)
-                            rssi = config.visibility.rssi24;
-                    }
-                    if (rssi < -80) {
-                        continue;
+                    // Compare RSSI values so as to evaluate the strength of the user preference
+                    int order = compareWifiConfigurationsRSSI(config, selected, null);
+
+                    if (order < -30) {
+                        // Selected configuration is worse than the visible configuration
+                        // hence register a strong choice so as autojoin cannot override this
+                        // for instance, the user has select a network
+                        // with 1 bar over a network with 3 bars...
+                        choice = 60;
+                    } else if (order < -20) {
+                        choice = 50;
+                    } else if (order < -10) {
+                        choice = 40;
+                    } else if (order < 10) {
+                        // Selected configuration is about same or has a slightly better RSSI
+                        // hence register a weaker choice, here a difference of at least +/-30 in
+                        // RSSI comparison triggered by autoJoin will override the choice
+                        choice = 30;
+                    } else if (order <= 30) {
+                        // Selected configuration is better than the visible configuration
+                        // hence we do not know if the user prefers this configuration strongly
+                        choice = 20;
+                    } else {
+                        choice = 10;
                     }
 
                     // The selected configuration was preferred over a recently seen config
@@ -384,10 +397,13 @@ public class WifiAutoJoinController {
 
                     logDbg("updateConfigurationHistory add a choice " + selected.configKey(true)
                             + " over " + config.configKey(true)
-                            + " RSSI " + Integer.toString(rssi));
+                            + " choice " + Integer.toString(choice));
 
-                    // Add the visible config to the selected's connect choice list
-                    selected.connectChoices.put(config.configKey(true), rssi);
+                    Integer currentChoice = selected.connectChoices.get(config.configKey(true));
+                    if (currentChoice == null || currentChoice.intValue() < choice) {
+                        // Add the visible config to the selected's connect choice list
+                        selected.connectChoices.put(config.configKey(true), choice);
+                    }
 
                     if (config.connectChoices != null) {
                         if (VDBG) {
@@ -407,9 +423,10 @@ public class WifiAutoJoinController {
                     }
                 }
                 if (found == false) {
-                     // Log an error for now but do something stringer later
-                     // we will need a new scan before attempting to connect to this
-                     // configuration anyhow and thus we can process the scan results then
+                     // We haven't found the configuration that the user just selected in our
+                     // scan cache.
+                     // In that case we will need a new scan before attempting to connect to this
+                     // configuration anyhow and thus we can process the scan results then.
                      logDbg("updateConfigurationHistory try to connect to an old network!! : "
                              + selected.configKey());
                 }
@@ -428,63 +445,198 @@ public class WifiAutoJoinController {
         }
     }
 
-    boolean hasConnectChoice(WifiConfiguration source, WifiConfiguration target) {
-        boolean found = false;
-        if (source == null)
-            return false;
-        if (target == null)
-            return false;
-
-        if (source.connectChoices != null) {
-            if ( source.connectChoices.get(target.configKey(true)) != null) {
-                found = true;
-            }
+    int getConnectChoice(WifiConfiguration source, WifiConfiguration target) {
+        Integer choice = null;
+        if (source == null || target == null) {
+            return 0;
         }
 
-        if (source.linkedConfigurations != null) {
+        if (source.connectChoices != null
+                && source.connectChoices.containsKey(target.configKey(true))) {
+            choice = source.connectChoices.get(target.configKey(true));
+        } else if (source.linkedConfigurations != null) {
             for (String key : source.linkedConfigurations.keySet()) {
                 WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(key);
                 if (config != null) {
                     if (config.connectChoices != null) {
-                        if (config.connectChoices.get(target.configKey(true)) != null) {
-                            found = true;
-                        }
+                        choice = config.connectChoices.get(target.configKey(true));
                     }
                 }
             }
-
         }
-        return found;
+
+        if (choice == null) {
+            //We didn't find the connect choice
+            return 0;
+        } else {
+            if (choice.intValue() < 0) {
+                choice = 20; // Compatibility with older files
+            }
+            return choice.intValue();
+        }
     }
 
-    int compareWifiConfigurationsRSSI(WifiConfiguration a, WifiConfiguration b) {
+
+    int getScoreFromVisibility(WifiConfiguration.Visibility visibility, int rssiBoost) {
+        int rssiBoost5 = 0;
+        int score = 0;
+
+        /**
+         * Boost RSSI value of 5GHz bands iff the base value is better than threshold
+         * This implements band preference where we prefer 5GHz if RSSI5 is good enough, whereas
+         * we prefer 2.4GHz otherwise.
+         * Note that 2.4GHz doesn't need a boost since at equal power the RSSI is typically
+         * 6-10 dB higher
+         */
+        if ((visibility.rssi5 + rssiBoost) > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
+            rssiBoost5 = 25;
+        } else if ((visibility.rssi5 + rssiBoost)
+                > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW) {
+            rssiBoost5 = 15;
+        }
+
+        // Select which band to use so as to score a
+        if (visibility.rssi5 + rssiBoost5 > visibility.rssi24) {
+            // Prefer a's 5GHz
+            score = visibility.rssi5 + rssiBoost5 + rssiBoost;
+        } else {
+            // Prefer a's 2.4GHz
+            score = visibility.rssi24 + rssiBoost;
+        }
+
+        return score;
+    }
+
+    // Compare WifiConfiguration by RSSI, and return a comparison value in the range [-50, +50]
+    // The result represents "approximately" an RSSI difference measured in dBM
+    // Adjusted with various parameters:
+    // +) current network gets a +15 boost
+    // +) 5GHz signal, if they are strong enough, get a +15 or +25 boost, representing the
+    // fact that at short range we prefer 5GHz band as it is cleaner of interference and
+    // provides for wider channels
+    int compareWifiConfigurationsRSSI(WifiConfiguration a, WifiConfiguration b,
+                                      String currentConfiguration) {
         int order = 0;
-        int boost5 = 25;
+
+        // Boost used so as to favor current config
+        int aRssiBoost = 0;
+        int bRssiBoost = 0;
+
+        int scoreA;
+        int scoreB;
+
+        // Retrieve the visibility
         WifiConfiguration.Visibility astatus = a.visibility;
         WifiConfiguration.Visibility bstatus = b.visibility;
         if (astatus == null || bstatus == null) {
-            // Error -> cant happen, need to throw en exception
+            // Error visibility wasn't set
             logDbg("compareWifiConfigurations NULL band status!");
             return 0;
         }
-        if ((astatus.rssi5 > -70) && (bstatus.rssi5 == WifiConfiguration.INVALID_RSSI)
-                && ((astatus.rssi5 + boost5) > (bstatus.rssi24))) {
-            /**
-             * a is seen on 5GHz with good RSSI, greater rssi than b
-             * a is of higher priority - descending
-             */
-            order = -1;
-        } else if ((bstatus.rssi5 > -70) && (astatus.rssi5 == WifiConfiguration.INVALID_RSSI)
-                && ((bstatus.rssi5 + boost5) > (bstatus.rssi24))) {
-            /**
-             * b is seen on 5GHz with good RSSI, greater rssi than a
-             * a is of lower priority - ascending
-             */
-            order = 1;
+
+        // Apply Hysteresis, boost RSSI of current configuration
+        if (null != currentConfiguration) {
+            if (a.configKey().equals(currentConfiguration)) {
+                aRssiBoost += 15;
+            } else if (b.configKey().equals(currentConfiguration)) {
+                bRssiBoost += 15;
+            }
         }
+
+        if (VDBG)  {
+            logDbg("compareWifiConfigurationsRSSI: " + a.configKey()
+                    + " " + Integer.toString(astatus.rssi5)
+                    + "," + Integer.toString(astatus.rssi24) + "   "
+                    + " boost=" + Integer.toString(aRssiBoost)
+                    + b.configKey() + " "
+                    + Integer.toString(bstatus.rssi5) + ","
+                    + Integer.toString(bstatus.rssi24)
+                    + " boost=" + Integer.toString(bRssiBoost)
+            );
+        }
+
+        scoreA = getScoreFromVisibility(astatus, aRssiBoost);
+        scoreB = getScoreFromVisibility(bstatus, bRssiBoost);
+
+        // Compare a and b
+        // If a score is higher then a > b and the order is descending (negative)
+        // If b score is higher then a < b and the order is ascending (positive)
+        order = scoreB - scoreA;
+
+        // Normalize the order to [-50, +50]
+        if (order > 50) order = 50;
+        else if (order < -50) order = -50;
+
+        if (VDBG) {
+            String prefer = " = ";
+            if (order > 0) {
+                prefer = " < "; // Ascending
+            } else if (order < 0) {
+                prefer = " > "; // Descending
+            }
+            logDbg("compareWifiConfigurationsRSSI " + a.configKey()
+                    + " rssi=(" + a.visibility.rssi24
+                    + "," + a.visibility.rssi5
+                    + ") num=(" + a.visibility.num24
+                    + "," + a.visibility.num5 + ")"
+                    + prefer + b.configKey()
+                    + " rssi=(" + b.visibility.rssi24
+                    + "," + b.visibility.rssi5
+                    + ") num=(" + b.visibility.num24
+                    + "," + b.visibility.num5 + ")"
+                    + " -> " + order);
+        }
+
         return order;
     }
 
+
+    int compareWifiConfigurationsWithScorer(WifiConfiguration a, WifiConfiguration b) {
+
+        int aRssiBoost = 0;
+        int bRssiBoost = 0;
+
+        // Apply Hysteresis : boost RSSI of current configuration before
+        // looking up the score
+        if (null != mCurrentConfigurationKey) {
+            if (a.configKey().equals(mCurrentConfigurationKey)) {
+                aRssiBoost += 15;
+            } else if (b.configKey().equals(mCurrentConfigurationKey)) {
+                bRssiBoost += 15;
+            }
+        }
+        int scoreA = getConfigNetworkScore(a, 3000, aRssiBoost);
+        int scoreB = getConfigNetworkScore(a, 3000, bRssiBoost);
+
+        // Both configurations need to have a score for the scorer to be used
+        // ...and the scores need to be different:-)
+        if (scoreA == WifiNetworkScoreCache.INVALID_NETWORK_SCORE
+                || scoreB == WifiNetworkScoreCache.INVALID_NETWORK_SCORE) {
+            return 0;
+        }
+
+        if (VDBG) {
+            String prefer = " = ";
+            if (scoreA < scoreB) {
+                prefer = " < ";
+            } if (scoreA > scoreB) {
+                prefer = " > ";
+            }
+            logDbg("compareWifiConfigurationsWithScorer " + a.configKey()
+                    + " rssi=(" + a.visibility.rssi24
+                    + "," + a.visibility.rssi5
+                    + ") num=(" + a.visibility.num24
+                    + "," + a.visibility.num5 + ")"
+                    + prefer + b.configKey()
+                    + " rssi=(" + b.visibility.rssi24
+                    + "," + b.visibility.rssi5
+                    + ") num=(" + b.visibility.num24
+                    + "," + b.visibility.num5 + ")"
+                    + " -> " + Integer.toString(scoreB - scoreA));
+        }
+        // If scoreA > scoreB, the comparison is descending hence the return value is negative
+        return scoreB - scoreA;
+    }
 
     int compareWifiConfigurations(WifiConfiguration a, WifiConfiguration b) {
         int order = 0;
@@ -494,8 +646,8 @@ public class WifiAutoJoinController {
         if ((a.linkedConfigurations != null) && (b.linkedConfigurations != null)
                 && (a.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED)
                 && (b.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED)) {
-            if ((a.linkedConfigurations.get(b.configKey(true))!= null)
-                    && (b.linkedConfigurations.get(a.configKey(true))!= null)) {
+            if ((a.linkedConfigurations.get(b.configKey(true)) != null)
+                    && (b.linkedConfigurations.get(a.configKey(true)) != null)) {
                 linked = true;
             }
         }
@@ -509,170 +661,41 @@ public class WifiAutoJoinController {
         }
         if (b.ephemeral && a.ephemeral == false) {
             if (VDBG) {
-                logDbg("compareWifiConfigurations ephemeral and prefers " +a.configKey()
+                logDbg("compareWifiConfigurations ephemeral and prefers " + a.configKey()
                         + " over " + b.configKey());
             }
             return -1; // a is of higher priority - descending
         }
 
-        int aRssiBoost5 = 0;
-        int bRssiBoost5 = 0;
-        // Apply Hysteresis: boost the RSSI value of the currently connected configuration
-        int aRssiBoost = 0;
-        int bRssiBoost = 0;
-        if (null != mCurrentConfigurationKey) {
-            if (a.configKey().equals(mCurrentConfigurationKey)) {
-                aRssiBoost += 10;
-            } else if (b.configKey().equals(mCurrentConfigurationKey)) {
-                bRssiBoost += 10;
-            }
-        }
-        if (linked) {
-            int ascore;
-            int bscore;
-            // Then we try prefer 5GHz, and try to ignore user's choice
-            WifiConfiguration.Visibility astatus = a.visibility;
-            WifiConfiguration.Visibility bstatus = b.visibility;
-            if (astatus == null || bstatus == null) {
-                // Error
-                logDbg("compareWifiConfigurations NULL band status!");
-                return 0;
-            }
+        // Apply RSSI, in the range [-5, +5]
+        // after band adjustment, +n difference roughly corresponds to +10xn dBm
+        order = order + compareWifiConfigurationsRSSI(a, b, mCurrentConfigurationKey);
 
-            if (VDBG)  {
-                logDbg("compareWifiConfigurations linked: " + Integer.toString(astatus.rssi5)
-                        + "," + Integer.toString(astatus.rssi24) + "   "
-                        + Integer.toString(bstatus.rssi5) + ","
-                        + Integer.toString(bstatus.rssi24));
-            }
+        // If the configurations are not linked, compare by user's choice, only a
+        // very high RSSI difference can then override the choice
+        if (!linked) {
+            int choice;
 
-            /**
-             * Boost RSSI value of 5GHz bands iff the base value is better than -65
-             * This implements band preference where we prefer 5GHz if RSSI5 is good enough, whereas
-             * we prefer 2.4GHz otherwise.
-             * Note that 2.4GHz doesn't need a boost since at equal power the RSSI is 6-10 dB higher
-             */
-            if ((astatus.rssi5+aRssiBoost) > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
-                aRssiBoost5 = 25;
-            }
-            if ((bstatus.rssi5+bRssiBoost) > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
-                bRssiBoost5 = 25;
-            }
-
-            if (astatus.rssi5+aRssiBoost5 > astatus.rssi24) {
-                // Prefer a's 5GHz
-                ascore = astatus.rssi5 + aRssiBoost5 + aRssiBoost;
-            } else {
-                // Prefer a's 2.4GHz
-                ascore = astatus.rssi24 + aRssiBoost;
-            }
-            if (bstatus.rssi5+bRssiBoost5 > bstatus.rssi24) {
-                // Prefer b's 5GHz
-                bscore = bstatus.rssi5 + bRssiBoost5 + bRssiBoost;
-            } else {
-                // Prefer b's 2.4GHz
-                bscore = bstatus.rssi24 + bRssiBoost;
-            }
-            if (ascore > bscore) {
-                // a is seen on 5GHz with good RSSI, greater rssi than b
+            choice = getConnectChoice(a, b);
+            if (choice > 0) {
                 // a is of higher priority - descending
-                order = -10;
+                order = order - choice;
                 if (VDBG) {
-                    logDbg("compareWifiConfigurations linked and prefers " + a.configKey()
-                            + " rssi=(" + a.visibility.rssi24
-                            + "," + a.visibility.rssi5
-                            + ") num=(" + a.visibility.num24
-                            + "," + a.visibility.num5 + ")"
+                    logDbg("compareWifiConfigurations prefers " + a.configKey()
                             + " over " + b.configKey()
-                            + " rssi=(" + b.visibility.rssi24
-                            + "," + b.visibility.rssi5
-                            + ") num=(" + b.visibility.num24
-                            + "," + b.visibility.num5 + ")"
-                            + " due to RSSI");
+                            + " due to user choice order -> " + Integer.toString(order));
                 }
-            } else if (bscore > ascore) {
-                // b is seen on 5GHz with good RSSI, greater rssi than a
+            }
+
+            choice = getConnectChoice(b, a);
+            if (choice > 0) {
                 // a is of lower priority - ascending
-                order = 10;
+                order = order + choice;
                 if (VDBG) {
-                    logDbg("compareWifiConfigurations linked and prefers " + b.configKey()
-                            + " rssi=(" + b.visibility.rssi24
-                            + "," + b.visibility.rssi5
-                            + ") num=(" + b.visibility.num24
-                            + "," + b.visibility.num5 + ")"
-                            + " over " + a.configKey()
-                            + " rssi=(" + a.visibility.rssi24
-                            + "," + a.visibility.rssi5
-                            + ") num=(" + a.visibility.num24
-                            + "," + a.visibility.num5 + ")"
-                            + " due to RSSI");
+                    logDbg("compareWifiConfigurations prefers " + b.configKey() + " over "
+                            + a.configKey() + " due to user choice order ->"
+                            + Integer.toString(order));
                 }
-            }
-        }
-
-        // Compare by user's choice.
-        if (hasConnectChoice(a, b)) {
-            // a is of higher priority - descending
-            order = order -2;
-            if (VDBG)   {
-                logDbg("compareWifiConfigurations prefers -2 " + a.configKey()
-                        + " over " + b.configKey()
-                        + " due to user choice order -> " + Integer.toString(order));
-            }
-        }
-
-        if (hasConnectChoice(b, a)) {
-            // a is of lower priority - ascending
-            order = order + 2;
-            if (VDBG)   {
-                logDbg("compareWifiConfigurations prefers +2 " + b.configKey() + " over "
-                        + a.configKey() + " due to user choice order ->" + Integer.toString(order));
-            }
-        }
-
-        // TODO: http://b/16381983 Fix Wifi Network Blacklisting
-        // TODO: count the number of association rejection
-        // and use this to adjust the order by more than +/- 3
-        if ((a.status == WifiConfiguration.Status.DISABLED)
-                && (a.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT)) {
-            // a is of lower priority - ascending
-            // lower the comparison score a bit
-            order = order +3;
-        }
-        if ((b.status == WifiConfiguration.Status.DISABLED)
-                && (b.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT)) {
-            // a is of higher priority - descending
-            // lower the comparison score a bit
-            order = order -3;
-        }
-
-        if ((lastSelectedConfiguration != null)
-                && a.configKey().equals(lastSelectedConfiguration)) {
-            // a is the last selected configuration, so keep it above connect choices (+/-2) and
-            // above RSSI based selection of linked configuration (+/- 11)
-            // by giving a -11
-            // Additional other factors like BAD RSSI (still to do) and
-            // ASSOC_REJECTION high counts will then still
-            // tip the auto-join to roam
-            order = order - 11;
-            if (VDBG)   {
-                logDbg("compareWifiConfigurations prefers -11 " + a.configKey()
-                        + " over " + b.configKey() + " because a is the last selected -> "
-                        + Integer.toString(order));
-            }
-        } else if ((lastSelectedConfiguration != null)
-                && b.configKey().equals(lastSelectedConfiguration)) {
-            // b is the last selected configuration, so keep it above connect choices (+/-2) and
-            // above RSSI based selection of linked configuration (+/- 11)
-            // by giving a +11
-            // Additional other factors like BAD RSSI (still to do) and
-            // ASSOC_REJECTION high counts will then still
-            // tip the auto-join to roam
-            order = order + 11;
-            if (VDBG)   {
-                logDbg("compareWifiConfigurations prefers +11 " + a.configKey()
-                        + " over " + b.configKey() + " because b is the last selected -> "
-                        + Integer.toString(order));
             }
         }
 
@@ -681,7 +704,7 @@ public class WifiAutoJoinController {
             // we should do this only for recently picked configurations
             if (a.priority > b.priority) {
                 // a is of higher priority - descending
-                if (VDBG)   {
+                if (VDBG) {
                     logDbg("compareWifiConfigurations prefers -1 " + a.configKey() + " over "
                             + b.configKey() + " due to priority");
                 }
@@ -689,18 +712,11 @@ public class WifiAutoJoinController {
                 order = -1;
             } else if (a.priority < b.priority) {
                 // a is of lower priority - ascending
-                if (VDBG)  {
+                if (VDBG) {
                     logDbg("compareWifiConfigurations prefers +1 " + b.configKey() + " over "
                             + a.configKey() + " due to priority");
                 }
-
-              order = 1;
-            } else {
-                if (VDBG)  {
-                    logDbg("compareWifiConfigurations prefers +1 " + b.configKey() + " over "
-                            + a.configKey() + " due to nothing");
-                }
-                order = compareWifiConfigurationsRSSI(a, b); //compare RSSI
+                order = 1;
             }
         }
 
@@ -711,7 +727,7 @@ public class WifiAutoJoinController {
             sorder = " > ";
         }
 
-        if (VDBG)   {
+        if (VDBG) {
             logDbg("compareWifiConfigurations Done: " + a.configKey() + sorder
                     + b.configKey() + " order " + Integer.toString(order));
         }
@@ -763,7 +779,7 @@ public class WifiAutoJoinController {
 
         // Determine which BSSID we want to associate to, taking account
         // relative strength of 5 and 2.4 GHz BSSIDs
-        long now_ms = System.currentTimeMillis();
+        long nowMs = System.currentTimeMillis();
         int bRssiBoost5 = 0;
         int aRssiBoost5 = 0;
         int bRssiBoost = 0;
@@ -771,8 +787,11 @@ public class WifiAutoJoinController {
         for (ScanResult b : current.scanResultCache.values()) {
 
             if ((b.seen == 0) || (b.BSSID == null)
-                    || (now_ms - b.seen) > age
-                    || b.status != ScanResult.ENABLED) {
+                    || (nowMs - b.seen) > age ) {
+                    // TODO: do not apply blacklisting right now so as to leave this
+                    // bug as apparent
+                    // https://b2.corp.google.com/#/issues/16504012
+                    //                    || b.status != ScanResult.ENABLED) {
                 continue;
             }
 
@@ -782,6 +801,7 @@ public class WifiAutoJoinController {
                 continue;
             }
 
+            // Apply hysteresis: we favor the currentBSSID by giving it a boost
             if (currentBSSID.equals(b.BSSID)) {
                 // Reduce the benefit of hysteresis if RSSI <= -75
                 if (b.level <= WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
@@ -798,6 +818,10 @@ public class WifiAutoJoinController {
                     aRssiBoost = +10;
                 }
             }
+
+            // Favor 5GHz: give a boost to 5GHz BSSIDs
+            //   Boost the BSSID if it is on 5GHz, above a threshold
+            //   But penalize it if it is on 5GHz and below threshold
             if (b.is5GHz() && (b.level+bRssiBoost)
                     > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
                 bRssiBoost5 = 25;
@@ -825,6 +849,8 @@ public class WifiAutoJoinController {
                         + "/" + Integer.toString(aRssiBoost5) + " freq=" + a.frequency);
             }
 
+            // Compare the RSSIs after applying the hysteresis boost and the 5GHz
+            // boost if applicable
             if (b.level + bRssiBoost + bRssiBoost5 > a.level +aRssiBoost + aRssiBoost5) {
                 // b is the better BSSID
                 a = b;
@@ -844,9 +870,42 @@ public class WifiAutoJoinController {
     }
 
     /**
+     * getNetworkScore()
+     *
+     * if scorer is present, get the network score of a WifiConfiguration
+     *
+     * Note: this should be merge with setVisibility
+     *
+     * @param config
+     * @return score
+     */
+    int getConfigNetworkScore(WifiConfiguration config, int age, int rssiBoost) {
+
+        int score = WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
+        if (mNetworkScoreCache == null) {
+            return score;
+        }
+
+        // Get current date
+        long nowMs = System.currentTimeMillis();
+
+        // Run thru all cached scan results
+        for (ScanResult result : scanResultCache.values()) {
+            if ((nowMs - result.seen) < age) {
+                int sc = mNetworkScoreCache.getNetworkScore(result, rssiBoost);
+                if (sc > score) {
+                    score = sc;
+                }
+            }
+        }
+        return score;
+    }
+
+    /**
      * attemptAutoJoin() function implements the core of the a network switching algorithm
      */
     void attemptAutoJoin() {
+        boolean didOverride = false;
         int networkSwitchType = AUTO_JOIN_IDLE;
 
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
@@ -897,7 +956,11 @@ public class WifiAutoJoinController {
         }
 
         if (currentConfiguration != null) {
-            if (supplicantNetId != currentConfiguration.networkId) {
+            if (supplicantNetId != currentConfiguration.networkId
+                    //https://b.corp.google.com/issue?id=16484607
+                    //mark this confition as an error only if the mismatched networkId are valid
+                    && supplicantNetId != WifiConfiguration.INVALID_NETWORK_ID
+                    && currentConfiguration.networkId != WifiConfiguration.INVALID_NETWORK_ID) {
                 logDbg("attemptAutoJoin() ERROR wpa_supplicant out of sync nid="
                         + Integer.toString(supplicantNetId) + " WifiStateMachine="
                         + Integer.toString(currentConfiguration.networkId));
@@ -953,7 +1016,7 @@ public class WifiAutoJoinController {
                      * looks like there was a change in the system clock since we black listed, and
                      * timestamp is not meaningful anymore, hence lose it.
                      * this event should be rare enough so that we still want to lose the black list
-                     **/
+                     */
                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 } else {
                     if ((now - config.blackListTimestamp) > loseBlackListHardMilli) {
@@ -1061,7 +1124,56 @@ public class WifiAutoJoinController {
                             + " with " + config.configKey());
                 }
 
+                int scorerOrder = compareWifiConfigurationsWithScorer(candidate, config);
                 int order = compareWifiConfigurations(candidate, config);
+
+                if (scorerOrder * order < 0) {
+                    // For debugging purpose, remember that an override happened
+                    // during that autojoin Attempt
+                    didOverride = true;
+                    candidate.numScorerOverride++;
+                    config.numScorerOverride++;
+                }
+
+                if (scorerOrder != 0) {
+                    // If the scorer came up with a result then use the scorer's result, else use
+                    // the order provided by the base comparison function
+                    order = scorerOrder;
+                }
+
+                // The lastSelectedConfiguration is the configuration the user has manually selected
+                // thru thru WifiPicker, or that a 3rd party app asked us to connect to via the
+                // enableNetwork with disableOthers=true WifiManager API
+                // As this is a direct user choice, we strongly prefer this configuration,
+                // hence give +/-100
+                if ((lastSelectedConfiguration != null)
+                        && candidate.configKey().equals(lastSelectedConfiguration)) {
+                    // candidate is the last selected configuration,
+                    // so keep it above connect choices (+/-60) and
+                    // above RSSI/scorer based selection of linked configuration (+/- 50)
+                    // by reducing order by -100
+                    order = order - 100;
+                    if (VDBG)   {
+                        logDbg("  prefers -100 " + candidate.configKey()
+                                + " over " + config.configKey()
+                                + " because it is the last selected -> "
+                                + Integer.toString(order));
+                    }
+                } else if ((lastSelectedConfiguration != null)
+                        && config.configKey().equals(lastSelectedConfiguration)) {
+                    // config is the last selected configuration,
+                    // so keep it above connect choices (+/-60) and
+                    // above RSSI/scorer based selection of linked configuration (+/- 50)
+                    // by increasing order by +100
+                    order = order + 100;
+                    if (VDBG)   {
+                        logDbg("  prefers +100 " + config.configKey()
+                                + " over " + candidate.configKey()
+                                + " because it is the last selected -> "
+                                + Integer.toString(order));
+                    }
+                }
+
                 if (order > 0) {
                     // Ascending : candidate < config
                     candidate = config;
@@ -1069,7 +1181,8 @@ public class WifiAutoJoinController {
             }
         }
 
-        // Now, go thru scan result to try finding a better Herrevad network
+        /* Wait for VPN to be available on the system to make use of this code
+        // Now, go thru scan result to try finding a better untrusted network
         if (mNetworkScoreCache != null) {
             int rssi5 = WifiConfiguration.INVALID_RSSI;
             int rssi24 = WifiConfiguration.INVALID_RSSI;
@@ -1080,11 +1193,12 @@ public class WifiAutoJoinController {
             }
 
             // Get current date
-            long now_ms = System.currentTimeMillis();
+            long nowMs = System.currentTimeMillis();
 
+            // Look for untrusted scored network only if the current candidate is bad
             if (rssi5 < -60 && rssi24 < -70) {
                 for (ScanResult result : scanResultCache.values()) {
-                    if ((now_ms - result.seen) < 3000) {
+                    if ((nowMs - result.seen) < 3000) {
                         int score = mNetworkScoreCache.getNetworkScore(result);
                         if (score > 0) {
                             // Try any arbitrary formula for now, adding apple and oranges,
@@ -1116,7 +1230,7 @@ public class WifiAutoJoinController {
                     }
                 }
             }
-        }
+        }*/
 
         /**
          *  If candidate is found, check the state of the connection so as
@@ -1149,6 +1263,9 @@ public class WifiAutoJoinController {
                     logDbg("AutoJoin auto connect with netId "
                             + Integer.toString(candidate.networkId)
                             + " to " + candidate.configKey());
+                }
+                if (didOverride) {
+                    candidate.numScorerOverrideAndSwitchedNetwork++;
                 }
                 mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
                         candidate.networkId, networkSwitchType, candidate);
