@@ -133,6 +133,11 @@ jlong getLongArrayField(JNIEnv *env, jobject obj, const char *name, int index)
     }
 
     jlongArray array = (jlongArray)(env)->GetObjectField(obj, field);
+    if (array == NULL) {
+        THROW(env, "Error in accessing array");
+        return 0;
+    }
+
     jlong *elem = (env)->GetLongArrayElements(array, 0);
     if (elem == NULL) {
         THROW(env, "Error in accessing index element");
