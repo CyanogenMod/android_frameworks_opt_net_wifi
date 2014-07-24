@@ -2239,6 +2239,26 @@ public class WifiStateMachine extends StateMachine {
                 } else if (msg.arg1 == DhcpStateMachine.DHCP_FAILURE) {
                     sb.append(" FAIL ");
                 }
+                if (mLinkProperties != null) {
+                    if (mLinkProperties.hasIPv4Address()) {
+                        sb.append(" v4");
+                    }
+                    if (mLinkProperties.hasGlobalIPv6Address()) {
+                        sb.append(" v6");
+                    }
+                    if (mLinkProperties.hasIPv4DefaultRoute()) {
+                        sb.append(" v4r");
+                    }
+                    if (mLinkProperties.hasIPv6DefaultRoute()) {
+                        sb.append(" v6r");
+                    }
+                    if (mLinkProperties.hasIPv4DnsServer()) {
+                        sb.append(" v4dns");
+                    }
+                    if (mLinkProperties.hasIPv6DnsServer()) {
+                        sb.append(" v6dns");
+                    }
+                }
                 break;
             case WifiP2pServiceImpl.P2P_CONNECTION_CHANGED:
                 sb.append(" ");
@@ -3022,7 +3042,8 @@ public class WifiStateMachine extends StateMachine {
         if (isProvisioned &&
                 (!wasProvisioned || detailedState == DetailedState.OBTAINING_IPADDR)) {
             sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
-        } else if (wasProvisioned && !isProvisioned) {
+        } else if (!isProvisioned && (wasProvisioned
+                || detailedState == DetailedState.OBTAINING_IPADDR)) {
             sendMessage(CMD_IP_CONFIGURATION_LOST);
         } else if (linkChanged && getNetworkDetailedState() == DetailedState.CONNECTED) {
             // If anything has changed, and we're already connected, send out a notification.
