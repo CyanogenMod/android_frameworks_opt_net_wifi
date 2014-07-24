@@ -34,6 +34,9 @@ import java.util.Map;
 public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
  {
 
+    // A Network scorer returns a score in the range [-127, +127]
+    public static int INVALID_NETWORK_SCORE = 100000;
+
     private static String TAG = "WifiNetworkScoreCache";
     private boolean DBG = true;
     private final Context mContext;
@@ -84,7 +87,7 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
 
     public int getNetworkScore(ScanResult result) {
 
-        int score = -1;
+        int score = INVALID_NETWORK_SCORE;
 
         String key = buildNetworkKey(result);
         if (key == null) return score;
@@ -95,7 +98,7 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
             if (network != null && network.rssiCurve != null) {
                 score = network.rssiCurve.lookupScore(result.level);
                 if (DBG) {
-                    Log.e(TAG, "getNetworkScore found Herrevad network" + key
+                    Log.e(TAG, "getNetworkScore found scored network" + key
                             + " score " + Integer.toString(score)
                             + " RSSI " + result.level);
                 }
@@ -104,7 +107,30 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
         return score;
     }
 
-    private String buildNetworkKey(ScoredNetwork network) {
+    public int getNetworkScore(ScanResult result, int rssiBoost) {
+
+        int score = INVALID_NETWORK_SCORE;
+
+        String key = buildNetworkKey(result);
+        if (key == null) return score;
+
+        //find it
+        synchronized(mNetworkCache) {
+            ScoredNetwork network = mNetworkCache.get(key);
+            if (network != null && network.rssiCurve != null) {
+                score = network.rssiCurve.lookupScore(result.level + rssiBoost);
+                if (DBG) {
+                    Log.e(TAG, "getNetworkScore found scored network" + key
+                            + " score " + Integer.toString(score)
+                            + " RSSI " + result.level
+                            + " boost " + rssiBoost);
+                }
+            }
+        }
+        return score;
+    }
+
+     private String buildNetworkKey(ScoredNetwork network) {
         if (network.networkKey == null) return null;
         if (network.networkKey.wifiKey == null) return null;
         if (network.networkKey.type == NetworkKey.TYPE_WIFI) {
