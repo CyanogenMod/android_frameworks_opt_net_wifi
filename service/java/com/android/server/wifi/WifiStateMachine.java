@@ -92,6 +92,7 @@ import com.android.server.net.BaseNetworkObserver;
 import com.android.server.net.NetlinkTracker;
 
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
+import android.net.wifi.p2p.WifiP2pManager;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -4752,6 +4753,8 @@ public class WifiStateMachine extends StateMachine {
                     mTemporarilyDisconnectWifi = (message.arg1 == 1);
                     replyToMessage(message, WifiP2pServiceImpl.DISCONNECT_WIFI_RESPONSE);
                     break;
+                case WifiP2pServiceImpl.P2P_MIRACAST_MODE_CHANGED:
+                    break;
                 /* Link configuration (IP address, DNS, ...) changes notified via netlink */
                 case CMD_UPDATE_LINKPROPERTIES:
                     updateLinkProperties(CMD_UPDATE_LINKPROPERTIES);
@@ -7773,6 +7776,9 @@ public class WifiStateMachine extends StateMachine {
                         ret = NOT_HANDLED;
                     }
                     break;
+                case WifiP2pServiceImpl.P2P_MIRACAST_MODE_CHANGED:
+                    setScanIntevelOnMiracastModeChange(message.arg1);
+                    break;
                 case CMD_SCREEN_STATE_CHANGED:
                     handleScreenStateChanged(message.arg1 != 0,
                             /* startBackgroundScanIfNeeded = */ true);
@@ -8320,5 +8326,18 @@ public class WifiStateMachine extends StateMachine {
 
     void handle3GAuthRequest(SimAuthRequestData requestData) {
 
+    }
+    private void setScanIntevelOnMiracastModeChange(int mode) {
+        if ((mode == WifiP2pManager.MIRACAST_SOURCE)
+                || (mode == WifiP2pManager.MIRACAST_SINK)) {
+            int defaultWfdIntervel = mContext.getResources().getInteger(
+                    R.integer.config_wifi_scan_interval_wfd_connected);
+            long wfdScanIntervalMs = Settings.Global
+                    .getLong(
+                            mContext.getContentResolver(),
+                            Settings.Global.WIFI_SUPPLICANT_SCAN_INTERVAL_WFD_CONNECTED_MS,
+                            defaultWfdIntervel);
+            mWifiNative.setScanInterval((int) wfdScanIntervalMs / 1000);
+        }
     }
 }
