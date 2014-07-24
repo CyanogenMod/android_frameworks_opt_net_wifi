@@ -75,6 +75,8 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.text.SimpleDateFormat;
 import java.text.DateFormat;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.*;
 
 /**
@@ -182,6 +184,20 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String UPDATE_UID_KEY = "UPDATE_UID:  ";
     private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS:  ";
     private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON:  ";
+    private static final String FQDN_KEY = "FQDN:  ";
+    private static final String NUM_CONNECTION_FAILURES_KEY = "CONNECT_FAILURES:  ";
+    private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE:  ";
+    private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH:  ";
+
+    /**
+     * Regex pattern for extracting a connect choice.
+     * Matches a strings like the following:
+     * <configKey>=([0:9]+)
+     */
+    private static Pattern mConnectChoice =
+            Pattern.compile("(.*)=([0-9]+)");
+
+
     /* Enterprise configuration keys */
     /**
      * In old configurations, the "private_key" field was used. However, newer
@@ -1155,6 +1171,7 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(CONFIG_KEY + config.configKey() + SEPARATOR_KEY);
 
                     out.writeUTF(SSID_KEY + config.SSID + SEPARATOR_KEY);
+                    out.writeUTF(FQDN_KEY + config.FQDN + SEPARATOR_KEY);
 
                     out.writeUTF(PRIORITY_KEY + Integer.toString(config.priority) + SEPARATOR_KEY);
                     out.writeUTF(STATUS_KEY + Integer.toString(config.autoJoinStatus)
@@ -1174,6 +1191,14 @@ public class WifiConfigStore extends IpConfigStore {
                         out.writeUTF(PEER_CONFIGURATION_KEY + config.peerWifiConfiguration
                                 + SEPARATOR_KEY);
                     }
+                    out.writeUTF(NUM_CONNECTION_FAILURES_KEY
+                            + Integer.toString(config.numConnectionFailures)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(SCORER_OVERRIDE_KEY + Integer.toString(config.numScorerOverride)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(SCORER_OVERRIDE_AND_SWITCH_KEY
+                            + Integer.toString(config.numScorerOverrideAndSwitchedNetwork)
+                            + SEPARATOR_KEY);
                     out.writeUTF(BLACKLIST_MILLI_KEY + Long.toString(config.blackListTimestamp)
                             + SEPARATOR_KEY);
                     out.writeUTF(CREATOR_UID_KEY + Integer.toString(config.creatorUid)
@@ -1189,7 +1214,9 @@ public class WifiConfigStore extends IpConfigStore {
 
                     if (config.connectChoices != null) {
                         for (String key : config.connectChoices.keySet()) {
-                            out.writeUTF(CHOICE_KEY + key + SEPARATOR_KEY);
+                            Integer choice = config.connectChoices.get(key);
+                            out.writeUTF(CHOICE_KEY + key + "="
+                                    + choice.toString() + SEPARATOR_KEY);
                         }
                     }
                     if (config.linkedConfigurations != null) {
@@ -1322,6 +1349,12 @@ public class WifiConfigStore extends IpConfigStore {
                         }
                     }
 
+                    if (key.startsWith(FQDN_KEY)) {
+                        String fqdn = key.replace(FQDN_KEY, "");
+                        fqdn = fqdn.replace(SEPARATOR_KEY, "");
+                        config.FQDN = fqdn;
+                    }
+
                     if (key.startsWith(DEFAULT_GW_KEY)) {
                         String gateway = key.replace(DEFAULT_GW_KEY, "");
                         gateway = gateway.replace(SEPARATOR_KEY, "");
@@ -1371,6 +1404,24 @@ public class WifiConfigStore extends IpConfigStore {
                         config.blackListTimestamp = Long.parseLong(milli);
                     }
 
+                    if (key.startsWith(NUM_CONNECTION_FAILURES_KEY)) {
+                        String num = key.replace(NUM_CONNECTION_FAILURES_KEY, "");
+                        num = num.replace(SEPARATOR_KEY, "");
+                        config.numConnectionFailures = Integer.parseInt(num);
+                    }
+
+                    if (key.startsWith(SCORER_OVERRIDE_KEY)) {
+                        String num = key.replace(SCORER_OVERRIDE_KEY, "");
+                        num = num.replace(SEPARATOR_KEY, "");
+                        config.numScorerOverride = Integer.parseInt(num);
+                    }
+
+                    if (key.startsWith(SCORER_OVERRIDE_AND_SWITCH_KEY)) {
+                        String num = key.replace(SCORER_OVERRIDE_AND_SWITCH_KEY, "");
+                        num = num.replace(SEPARATOR_KEY, "");
+                        config.numScorerOverrideAndSwitchedNetwork = Integer.parseInt(num);
+                    }
+
                     if (key.startsWith(CONNECT_UID_KEY)) {
                         String uid = key.replace(CONNECT_UID_KEY, "");
                         uid = uid.replace(SEPARATOR_KEY, "");
@@ -1395,12 +1446,28 @@ public class WifiConfigStore extends IpConfigStore {
                     }
 
                     if (key.startsWith(CHOICE_KEY)) {
-                        String configKey = key.replace(CHOICE_KEY, "");
-                        configKey = configKey.replace(SEPARATOR_KEY, "");
-                        if (config.connectChoices == null) {
-                            config.connectChoices = new HashMap<String, Integer>();
+                        String choiceStr = key.replace(CHOICE_KEY, "");
+                        choiceStr = choiceStr.replace(SEPARATOR_KEY, "");
+                        String configKey = "";
+                        int choice = 0;
+                        Matcher match = mConnectChoice.matcher(choiceStr);
+                        if (!match.find()) {
+                            if (DBG) Log.d(TAG, "WifiConfigStore: connectChoice: " +
+                                    " Couldnt match pattern : " + choiceStr);
+                        } else {
+                            configKey = match.group(1);
+                            try {
+                                choice = Integer.parseInt(match.group(2));
+                            } catch (NumberFormatException e) {
+                                choice = 0;
+                            }
+                            if (choice > 0) {
+                                if (config.connectChoices == null) {
+                                    config.connectChoices = new HashMap<String, Integer>();
+                                }
+                                config.connectChoices.put(configKey, choice);
+                            }
                         }
-                        config.connectChoices.put(configKey, -1);
                     }
 
                     if (key.startsWith(LINK_KEY)) {
@@ -2691,24 +2758,30 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
-    void handleBSSIDBlackList(int netId, String BSSID, boolean enable) {
+    boolean handleBSSIDBlackList(int netId, String BSSID, boolean enable) {
+        boolean found = false;
         if (BSSID == null)
-            return;
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null && config.scanResultCache != null) {
-            for (ScanResult result: config.scanResultCache.values()) {
-                if (result.BSSID.equals(BSSID)) {
-                    if (enable) {
-                        result.status = ScanResult.ENABLED;
-                    } else {
-                        // Black list the BSSID we we were trying to join
-                        // so as the Roam state machine
-                        // doesn't pick it up over and over
-                        result.status = ScanResult.AUTO_ROAM_DISABLED;
+            return found;
+
+        // Look for the BSSID in our config store
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            if (config.scanResultCache != null) {
+                for (ScanResult result: config.scanResultCache.values()) {
+                    if (result.BSSID.equals(BSSID)) {
+                        if (enable) {
+                            result.status = ScanResult.ENABLED;
+                        } else {
+                            // Black list the BSSID we we were trying to join
+                            // so as the Roam state machine
+                            // doesn't pick it up over and over
+                            result.status = ScanResult.AUTO_ROAM_DISABLED;
+                            found = true;
+                        }
                     }
                 }
             }
         }
+        return found;
     }
 
     void handleSSIDStateChange(int netId, boolean enabled, String message) {
