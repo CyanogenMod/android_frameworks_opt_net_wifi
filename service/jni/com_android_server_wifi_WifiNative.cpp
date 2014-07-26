@@ -873,25 +873,23 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
             return;
         }
 
-        // setStringField(env, scanResult, "SSID", results[i].ssid);
-
         char bssid[32];
         sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result.addr[0], result.addr[1],
             result.addr[2], result.addr[3], result.addr[4], result.addr[5]);
 
         setStringField(env, rttResult, "bssid", bssid);
-
-        setIntField(env, rttResult, "status",               result.status);
-        setIntField(env, rttResult, "ts",                   result.ts);
-        setIntField(env, rttResult, "rssi",                 result.rssi);
-        setIntField(env, rttResult, "rssi_spread",          result.rssi_spread);
-        setIntField(env, rttResult, "tx_rate",              result.tx_rate.bitrate);
-        setIntField(env, rttResult, "rtt_ns",               result.rtt);
-        setIntField(env, rttResult, "rtt_sd_ns",            result.rtt_sd);
-        setIntField(env, rttResult, "rtt_spread_ns",        result.rtt_spread);
-        setIntField(env, rttResult, "distance_ns",          result.distance);
-        setIntField(env, rttResult, "distance_sd_ns",       result.distance_sd);
-        setIntField(env, rttResult, "distance_spread_ns",   result.distance_spread);
+        setIntField(env,  rttResult, "status",               result.status);
+        setIntField(env,  rttResult, "requestType",          result.type);
+        setLongField(env, rttResult, "ts",                   result.ts);
+        setIntField(env,  rttResult, "rssi",                 result.rssi);
+        setIntField(env,  rttResult, "rssi_spread",          result.rssi_spread);
+        setIntField(env,  rttResult, "tx_rate",              result.tx_rate.bitrate);
+        setLongField(env, rttResult, "rtt_ns",               result.rtt);
+        setLongField(env, rttResult, "rtt_sd_ns",            result.rtt_sd);
+        setLongField(env, rttResult, "rtt_spread_ns",        result.rtt_spread);
+        setIntField(env,  rttResult, "distance_cm",          result.distance);
+        setIntField(env,  rttResult, "distance_sd_cm",       result.distance_sd);
+        setIntField(env,  rttResult, "distance_spread_cm",   result.distance_spread);
 
         env->SetObjectArrayElement(rttResults, i, rttResult);
     }
@@ -900,27 +898,45 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
         id, rttResults);
 }
 
+const int MaxRttConfigs = 16;
+
 static jboolean android_net_wifi_requestRange(
         JNIEnv *env, jclass cls, jint iface, jint id, jobject params)  {
 
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("sending rtt request [%d] = %p", id, handle);
 
-    wifi_rtt_config config;
-    memset(&config, 0, sizeof(config));
+    wifi_rtt_config configs[MaxRttConfigs];
+    memset(&configs, 0, sizeof(configs));
 
-    parseMacAddress(env, params, config.addr);
-    config.type = (wifi_rtt_type)getIntField(env, params, "requestType");
-    config.peer = (wifi_peer_type)getIntField(env, params, "deviceType");
-    config.channel.center_freq = getIntField(env, params, "frequency");
-    config.channel.width = (wifi_channel_width)getIntField(env, params, "channelWidth");
-    config.num_samples_per_measurement = getIntField(env, params, "num_samples");
-    config.num_retries_per_measurement = getIntField(env, params, "num_retries");
+    int len = env->GetArrayLength((jobjectArray)params);
+    if (len > MaxRttConfigs) {
+        return false;
+    }
+
+    for (int i = 0; i < len; i++) {
+
+        jobject param = env->GetObjectArrayElement((jobjectArray)params, i);
+        if (param == NULL) {
+            ALOGD("could not get element %d", i);
+            continue;
+        }
+
+        wifi_rtt_config &config = configs[i];
+
+        parseMacAddress(env, param, config.addr);
+        config.type = (wifi_rtt_type)getIntField(env, param, "requestType");
+        config.peer = (wifi_peer_type)getIntField(env, param, "deviceType");
+        config.channel.center_freq = getIntField(env, param, "frequency");
+        config.channel.width = (wifi_channel_width)getIntField(env, param, "channelWidth");
+        config.num_samples_per_measurement = getIntField(env, param, "num_samples");
+        config.num_retries_per_measurement = getIntField(env, param, "num_retries");
+    }
 
     wifi_rtt_event_handler handler;
     handler.on_rtt_results = &onRttResults;
 
-    return wifi_rtt_range_request(id, handle, 1, &config, handler) == WIFI_SUCCESS;
+    return wifi_rtt_range_request(id, handle, len, configs, handler) == WIFI_SUCCESS;
 }
 
 static jboolean android_net_wifi_cancelRange(
@@ -929,14 +945,26 @@ static jboolean android_net_wifi_cancelRange(
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("cancelling rtt request [%d] = %p", id, handle);
 
-    wifi_rtt_config config;
-    memset(&config, 0, sizeof(config));
+    mac_addr addrs[MaxRttConfigs];
+    memset(&addrs, 0, sizeof(addrs));
 
-    parseMacAddress(env, params, config.addr);
-    mac_addr addrs[1];
-    memcpy(&addrs[0], config.addr, sizeof(mac_addr));
+    int len = env->GetArrayLength((jobjectArray)params);
+    if (len > MaxRttConfigs) {
+        return false;
+    }
 
-    return wifi_rtt_range_cancel(id, handle, 1, addrs) == WIFI_SUCCESS;
+    for (int i = 0; i < len; i++) {
+
+        jobject param = env->GetObjectArrayElement((jobjectArray)params, i);
+        if (param == NULL) {
+            ALOGD("could not get element %d", i);
+            continue;
+        }
+
+        parseMacAddress(env, param, addrs[i]);
+    }
+
+    return wifi_rtt_range_cancel(id, handle, len, addrs) == WIFI_SUCCESS;
 }
 
 // ----------------------------------------------------------------------------

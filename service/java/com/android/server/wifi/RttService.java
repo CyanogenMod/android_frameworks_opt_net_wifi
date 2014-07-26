@@ -6,11 +6,13 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.wifi.RttManager;
 import android.net.wifi.WifiManager;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.Parcel;
 import android.os.RemoteException;
 import android.util.Log;
 import android.net.wifi.IRttManager;
@@ -23,12 +25,13 @@ import com.android.internal.util.State;
 import com.android.server.SystemService;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Queue;
 
 class RttService extends SystemService {
 
-    public static final boolean DBG = false;
+    public static final boolean DBG = true;
 
     class RttServiceImpl extends IRttManager.Stub {
 
@@ -140,28 +143,34 @@ class RttService extends SystemService {
         private class RttRequest {
             Integer key;
             ClientInfo ci;
-            RttManager.RttParams params;
+            RttManager.RttParams[] params;
         }
 
         private class ClientInfo {
             private final AsyncChannel mChannel;
             private final Messenger mMessenger;
-            HashMap<Integer, RttManager.RttParams> mRequests = new HashMap<Integer,
-                    RttManager.RttParams>();
+            HashMap<Integer, RttRequest> mRequests = new HashMap<Integer,
+                    RttRequest>();
 
             ClientInfo(AsyncChannel c, Messenger m) {
                 mChannel = c;
                 mMessenger = m;
             }
 
-            void addRttRequest(int key, RttManager.RttParams params) {
+            boolean addRttRequest(int key, RttManager.ParcelableRttParams parcelableParams) {
+                if (parcelableParams == null) {
+                    return false;
+                }
+
+                RttManager.RttParams params[] = parcelableParams.mParams;
+
                 RttRequest request = new RttRequest();
                 request.key = key;
                 request.ci = this;
                 request.params = params;
-                mRequests.put(key, params);
+                mRequests.put(key, request);
                 mRequestQueue.add(request);
-                mStateMachine.sendMessage(CMD_ISSUE_NEXT_REQUEST);
+                return true;
             }
 
             void removeRttRequest(int key) {
@@ -169,13 +178,28 @@ class RttService extends SystemService {
             }
 
             void reportResult(RttRequest request, RttManager.RttResult[] results) {
-                mChannel.sendMessage(RttManager.CMD_OP_SUCCEEDED, request.key, 0, results);
+                RttManager.ParcelableRttResults parcelableResults =
+                        new RttManager.ParcelableRttResults(results);
+
+                mChannel.sendMessage(RttManager.CMD_OP_SUCCEEDED,
+                        0, request.key, parcelableResults);
                 mRequests.remove(request.key);
             }
 
             void reportFailed(RttRequest request, int reason, String description) {
-                mChannel.sendMessage(RttManager.CMD_OP_FAILED, request.key, reason, description);
-                mRequests.remove(request.key);
+                reportFailed(request.key, reason, description);
+            }
+
+            void reportFailed(int key, int reason, String description) {
+                Bundle bundle = new Bundle();
+                bundle.putString(RttManager.DESCRIPTION_KEY, description);
+                mChannel.sendMessage(RttManager.CMD_OP_FAILED, key, reason, bundle);
+                mRequests.remove(key);
+            }
+
+            void reportAborted(int key) {
+                mChannel.sendMessage(RttManager.CMD_OP_ABORTED, key);
+                mRequests.remove(key);
             }
 
             void cleanup() {
@@ -186,7 +210,7 @@ class RttService extends SystemService {
         private Queue<RttRequest> mRequestQueue = new LinkedList<RttRequest>();
         private HashMap<Messenger, ClientInfo> mClients = new HashMap<Messenger, ClientInfo>(4);
 
-        private static final int BASE = Protocol.BASE_WIFI_SCANNER_SERVICE;
+        private static final int BASE = Protocol.BASE_WIFI_RTT_SERVICE;
 
         private static final int CMD_DRIVER_LOADED                       = BASE + 0;
         private static final int CMD_DRIVER_UNLOADED                     = BASE + 1;
@@ -201,11 +225,18 @@ class RttService extends SystemService {
 
             RttStateMachine(Looper looper) {
                 super("RttStateMachine", looper);
+
+                addState(mDefaultState);
+                addState(mEnabledState);
+                    addState(mRequestPendingState, mEnabledState);
+
+                setInitialState(mDefaultState);
             }
 
             class DefaultState extends State {
                 @Override
                 public boolean processMessage(Message msg) {
+                    if (DBG) Log.d(TAG, "DefaultState got" + msg);
                     switch (msg.what) {
                         case CMD_DRIVER_LOADED:
                             transitionTo(mEnabledState);
@@ -213,6 +244,11 @@ class RttService extends SystemService {
                         case CMD_ISSUE_NEXT_REQUEST:
                             deferMessage(msg);
                             break;
+                        case RttManager.CMD_OP_START_RANGING:
+                            replyFailed(msg, RttManager.REASON_NOT_AVAILABLE, "Try later");
+                            break;
+                        case RttManager.CMD_OP_STOP_RANGING:
+                            return HANDLED;
                         default:
                             return NOT_HANDLED;
                     }
@@ -223,6 +259,9 @@ class RttService extends SystemService {
             class EnabledState extends State {
                 @Override
                 public boolean processMessage(Message msg) {
+                    if (DBG) Log.d(TAG, "EnabledState got" + msg);
+                    ClientInfo ci = mClients.get(msg.replyTo);
+
                     switch (msg.what) {
                         case CMD_DRIVER_UNLOADED:
                             transitionTo(mDefaultState);
@@ -230,6 +269,32 @@ class RttService extends SystemService {
                         case CMD_ISSUE_NEXT_REQUEST:
                             deferMessage(msg);
                             transitionTo(mRequestPendingState);
+                            break;
+                        case RttManager.CMD_OP_START_RANGING: {
+                                RttManager.ParcelableRttParams params =
+                                        (RttManager.ParcelableRttParams)msg.obj;
+                                if (params == null) {
+                                    replyFailed(msg,
+                                            RttManager.REASON_INVALID_REQUEST, "No params");
+                                } else if (ci.addRttRequest(msg.arg2, params) == false) {
+                                    replyFailed(msg,
+                                            RttManager.REASON_INVALID_REQUEST, "Unspecified");
+                                } else {
+                                    sendMessage(CMD_ISSUE_NEXT_REQUEST);
+                                }
+                            }
+                            break;
+                        case RttManager.CMD_OP_STOP_RANGING:
+                            for (Iterator<RttRequest> it = mRequestQueue.iterator();
+                                    it.hasNext(); ) {
+                                RttRequest request = it.next();
+                                if (request.key == msg.arg2) {
+                                    if (DBG) Log.d(TAG, "Cancelling not-yet-scheduled RTT");
+                                    mRequestQueue.remove(request);
+                                    request.ci.reportAborted(request.key);
+                                    break;
+                                }
+                            }
                             break;
                         default:
                             return NOT_HANDLED;
@@ -242,11 +307,13 @@ class RttService extends SystemService {
                 RttRequest mOutstandingRequest;
                 @Override
                 public boolean processMessage(Message msg) {
+                    if (DBG) Log.d(TAG, "RequestPendingState got" + msg);
                     switch (msg.what) {
                         case CMD_DRIVER_UNLOADED:
                             if (mOutstandingRequest != null) {
-                                WifiNative.cancelRtt(
-                                        new RttManager.RttParams[]{mOutstandingRequest.params});
+                                WifiNative.cancelRtt(mOutstandingRequest.params);
+                                mOutstandingRequest.ci.reportAborted(mOutstandingRequest.key);
+                                mOutstandingRequest = null;
                             }
                             transitionTo(mDefaultState);
                             break;
@@ -259,12 +326,28 @@ class RttService extends SystemService {
                             } else {
                                 /* just wait; we'll issue next request after
                                  * current one is finished */
+                                if (DBG) Log.d(TAG, "Ignoring CMD_ISSUE_NEXT_REQUEST");
                             }
                             break;
                         case CMD_RTT_RESPONSE:
+                            if (DBG) Log.d(TAG, "Received an RTT response");
                             mOutstandingRequest.ci.reportResult(
                                     mOutstandingRequest, (RttManager.RttResult[])msg.obj);
+                            mOutstandingRequest = null;
                             sendMessage(CMD_ISSUE_NEXT_REQUEST);
+                            break;
+                        case RttManager.CMD_OP_STOP_RANGING:
+                            if (mOutstandingRequest != null
+                                    && msg.arg2 == mOutstandingRequest.key) {
+                                if (DBG) Log.d(TAG, "Cancelling ongoing RTT");
+                                WifiNative.cancelRtt(mOutstandingRequest.params);
+                                mOutstandingRequest.ci.reportAborted(mOutstandingRequest.key);
+                                mOutstandingRequest = null;
+                                sendMessage(CMD_ISSUE_NEXT_REQUEST);
+                            } else {
+                                /* Let EnabledState handle this */
+                                return NOT_HANDLED;
+                            }
                             break;
                         default:
                             return NOT_HANDLED;
@@ -295,7 +378,11 @@ class RttService extends SystemService {
             reply.what = RttManager.CMD_OP_FAILED;
             reply.arg1 = reason;
             reply.arg2 = msg.arg2;
-            reply.obj = description;
+
+            Bundle bundle = new Bundle();
+            bundle.putString(RttManager.DESCRIPTION_KEY, description);
+            reply.obj = bundle;
+
             try {
                 msg.replyTo.send(reply);
             } catch (RemoteException e) {
@@ -312,18 +399,19 @@ class RttService extends SystemService {
 
         RttRequest issueNextRequest() {
             RttRequest request = null;
-            do {
+            while (mRequestQueue.isEmpty() == false) {
                 request = mRequestQueue.remove();
-                if (WifiNative.requestRtt(
-                        new RttManager.RttParams[] {request.params}, mEventHandler)) {
+                if (WifiNative.requestRtt(request.params, mEventHandler)) {
+                    if (DBG) Log.d(TAG, "Issued next RTT request");
                     return request;
                 } else {
                     request.ci.reportFailed(request,
                             RttManager.REASON_UNSPECIFIED, "Failed to start");
                 }
-            } while (request != null);
+            }
 
             /* all requests exhausted */
+            if (DBG) Log.d(TAG, "No more requests left");
             return null;
         }
     }
