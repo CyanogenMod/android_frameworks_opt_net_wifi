@@ -56,21 +56,7 @@ import android.net.NetworkInfo.DetailedState;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.TrafficStats;
-import android.net.wifi.BatchedScanResult;
-import android.net.wifi.BatchedScanSettings;
-import android.net.wifi.RssiPacketCountInfo;
-import android.net.wifi.ScanResult;
-import android.net.wifi.ScanSettings;
-import android.net.wifi.WifiChannel;
-import android.net.wifi.SupplicantState;
-import android.net.wifi.WifiAdapter;
-import android.net.wifi.WifiConfiguration;
-import android.net.wifi.WifiInfo;
-import android.net.wifi.WifiLinkLayerStats;
-import android.net.wifi.WifiManager;
-import android.net.wifi.WifiSsid;
-import android.net.wifi.WpsInfo;
-import android.net.wifi.WpsResult;
+import android.net.wifi.*;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.net.wifi.passpoint.IWifiPasspointManager;
@@ -354,6 +340,11 @@ public class WifiStateMachine extends StateMachine {
     private WifiNetworkFactory mNetworkFactory;
     private WifiNetworkAgent mNetworkAgent;
 
+    // Keep track of various statistics, for retrieval by System Apps, i.e. under @SystemApi
+    // We should really persist that into the networkHistory.txt file, and read it back when
+    // WifiStateMachine starts up
+    private WifiConnectionStatistics mWifiConnectionStatistics = new WifiConnectionStatistics();
+
     // Used to filter out requests we couldn't possibly satisfy.
     private final NetworkCapabilities mNetworkCapabilitiesFilter = new NetworkCapabilities();
 
@@ -438,6 +429,9 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_RECONNECT                        = BASE + 74;
     /* Reassociate to a network */
     static final int CMD_REASSOCIATE                      = BASE + 75;
+    /* Get Connection Statistis */
+    static final int CMD_GET_CONNECTION_STATISTICS        = BASE + 76;
+
     /* Controls suspend mode optimizations
      *
      * When high perf mode is enabled, suspend mode optimizations are disabled
@@ -767,7 +761,7 @@ public class WifiStateMachine extends StateMachine {
         mWifiNative = new WifiNative(mInterfaceName);
         mWifiConfigStore = new WifiConfigStore(context, mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
-                mWifiConfigStore, trafficPoller, mWifiNative);
+                mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
         mWifiInfo = new WifiInfo();
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
@@ -1795,6 +1789,20 @@ public class WifiStateMachine extends StateMachine {
         return result;
     }
 
+
+    /**
+     * Get connection statistics synchronously
+     * @param channel
+     * @return
+     */
+
+    public WifiConnectionStatistics syncGetConnectionStatistics(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_CONNECTION_STATISTICS);
+        WifiConnectionStatistics result = (WifiConnectionStatistics) resultMsg.obj;
+        resultMsg.recycle();
+        return result;
+    }
+
     /**
      * Get adaptors synchronously
      */
@@ -2747,8 +2755,15 @@ public class WifiStateMachine extends StateMachine {
             mWifiInfo.setLinkSpeed(newLinkSpeed);
         }
         if (newFrequency > 0) {
+            if (ScanResult.is24GHz(newFrequency)) {
+                mWifiConnectionStatistics.num5GhzConnected++;
+            }
+            if (ScanResult.is24GHz(newFrequency)) {
+                mWifiConnectionStatistics.num24GhzConnected++;
+            }
             mWifiInfo.setFrequency(newFrequency);
         }
+        mWifiConfigStore.updateConfiguration(mWifiInfo);
     }
 
     /**
@@ -3748,6 +3763,9 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 case CMD_IP_CONFIGURATION_LOST:
                     break;
+                case CMD_GET_CONNECTION_STATISTICS:
+                    replyToMessage(message, message.what, mWifiConnectionStatistics);
+                    break;
                 default:
                     loge("Error! unhandled message" + message);
                     break;
@@ -4712,6 +4730,9 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_REASSOCIATE:
                 s = "CMD_REASSOCIATE";
+                break;
+            case CMD_GET_CONNECTION_STATISTICS:
+                s = "CMD_GET_CONNECTION_STATISTICS";
                 break;
             case CMD_SET_HIGH_PERF_MODE:
                 s = "CMD_SET_HIGH_PERF_MODE";

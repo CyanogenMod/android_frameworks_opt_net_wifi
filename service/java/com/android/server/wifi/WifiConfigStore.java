@@ -188,7 +188,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String NUM_CONNECTION_FAILURES_KEY = "CONNECT_FAILURES:  ";
     private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE:  ";
     private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH:  ";
-
+    private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
     /**
      * Regex pattern for extracting a connect choice.
      * Matches a strings like the following:
@@ -344,13 +344,13 @@ public class WifiConfigStore extends IpConfigStore {
 
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
-                //do not enumerate and return this configuration to any one,
-                //instead treat it as unknown. the configuration can still be retrieved
-                //directly by the key or networkId
+                // Do not enumerate and return this configuration to any one,
+                // instead treat it as unknown. the configuration can still be retrieved
+                // directly by the key or networkId
                 continue;
             }
 
-            // calculate the RSSI for scan results that are more recent than milli
+            // Calculate the RSSI for scan results that are more recent than milli
             config.setVisibility(milli);
 
             if (config.visibility == null) {
@@ -372,6 +372,28 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
+     *  Update the configuration and BSSID with latest RSSI value.
+     */
+    void updateConfiguration(WifiInfo info) {
+        WifiConfiguration config = getWifiConfiguration(info.getNetworkId());
+        if (config != null && config.scanResultCache != null) {
+            ScanResult result = config.scanResultCache.get(info.getBSSID());
+            if (result != null) {
+                long previousSeen = result.seen;
+                int previousRssi = result.level;
+
+                // Update the scan result
+                result.seen = System.currentTimeMillis();
+                result.level = info.getRssi();
+
+                // Average the RSSI value
+                result.averageRssi(previousRssi, previousSeen,
+                        WifiAutoJoinController.mScanResultMaximumAge);
+            }
+        }
+    }
+
+    /**
      * get the Wificonfiguration for this netId
      *
      * @return Wificonfiguration
@@ -383,8 +405,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
-     * get the Wificonfiguration for this key
-     *
+     * Get the Wificonfiguration for this key
      * @return Wificonfiguration
      */
     WifiConfiguration getWifiConfiguration(String key) {
@@ -401,7 +422,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
-     * enable all networks and save config. This will be a no-op if the list
+     * Enable all networks and save config. This will be a no-op if the list
      * of configured networks indicates all networks as being enabled
      */
     void enableAllNetworks() {
@@ -1199,6 +1220,9 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(SCORER_OVERRIDE_AND_SWITCH_KEY
                             + Integer.toString(config.numScorerOverrideAndSwitchedNetwork)
                             + SEPARATOR_KEY);
+                    out.writeUTF(NUM_ASSOCIATION_KEY
+                            + Integer.toString(config.numAssociation)
+                            + SEPARATOR_KEY);
                     out.writeUTF(BLACKLIST_MILLI_KEY + Long.toString(config.blackListTimestamp)
                             + SEPARATOR_KEY);
                     out.writeUTF(CREATOR_UID_KEY + Integer.toString(config.creatorUid)
@@ -1420,6 +1444,12 @@ public class WifiConfigStore extends IpConfigStore {
                         String num = key.replace(SCORER_OVERRIDE_AND_SWITCH_KEY, "");
                         num = num.replace(SEPARATOR_KEY, "");
                         config.numScorerOverrideAndSwitchedNetwork = Integer.parseInt(num);
+                    }
+
+                    if (key.startsWith(NUM_ASSOCIATION_KEY)) {
+                        String num = key.replace(NUM_ASSOCIATION_KEY, "");
+                        num = num.replace(SEPARATOR_KEY, "");
+                        config.numAssociation = Integer.parseInt(num);
                     }
 
                     if (key.startsWith(CONNECT_UID_KEY)) {
