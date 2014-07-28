@@ -1122,6 +1122,7 @@ public class WifiNative {
             if (sHalIsStarted)
                 return true;
             if (startHalNative()) {
+                getInterfaces();
                 new MonitorThread().start();
                 sHalIsStarted = true;
                 return true;
@@ -1141,20 +1142,24 @@ public class WifiNative {
 
     synchronized public static int getInterfaces() {
         synchronized (mLock) {
-            int num = getInterfacesNative();
-            int wifi_num = 0;
-            for (int i = 0; i < num; i++) {
-                String name = getInterfaceNameNative(i);
-                Log.i(TAG, "interface[" + i + "] = " + name);
-                if (name.equals("wlan0")) {
-                    sWlan0Index = i;
-                    wifi_num++;
-                } else if (name.equals("p2p0")) {
-                    sP2p0Index = i;
-                    wifi_num++;
+            if (sWifiIfaceHandles == null) {
+                int num = getInterfacesNative();
+                int wifi_num = 0;
+                for (int i = 0; i < num; i++) {
+                    String name = getInterfaceNameNative(i);
+                    Log.i(TAG, "interface[" + i + "] = " + name);
+                    if (name.equals("wlan0")) {
+                        sWlan0Index = i;
+                        wifi_num++;
+                    } else if (name.equals("p2p0")) {
+                        sP2p0Index = i;
+                        wifi_num++;
+                    }
                 }
+                return wifi_num;
+            } else {
+                return sWifiIfaceHandles.length;
             }
-            return num;
         }
     }
 
@@ -1460,6 +1465,7 @@ public class WifiNative {
 
     synchronized private static void onRttResults(int id, RttManager.RttResult[] results) {
         if (id == sRttCmdId) {
+            Log.d(TAG, "Received " + results.length + " rtt results");
             sRttEventHandler.onRttResults(results);
             sRttCmdId = 0;
         } else {
