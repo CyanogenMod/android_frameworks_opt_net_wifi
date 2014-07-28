@@ -32,16 +32,8 @@ import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
-import android.net.wifi.BatchedScanResult;
-import android.net.wifi.BatchedScanSettings;
+import android.net.wifi.*;
 import android.net.wifi.IWifiManager;
-import android.net.wifi.ScanResult;
-import android.net.wifi.ScanSettings;
-import android.net.wifi.WifiAdapter;
-import android.net.wifi.WifiChannel;
-import android.net.wifi.WifiConfiguration;
-import android.net.wifi.WifiInfo;
-import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Handler;
@@ -1763,5 +1755,17 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public int getAllowScansWithTraffic() {
         enforceAccessPermission();
         return mWifiStateMachine.getAllowScansWithTraffic();
+    }
+
+    /* Return the Wifi Connection statistics object */
+    public WifiConnectionStatistics getConnectionStatistics() {
+        enforceAccessPermission();
+        enforceReadCredentialPermission();
+        if (mWifiStateMachineChannel != null) {
+            return mWifiStateMachine.syncGetConnectionStatistics(mWifiStateMachineChannel);
+        } else {
+            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
+            return null;
+        }
     }
 }
