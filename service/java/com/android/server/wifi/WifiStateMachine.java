@@ -2114,7 +2114,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(String.format(" %.1f,", mWifiInfo.txRetriesRate));
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
-                if (lastScanFreqs != null) sb.append(lastScanFreqs);
+                if (lastScanFreqs != null) sb.append(" ").append(lastScanFreqs);
                 break;
             case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                 sb.append(" ");
@@ -4782,9 +4782,6 @@ public class WifiStateMachine extends StateMachine {
             case WifiManager.FORGET_NETWORK:
                 s = "FORGET_NETWORK";
                 break;
-            case WifiManager.START_WPS:
-                s = "START_WPS";
-                break;
             case WifiMonitor.SUP_CONNECTION_EVENT:
                 s = "SUP_CONNECTION_EVENT";
                 break;
@@ -4862,6 +4859,27 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case WifiP2pServiceImpl.SET_COUNTRY_CODE:
                 s = "P2P.SET_COUNTRY_CODE";
+                break;
+            case WifiManager.CANCEL_WPS:
+                s = "CANCEL_WPS";
+                break;
+            case WifiManager.CANCEL_WPS_FAILED:
+                s = "CANCEL_WPS_FAILED";
+                break;
+            case WifiManager.CANCEL_WPS_SUCCEDED:
+                s = "CANCEL_WPS_SUCCEDED";
+                break;
+            case WifiManager.START_WPS:
+                s = "START_WPS";
+                break;
+            case WifiManager.START_WPS_SUCCEEDED:
+                s = "START_WPS_SUCCEEDED";
+                break;
+            case WifiManager.WPS_FAILED:
+                s = "WPS_FAILED";
+                break;
+            case WifiManager.WPS_COMPLETED:
+                s = "WPS_COMPLETED";
                 break;
             default:
                 s = "what:" + Integer.toString(message.what);

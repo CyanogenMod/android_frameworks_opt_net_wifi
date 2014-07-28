@@ -389,6 +389,12 @@ public class WifiConfigStore extends IpConfigStore {
                 // Average the RSSI value
                 result.averageRssi(previousRssi, previousSeen,
                         WifiAutoJoinController.mScanResultMaximumAge);
+                if (VDBG) {
+                    loge("updateConfiguration freq=" + result.level
+                        + " BSSID=" + result.BSSID
+                        + " RSSI=" + result.level
+                        + " " + config.configKey());
+                }
             }
         }
     }
