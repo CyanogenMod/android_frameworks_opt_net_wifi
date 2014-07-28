@@ -282,13 +282,7 @@ public class WifiAutoJoinController {
         }
 
         int order = compareWifiConfigurations(currentNetwork, candidate);
-
-        if (order > 0) {
-            //ascending: currentNetwork < candidate
-            return 10; //will try switch over to the candidate
-        }
-
-        return 0;
+        return order;
     }
 
     /**
@@ -600,7 +594,7 @@ public class WifiAutoJoinController {
             }
         }
         int scoreA = getConfigNetworkScore(a, 3000, aRssiBoost);
-        int scoreB = getConfigNetworkScore(a, 3000, bRssiBoost);
+        int scoreB = getConfigNetworkScore(b, 3000, bRssiBoost);
 
         // Both configurations need to have a score for the scorer to be used
         // ...and the scores need to be different:-)
@@ -1098,7 +1092,7 @@ public class WifiAutoJoinController {
                         && config.visibility.rssi24
                         < WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24) {
                     if (DBG) {
-                        logDbg("attemptAutoJoin gskip due to low visibility -> status="
+                        logDbg("attemptAutoJoin skip due to low visibility -> status="
                                 + config.autoJoinStatus
                                 + " key " + config.configKey(true) + " rssi="
                                 + config.visibility.rssi24 + ", " + config.visibility.rssi5
