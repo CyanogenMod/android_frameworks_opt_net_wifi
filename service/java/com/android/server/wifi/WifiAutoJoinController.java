@@ -67,6 +67,9 @@ public class WifiAutoJoinController {
     /* for debug purpose only : the untrusted SSID we would be connected to if we had VPN */
     String lastUntrustedBSSID = null;
 
+    /* For debug purpose only: if the scored override a score */
+    boolean didOverride = false;
+
     // Lose the non-auth failure blacklisting after 8 hours
     private final static long loseBlackListHardMilli = 1000 * 60 * 60 * 8;
     // Lose some temporary blacklisting after 30 minutes
@@ -274,6 +277,8 @@ public class WifiAutoJoinController {
 
         WifiConfiguration currentNetwork = mWifiStateMachine.getCurrentWifiConfiguration();
         if (currentNetwork == null) {
+            // Return any absurdly high score, if we are not connected there is no current
+            // network to...
            return 1000;
         }
 
@@ -281,7 +286,7 @@ public class WifiAutoJoinController {
             return -2;
         }
 
-        int order = compareWifiConfigurations(currentNetwork, candidate);
+        int order = compareWifiConfigurationsTop(currentNetwork, candidate);
         return order;
     }
 
@@ -525,9 +530,9 @@ public class WifiAutoJoinController {
         // Apply Hysteresis, boost RSSI of current configuration
         if (null != currentConfiguration) {
             if (a.configKey().equals(currentConfiguration)) {
-                aRssiBoost += 15;
+                aRssiBoost += 20;
             } else if (b.configKey().equals(currentConfiguration)) {
-                bRssiBoost += 15;
+                bRssiBoost += 20;
             }
         }
 
@@ -588,9 +593,9 @@ public class WifiAutoJoinController {
         // looking up the score
         if (null != mCurrentConfigurationKey) {
             if (a.configKey().equals(mCurrentConfigurationKey)) {
-                aRssiBoost += 15;
+                aRssiBoost += 20;
             } else if (b.configKey().equals(mCurrentConfigurationKey)) {
-                bRssiBoost += 15;
+                bRssiBoost += 20;
             }
         }
         int scoreA = getConfigNetworkScore(a, 3000, aRssiBoost);
@@ -728,9 +733,29 @@ public class WifiAutoJoinController {
         return (rssi5 < -80 && rssi24 < -90);
     }
 
-    /**
-     * attemptRoam function implements the core of the same SSID switching algorithm
-     */
+    int compareWifiConfigurationsTop(WifiConfiguration a, WifiConfiguration b) {
+        int scorerOrder = compareWifiConfigurationsWithScorer(a, b);
+        int order = compareWifiConfigurations(a, b);
+
+        if (scorerOrder * order < 0) {
+            // For debugging purpose, remember that an override happened
+            // during that autojoin Attempt
+            didOverride = true;
+            a.numScorerOverride++;
+            b.numScorerOverride++;
+        }
+
+        if (scorerOrder != 0) {
+            // If the scorer came up with a result then use the scorer's result, else use
+            // the order provided by the base comparison function
+            order = scorerOrder;
+        }
+        return order;
+    }
+
+        /**
+         * attemptRoam function implements the core of the same SSID switching algorithm
+         */
     ScanResult attemptRoam(WifiConfiguration current, int age) {
         ScanResult a = null;
         if (current == null) {
@@ -871,6 +896,7 @@ public class WifiAutoJoinController {
      *
      * @param config
      * @return score
+     * @return score
      */
     int getConfigNetworkScore(WifiConfiguration config, int age, int rssiBoost) {
 
@@ -898,7 +924,7 @@ public class WifiAutoJoinController {
      * attemptAutoJoin() function implements the core of the a network switching algorithm
      */
     void attemptAutoJoin() {
-        boolean didOverride = false;
+        didOverride = false;
         int networkSwitchType = AUTO_JOIN_IDLE;
 
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
@@ -1083,8 +1109,8 @@ public class WifiAutoJoinController {
 
             if (lastSelectedConfiguration == null ||
                     !config.configKey().equals(lastSelectedConfiguration)) {
-                // Don't try to autojoin a network that is too far
-                // If that configuration is
+                // Don't try to autojoin a network that is too far but
+                // If that configuration is a user's choice however, try anyway
                 if (config.visibility == null) {
                     continue;
                 }
@@ -1117,26 +1143,10 @@ public class WifiAutoJoinController {
                     logDbg("attemptAutoJoin will compare candidate  " + candidate.configKey()
                             + " with " + config.configKey());
                 }
-
-                int scorerOrder = compareWifiConfigurationsWithScorer(candidate, config);
-                int order = compareWifiConfigurations(candidate, config);
-
-                if (scorerOrder * order < 0) {
-                    // For debugging purpose, remember that an override happened
-                    // during that autojoin Attempt
-                    didOverride = true;
-                    candidate.numScorerOverride++;
-                    config.numScorerOverride++;
-                }
-
-                if (scorerOrder != 0) {
-                    // If the scorer came up with a result then use the scorer's result, else use
-                    // the order provided by the base comparison function
-                    order = scorerOrder;
-                }
+                int order = compareWifiConfigurationsTop(candidate, config);
 
                 // The lastSelectedConfiguration is the configuration the user has manually selected
-                // thru thru WifiPicker, or that a 3rd party app asked us to connect to via the
+                // thru WifiPicker, or that a 3rd party app asked us to connect to via the
                 // enableNetwork with disableOthers=true WifiManager API
                 // As this is a direct user choice, we strongly prefer this configuration,
                 // hence give +/-100

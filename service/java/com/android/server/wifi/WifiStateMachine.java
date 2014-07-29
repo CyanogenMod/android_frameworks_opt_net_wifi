@@ -185,7 +185,6 @@ public class WifiStateMachine extends StateMachine {
     private boolean mEnableRssiPolling = false;
     private boolean mEnableBackgroundScan = false;
     private int mRssiPollToken = 0;
-    private int mReconnectCount = 0;
     /* 3 operational states for STA operation: CONNECT_MODE, SCAN_ONLY_MODE, SCAN_ONLY_WIFI_OFF_MODE
     * In CONNECT_MODE, the STA can scan and connect to an access point
     * In SCAN_ONLY_MODE, the STA can only scan for access points
@@ -522,16 +521,6 @@ public class WifiStateMachine extends StateMachine {
 
     private static final int SUCCESS = 1;
     private static final int FAILURE = -1;
-
-    /**
-     * The maximum number of times we will retry a connection to an access point
-     * for which we have failed in acquiring an IP address from DHCP. A value of
-     * N means that we will make N+1 connection attempts in all.
-     * <p>
-     * See {@link Settings.Secure#WIFI_MAX_DHCP_RETRY_COUNT}. This is the default
-     * value if a Settings value is not present.
-     */
-    private static final int DEFAULT_MAX_DHCP_RETRIES = 9;
 
     /* Tracks if suspend optimizations need to be disabled by DHCP,
      * screen or due to high perf mode.
@@ -2053,7 +2042,6 @@ public class WifiStateMachine extends StateMachine {
         pw.println("mLastSignalLevel " + mLastSignalLevel);
         pw.println("mLastBssid " + mLastBssid);
         pw.println("mLastNetworkId " + mLastNetworkId);
-        pw.println("mReconnectCount " + mReconnectCount);
         pw.println("mOperationalMode " + mOperationalMode);
         pw.println("mUserWantsSuspendOpt " + mUserWantsSuspendOpt);
         pw.println("mSuspendOptNeedsDisabled " + mSuspendOptNeedsDisabled);
@@ -2284,6 +2272,19 @@ public class WifiStateMachine extends StateMachine {
                         sb.append("/").append(detailedState);
                     }
                 }
+                break;
+            case CMD_IP_CONFIGURATION_LOST:
+                int count = -1;
+                WifiConfiguration c = getCurrentWifiConfiguration();
+                if (c != null) count = c.numConnectionFailures;
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                sb.append(" failures: ");
+                sb.append(Integer.toString(count));
+                sb.append("/");
+                sb.append(Integer.toString(mWifiConfigStore.getMaxDhcpRetries()));
                 break;
             default:
                 sb.append(" ");
@@ -3001,7 +3002,7 @@ public class WifiStateMachine extends StateMachine {
      * - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
      * - HTTP proxy: the wifi config store.
      */
-    private void updateLinkProperties() {
+    private void updateLinkProperties(boolean failure) {
         LinkProperties newLp = new LinkProperties();
 
         // Interface name and proxy are locally configured.
@@ -3048,6 +3049,38 @@ public class WifiStateMachine extends StateMachine {
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
+        if (DBG) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("updateLinkProperties nid: " + mLastNetworkId);
+            sb.append(" state: " + detailedState);
+            if (failure) sb.append(" failure");
+
+            if (mLinkProperties != null) {
+                if (mLinkProperties.hasIPv4Address()) {
+                    sb.append(" v4");
+                }
+                if (mLinkProperties.hasGlobalIPv6Address()) {
+                    sb.append(" v6");
+                }
+                if (mLinkProperties.hasIPv4DefaultRoute()) {
+                    sb.append(" v4r");
+                }
+                if (mLinkProperties.hasIPv6DefaultRoute()) {
+                    sb.append(" v6r");
+                }
+                if (mLinkProperties.hasIPv4DnsServer()) {
+                    sb.append(" v4dns");
+                }
+                if (mLinkProperties.hasIPv6DnsServer()) {
+                    sb.append(" v6dns");
+                }
+                if (mLinkProperties.isProvisioned()) {
+                    sb.append(" isprov");
+                }
+            }
+            loge(sb.toString());
+        }
+
         // If we just configured or lost IP configuration, do the needful.
         // We don't just call handleSuccessfulIpConfiguration() or handleIpConfigurationLost()
         // here because those should only be called if we're attempting to connect or already
@@ -3055,10 +3088,10 @@ public class WifiStateMachine extends StateMachine {
         // Also, when roaming we don't pass through a not-provisioned state but
         // still need to realize we have an IP_CONFIGURATION_SUCCESSFUL.
         if (isProvisioned &&
-                (!wasProvisioned || detailedState == DetailedState.OBTAINING_IPADDR)) {
+                (!wasProvisioned || getCurrentState() == mObtainingIpState)) {
             sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
         } else if (!isProvisioned && (wasProvisioned
-                || detailedState == DetailedState.OBTAINING_IPADDR)) {
+                || failure && getCurrentState() == mObtainingIpState)) {
             sendMessage(CMD_IP_CONFIGURATION_LOST);
         } else if (linkChanged && getNetworkDetailedState() == DetailedState.CONNECTED) {
             // If anything has changed, and we're already connected, send out a notification.
@@ -3133,12 +3166,6 @@ public class WifiStateMachine extends StateMachine {
           }
           return address;
       }
-
-    private int getMaxDhcpRetries() {
-        return Settings.Global.getInt(mContext.getContentResolver(),
-                                      Settings.Global.WIFI_MAX_DHCP_RETRY_COUNT,
-                                      DEFAULT_MAX_DHCP_RETRIES);
-    }
 
     private void sendScanResultsAvailableBroadcast() {
         noteScanEnd();
@@ -3387,7 +3414,7 @@ public class WifiStateMachine extends StateMachine {
     private void handleIPv4Success(DhcpResults dhcpResults) {
 
         if (PDBG) {
-            loge("handleIPv4Success <" + dhcpResults.toString()
+            loge("wifistatemachine handleIPv4Success <" + dhcpResults.toString()
                     + "> linkaddress num " + dhcpResults.linkProperties.getLinkAddresses().size());
             for (LinkAddress linkAddress : dhcpResults.linkProperties.getLinkAddresses()) {
                 loge("link address " + linkAddress.toString());
@@ -3424,12 +3451,16 @@ public class WifiStateMachine extends StateMachine {
         }
         mWifiInfo.setInetAddress(addr);
         mWifiInfo.setMeteredHint(dhcpResults.hasMeteredHint());
-        updateLinkProperties();
+        updateLinkProperties(false);
     }
 
     private void handleSuccessfulIpConfiguration() {
         mLastSignalLevel = -1; // Force update of signal strength
-        mReconnectCount = 0; // Reset IP failure tracking
+        WifiConfiguration c = getCurrentWifiConfiguration();
+        // Reset IP failure tracking
+        if (c != null) {
+            c.numConnectionFailures = 0;
+        }
     }
 
     private void handleIPv4Failure() {
@@ -3438,31 +3469,22 @@ public class WifiStateMachine extends StateMachine {
                  mDhcpResults.linkProperties.clear();
              }
         }
-        updateLinkProperties();
+        if (PDBG) {
+            loge("wifistatemachine handleIPv4Failure");
+        }
+        updateLinkProperties(true);
     }
 
     private void handleIpConfigurationLost() {
         mWifiInfo.setInetAddress(null);
         mWifiInfo.setMeteredHint(false);
-        /**
-         * If we've exceeded the maximum number of retries for DHCP
-         * to a given network, disable the network
-         */
-        int maxRetries = getMaxDhcpRetries();
-        // maxRetries == 0 means keep trying forever
-        if (maxRetries > 0 && ++mReconnectCount > maxRetries) {
-            loge("Failed " +
-                    mReconnectCount + " times, Disabling " + mLastNetworkId);
-            mWifiConfigStore.disableNetwork(mLastNetworkId,
-                    WifiConfiguration.DISABLED_DHCP_FAILURE);
-            mReconnectCount = 0;
-        }
+
+        mWifiConfigStore.handleSSIDStateChange(mLastNetworkId, false, "DHCP FAILURE");
 
         /* DHCP times out after about 30 seconds, we do a
-         * disconnect and an immediate reconnect to try again
+         * disconnect thru supplicant, we will let autojoin retry connecting to the network
          */
         mWifiNative.disconnect();
-        mWifiNative.reconnect();
     }
 
     /* Current design is to not set the config on a running hostapd but instead
@@ -3758,7 +3780,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 /* Link configuration (IP address, DNS, ...) changes notified via netlink */
                 case CMD_NETLINK_UPDATE:
-                    updateLinkProperties();
+                    updateLinkProperties(false);
                     break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 case CMD_IP_CONFIGURATION_LOST:
@@ -4881,6 +4903,12 @@ public class WifiStateMachine extends StateMachine {
             case WifiManager.WPS_COMPLETED:
                 s = "WPS_COMPLETED";
                 break;
+            case CMD_IP_CONFIGURATION_LOST:
+                s = "CMD_IP_CONFIGURATION_LOST";
+                break;
+            case CMD_IP_CONFIGURATION_SUCCESSFUL:
+                s = "CMD_IP_CONFIGURATION_SUCCESSFUL";
+                break;
             default:
                 s = "what:" + Integer.toString(message.what);
                 break;
@@ -5375,7 +5403,7 @@ public class WifiStateMachine extends StateMachine {
         public void exit() {
             // This is handled by receiving a NETWORK_DISCONNECTION_EVENT in ConnectModeState
             // Bug: 15347363
-            // For paranoia's sake, call handleNEtworkDisconnect only if BSSID is null or last networkId
+            // For paranoia's sake, call handleNetworkDisconnect only if BSSID is null or last networkId
             // is not invalid.
             if (mLastBssid != null || mLastNetworkId != WifiConfiguration.INVALID_NETWORK_ID) {
                 handleNetworkDisconnect();
@@ -5393,12 +5421,19 @@ public class WifiStateMachine extends StateMachine {
               case DhcpStateMachine.CMD_POST_DHCP_ACTION:
                   handlePostDhcpSetup();
                   if (message.arg1 == DhcpStateMachine.DHCP_SUCCESS) {
-                      if (DBG) log("DHCP successful");
+                      if (DBG) log("WifiStateMachine DHCP successful");
                       handleIPv4Success((DhcpResults) message.obj);
                       // We advance to mVerifyingLinkState because handleIPv4Success will call
                       // updateLinkProperties, which then sends CMD_IP_CONFIGURATION_SUCCESSFUL.
                   } else if (message.arg1 == DhcpStateMachine.DHCP_FAILURE) {
-                      if (DBG) log("DHCP failed");
+                      if (DBG) {
+                          int count = -1;
+                          WifiConfiguration config = getCurrentWifiConfiguration();
+                          if (config != null) {
+                              count = config.numConnectionFailures;
+                          }
+                          log("WifiStateMachine DHCP failure count=" + count);
+                      }
                       handleIPv4Failure();
                       // As above, we transition to mDisconnectingState via updateLinkProperties.
                   }
@@ -5563,7 +5598,7 @@ public class WifiStateMachine extends StateMachine {
                         }
                         if (result.hasProxyChanged()) {
                             log("Reconfiguring proxy on connection");
-                            updateLinkProperties();
+                            updateLinkProperties(false);
                         }
                     }
 

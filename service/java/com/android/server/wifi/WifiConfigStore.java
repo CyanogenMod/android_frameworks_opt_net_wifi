@@ -44,6 +44,7 @@ import android.os.FileObserver;
 import android.os.Process;
 import android.os.SystemClock;
 import android.os.UserHandle;
+import android.provider.Settings;
 import android.security.Credentials;
 import android.security.KeyChain;
 import android.security.KeyStore;
@@ -222,6 +223,18 @@ public class WifiConfigStore extends IpConfigStore {
             WifiEnterpriseConfig.ENGINE_KEY, WifiEnterpriseConfig.ENGINE_ID_KEY,
             WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY };
 
+
+    /**
+     * The maximum number of times we will retry a connection to an access point
+     * for which we have failed in acquiring an IP address from DHCP. A value of
+     * N means that we will make N+1 connection attempts in all.
+     * <p>
+     * See {@link Settings.Secure#WIFI_MAX_DHCP_RETRY_COUNT}. This is the default
+     * value if a Settings value is not present.
+     */
+    private static final int DEFAULT_MAX_DHCP_RETRIES = 9;
+
+
     private final LocalLog mLocalLog;
     private final WpaConfigFileObserver mFileObserver;
 
@@ -390,7 +403,7 @@ public class WifiConfigStore extends IpConfigStore {
                 result.averageRssi(previousRssi, previousSeen,
                         WifiAutoJoinController.mScanResultMaximumAge);
                 if (VDBG) {
-                    loge("updateConfiguration freq=" + result.level
+                    loge("updateConfiguration freq=" + result.frequency
                         + " BSSID=" + result.BSSID
                         + " RSSI=" + result.level
                         + " " + config.configKey());
@@ -2820,6 +2833,12 @@ public class WifiConfigStore extends IpConfigStore {
         return found;
     }
 
+    int getMaxDhcpRetries() {
+        return Settings.Global.getInt(mContext.getContentResolver(),
+                Settings.Global.WIFI_MAX_DHCP_RETRY_COUNT,
+                DEFAULT_MAX_DHCP_RETRIES);
+    }
+
     void handleSSIDStateChange(int netId, boolean enabled, String message) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
@@ -2879,6 +2898,25 @@ public class WifiConfigStore extends IpConfigStore {
                             if (DBG) {
                                 loge("blacklisted " + config.configKey() + " to "
                                         + Integer.toString(config.autoJoinStatus));
+                            }
+                        } else if (message.contains("DHCP FAILURE")) {
+                            config.numConnectionFailures++;
+                            config.lastConnectionFailure = System.currentTimeMillis();
+                            int maxRetries = getMaxDhcpRetries();
+                            // maxRetries == 0 means keep trying forever
+                            if (maxRetries > 0 && config.numConnectionFailures > maxRetries) {
+                                /**
+                                 * If we've exceeded the maximum number of retries for DHCP
+                                 * to a given network, disable the network
+                                 */
+                                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
+                                disableNetwork(netId, WifiConfiguration.DISABLED_DHCP_FAILURE);
+                            }
+                            if (DBG) {
+                                loge("blacklisted " + config.configKey() + " to "
+                                        + config.autoJoinStatus
+                                        + " due to DHCP failure, count="
+                                        + config.numConnectionFailures);
                             }
                         }
                         message.replace("\n", "");
