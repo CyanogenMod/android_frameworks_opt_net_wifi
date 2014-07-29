@@ -3002,7 +3002,7 @@ public class WifiStateMachine extends StateMachine {
      * - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
      * - HTTP proxy: the wifi config store.
      */
-    private void updateLinkProperties(boolean failure) {
+    private void updateLinkProperties(boolean dhcpComplete) {
         LinkProperties newLp = new LinkProperties();
 
         // Interface name and proxy are locally configured.
@@ -3053,7 +3053,11 @@ public class WifiStateMachine extends StateMachine {
             StringBuilder sb = new StringBuilder();
             sb.append("updateLinkProperties nid: " + mLastNetworkId);
             sb.append(" state: " + detailedState);
-            if (failure) sb.append(" failure");
+            if (dhcpComplete && !isProvisioned) {
+                sb.append(" dhcp-failure");
+            } else if (dhcpComplete) {
+                sb.append(" dhcp-done");
+            }
 
             if (mLinkProperties != null) {
                 if (mLinkProperties.hasIPv4Address()) {
@@ -3091,7 +3095,7 @@ public class WifiStateMachine extends StateMachine {
                 (!wasProvisioned || getCurrentState() == mObtainingIpState)) {
             sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
         } else if (!isProvisioned && (wasProvisioned
-                || failure && getCurrentState() == mObtainingIpState)) {
+                || (dhcpComplete && getCurrentState() == mObtainingIpState))) {
             sendMessage(CMD_IP_CONFIGURATION_LOST);
         } else if (linkChanged && getNetworkDetailedState() == DetailedState.CONNECTED) {
             // If anything has changed, and we're already connected, send out a notification.
@@ -3451,7 +3455,7 @@ public class WifiStateMachine extends StateMachine {
         }
         mWifiInfo.setInetAddress(addr);
         mWifiInfo.setMeteredHint(dhcpResults.hasMeteredHint());
-        updateLinkProperties(false);
+        updateLinkProperties(true);
     }
 
     private void handleSuccessfulIpConfiguration() {
