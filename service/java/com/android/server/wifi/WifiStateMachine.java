@@ -5050,6 +5050,8 @@ public class WifiStateMachine extends StateMachine {
 
                         // Remember time of last connection attempt
                         lastConnectAttempt = System.currentTimeMillis();
+
+                        mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
                     }
                     // Cancel auto roam requests
                     autoRoamSetBSSID(message.arg1, "any");
@@ -5215,6 +5217,7 @@ public class WifiStateMachine extends StateMachine {
                      */
                     netId = message.arg1;
                     config = (WifiConfiguration) message.obj;
+                    mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
 
                     if (config == null) {
                         loge("CONNECT_NETWORK id=" + Integer.toString(netId) + " "
@@ -5281,6 +5284,7 @@ public class WifiStateMachine extends StateMachine {
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
                                 + " my state " + getCurrentState().getName());
                     }
+                    mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
 
                     result = mWifiConfigStore.saveNetwork(config);
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
