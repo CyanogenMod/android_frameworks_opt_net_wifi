@@ -159,22 +159,32 @@ public class WifiAutoJoinController {
 
                 // Remove the previous Scan Result - this is not necessary
                 scanResultCache.remove(result.BSSID);
+            }
+
+            if (!mNetworkScoreCache.isScoredNetwork(result)) {
+                WifiKey wkey;
+                // Quoted SSIDs are the only one valid at this stage
+                try {
+                    wkey = new WifiKey("\"" + result.SSID + "\"", result.BSSID);
+                } catch (IllegalArgumentException e) {
+                    logDbg("AutoJoinController: received badly encoded SSID=[" + result.SSID +
+                            "] ->skipping this network");
+                    wkey = null;
+                }
+                if (wkey != null) {
+                    NetworkKey nkey = new NetworkKey(wkey);
+                    //if we don't know this scan result then request a score from the scorer
+                    unknownScanResults.add(nkey);
+                }
+                if (VDBG) {
+                    logDbg(result.SSID + " " + result.BSSID + " rssi="
+                            + result.level + " is not scored");
+                }
             } else {
-                if (!mNetworkScoreCache.isScoredNetwork(result)) {
-                    WifiKey wkey;
-                    // Quoted SSIDs are the only one valid at this stage
-                    try {
-                        wkey = new WifiKey("\"" + result.SSID + "\"", result.BSSID);
-                    } catch (IllegalArgumentException e) {
-                        logDbg("AutoJoinController: received badly encoded SSID=[" + result.SSID +
-                                "] ->skipping this network");
-                        wkey = null;
-                    }
-                    if (wkey != null) {
-                        NetworkKey nkey = new NetworkKey(wkey);
-                        //if we don't know this scan result then request a score from the scorer
-                        unknownScanResults.add(nkey);
-                    }
+                if (VDBG) {
+                    int score = mNetworkScoreCache.getNetworkScore(result);
+                    logDbg(result.SSID + " " + result.BSSID + " rssi="
+                            + result.level + " is scored : " + score);
                 }
             }
 
@@ -605,6 +615,12 @@ public class WifiAutoJoinController {
         // ...and the scores need to be different:-)
         if (scoreA == WifiNetworkScoreCache.INVALID_NETWORK_SCORE
                 || scoreB == WifiNetworkScoreCache.INVALID_NETWORK_SCORE) {
+            if (VDBG)  {
+                logDbg("compareWifiConfigurationsWithScorer no-scores: "
+                        + a.configKey()
+                        + " "
+                        + b.configKey());
+            }
             return 0;
         }
 
@@ -620,11 +636,13 @@ public class WifiAutoJoinController {
                     + "," + a.visibility.rssi5
                     + ") num=(" + a.visibility.num24
                     + "," + a.visibility.num5 + ")"
+                    + " sc=" + scoreA
                     + prefer + b.configKey()
                     + " rssi=(" + b.visibility.rssi24
                     + "," + b.visibility.rssi5
                     + ") num=(" + b.visibility.num24
                     + "," + b.visibility.num5 + ")"
+                    + " sc=" + scoreB
                     + " -> " + Integer.toString(scoreB - scoreA));
         }
 
@@ -1286,6 +1304,7 @@ public class WifiAutoJoinController {
                     candidate.numScorerOverrideAndSwitchedNetwork++;
                 }
                 candidate.numAssociation++;
+                mWifiConnectionStatistics.numAutoJoinAttempt++;
                 mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
                         candidate.networkId, networkSwitchType, candidate);
             }
@@ -1303,6 +1322,8 @@ public class WifiAutoJoinController {
                             + " RSSI=" + roamCandidate.frequency);
                 }
                 networkSwitchType = AUTO_JOIN_ROAMING;
+                mWifiConnectionStatistics.numAutoRoamAttempt++;
+
                 mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
                             currentConfiguration.networkId, 1, roamCandidate);
             }
