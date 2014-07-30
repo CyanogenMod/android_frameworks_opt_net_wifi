@@ -914,28 +914,36 @@ public class WifiAutoJoinController {
      *
      * @param config
      * @return score
-     * @return score
      */
     int getConfigNetworkScore(WifiConfiguration config, int age, int rssiBoost) {
 
-        int score = WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
+        if (VDBG)  logDbg("getConfigNetworkScore for " + config.configKey());
+
         if (mNetworkScoreCache == null) {
-            return score;
+            return WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
+        }
+        if (config.scanResultCache == null) {
+            return WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
         }
 
         // Get current date
         long nowMs = System.currentTimeMillis();
 
+        int startScore = -10000;
+
         // Run thru all cached scan results
-        for (ScanResult result : scanResultCache.values()) {
+        for (ScanResult result : config.scanResultCache.values()) {
             if ((nowMs - result.seen) < age) {
                 int sc = mNetworkScoreCache.getNetworkScore(result, rssiBoost);
-                if (sc > score) {
-                    score = sc;
+                if (sc > startScore) {
+                    startScore = sc;
                 }
             }
         }
-        return score;
+        if (startScore == -10000) {
+            startScore = WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
+        }
+        return startScore;
     }
 
     /**
