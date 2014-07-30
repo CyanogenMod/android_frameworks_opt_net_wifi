@@ -98,7 +98,7 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
             if (network != null && network.rssiCurve != null) {
                 score = network.rssiCurve.lookupScore(result.level);
                 if (DBG) {
-                    Log.e(TAG, "getNetworkScore found scored network" + key
+                    Log.e(TAG, "getNetworkScore found scored network " + key
                             + " score " + Integer.toString(score)
                             + " RSSI " + result.level);
                 }
@@ -120,7 +120,7 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
             if (network != null && network.rssiCurve != null) {
                 score = network.rssiCurve.lookupScore(result.level + rssiBoost);
                 if (DBG) {
-                    Log.e(TAG, "getNetworkScore found scored network" + key
+                    Log.e(TAG, "getNetworkScore found scored network " + key
                             + " score " + Integer.toString(score)
                             + " RSSI " + result.level
                             + " boost " + rssiBoost);
