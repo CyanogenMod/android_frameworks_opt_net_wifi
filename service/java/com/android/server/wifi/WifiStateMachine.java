@@ -2166,6 +2166,7 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_RSSI_POLL:
             case CMD_UNWANTED_NETWORK:
+            case WifiManager.RSSI_PKTCNT_FETCH:
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
@@ -4906,6 +4907,9 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case WifiManager.WPS_COMPLETED:
                 s = "WPS_COMPLETED";
+                break;
+            case WifiManager.RSSI_PKTCNT_FETCH:
+                s = "RSSI_PKTCNT_FETCH";
                 break;
             case CMD_IP_CONFIGURATION_LOST:
                 s = "CMD_IP_CONFIGURATION_LOST";
