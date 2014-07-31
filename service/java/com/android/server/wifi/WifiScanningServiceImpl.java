@@ -50,7 +50,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
 public class WifiScanningServiceImpl extends IWifiScanner.Stub {
@@ -122,7 +121,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     WifiScanner.CMD_START_TRACKING_CHANGE,
                     WifiScanner.CMD_STOP_TRACKING_CHANGE };
 
-            for(int cmd : validCommands) {
+            for (int cmd : validCommands) {
                 if (cmd == msg.what) {
                     mStateMachine.sendMessage(Message.obtain(msg));
                     return;
@@ -209,6 +208,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         @Override
         public void onScanResultsAvailable() {
             if (DBG) Log.d(TAG, "onScanResultAvailable event received");
+            sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
+        }
+
+        @Override
+        public void onSingleScanComplete() {
+            if (DBG) Log.d(TAG, "onSingleScanComplete event received");
             sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
         }
 
@@ -354,6 +359,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         break;
                     case CMD_FULL_SCAN_RESULTS: {
                             ScanResult result = (ScanResult) msg.obj;
+                            if (DBG) Log.d(TAG, "reporting fullscan result for " + result.SSID);
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportFullScanResult(result);
@@ -391,7 +397,15 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         class PausedState extends State {
             @Override
+            public void enter() {
+                if (DBG) Log.d(TAG, "PausedState");
+            }
+
+            @Override
             public boolean processMessage(Message msg) {
+
+                if (DBG) Log.d(TAG, "PausedState got" + msg);
+
                 switch (msg.what) {
                     case CMD_SCAN_RESTARTED:
                         transitionTo(mStartedState);
@@ -527,7 +541,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 ScanSettings settings = mScanSettings.get(handler);
                 for (WifiScanner.ChannelSpec channelSpec : settings.channels) {
                     if (channelSpec.frequency == result.frequency) {
-                        mChannel.sendMessage(WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, result);
+                        WifiSsid wifiSsid = WifiSsid.createFromAsciiEncoded(result.SSID);
+                        ScanResult newResult = new ScanResult(wifiSsid, result.BSSID, "",
+                                result.level, result.frequency, result.timestamp);
+                        if (DBG) Log.d(TAG, "sending it to " + handler);
+                        newResult.informationElements = result.informationElements.clone();
+                        mChannel.sendMessage(
+                                WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, newResult);
                     }
                 }
             }
@@ -569,8 +589,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 WifiScanner.HotlistSettings settings = entry.getValue();
                 int num_results = 0;
                 for (ScanResult result : results) {
-                    for (WifiScanner.HotspotInfo hotspotInfo : settings.hotspotInfos) {
-                        if (result.BSSID.equalsIgnoreCase(hotspotInfo.bssid)) {
+                    for (WifiScanner.BssidInfo BssidInfo : settings.bssidInfos) {
+                        if (result.BSSID.equalsIgnoreCase(BssidInfo.bssid)) {
                             num_results++;
                             break;
                         }
@@ -585,8 +605,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 ScanResult results2[] = new ScanResult[num_results];
                 int index = 0;
                 for (ScanResult result : results) {
-                    for (WifiScanner.HotspotInfo hotspotInfo : settings.hotspotInfos) {
-                        if (result.BSSID.equalsIgnoreCase(hotspotInfo.bssid)) {
+                    for (WifiScanner.BssidInfo BssidInfo : settings.bssidInfos) {
+                        if (result.BSSID.equalsIgnoreCase(BssidInfo.bssid)) {
                             results2[index] = result;
                             index++;
                         }
@@ -705,13 +725,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         private static final int MAX_BUCKETS = 8;
         private static final int MAX_CHANNELS = 8;
+        private static final int DEFAULT_MAX_AP_PER_SCAN = 10;
+        private static final int DEFAULT_REPORT_THRESHOLD = 10;
+        private static final int DEFAULT_BASE_PERIOD_MS = 5000;
 
         private WifiNative.ScanSettings mSettings;
         {
             mSettings = new WifiNative.ScanSettings();
-            mSettings.max_ap_per_scan = 10;
-            mSettings.base_period_ms = 5000;
-            mSettings.report_threshold = 80;
+            mSettings.max_ap_per_scan = DEFAULT_MAX_AP_PER_SCAN;
+            mSettings.base_period_ms = DEFAULT_BASE_PERIOD_MS;
+            mSettings.report_threshold = DEFAULT_REPORT_THRESHOLD;
 
             mSettings.buckets = new WifiNative.BucketSettings[MAX_BUCKETS];
             for (int i = 0; i < mSettings.buckets.length; i++) {
@@ -874,6 +897,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 mSettings.num_buckets++;
             }
 
+            if (mSettings.max_ap_per_scan < settings.numBssidsPerScan) {
+                mSettings.max_ap_per_scan = settings.numBssidsPerScan;
+            }
+
             return bucket.period_ms;
         }
 
@@ -1008,26 +1035,26 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         for (ClientInfo ci : clients) {
             Collection<WifiScanner.HotlistSettings> c = ci.getHotlistSettings();
             for (WifiScanner.HotlistSettings s : c) {
-                num_hotlist_ap +=  s.hotspotInfos.length;
+                num_hotlist_ap +=  s.bssidInfos.length;
             }
         }
 
         if (num_hotlist_ap == 0) {
             WifiNative.resetHotlist();
         } else {
-            WifiScanner.HotspotInfo hotspotInfos[] = new WifiScanner.HotspotInfo[num_hotlist_ap];
+            WifiScanner.BssidInfo bssidInfos[] = new WifiScanner.BssidInfo[num_hotlist_ap];
             int index = 0;
             for (ClientInfo ci : clients) {
                 Collection<WifiScanner.HotlistSettings> settings = ci.getHotlistSettings();
                 for (WifiScanner.HotlistSettings s : settings) {
-                    for (int i = 0; i < s.hotspotInfos.length; i++, index++) {
-                        hotspotInfos[index] = s.hotspotInfos[i];
+                    for (int i = 0; i < s.bssidInfos.length; i++, index++) {
+                        bssidInfos[index] = s.bssidInfos[i];
                     }
                 }
             }
 
             WifiScanner.HotlistSettings settings = new WifiScanner.HotlistSettings();
-            settings.hotspotInfos = hotspotInfos;
+            settings.bssidInfos = bssidInfos;
             settings.apLostThreshold = 3;
             WifiNative.setHotlist(settings, mStateMachine);
         }
@@ -1109,7 +1136,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 "com.android.server.WifiScanningServiceImpl.action.TIMEOUT";
         AlarmManager  mAlarmManager;
         PendingIntent mTimeoutIntent;
-        ScanResult    mCurrentHotspots[];
+        ScanResult    mCurrentBssids[];
 
         WifiChangeStateMachine(Looper looper) {
             super("SignificantChangeStateMachine", looper);
@@ -1180,14 +1207,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 }
                 return HANDLED;
             }
-
         }
 
         class StationaryState extends State {
             @Override
             public void enter() {
                 if (DBG) Log.d(TAG, "Entering StationaryState");
-                reportWifiStabilized(mCurrentHotspots);
+                reportWifiStabilized(mCurrentBssids);
             }
 
             @Override
@@ -1203,7 +1229,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         transitionTo(mMovingState);
                         break;
                     case WIFI_CHANGE_CMD_DISABLE:
-                        mCurrentHotspots = null;
+                        if (DBG) Log.d(TAG, "Got Disable Wifi Change");
+                        mCurrentBssids = null;
                         removeScanRequest();
                         untrackSignificantWifiChange();
                         transitionTo(mDefaultState);
@@ -1221,15 +1248,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         class MovingState extends State {
             boolean mWifiChangeDetected = false;
+            boolean mScanResultsPending = false;
 
             @Override
             public void enter() {
                 if (DBG) Log.d(TAG, "Entering MovingState");
-                WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
-                settings.band = WifiScanner.WIFI_BAND_BOTH;
-                settings.periodInMs = MOVING_SCAN_PERIOD_MS;
-                settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
-                addScanRequest(settings);
+                issueFullScan();
             }
 
             @Override
@@ -1240,31 +1264,41 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         // do nothing
                         break;
                     case WIFI_CHANGE_CMD_DISABLE:
-                        mCurrentHotspots = null;
+                        if (DBG) Log.d(TAG, "Got Disable Wifi Change");
+                        mCurrentBssids = null;
                         removeScanRequest();
                         untrackSignificantWifiChange();
                         transitionTo(mDefaultState);
                         break;
                     case WIFI_CHANGE_CMD_NEW_SCAN_RESULTS:
                         if (DBG) Log.d(TAG, "Got scan results");
-                        reconfigureScan((ScanResult[])msg.obj, STATIONARY_SCAN_PERIOD_MS);
-                        mWifiChangeDetected = false;
-                        mAlarmManager.setExact(AlarmManager.RTC_WAKEUP,
-                                System.currentTimeMillis() + MOVING_STATE_TIMEOUT_MS,
-                                mTimeoutIntent);
+                        if (mScanResultsPending) {
+                            reconfigureScan((ScanResult[])msg.obj, STATIONARY_SCAN_PERIOD_MS);
+                            mWifiChangeDetected = false;
+                            mAlarmManager.setExact(AlarmManager.RTC_WAKEUP,
+                                    System.currentTimeMillis() + MOVING_STATE_TIMEOUT_MS,
+                                    mTimeoutIntent);
+                            mScanResultsPending = false;
+                        }
                         break;
                     case WIFI_CHANGE_CMD_CONFIGURE:
                         if (DBG) Log.d(TAG, "Got configuration from app");
-                        reconfigureScan((WifiScanner.WifiChangeSettings) msg.obj);
+                        WifiScanner.WifiChangeSettings settings =
+                                (WifiScanner.WifiChangeSettings) msg.obj;
+                        reconfigureScan(settings);
                         mWifiChangeDetected = false;
+                        long unchangedDelay = settings.unchangedSampleSize * settings.periodInMs;
+                        mAlarmManager.cancel(mTimeoutIntent);
                         mAlarmManager.setExact(AlarmManager.RTC_WAKEUP,
-                                System.currentTimeMillis() + MOVING_STATE_TIMEOUT_MS,
+                                System.currentTimeMillis() + unchangedDelay,
                                 mTimeoutIntent);
                         break;
                     case WIFI_CHANGE_CMD_CHANGE_DETECTED:
+                        if (DBG) Log.d(TAG, "Change detected");
                         mAlarmManager.cancel(mTimeoutIntent);
                         reportWifiChanged((ScanResult[])msg.obj);
                         mWifiChangeDetected = true;
+                        issueFullScan();
                         break;
                     case WIFI_CHANGE_CMD_CHANGE_TIMEOUT:
                         if (DBG) Log.d(TAG, "Got timeout event");
@@ -1282,6 +1316,17 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             public void exit() {
                 mAlarmManager.cancel(mTimeoutIntent);
             }
+
+            void issueFullScan() {
+                if (DBG) Log.d(TAG, "Issuing full scan");
+                WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
+                settings.band = WifiScanner.WIFI_BAND_BOTH;
+                settings.periodInMs = MOVING_SCAN_PERIOD_MS;
+                settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
+                addScanRequest(settings);
+                mScanResultsPending = true;
+            }
+
         }
 
         void reconfigureScan(ScanResult[] results, int period) {
@@ -1352,42 +1397,42 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             settings2.lostApSampleSize = 3;
             settings2.unchangedSampleSize = 3;
             settings2.minApsBreachingThreshold = 3;
-            settings2.hotspotInfos = new WifiScanner.HotspotInfo[brightest.length];
+            settings2.bssidInfos = new WifiScanner.BssidInfo[brightest.length];
 
             for (int i = 0; i < brightest.length; i++) {
-                WifiScanner.HotspotInfo hotspotInfo = new WifiScanner.HotspotInfo();
-                hotspotInfo.bssid = brightest[i].BSSID;
-                int threshold = (100 + brightest[i].level) / 32 + 2;
-                hotspotInfo.low = brightest[i].level - threshold;
-                hotspotInfo.high = brightest[i].level + threshold;
-                settings2.hotspotInfos[i] = hotspotInfo;
+                WifiScanner.BssidInfo BssidInfo = new WifiScanner.BssidInfo();
+                BssidInfo.bssid = brightest[i].BSSID;
+                int threshold = (100 + brightest[i].level) / 64 + 2;
+                BssidInfo.low = brightest[i].level - threshold;
+                BssidInfo.high = brightest[i].level + threshold;
+                settings2.bssidInfos[i] = BssidInfo;
 
-                if (DBG) Log.d(TAG, "Setting bssid=" + hotspotInfo.bssid + ", " +
-                        "low=" + hotspotInfo.low + ", high=" + hotspotInfo.high);
+                if (DBG) Log.d(TAG, "Setting bssid=" + BssidInfo.bssid + ", " +
+                        "low=" + BssidInfo.low + ", high=" + BssidInfo.high);
             }
 
             trackSignificantWifiChange(settings2);
-            mCurrentHotspots = brightest;
+            mCurrentBssids = brightest;
         }
 
         void reconfigureScan(WifiScanner.WifiChangeSettings settings) {
 
-            if (settings.hotspotInfos.length < MAX_APS_TO_TRACK) {
-                Log.d(TAG, "too few APs (" + settings.hotspotInfos.length
+            if (settings.bssidInfos.length < MAX_APS_TO_TRACK) {
+                Log.d(TAG, "too few APs (" + settings.bssidInfos.length
                         + ") available to track wifi change");
                 return;
             }
 
             if (DBG) Log.d(TAG, "Setting configuration specified by app");
 
-            mCurrentHotspots = new ScanResult[settings.hotspotInfos.length];
+            mCurrentBssids = new ScanResult[settings.bssidInfos.length];
             HashSet<Integer> channels = new HashSet<Integer>();
 
-            for (int i = 0; i < settings.hotspotInfos.length; i++) {
+            for (int i = 0; i < settings.bssidInfos.length; i++) {
                 ScanResult result = new ScanResult();
-                result.BSSID = settings.hotspotInfos[i].bssid;
-                mCurrentHotspots[i] = result;
-                channels.add(settings.hotspotInfos[i].frequencyHint);
+                result.BSSID = settings.bssidInfos[i].bssid;
+                mCurrentBssids[i] = result;
+                channels.add(settings.bssidInfos[i].frequencyHint);
             }
 
             // cancel previous scan
