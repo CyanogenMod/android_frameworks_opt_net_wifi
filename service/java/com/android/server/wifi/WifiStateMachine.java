@@ -3836,9 +3836,13 @@ public class WifiStateMachine extends StateMachine {
 
                         try {
                             // A runtime crash can leave the interface up and
-                            // this affects connectivity when supplicant starts up.
-                            // Ensure interface is down before a supplicant start.
+                            // IP addresses configured, and this affects
+                            // connectivity when supplicant starts up.
+                            // Ensure interface is down and we have no IP
+                            // addresses before a supplicant start.
                             mNwService.setInterfaceDown(mInterfaceName);
+                            mNwService.clearInterfaceAddresses(mInterfaceName);
+
                             // Set privacy extensions
                             mNwService.setInterfaceIpv6PrivacyExtensions(mInterfaceName, true);
 
