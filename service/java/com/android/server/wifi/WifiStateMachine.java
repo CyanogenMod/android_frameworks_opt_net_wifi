@@ -55,6 +55,7 @@ import android.net.NetworkInfo;
 import android.net.NetworkInfo.DetailedState;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
+import android.net.StaticIpConfiguration;
 import android.net.TrafficStats;
 import android.net.wifi.*;
 import android.net.wifi.WpsResult.Status;
@@ -3149,15 +3150,14 @@ public class WifiStateMachine extends StateMachine {
         synchronized (mDhcpResultsLock) {
             // Even when we're using static configuration, we don't need to look at the config
             // store, because static IP configuration also populates mDhcpResults.
-            if ((mDhcpResults != null) && (mDhcpResults.linkProperties != null)) {
-                LinkProperties lp = mDhcpResults.linkProperties;
-                for (RouteInfo route : lp.getRoutes()) {
+            if ((mDhcpResults != null)) {
+                for (RouteInfo route : mDhcpResults.getRoutes(mInterfaceName)) {
                     newLp.addRoute(route);
                 }
-                for (InetAddress dns : lp.getDnsServers()) {
+                for (InetAddress dns : mDhcpResults.dnsServers) {
                     newLp.addDnsServer(dns);
                 }
-                newLp.setDomains(lp.getDomains());
+                newLp.setDomains(mDhcpResults.domains);
             }
         }
 
@@ -3286,15 +3286,10 @@ public class WifiStateMachine extends StateMachine {
      * Clears all our link properties.
      */
      private void clearLinkProperties() {
-         // If the network used DHCP, clear the LinkProperties we stored in the config store.
-         if (!mWifiConfigStore.isUsingStaticIp(mLastNetworkId)) {
-             mWifiConfigStore.clearLinkProperties(mLastNetworkId);
-         }
-
          // Clear the link properties obtained from DHCP and netlink.
          synchronized (mDhcpResultsLock) {
-             if (mDhcpResults != null && mDhcpResults.linkProperties != null) {
-                 mDhcpResults.linkProperties.clear();
+             if (mDhcpResults != null) {
+                 mDhcpResults.clear();
              }
          }
          mNetlinkTracker.clearLinkProperties();
@@ -3339,10 +3334,7 @@ public class WifiStateMachine extends StateMachine {
                           }
                       }
                       if (address != null) {
-                          mWifiConfigStore.setLinkProperties(mLastNetworkId,
-                                  new LinkProperties(mLinkProperties));
                           mWifiConfigStore.setDefaultGwMacAddress(mLastNetworkId, address);
-
                       }
                   }
               }
@@ -3612,28 +3604,19 @@ public class WifiStateMachine extends StateMachine {
     private void handleIPv4Success(DhcpResults dhcpResults, int reason) {
 
         if (PDBG) {
-            loge("wifistatemachine handleIPv4Success <" + dhcpResults.toString()
-                    + "> linkaddress num " + dhcpResults.linkProperties.getLinkAddresses().size());
-            for (LinkAddress linkAddress : dhcpResults.linkProperties.getLinkAddresses()) {
-                loge("link address " + linkAddress.toString());
-            }
+            loge("wifistatemachine handleIPv4Success <" + dhcpResults.toString() + ">");
+            loge("link address " + dhcpResults.ipAddress);
         }
 
         synchronized (mDhcpResultsLock) {
             mDhcpResults = dhcpResults;
         }
-        LinkProperties linkProperties = dhcpResults.linkProperties;
-        mWifiConfigStore.setLinkProperties(mLastNetworkId, new LinkProperties(linkProperties));
-        InetAddress addr = null;
-        Iterator<InetAddress> addrs = linkProperties.getAddresses().iterator();
-        if (addrs.hasNext()) {
-            addr = addrs.next();
-        }
 
+        Inet4Address addr = (Inet4Address) dhcpResults.ipAddress.getAddress();
         if (isRoaming()) {
             if (addr instanceof Inet4Address) {
                 int previousAddress = mWifiInfo.getIpAddress();
-                int newAddress = NetworkUtils.inetAddressToInt((Inet4Address)addr);
+                int newAddress = NetworkUtils.inetAddressToInt(addr);
                 if (previousAddress != newAddress) {
                     loge("handleIPv4Success, roaming and address changed" +
                             mWifiInfo + " got: " + addr);
@@ -3663,8 +3646,8 @@ public class WifiStateMachine extends StateMachine {
 
     private void handleIPv4Failure(int reason) {
         synchronized(mDhcpResultsLock) {
-             if (mDhcpResults != null && mDhcpResults.linkProperties != null) {
-                 mDhcpResults.linkProperties.clear();
+             if (mDhcpResults != null) {
+                 mDhcpResults.clear();
              }
         }
         if (PDBG) {
@@ -5998,11 +5981,12 @@ public class WifiStateMachine extends StateMachine {
             }
 
             if (!mWifiConfigStore.isUsingStaticIp(mLastNetworkId)) {
-                // TODO: If we're switching between static IP configuration and DHCP, remove the
-                // static configuration first.
                 if (isRoaming()) {
                     renewDhcp();
                 } else {
+                    // Remove any IP address on the interface in case we're switching from static
+                    // IP configuration to DHCP. This is safe because if we get here when not
+                    // roaming, we don't have a usable address.
                     startDhcp();
                 }
                 obtainingIpWatchdogCount++;
@@ -6012,20 +5996,19 @@ public class WifiStateMachine extends StateMachine {
             } else {
                 // stop any running dhcp before assigning static IP
                 stopDhcp();
-                DhcpResults dhcpResults = new DhcpResults(
-                        mWifiConfigStore.getLinkProperties(mLastNetworkId));
-                InterfaceConfiguration ifcg = new InterfaceConfiguration();
-                Iterator<LinkAddress> addrs =
-                        dhcpResults.linkProperties.getLinkAddresses().iterator();
-                if (!addrs.hasNext()) {
+                StaticIpConfiguration config = mWifiConfigStore.getStaticIpConfiguration(
+                        mLastNetworkId);
+                if (config.ipAddress == null) {
                     loge("Static IP lacks address");
                     sendMessage(CMD_STATIC_IP_FAILURE);
                 } else {
-                    ifcg.setLinkAddress(addrs.next());
+                    InterfaceConfiguration ifcg = new InterfaceConfiguration();
+                    ifcg.setLinkAddress(config.ipAddress);
                     ifcg.setInterfaceUp();
                     try {
                         mNwService.setInterfaceConfig(mInterfaceName, ifcg);
                         if (DBG) log("Static IP configuration succeeded");
+                        DhcpResults dhcpResults = new DhcpResults(config);
                         sendMessage(CMD_STATIC_IP_SUCCESS, dhcpResults);
                     } catch (RemoteException re) {
                         loge("Static IP configuration failed: " + re);

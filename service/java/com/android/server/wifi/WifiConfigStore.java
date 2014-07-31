@@ -22,10 +22,10 @@ import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
-import android.net.LinkProperties;
 import android.net.NetworkInfo.DetailedState;
 import android.net.ProxyInfo;
 import android.net.RouteInfo;
+import android.net.StaticIpConfiguration;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
 import android.net.wifi.WifiConfiguration.Status;
@@ -948,27 +948,23 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
-     * Fetch the link properties for a given network id
-     *
-     * @return LinkProperties for the given network id
+     * Fetch the static IP configuration for a given network id
      */
-    LinkProperties getLinkProperties(int netId) {
+    StaticIpConfiguration getStaticIpConfiguration(int netId) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null) return new LinkProperties(config.getLinkProperties());
+        if (config != null) {
+            return config.getStaticIpConfiguration();
+        }
         return null;
     }
 
     /**
-     * set IP configuration for a given network id
+     * Set the static IP configuration for a given network id
      */
-    void setLinkProperties(int netId, LinkProperties linkProperties) {
+    void setStaticIpConfiguration(int netId, StaticIpConfiguration staticIpConfiguration) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
-            // add old proxy details - TODO - is this still needed?
-            if(config.getLinkProperties() != null) {
-                linkProperties.setHttpProxy(config.getLinkProperties().getHttpProxy());
-            }
-            config.setLinkProperties(linkProperties);
+            config.setStaticIpConfiguration(staticIpConfiguration);
         }
     }
 
@@ -985,29 +981,14 @@ public class WifiConfigStore extends IpConfigStore {
 
 
     /**
-     * clear IP configuration for a given network id
-     * @param network id
-     */
-    void clearLinkProperties(int netId) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null && config.getLinkProperties() != null) {
-            // Clear everything except proxy
-            ProxyInfo proxy = config.getLinkProperties().getHttpProxy();
-            config.getLinkProperties().clear();
-            config.getLinkProperties().setHttpProxy(proxy);
-        }
-    }
-
-
-    /**
      * Fetch the proxy properties for a given network id
      * @param network id
      * @return ProxyInfo for the network id
      */
     ProxyInfo getProxyProperties(int netId) {
-        LinkProperties linkProperties = getLinkProperties(netId);
-        if (linkProperties != null) {
-            return new ProxyInfo(linkProperties.getHttpProxy());
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        if (config != null) {
+            return config.getHttpProxy();
         }
         return null;
     }
@@ -1345,11 +1326,9 @@ public class WifiConfigStore extends IpConfigStore {
                         }
                     }
 
-                    if (config.getLinkProperties() != null) {
-                        String macAddress = config.defaultGwMacAddress;
-                        if (macAddress != null) {
-                            out.writeUTF(DEFAULT_GW_KEY + macAddress + SEPARATOR_KEY);
-                        }
+                    String macAddress = config.defaultGwMacAddress;
+                    if (macAddress != null) {
+                        out.writeUTF(DEFAULT_GW_KEY + macAddress + SEPARATOR_KEY);
                     }
 
                     if (config.scanResultCache != null) {
@@ -2589,7 +2568,6 @@ public class WifiConfigStore extends IpConfigStore {
             WifiConfiguration newConfig) {
         boolean ipChanged = false;
         boolean proxyChanged = false;
-        LinkProperties linkProperties = null;
 
         if (VDBG) {
             loge("writeIpAndProxyConfigurationsOnChange: " + currentConfig.SSID + " -> " +
@@ -2599,29 +2577,12 @@ public class WifiConfigStore extends IpConfigStore {
 
         switch (newConfig.getIpAssignment()) {
             case STATIC:
-                Collection<LinkAddress> currentLinkAddresses = currentConfig.getLinkProperties()
-                        .getLinkAddresses();
-                Collection<LinkAddress> newLinkAddresses = newConfig.getLinkProperties()
-                        .getLinkAddresses();
-                Collection<InetAddress> currentDnses =
-                        currentConfig.getLinkProperties().getDnsServers();
-                Collection<InetAddress> newDnses = newConfig.getLinkProperties().getDnsServers();
-                Collection<RouteInfo> currentRoutes = currentConfig.getLinkProperties().getRoutes();
-                Collection<RouteInfo> newRoutes = newConfig.getLinkProperties().getRoutes();
-
-                boolean linkAddressesDiffer =
-                        (currentLinkAddresses.size() != newLinkAddresses.size()) ||
-                        !currentLinkAddresses.containsAll(newLinkAddresses);
-                boolean dnsesDiffer = (currentDnses.size() != newDnses.size()) ||
-                        !currentDnses.containsAll(newDnses);
-                boolean routesDiffer = (currentRoutes.size() != newRoutes.size()) ||
-                        !currentRoutes.containsAll(newRoutes);
-
-                if ((currentConfig.getIpAssignment() != newConfig.getIpAssignment()) ||
-                        linkAddressesDiffer ||
-                        dnsesDiffer ||
-                        routesDiffer) {
+                if (currentConfig.getIpAssignment() != newConfig.getIpAssignment()) {
                     ipChanged = true;
+                } else {
+                    ipChanged = !Objects.equals(
+                            currentConfig.getStaticIpConfiguration(),
+                            newConfig.getStaticIpConfiguration());
                 }
                 break;
             case DHCP:
@@ -2640,8 +2601,8 @@ public class WifiConfigStore extends IpConfigStore {
         switch (newConfig.getProxySettings()) {
             case STATIC:
             case PAC:
-                ProxyInfo newHttpProxy = newConfig.getLinkProperties().getHttpProxy();
-                ProxyInfo currentHttpProxy = currentConfig.getLinkProperties().getHttpProxy();
+                ProxyInfo newHttpProxy = newConfig.getHttpProxy();
+                ProxyInfo currentHttpProxy = currentConfig.getHttpProxy();
 
                 if (newHttpProxy != null) {
                     proxyChanged = !newHttpProxy.equals(currentHttpProxy);
@@ -2662,49 +2623,28 @@ public class WifiConfigStore extends IpConfigStore {
                 break;
         }
 
-        if (!ipChanged) {
-            linkProperties = copyIpSettingsFromConfig(currentConfig);
-        } else {
+        if (ipChanged) {
             currentConfig.setIpAssignment(newConfig.getIpAssignment());
-            linkProperties = copyIpSettingsFromConfig(newConfig);
-            log("IP config changed SSID = " + currentConfig.SSID + " linkProperties: " +
-                    linkProperties.toString());
+            currentConfig.setStaticIpConfiguration(newConfig.getStaticIpConfiguration());
+            log("IP config changed SSID = " + currentConfig.SSID +
+                " static configuration: " + currentConfig.getStaticIpConfiguration().toString());
         }
 
-
-        if (!proxyChanged) {
-            linkProperties.setHttpProxy(currentConfig.getLinkProperties().getHttpProxy());
-        } else {
+        if (proxyChanged) {
             currentConfig.setProxySettings(newConfig.getProxySettings());
-            linkProperties.setHttpProxy(newConfig.getLinkProperties().getHttpProxy());
+            currentConfig.setHttpProxy(newConfig.getHttpProxy());
             log("proxy changed SSID = " + currentConfig.SSID);
-            if (linkProperties.getHttpProxy() != null) {
-                log(" proxyProperties: " + linkProperties.getHttpProxy().toString());
+            if (currentConfig.getHttpProxy() != null) {
+                log(" proxyProperties: " + currentConfig.getHttpProxy().toString());
             }
         }
 
         if (ipChanged || proxyChanged) {
-            currentConfig.setLinkProperties(linkProperties);
             writeIpAndProxyConfigurations();
             sendConfiguredNetworksChangedBroadcast(currentConfig,
                     WifiManager.CHANGE_REASON_CONFIG_CHANGE);
         }
         return new NetworkUpdateResult(ipChanged, proxyChanged);
-    }
-
-    private LinkProperties copyIpSettingsFromConfig(WifiConfiguration config) {
-        LinkProperties linkProperties = new LinkProperties();
-        linkProperties.setInterfaceName(config.getLinkProperties().getInterfaceName());
-        for (LinkAddress linkAddr : config.getLinkProperties().getLinkAddresses()) {
-            linkProperties.addLinkAddress(linkAddr);
-        }
-        for (RouteInfo route : config.getLinkProperties().getRoutes()) {
-            linkProperties.addRoute(route);
-        }
-        for (InetAddress dns : config.getLinkProperties().getDnsServers()) {
-            linkProperties.addDnsServer(dns);
-        }
-        return linkProperties;
     }
 
     /** Returns true if a particular config key needs to be quoted when passed to the supplicant. */
