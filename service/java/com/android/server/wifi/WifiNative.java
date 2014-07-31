@@ -1216,16 +1216,35 @@ public class WifiNative {
     public static interface ScanEventHandler {
         void onScanResultsAvailable();
         void onFullScanResult(ScanResult fullScanResult);
+        void onSingleScanComplete();
         void onScanPaused();
         void onScanRestarted();
     }
 
     synchronized static void onScanResultsAvailable(int id) {
-        sScanEventHandler.onScanResultsAvailable();
+        if (sScanEventHandler  != null) {
+            sScanEventHandler.onScanResultsAvailable();
+        }
+    }
+
+    /* scan status, keep these values in sync with gscan.h */
+    private static int WIFI_SCAN_BUFFER_FULL = 0;
+    private static int WIFI_SCAN_COMPLETE = 1;
+
+    synchronized static void onScanStatus(int status) {
+        Log.i(TAG, "Got a scan status changed event, status = " + status);
+
+        if (status == WIFI_SCAN_BUFFER_FULL) {
+            /* we have a separate event to take care of this */
+        } else if (status == WIFI_SCAN_COMPLETE) {
+            if (sScanEventHandler  != null) {
+                sScanEventHandler.onSingleScanComplete();
+            }
+        }
     }
 
     synchronized static void onFullScanResult(int id, ScanResult result, byte bytes[]) {
-        Log.i(TAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
+        if (DBG) Log.i(TAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
                 "num = " + bytes.length);
 
         int num = 0;
@@ -1238,14 +1257,15 @@ public class WifiNative {
                 return;
             }
             i += len + 2;
-            Log.i(TAG, "bytes[" + i + "] = [" + type + ", " + len + "]" + ", next = " + i);
+            if (DBG) Log.i(TAG, "bytes[" + i + "] = [" + type + ", " + len + "]" + ", " +
+                    "next = " + i);
         }
 
         ScanResult.InformationElement elements[] = new ScanResult.InformationElement[num];
         for (int i = 0, index = 0; i < num; i++) {
             int type  = (int) bytes[index] & 0xFF;
             int len = (int) bytes[index + 1] & 0xFF;
-            Log.i(TAG, "index = " + index + ", type = " + type + ", len = " + len);
+            if (DBG) Log.i(TAG, "index = " + index + ", type = " + type + ", len = " + len);
             ScanResult.InformationElement elem = new ScanResult.InformationElement();
             elem.id = type;
             elem.bytes = new byte[len];
@@ -1257,7 +1277,9 @@ public class WifiNative {
         }
 
         result.informationElements = elements;
-        sScanEventHandler.onFullScanResult(result);
+        if (sScanEventHandler  != null) {
+            sScanEventHandler.onFullScanResult(result);
+        }
     }
 
     private static int sScanCmdId = 0;
