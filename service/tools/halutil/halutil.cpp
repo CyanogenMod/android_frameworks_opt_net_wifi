@@ -599,7 +599,8 @@ static void testRTT() {
     wifi_rtt_config params[max_ap];
     memset(params, 0, sizeof(params));
 
-    printMsg("Configuring RTT for %d APs, num_tries = %d\n", min(num_results, max_ap), rtt_samples);
+    printMsg("Configuring RTT for %d APs, num_samples = %d\n",
+            min(num_results, max_ap), rtt_samples);
 
     unsigned num_ap = 0;
     for (int i = 0; i < min(num_results, max_ap); i++, num_ap++) {

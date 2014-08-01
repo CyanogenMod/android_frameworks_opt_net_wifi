@@ -166,7 +166,7 @@ static wifi_interface_handle getIfaceHandle(JNIEnv *env, jclass cls, jint index)
     return (wifi_interface_handle) getStaticLongArrayField(env, cls, WifiIfaceHandleVarName, index);
 }
 
-static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
+static jobject createScanResult(JNIEnv *env, wifi_scan_result *result) {
 
     // ALOGD("creating scan result");
 
@@ -177,17 +177,17 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result result) {
     }
 
     // ALOGD("setting SSID to %s", result.ssid);
-    setStringField(env, scanResult, "SSID", result.ssid);
+    setStringField(env, scanResult, "SSID", result->ssid);
 
     char bssid[32];
-    sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result.bssid[0], result.bssid[1],
-        result.bssid[2], result.bssid[3], result.bssid[4], result.bssid[5]);
+    sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0], result->bssid[1],
+        result->bssid[2], result->bssid[3], result->bssid[4], result->bssid[5]);
 
     setStringField(env, scanResult, "BSSID", bssid);
 
-    setIntField(env, scanResult, "level", result.rssi);
-    setIntField(env, scanResult, "frequency", result.channel);
-    setLongField(env, scanResult, "timestamp", result.ts);
+    setIntField(env, scanResult, "level", result->rssi);
+    setIntField(env, scanResult, "frequency", result->channel);
+    setLongField(env, scanResult, "timestamp", result->ts);
 
     return scanResult;
 }
@@ -287,6 +287,7 @@ static jstring android_net_wifi_getInterfaceName(JNIEnv *env, jclass cls, jint i
     }
 }
 
+
 static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
 
     JNIEnv *env = NULL;
@@ -297,6 +298,15 @@ static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
     reportEvent(env, mCls, "onScanResultsAvailable", "(I)V", id);
 }
 
+static void onScanEvent(wifi_scan_event event, unsigned status) {
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onScanStatus called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+
+    reportEvent(env, mCls, "onScanStatus", "(I)V", status);
+}
+
 static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
 
     JNIEnv *env = NULL;
@@ -304,7 +314,7 @@ static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
 
     ALOGD("onFullScanResult called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
-    jobject scanResult = createScanResult(env, *result);
+    jobject scanResult = createScanResult(env, result);
 
     ALOGD("Creating a byte array of length %d", result->ie_length);
 
@@ -323,6 +333,9 @@ static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
 
     reportEvent(env, mCls, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[B)V", id,
             scanResult, elements);
+
+    env->DeleteLocalRef(scanResult);
+    env->DeleteLocalRef(elements);
 }
 
 static jboolean android_net_wifi_startScan(
@@ -389,6 +402,7 @@ static jboolean android_net_wifi_startScan(
     memset(&handler, 0, sizeof(handler));
     handler.on_scan_results_available = &onScanResultsAvailable;
     handler.on_full_scan_result = &onFullScanResult;
+    handler.on_scan_event = &onScanEvent;
 
     return wifi_start_gscan(id, handle, params, handler) == WIFI_SUCCESS;
 }
@@ -595,7 +609,7 @@ static jboolean android_net_wifi_setHotlist(
     memset(&params, 0, sizeof(params));
 
     jobjectArray array = (jobjectArray) getObjectField(env, ap,
-            "hotspotInfos", "[Landroid/net/wifi/WifiScanner$HotspotInfo;");
+            "bssidInfos", "[Landroid/net/wifi/WifiScanner$BssidInfo;");
     params.num_ap = env->GetArrayLength(array);
 
     if (params.num_ap == 0) {
@@ -711,10 +725,10 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
     params.lost_ap_sample_size = getIntField(env, settings, "lostApSampleSize");
     params.min_breaching = getIntField(env, settings, "minApsBreachingThreshold");
 
-    const char *hotspot_info_array_type = "[Landroid/net/wifi/WifiScanner$HotspotInfo;";
-    jobjectArray hotspots = (jobjectArray)getObjectField(
-                env, settings, "hotspotInfos", hotspot_info_array_type);
-    params.num_ap = env->GetArrayLength(hotspots);
+    const char *bssid_info_array_type = "[Landroid/net/wifi/WifiScanner$BssidInfo;";
+    jobjectArray bssids = (jobjectArray)getObjectField(
+                env, settings, "bssidInfos", bssid_info_array_type);
+    params.num_ap = env->GetArrayLength(bssids);
 
     if (params.num_ap == 0) {
         ALOGE("Error in accessing array");
@@ -725,7 +739,7 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
             params.lost_ap_sample_size, params.min_breaching, params.num_ap);
 
     for (int i = 0; i < params.num_ap; i++) {
-        jobject objAp = env->GetObjectArrayElement(hotspots, i);
+        jobject objAp = env->GetObjectArrayElement(bssids, i);
 
         jstring macAddrString = (jstring) getObjectField(
                 env, objAp, "bssid", "Ljava/lang/String;");
