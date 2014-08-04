@@ -498,7 +498,7 @@ public class WifiStateMachine extends StateMachine {
     /* We no longer have a valid IP configuration. */
     static final int CMD_IP_CONFIGURATION_LOST            = BASE + 139;
     /* Link configuration (IP address, DNS, ...) changes notified via netlink */
-    static final int CMD_NETLINK_UPDATE                   = BASE + 140;
+    static final int CMD_UPDATE_LINKPROPERTIES            = BASE + 140;
 
 
     /* Reload all networks and reconnect */
@@ -770,7 +770,7 @@ public class WifiStateMachine extends StateMachine {
 
         mNetlinkTracker = new NetlinkTracker(mInterfaceName, new NetlinkTracker.Callback() {
             public void update() {
-                sendMessage(CMD_NETLINK_UPDATE);
+                sendMessage(CMD_UPDATE_LINKPROPERTIES);
             }
         });
         try {
@@ -2986,6 +2986,20 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+    private boolean isProvisioned(LinkProperties lp) {
+        // LinkProperties#isProvisioned returns true even if all we have is an IPv4 address and no
+        // connectivity. This turns out not to be very useful, because we can't distinguish it from
+        // a state where we have an IPv4 address assigned to the interface but are still running
+        // DHCP.
+        // TODO: Fix LinkProperties and remove this function.
+        if (mWifiConfigStore.isUsingStaticIp(mLastNetworkId)) {
+            return lp.hasIPv4Address();
+        } else {
+            return (lp.hasIPv4Address() && lp.hasIPv4DefaultRoute() && lp.hasIPv4DnsServer()) ||
+                   (lp.hasGlobalIPv6Address() && lp.hasIPv6DefaultRoute() && lp.hasIPv6DnsServer());
+        }
+    }
+
     /**
      * Updates mLinkProperties by merging information from various sources.
      *
@@ -3003,7 +3017,7 @@ public class WifiStateMachine extends StateMachine {
      * - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
      * - HTTP proxy: the wifi config store.
      */
-    private void updateLinkProperties(boolean dhcpComplete) {
+    private void updateLinkProperties(int reason) {
         LinkProperties newLp = new LinkProperties();
 
         // Interface name and proxy are locally configured.
@@ -3037,14 +3051,14 @@ public class WifiStateMachine extends StateMachine {
         }
 
         final boolean linkChanged = !newLp.equals(mLinkProperties);
-        final boolean wasProvisioned = mLinkProperties.isProvisioned();
-        final boolean isProvisioned = newLp.isProvisioned();
+        final boolean wasProvisioned = isProvisioned(mLinkProperties);
+        final boolean isProvisioned = isProvisioned(newLp);
         final DetailedState detailedState = getNetworkDetailedState();
 
         if (linkChanged) {
             if (DBG) {
                 log("Link configuration changed for netId: " + mLastNetworkId
-                        + " old: " + mLinkProperties + "new: " + newLp);
+                        + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
@@ -3054,11 +3068,7 @@ public class WifiStateMachine extends StateMachine {
             StringBuilder sb = new StringBuilder();
             sb.append("updateLinkProperties nid: " + mLastNetworkId);
             sb.append(" state: " + detailedState);
-            if (dhcpComplete && !isProvisioned) {
-                sb.append(" dhcp-failure");
-            } else if (dhcpComplete) {
-                sb.append(" dhcp-done");
-            }
+            sb.append(" reason: " + smToString(reason));
 
             if (mLinkProperties != null) {
                 if (mLinkProperties.hasIPv4Address()) {
@@ -3079,7 +3089,7 @@ public class WifiStateMachine extends StateMachine {
                 if (mLinkProperties.hasIPv6DnsServer()) {
                     sb.append(" v6dns");
                 }
-                if (mLinkProperties.isProvisioned()) {
+                if (isProvisioned) {
                     sb.append(" isprov");
                 }
             }
@@ -3090,17 +3100,73 @@ public class WifiStateMachine extends StateMachine {
         // We don't just call handleSuccessfulIpConfiguration() or handleIpConfigurationLost()
         // here because those should only be called if we're attempting to connect or already
         // connected, whereas updateLinkProperties can be called at any time.
-        // Also, when roaming we don't pass through a not-provisioned state but
-        // still need to realize we have an IP_CONFIGURATION_SUCCESSFUL.
-        if (isProvisioned &&
-                (!wasProvisioned || getCurrentState() == mObtainingIpState)) {
-            sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
-        } else if (!isProvisioned && (wasProvisioned
-                || (dhcpComplete && getCurrentState() == mObtainingIpState))) {
-            sendMessage(CMD_IP_CONFIGURATION_LOST);
-        } else if (linkChanged && getNetworkDetailedState() == DetailedState.CONNECTED) {
-            // If anything has changed, and we're already connected, send out a notification.
-            sendLinkConfigurationChangedBroadcast();
+        switch (reason) {
+            case DhcpStateMachine.DHCP_SUCCESS:
+            case CMD_STATIC_IP_SUCCESS:
+                // IPv4 provisioning succeded. Advance to connected state.
+                sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
+                if (!isProvisioned) {
+                    // Can never happen unless DHCP reports success but isProvisioned thinks the
+                    // resulting configuration is invalid (e.g., no IPv4 address, or the state in
+                    // mLinkProperties is out of sync with reality, or there's a bug in this code).
+                    // TODO: disconnect here instead. If our configuration is not usable, there's no
+                    // point in staying connected, and if mLinkProperties is out of sync with
+                    // reality, that will cause problems in the future.
+                    loge("IPv4 config succeeded, but not provisioned");
+                }
+                break;
+
+            case DhcpStateMachine.DHCP_FAILURE:
+                // DHCP failed. If we're not already provisioned, give up and disconnect.
+                // If we're already provisioned (e.g., IPv6-only network), stay connected.
+                if (!isProvisioned) {
+                    sendMessage(CMD_IP_CONFIGURATION_LOST);
+                } else {
+                    // DHCP failed, but we're provisioned (e.g., if we're on an IPv6-only network).
+                    sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
+
+                    // To be sure we don't get stuck with a non-working network if all we had is
+                    // IPv4, remove the IPv4 address from the interface (since we're using DHCP,
+                    // and DHCP failed). If we had an IPv4 address before, the deletion of the
+                    // address  will cause a CMD_UPDATE_LINKPROPERTIES. If the IPv4 address was
+                    // necessary for provisioning, its deletion will cause us to disconnect.
+                    //
+                    // This should never happen, because a DHCP failure will have empty DhcpResults
+                    // and thus empty LinkProperties, and isProvisioned will not return true if
+                    // we're using DHCP and don't have an IPv4 default route. So for now it's only
+                    // here for extra redundancy. However, it will increase robustness if we move
+                    // to getting IPv4 routes from netlink as well.
+                    loge("DHCP failure: provisioned, should not happen! Clearing IPv4 address.");
+                    try {
+                        InterfaceConfiguration ifcg = new InterfaceConfiguration();
+                        ifcg.setLinkAddress(new LinkAddress("0.0.0.0/0"));
+                        ifcg.setInterfaceUp();
+                        mNwService.setInterfaceConfig(mInterfaceName, ifcg);
+                    } catch (RemoteException e) {
+                        sendMessage(CMD_IP_CONFIGURATION_LOST);
+                    }
+                }
+                break;
+
+            case CMD_STATIC_IP_FAILURE:
+                // Static configuration was invalid, or an error occurred in applying it. Give up.
+                sendMessage(CMD_IP_CONFIGURATION_LOST);
+                break;
+
+            case CMD_UPDATE_LINKPROPERTIES:
+                // IP addresses, DNS servers, etc. changed. Act accordingly.
+                if (wasProvisioned && !isProvisioned) {
+                    // We no longer have a usable network configuration. Disconnect.
+                    sendMessage(CMD_IP_CONFIGURATION_LOST);
+                } else if (!wasProvisioned && isProvisioned) {
+                    // We have a usable IPv6-only config. Advance to connected state.
+                    sendMessage(CMD_IP_CONFIGURATION_SUCCESSFUL);
+                }
+                if (linkChanged && getNetworkDetailedState() == DetailedState.CONNECTED) {
+                    // If anything has changed and we're already connected, send out a notification.
+                    sendLinkConfigurationChangedBroadcast();
+                }
+                break;
         }
     }
 
@@ -3416,7 +3482,7 @@ public class WifiStateMachine extends StateMachine {
         WifiNative.restartScan();
     }
 
-    private void handleIPv4Success(DhcpResults dhcpResults) {
+    private void handleIPv4Success(DhcpResults dhcpResults, int reason) {
 
         if (PDBG) {
             loge("wifistatemachine handleIPv4Success <" + dhcpResults.toString()
@@ -3456,7 +3522,7 @@ public class WifiStateMachine extends StateMachine {
         }
         mWifiInfo.setInetAddress(addr);
         mWifiInfo.setMeteredHint(dhcpResults.hasMeteredHint());
-        updateLinkProperties(true);
+        updateLinkProperties(reason);
     }
 
     private void handleSuccessfulIpConfiguration() {
@@ -3468,7 +3534,7 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
-    private void handleIPv4Failure() {
+    private void handleIPv4Failure(int reason) {
         synchronized(mDhcpResultsLock) {
              if (mDhcpResults != null && mDhcpResults.linkProperties != null) {
                  mDhcpResults.linkProperties.clear();
@@ -3477,7 +3543,7 @@ public class WifiStateMachine extends StateMachine {
         if (PDBG) {
             loge("wifistatemachine handleIPv4Failure");
         }
-        updateLinkProperties(true);
+        updateLinkProperties(reason);
     }
 
     private void handleIpConfigurationLost() {
@@ -3784,8 +3850,8 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, WifiP2pServiceImpl.DISCONNECT_WIFI_RESPONSE);
                     break;
                 /* Link configuration (IP address, DNS, ...) changes notified via netlink */
-                case CMD_NETLINK_UPDATE:
-                    updateLinkProperties(false);
+                case CMD_UPDATE_LINKPROPERTIES:
+                    updateLinkProperties(CMD_UPDATE_LINKPROPERTIES);
                     break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 case CMD_IP_CONFIGURATION_LOST:
@@ -4647,8 +4713,12 @@ public class WifiStateMachine extends StateMachine {
 
 
     String smToString(Message message) {
+        return smToString(message.what);
+    }
+
+    String smToString(int what) {
         String s = "unknown";
-        switch(message.what) {
+        switch (what) {
             case WifiMonitor.DRIVER_HUNG_EVENT:
                 s = "DRIVER_HUNG_EVENT";
                 break;
@@ -4798,8 +4868,8 @@ public class WifiStateMachine extends StateMachine {
             case CMD_POLL_BATCHED_SCAN:
                 s = "CMD_POLL_BATCHED_SCAN";
                 break;
-            case CMD_NETLINK_UPDATE:
-                s = "CMD_NETLINK_UPDATE";
+            case CMD_UPDATE_LINKPROPERTIES:
+                s = "CMD_UPDATE_LINKPROPERTIES";
                 break;
             case CMD_RELOAD_TLS_AND_RECONNECT:
                 s = "CMD_RELOAD_TLS_AND_RECONNECT";
@@ -4921,8 +4991,20 @@ public class WifiStateMachine extends StateMachine {
             case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 s = "CMD_IP_CONFIGURATION_SUCCESSFUL";
                 break;
+            case CMD_STATIC_IP_SUCCESS:
+                s = "CMD_STATIC_IP_SUCCESSFUL";
+                break;
+            case CMD_STATIC_IP_FAILURE:
+                s = "CMD_STATIC_IP_FAILURE";
+                break;
+            case DhcpStateMachine.DHCP_SUCCESS:
+                s = "DHCP_SUCCESS";
+                break;
+            case DhcpStateMachine.DHCP_FAILURE:
+                s = "DHCP_FAILURE";
+                break;
             default:
-                s = "what:" + Integer.toString(message.what);
+                s = "what:" + Integer.toString(what);
                 break;
         }
         return s;
@@ -5438,7 +5520,7 @@ public class WifiStateMachine extends StateMachine {
                   handlePostDhcpSetup();
                   if (message.arg1 == DhcpStateMachine.DHCP_SUCCESS) {
                       if (DBG) log("WifiStateMachine DHCP successful");
-                      handleIPv4Success((DhcpResults) message.obj);
+                      handleIPv4Success((DhcpResults) message.obj, DhcpStateMachine.DHCP_SUCCESS);
                       // We advance to mVerifyingLinkState because handleIPv4Success will call
                       // updateLinkProperties, which then sends CMD_IP_CONFIGURATION_SUCCESSFUL.
                   } else if (message.arg1 == DhcpStateMachine.DHCP_FAILURE) {
@@ -5450,7 +5532,7 @@ public class WifiStateMachine extends StateMachine {
                           }
                           log("WifiStateMachine DHCP failure count=" + count);
                       }
-                      handleIPv4Failure();
+                      handleIPv4Failure(DhcpStateMachine.DHCP_FAILURE);
                       // As above, we transition to mDisconnectingState via updateLinkProperties.
                   }
                   break;
@@ -5609,12 +5691,15 @@ public class WifiStateMachine extends StateMachine {
                     NetworkUpdateResult result = mWifiConfigStore.saveNetwork(config);
                     if (mWifiInfo.getNetworkId() == result.getNetworkId()) {
                         if (result.hasIpChanged()) {
+                            // We switched from DHCP to static or from static to DHCP, or the
+                            // static IP address has changed.
                             log("Reconfiguring IP on connection");
+                            // TODO: clear addresses and disable IPv6 to simplify obtainingIpState.
                             transitionTo(mObtainingIpState);
                         }
                         if (result.hasProxyChanged()) {
                             log("Reconfiguring proxy on connection");
-                            updateLinkProperties(false);
+                            updateLinkProperties(CMD_UPDATE_LINKPROPERTIES);
                         }
                     }
 
@@ -5759,10 +5844,10 @@ public class WifiStateMachine extends StateMachine {
 
           switch(message.what) {
             case CMD_STATIC_IP_SUCCESS:
-                  handleIPv4Success((DhcpResults) message.obj);
+                  handleIPv4Success((DhcpResults) message.obj, CMD_STATIC_IP_SUCCESS);
                   break;
               case CMD_STATIC_IP_FAILURE:
-                  handleIPv4Failure();
+                  handleIPv4Failure(CMD_STATIC_IP_FAILURE);
                   break;
              case WifiManager.SAVE_NETWORK:
                   deferMessage(message);
