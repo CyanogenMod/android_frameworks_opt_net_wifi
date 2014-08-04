@@ -37,6 +37,7 @@ T min(const T& t1, const T& t2) {
 #define EVENT_BUF_SIZE 2048
 #define MAX_CH_BUF_SIZE  64
 #define MAX_FEATURE_SET  8
+#define HOTLIST_LOST_WINDOW  5
 
 static wifi_handle halHandle;
 static wifi_interface_handle *ifaceHandles;
@@ -59,6 +60,7 @@ static int rtt_samples = 30;
 static wifi_band band = WIFI_BAND_UNSPECIFIED;
 
 mac_addr hotlist_bssids[16];
+unsigned char mac_oui[3];
 int channel_list[16];
 int num_hotlist_bssids = 0;
 int num_channels = 0;
@@ -238,7 +240,8 @@ typedef enum {
     EVENT_TYPE_HOTLIST_AP_FOUND = 1001,
     EVENT_TYPE_SIGNIFICANT_WIFI_CHANGE = 1002,
     EVENT_TYPE_RTT_RESULTS = 1003,
-    EVENT_TYPE_SCAN_COMPLETE = 1004
+    EVENT_TYPE_SCAN_COMPLETE = 1004,
+    EVENT_TYPE_HOTLIST_AP_LOST = 1005
 } EventType;
 
 typedef struct {
@@ -340,35 +343,44 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
         /* create a schedule to scan channels 1, 6, 11 every 5 second and
          * scan 36, 40, 44, 149, 153, 157, 161 165 every 10 second */
 
-        params.max_ap_per_scan = max_ap_per_scan;
-        params.base_period = base_period;                       // 5 second
-        params.report_threshold = report_threshold;
-        params.num_buckets = 2;
+      params.max_ap_per_scan = max_ap_per_scan;
+      params.base_period = base_period;                      // 5 second
+      params.report_threshold = report_threshold;
+      params.num_buckets = 3;
 
-        params.buckets[0].bucket = 0;
-        params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
-        params.buckets[0].period = 5000;                        // 5 second
-        params.buckets[0].report_events = 0;
-        params.buckets[0].num_channels = 3;
+      params.buckets[0].bucket = 0;
+      params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
+      params.buckets[0].period = 5000;                // 5 second
+      params.buckets[0].report_events = 0;
+      params.buckets[0].num_channels = 2;
 
-        params.buckets[0].channels[0].channel = 2412;
-        params.buckets[0].channels[1].channel = 2437;
-        params.buckets[0].channels[2].channel = 2462;
+      params.buckets[0].channels[0].channel = 2412;
+      params.buckets[0].channels[1].channel = 2437;
 
-        params.buckets[1].bucket = 1;
-        params.buckets[1].band = WIFI_BAND_A;
-        params.buckets[1].period = 10000;                       // 10 second
-        params.buckets[1].report_events = 1;
-        params.buckets[1].num_channels = 8;   // driver should ignore list since band is specified
+      params.buckets[1].bucket = 1;
+      params.buckets[1].band = WIFI_BAND_A;
+      params.buckets[1].period = 10000;               // 10 second
+      params.buckets[1].report_events = 1;
+      params.buckets[1].num_channels = 8;   // driver should ignore list since band is specified
 
-        params.buckets[1].channels[0].channel = 5180;
-        params.buckets[1].channels[1].channel = 5200;
-        params.buckets[1].channels[2].channel = 5220;
-        params.buckets[1].channels[3].channel = 5745;
-        params.buckets[1].channels[4].channel = 5765;
-        params.buckets[1].channels[5].channel = 5785;
-        params.buckets[1].channels[6].channel = 5805;
-        params.buckets[1].channels[7].channel = 5825;
+
+      params.buckets[1].channels[0].channel = 5180;
+      params.buckets[1].channels[1].channel = 5200;
+      params.buckets[1].channels[2].channel = 5220;
+      params.buckets[1].channels[3].channel = 5745;
+      params.buckets[1].channels[4].channel = 5765;
+      params.buckets[1].channels[5].channel = 5785;
+      params.buckets[1].channels[6].channel = 5805;
+      params.buckets[1].channels[7].channel = 5825;
+
+      params.buckets[2].bucket = 2;
+      params.buckets[2].band = WIFI_BAND_UNSPECIFIED;
+      params.buckets[2].period = 15000;                // 15 second
+      params.buckets[2].report_events = 2;
+      params.buckets[2].num_channels = 1;
+
+      params.buckets[2].channels[0].channel = 2462;
+
     }
 
     wifi_scan_result_handler handler;
@@ -569,6 +581,15 @@ static void onHotlistAPFound(wifi_request_id id, unsigned num_results, wifi_scan
     putEventInCache(EVENT_TYPE_HOTLIST_AP_FOUND, "Found a hotlist AP");
 }
 
+static void onHotlistAPLost(wifi_request_id id, unsigned num_results, wifi_scan_result *results) {
+
+    printMsg("Lost hotlist APs\n");
+    for (unsigned i = 0; i < num_results; i++) {
+        printScanResult(results[i]);
+    }
+    putEventInCache(EVENT_TYPE_HOTLIST_AP_LOST, "Lost event Hotlist APs");
+}
+
 static void testRTT() {
 
     wifi_scan_result results[256];
@@ -681,6 +702,7 @@ static wifi_error setHotlistAPs() {
     wifi_bssid_hotlist_params params;
     memset(&params, 0, sizeof(params));
 
+    params.lost_ap_sample_size = HOTLIST_LOST_WINDOW;
     if (num_hotlist_bssids > 0) {
       for (int i = 0; i < num_hotlist_bssids; i++) {
           memcpy(params.ap[i].bssid, hotlist_bssids[i], sizeof(mac_addr));
@@ -702,7 +724,7 @@ static wifi_error setHotlistAPs() {
 
     wifi_hotlist_ap_found_handler handler;
     handler.on_hotlist_ap_found = &onHotlistAPFound;
-
+    handler.on_hotlist_ap_lost = &onHotlistAPLost;
     hotlistCmdId = getNewCmdId();
     printMsg("Setting hotlist APs threshold\n");
     return wifi_set_bssid_hotlist(hotlistCmdId, wlan0Handle, params, handler);
@@ -713,6 +735,9 @@ static void resetHotlistAPs() {
     wifi_reset_bssid_hotlist(hotlistCmdId, wlan0Handle);
 }
 
+static void setPnoMacOui() {
+    wifi_set_scanning_mac_oui(wlan0Handle, mac_oui);
+}
 
 static void testHotlistAPs(){
 
@@ -734,8 +759,9 @@ static void testHotlistAPs(){
 
             if (info.type == EVENT_TYPE_SCAN_RESULTS_AVAILABLE) {
                 retrieveScanResults();
-            } else if (info.type == EVENT_TYPE_HOTLIST_AP_FOUND) {
-                printMsg("Found Hotlist APs");
+            } else if (info.type == EVENT_TYPE_HOTLIST_AP_FOUND ||
+                   info.type == EVENT_TYPE_HOTLIST_AP_LOST) {
+                printMsg("Hotlist APs");
                 if (--max_event_wait > 0)
                   printMsg(", waiting for more event ::%d\n", max_event_wait);
                 else
@@ -891,7 +917,7 @@ byte parseHexChar(char ch) {
     else if ('a' <= ch && ch <= 'f')
         return ch - 'a' + 10;
     else {
-        printMsg("invalid character in bssid %c", ch);
+        printMsg("invalid character in bssid %c\n", ch);
         return 0;
     }
 }
@@ -909,6 +935,14 @@ void parseMacAddress(const char *str, mac_addr addr) {
     addr[5] = parseHexByte(str[15], str[16]);
     // printMsg("read mac addr: %02x:%02x:%02x:%02x:%02x:%02x\n", addr[0],
     //      addr[1], addr[2], addr[3], addr[4], addr[5]);
+}
+
+void parseMacOUI(char *str, unsigned char *addr) {
+    addr[0] = parseHexByte(str[0], str[1]);
+    addr[1] = parseHexByte(str[3], str[4]);
+    addr[2] = parseHexByte(str[6], str[7]);
+    printMsg("read mac OUI: %02x:%02x:%02x\n", addr[0],
+            addr[1], addr[2]);
 }
 
 void readTestOptions(int argc, char *argv[]){
@@ -975,7 +1009,9 @@ void readTestOptions(int argc, char *argv[]){
         } else if ((strcmp(argv[j], "-rtt_samples") == 0)) {
             rtt_samples = atoi(argv[++j]);
             printf(" rtt_retries #-%d\n", rtt_samples);
-        }
+        } else if (strcmp(argv[j], "-scan_mac_oui") == 0 && isxdigit(argv[j+1][0])) {
+            parseMacOUI(argv[++j], mac_oui);
+     }
     }
 }
 
@@ -1130,20 +1166,27 @@ int main(int argc, char *argv[]) {
         printf(" -get_feature_matrix  Get concurrent feature matrix\n");
         printf(" -rtt             Run RTT on nearby APs\n");
         printf(" -rtt_samples     Run RTT on nearby APs\n");
+        printf(" -scan_mac_oui XY:AB:CD\n");
         goto cleanup;
     }
+    memset(mac_oui, 0, 3);
 
     if (strcmp(argv[1], "-s") == 0) {
         readTestOptions(argc, argv);
+        setPnoMacOui();
         testScan();
     }else if(strcmp(argv[1], "-swc") == 0){
         readTestOptions(argc, argv);
+        setPnoMacOui();
         trackSignificantChange();
     }else if (strcmp(argv[1], "-ss") == 0) {
+        // Stop scan so clear the OUI too
+        setPnoMacOui();
         testStopScan();
     }else if ((strcmp(argv[1], "-h") == 0)  ||
               (strcmp(argv[1], "-hotlist_bssids") == 0)) {
         readTestOptions(argc, argv);
+        setPnoMacOui();
         testHotlistAPs();
     }else if (strcmp(argv[1], "-stats") == 0) {
         getLinkStats();
@@ -1157,6 +1200,10 @@ int main(int argc, char *argv[]) {
         getFeatureSet();
     } else if ((strcmp(argv[1], "-get_feature_matrix") == 0)) {
         getFeatureSetMatrix();
+    } else if ((strcmp(argv[1], "-scan_mac_oui") == 0)) {
+        readTestOptions(argc, argv);
+        setPnoMacOui();
+        testScan();
     }
 
 cleanup:
