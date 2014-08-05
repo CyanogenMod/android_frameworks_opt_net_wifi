@@ -236,14 +236,15 @@ public class WifiAutoJoinController {
     }
 
     // Called directly from WifiStateMachine
-    void newSupplicantResults() {
+    void newSupplicantResults(boolean doAutoJoin) {
         List<ScanResult> scanList = mWifiStateMachine.syncGetScanResultsList();
         addToScanCache(scanList);
         ageScanResultsOut(mScanResultMaximumAge);
         if (DBG)
            logDbg("newSupplicantResults size=" + Integer.valueOf(scanResultCache.size()) );
-
-        attemptAutoJoin();
+        if (doAutoJoin) {
+            attemptAutoJoin();
+        }
         mWifiConfigStore.writeKnownNetworkHistory();
     }
 
@@ -404,6 +405,10 @@ public class WifiAutoJoinController {
 
                     Integer currentChoice = selected.connectChoices.get(config.configKey(true));
                     if (currentChoice == null || currentChoice.intValue() < choice) {
+                        if (currentChoice != null) {
+                            // User has made this choice multiple time in a row so bump up
+                            choice += currentChoice.intValue() / 2;
+                        }
                         // Add the visible config to the selected's connect choice list
                         selected.connectChoices.put(config.configKey(true), choice);
                     }
@@ -492,10 +497,10 @@ public class WifiAutoJoinController {
          * 6-10 dB higher
          */
         if ((visibility.rssi5 + rssiBoost) > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
-            rssiBoost5 = 25;
+            rssiBoost5 = 20;
         } else if ((visibility.rssi5 + rssiBoost)
                 > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW) {
-            rssiBoost5 = 15;
+            rssiBoost5 = 10;
         }
 
         // Select which band to use so as to score a
@@ -774,7 +779,7 @@ public class WifiAutoJoinController {
         /**
          * attemptRoam function implements the core of the same SSID switching algorithm
          */
-    ScanResult attemptRoam(WifiConfiguration current, int age) {
+    public ScanResult attemptRoam(WifiConfiguration current, int age, String currentBSSID) {
         ScanResult a = null;
         if (current == null) {
             if (VDBG)   {
@@ -795,13 +800,6 @@ public class WifiAutoJoinController {
             }
             // Implement same SSID roaming only for configurations
             // that have less than 4 BSSIDs
-            return null;
-        }
-        String currentBSSID = mWifiStateMachine.getCurrentBSSID();
-        if (currentBSSID == null) {
-            if (DBG)   {
-                logDbg("attemptRoam currentBSSID unknown");
-            }
             return null;
         }
 
@@ -838,7 +836,7 @@ public class WifiAutoJoinController {
             }
 
             // Apply hysteresis: we favor the currentBSSID by giving it a boost
-            if (currentBSSID.equals(b.BSSID)) {
+            if (currentBSSID != null && currentBSSID.equals(b.BSSID)) {
                 // Reduce the benefit of hysteresis if RSSI <= -75
                 if (b.level <= WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
                     bRssiBoost = +6;
@@ -846,7 +844,7 @@ public class WifiAutoJoinController {
                     bRssiBoost = +10;
                 }
             }
-            if (currentBSSID.equals(a.BSSID)) {
+            if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
                 if (a.level <= WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
                     // Reduce the benefit of hysteresis if RSSI <= -75
                     aRssiBoost = +6;
@@ -860,14 +858,14 @@ public class WifiAutoJoinController {
             //   But penalize it if it is on 5GHz and below threshold
             if (b.is5GHz() && (b.level+bRssiBoost)
                     > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
-                bRssiBoost5 = 25;
+                bRssiBoost5 = 20;
             } else if (b.is5GHz() && (b.level+bRssiBoost)
                     < WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
                 bRssiBoost5 = -10;
             }
             if (a.is5GHz() && (a.level+aRssiBoost)
                     > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
-                aRssiBoost5 = 25;
+                aRssiBoost5 = 20;
             } else if (a.is5GHz() && (a.level+aRssiBoost)
                     < WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
                 aRssiBoost5 = -10;
@@ -894,11 +892,16 @@ public class WifiAutoJoinController {
         }
         if (a != null) {
             if (VDBG)  {
-                logDbg("attemptRoam: Found "
-                        + a.BSSID + " rssi=" + a.level + " freq=" + a.frequency
-                        + " Current: " + currentBSSID);
+                StringBuilder sb = new StringBuilder();
+                sb.append("attemptRoam: Found "
+                        + a.BSSID + " rssi=" + a.level + " freq=" + a.frequency);
+                if (currentBSSID != null) {
+                    sb.append(" Current: " + currentBSSID);
+                }
+                sb.append("\n");
+                logDbg(sb.toString());
             }
-            if (currentBSSID.equals(a.BSSID)) {
+            if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
                 return null;
             }
         }
@@ -996,7 +999,12 @@ public class WifiAutoJoinController {
             }
         }
         if (DBG) {
+            String conf = "";
+            if (currentConfiguration != null) {
+                conf = currentConfiguration.configKey();
+            }
             logDbg("attemptAutoJoin() num recent config " + Integer.toString(list.size())
+                    + " " + conf
                     + " ---> suppId=" + Integer.toString(supplicantNetId));
         }
 
@@ -1320,7 +1328,8 @@ public class WifiAutoJoinController {
 
         if (networkSwitchType == AUTO_JOIN_IDLE) {
             // Attempt same WifiConfiguration roaming
-            ScanResult roamCandidate = attemptRoam(currentConfiguration, 3000);
+            ScanResult roamCandidate = attemptRoam(currentConfiguration, 3000,
+                    mWifiStateMachine.getCurrentBSSID());
             if (roamCandidate != null) {
                 if (DBG) {
                     logDbg("AutoJoin auto roam with netId "
