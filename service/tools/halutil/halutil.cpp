@@ -550,7 +550,7 @@ static void onRTTResults (wifi_request_id id, unsigned num_results, wifi_rtt_res
     printMsg("Addr\t\t\tts\t\tRSSI\tSpread\trtt\tsd\tspread\tdist\tsd\tspread\n");
 
     for (unsigned i = 0; i < num_results; i++) {
-        printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%lld\t%d\t%d\t%lld\t%d\t%d\t%d\t%d\t%d\n",
+        printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%lld\t%d\t%d\t%lld\t%lld\t%lld\t%d\t%d\t%d\n",
                 result[i].addr[0], result[i].addr[1], result[i].addr[2], result[i].addr[3],
                 result[i].addr[4], result[i].addr[5], result[i].ts, result[i].rssi,
                 result[i].rssi_spread, result[i].rtt, result[i].rtt_sd, result[i].rtt_spread,
