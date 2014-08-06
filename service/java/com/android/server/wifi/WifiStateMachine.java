@@ -3020,7 +3020,9 @@ public class WifiStateMachine extends StateMachine {
                 loge("calculateWifiScore() report new score " + Integer.toString(score));
             }
             mWifiInfo.score = score;
-            mNetworkAgent.sendNetworkScore(score);
+            if (mNetworkAgent != null) {
+                mNetworkAgent.sendNetworkScore(score);
+            }
         }
     }
 
