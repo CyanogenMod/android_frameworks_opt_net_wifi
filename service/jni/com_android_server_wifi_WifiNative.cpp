@@ -834,11 +834,12 @@ static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint
     return wifiLinkLayerStats;
 }
 
-static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls) {
-    wifi_handle handle = getWifiHandle(env, cls);
+static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls, jint iface) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     feature_set set = 0;
 
     wifi_error result = WIFI_SUCCESS;
+    /*
     set = WIFI_FEATURE_INFRA
         | WIFI_FEATURE_INFRA_5G
         | WIFI_FEATURE_HOTSPOT
@@ -848,13 +849,16 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls) {
         | WIFI_FEATURE_PNO
         | WIFI_FEATURE_TDLS
         | WIFI_FEATURE_EPR;
+    */
 
-    //wifi_error result = wifi_get_supported_feature_set(handle, &set);
-    ALOGD("wifi_get_supported_feature_set returned 0x%x, set = 0x%x", result, set);
-
+    result = wifi_get_supported_feature_set(handle, &set);
     if (result == WIFI_SUCCESS) {
+        /* Temporary workaround for RTT capability */
+        set = set | WIFI_FEATURE_D2AP_RTT;
+        ALOGD("wifi_get_supported_feature_set returned set = 0x%x", set);
         return set;
     } else {
+        ALOGD("wifi_get_supported_feature_set returned error = 0x%x", result);
         return 0;
     }
 }
@@ -1023,7 +1027,7 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_untrackSignificantWifiChange},
     { "getWifiLinkLayerStatsNative", "(I)Landroid/net/wifi/WifiLinkLayerStats;",
             (void*) android_net_wifi_getLinkLayerStats},
-    { "getSupportedFeatureSetNative", "()I",
+    { "getSupportedFeatureSetNative", "(I)I",
             (void*) android_net_wifi_getSupportedFeatures},
     { "requestRangeNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
             (void*) android_net_wifi_requestRange},

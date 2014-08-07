@@ -1482,9 +1482,9 @@ public class WifiNative {
         return doBooleanCommand("NFC_REPORT_HANDOVER RESP P2P " + requestMessage + " 00");
     }
 
-    public static native int getSupportedFeatureSetNative();
+    public static native int getSupportedFeatureSetNative(int iface);
     synchronized public static int getSupportedFeatureSet() {
-        return getSupportedFeatureSetNative();
+        return getSupportedFeatureSetNative(sWlan0Index);
     }
 
     /* Rtt related commands/events */
