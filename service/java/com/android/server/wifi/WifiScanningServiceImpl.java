@@ -688,14 +688,18 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     void replyFailed(Message msg, int reason, String description) {
-        Message reply = Message.obtain();
-        reply.what = WifiScanner.CMD_OP_FAILED;
-        reply.arg2 = msg.arg2;
-        reply.obj = new WifiScanner.OperationResult(reason, description);
-        try {
-            msg.replyTo.send(reply);
-        } catch (RemoteException e) {
-            // There's not much we can do if reply can't be sent!
+        if (msg.replyTo != null) {
+            Message reply = Message.obtain();
+            reply.what = WifiScanner.CMD_OP_FAILED;
+            reply.arg2 = msg.arg2;
+            reply.obj = new WifiScanner.OperationResult(reason, description);
+            try {
+                msg.replyTo.send(reply);
+            } catch (RemoteException e) {
+                // There's not much we can do if reply can't be sent!
+            }
+        } else {
+            // locally generated message; doesn't need a reply!
         }
     }
 

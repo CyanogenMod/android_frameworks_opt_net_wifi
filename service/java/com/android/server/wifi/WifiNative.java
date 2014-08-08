@@ -1389,7 +1389,12 @@ public class WifiNative {
 
     synchronized public static void onHotlistApFound(int id, ScanResult[] results) {
         synchronized (mLock) {
-            sHotlistEventHandler.onHotlistApFound(results);
+            if (sHotlistCmdId != 0) {
+                sHotlistEventHandler.onHotlistApFound(results);
+            } else {
+                /* this can happen because of race conditions */
+                Log.d(TAG, "Ignoring hotlist AP found change");
+            }
         }
     }
 
@@ -1415,7 +1420,7 @@ public class WifiNative {
 
             sSignificantWifiChangeHandler = handler;
             if (trackSignificantWifiChangeNative(sWlan0Index, sScanCmdId, settings) == false) {
-                sHotlistEventHandler = null;
+                sSignificantWifiChangeHandler = null;
                 return false;
             }
 
@@ -1435,7 +1440,12 @@ public class WifiNative {
 
     synchronized static void onSignificantWifiChange(int id, ScanResult[] results) {
         synchronized (mLock) {
-            sSignificantWifiChangeHandler.onChangesFound(results);
+            if (sSignificantWifiChangeCmdId != 0) {
+                sSignificantWifiChangeHandler.onChangesFound(results);
+            } else {
+                /* this can happen because of race conditions */
+                Log.d(TAG, "Ignoring significant wifi change");
+            }
         }
     }
 
