@@ -1630,12 +1630,12 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         for (int i = 0; i < networks.size(); i++) {
-            Integer id = (Integer) i;
+            int id = networks.keyAt(i);
             WifiConfiguration config = mConfiguredNetworks.get(mNetworkIds.get(id));
 
 
             if (config == null || config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
-                loge("configuration found for missing network, nid="+Integer.toString(id)
+                loge("configuration found for missing network, nid=" + id
                         +", ignored, networks.size=" + Integer.toString(networks.size()));
             } else {
                 config.setIpConfiguration(networks.valueAt(i));
