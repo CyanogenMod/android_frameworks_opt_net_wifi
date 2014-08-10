@@ -306,7 +306,7 @@ public class WifiPasspointCertificate {
         return keyPair;
     }
 
-    private void genDERAttribute(DERObjectIdentifier oid, Object derObj, Vector oids,
+    private void genDERAttribute(ASN1ObjectIdentifier oid, Object derObj, Vector oids,
             Vector values) {
         try {
             if (derObj instanceof GeneralName) {
