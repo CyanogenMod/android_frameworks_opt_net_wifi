@@ -672,6 +672,19 @@ public class WifiNative {
         }
     }
 
+    public boolean setExternalSim(boolean external) {
+        synchronized (mLock) {
+            String value = external ? "1" : "0";
+            return doBooleanCommand("set external_sim " + value);
+        }
+    }
+
+    public boolean simAuthResponse(int id, String response) {
+        synchronized (mLock) {
+            return doBooleanCommand("SIM " + id + ":GSM-AUTH:" + response);
+        }
+    }
+
     /* Configures an access point connection */
     public boolean startWpsRegistrar(String bssid, String pin) {
         if (TextUtils.isEmpty(bssid) || TextUtils.isEmpty(pin)) return false;

@@ -114,6 +114,8 @@ public class WifiMonitor {
 
     private static final String IDENTITY_STR = "IDENTITY";
 
+    private static final String SIM_STR = "SIM";
+
 
     //used to debug and detect if we miss an event
     private static int eventLogCounter = 0;
@@ -231,10 +233,26 @@ public class WifiMonitor {
     /**
      * Regex pattern for extracting SSIDs from request identity string.
      * Matches a strings like the following:<pre>
+     * CTRL-REQ-SIM-<network id>:GSM-AUTH:<RAND1>:<RAND2>[:<RAND3>] needed for SSID <SSID>
+     * This pattern should find
+     *    0 - id
+     *    1 - Rand1
+     *    2 - Rand2
+     *    3 - Rand3
+     *    4 - SSID
+     */
+    private static Pattern mRequestSimAuthPattern =
+            Pattern.compile("SIM-([0-9]*):GSM-AUTH(:[0-9a-f]*)(:[0-9a-f]*)(:[0-9a-f]*)?"
+                    + " needed for SSID (.+)");
+
+    /**
+     * Regex pattern for extracting SSIDs from request identity string.
+     * Matches a strings like the following:<pre>
      * CTRL-REQ-IDENTITY-1:Identity needed for SSID XXXX</pre>
      */
     private static Pattern mRequestIdentityPattern =
             Pattern.compile("IDENTITY-[0-9]:Identity needed for SSID (.+)");
+
 
     /** P2P events */
     private static final String P2P_EVENT_PREFIX_STR = "P2P";
@@ -384,6 +402,9 @@ public class WifiMonitor {
 
     /* Request Identity */
     public static final int SUP_REQUEST_IDENTITY                 = BASE + 15;
+
+    /* Request SIM Auth */
+    public static final int SUP_REQUEST_SIM_AUTH                 = BASE + 16;
 
     /* P2P events */
     public static final int P2P_DEVICE_FOUND_EVENT               = BASE + 21;
@@ -1091,9 +1112,25 @@ public class WifiMonitor {
             if (match.find()) {
                 SSID = match.group(1);
             } else {
-                Log.e(TAG, "didnt find SSID " + requestName);
+                Log.e(TAG, "didn't find SSID " + requestName);
             }
             mStateMachine.sendMessage(SUP_REQUEST_IDENTITY, eventLogCounter, 0, SSID);
+        } if (requestName.startsWith(SIM_STR)) {
+            Matcher match = mRequestSimAuthPattern.matcher(requestName);
+            if (match.find()) {
+                WifiStateMachine.SimAuthRequestData data =
+                        new WifiStateMachine.SimAuthRequestData();
+                data.networkId = Integer.parseInt(match.group(1));
+                data.ssid = match.group(5);
+                data.rand1 = match.group(2).substring(1);
+                data.rand2 = match.group(3).substring(1);
+                data.rand3 = match.group(4).substring(1);
+
+                mStateMachine.sendMessage(SUP_REQUEST_SIM_AUTH, data);
+            } else {
+                Log.e(TAG, "couldn't parse SIM auth request - " + requestName);
+            }
+
         } else {
             if (DBG) Log.w(TAG, "couldn't identify request type - " + dataString);
         }
