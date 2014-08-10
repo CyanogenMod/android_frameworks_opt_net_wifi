@@ -76,6 +76,7 @@ import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.WorkSource;
 import android.provider.Settings;
+import android.telephony.TelephonyManager;
 import android.util.LruCache;
 import android.text.TextUtils;
 import android.util.Log;
@@ -692,6 +693,23 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+    public static class SimAuthRequestData {
+        int networkId;
+        String ssid;
+        String rand1;
+        String rand2;
+        String rand3;
+    }
+
+    public static class SimAuthResponseData {
+        int id;
+        String Kc1;
+        String SRES1;
+        String Kc2;
+        String SRES2;
+        String Kc3;
+        String SRES3;
+    }
 
     /**
      * One of  {@link WifiManager#WIFI_STATE_DISABLED},
@@ -3892,6 +3910,7 @@ public class WifiStateMachine extends StateMachine {
                 case WifiMonitor.SUP_REQUEST_IDENTITY:
                 case CMD_TEST_NETWORK_DISCONNECT:
                 case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
+                case WifiMonitor.SUP_REQUEST_SIM_AUTH:
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
                     mDhcpStateMachine = null;
@@ -4154,6 +4173,7 @@ public class WifiStateMachine extends StateMachine {
                     defaultInterval);
 
             mWifiNative.setScanInterval((int)mSupplicantScanIntervalMs / 1000);
+            mWifiNative.setExternalSim(true);
 
             if (mFrameworkAutoJoin.get()) {
                 mWifiNative.enableAutoConnect(false);
@@ -5313,6 +5333,15 @@ public class WifiStateMachine extends StateMachine {
                     mWifiConfigStore.setLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
                     mWifiNative.disconnect();
+                    break;
+                case WifiMonitor.SUP_REQUEST_SIM_AUTH:
+                    logd("Received SUP_REQUEST_SIM_AUTH");
+                    SimAuthRequestData requestData = (SimAuthRequestData) message.obj;
+                    if (requestData != null) {
+                        handleSimAuthRequest(requestData);
+                    } else {
+                        loge("Invalid sim auth request");
+                    }
                     break;
                 case CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS:
                     replyToMessage(message, message.what,
@@ -6923,5 +6952,152 @@ public class WifiStateMachine extends StateMachine {
         Message msg = Message.obtain();
         msg.arg2 = srcMsg.arg2;
         return msg;
+    }
+
+    private static int parseHex(char ch) {
+        if ('0' <= ch && ch <= '9') {
+            return ch - '0';
+        } else if ('a' <= ch && ch <= 'f') {
+            return ch - 'a' + 10;
+        } else if ('A' <= ch && ch <= 'F') {
+            return ch - 'A' + 10;
+        } else {
+            throw new NumberFormatException("" + ch + " is not a valid hex digit");
+        }
+    }
+
+    private byte[] parseHex(String hex) {
+        /* This only works for good input; don't throw bad data at it */
+        if (hex == null) {
+            return new byte[0];
+        }
+
+        if (hex.length() % 2 != 0) {
+            throw new NumberFormatException(hex + " is not a valid hex string");
+        }
+
+        byte[] result = new byte[(hex.length())/2];
+        for (int i = 0, j = 0; i < hex.length(); i += 2, j++) {
+
+            int val = parseHex(hex.charAt(i)) * 16 + parseHex(hex.charAt(i+1));
+            byte b = (byte) (val & 0xFF);
+            result[j] = b;
+        }
+
+        return result;
+    }
+
+    private static String makeHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
+    private static byte[] concat(byte[] array1, byte[] array2, byte[] array3) {
+
+        int len = array1.length + array2.length + array3.length;
+
+        if (array1.length != 0) {
+            len++;                      /* add another byte for size */
+        }
+
+        if (array2.length != 0) {
+            len++;                      /* add another byte for size */
+        }
+
+        if (array3.length != 0) {
+            len++;                      /* add another byte for size */
+        }
+
+        byte[] result = new byte[len];
+
+        int index = 0;
+        if (array1.length != 0) {
+            result[index] = (byte) (array1.length & 0xFF);
+            index++;
+            for (byte b : array1) {
+                result[index] = b;
+                index++;
+            }
+        }
+
+        if (array2.length != 0) {
+            result[index] = (byte) (array2.length & 0xFF);
+            index++;
+            for (byte b : array2) {
+                result[index] = b;
+                index++;
+            }
+        }
+
+        if (array3.length != 0) {
+            result[index] = (byte) (array3.length & 0xFF);
+            index++;
+            for (byte b : array3) {
+                result[index] = b;
+                index++;
+            }
+        }
+        return result;
+    }
+
+    void handleSimAuthRequest(SimAuthRequestData requestData) {
+        if (targetWificonfiguration == null
+                || targetWificonfiguration.networkId == requestData.networkId) {
+            logd("id matches targetWifiConfiguration");
+        } else {
+            logd("id does not match targetWifiConfiguration");
+        }
+
+        logd("rand1 = " + requestData.rand1);
+        logd("rand2 = " + requestData.rand2);
+        logd("rand3 = " + requestData.rand3);
+
+        byte[] rand1, rand2, rand3;
+
+        try {
+            rand1 = parseHex(requestData.rand1);
+            rand2 = parseHex(requestData.rand2);
+            rand3 = parseHex(requestData.rand3);
+        } catch (NumberFormatException e) {
+            loge("malformed challenge");
+            return;
+        }
+
+        byte[] c = concat(rand1, rand2, rand3);
+
+        String challenge = android.util.Base64.encodeToString(c, android.util.Base64.NO_WRAP);
+
+        logd("challenge = " + challenge);
+        logd("challenge length = " + challenge.length());
+
+        TelephonyManager tm = (TelephonyManager)
+                mContext.getSystemService(Context.TELEPHONY_SERVICE);
+
+        if (tm != null) {
+            /*
+             * appType = 1 => SIM, 2 => USIM according to
+             * com.android.internal.telephony.PhoneConstants#APPTYPE_xxx
+             */
+
+            int appType = 2;
+            String response = tm.getIccSimChallengeResponse(appType, challenge);
+            logd("Raw Response - " + response);
+
+            if (response != null) {
+                byte[] result = android.util.Base64.decode(response, android.util.Base64.DEFAULT);
+                response = makeHex(result);
+                logd("Sim Response - " + response);
+                mWifiNative.simAuthResponse(requestData.networkId, response);
+            } else {
+                logd("bad response - " + response);
+            }
+
+        } else {
+            loge("could not get telephony manager");
+        }
+
     }
 }
