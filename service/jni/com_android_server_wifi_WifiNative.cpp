@@ -700,7 +700,7 @@ void onSignificantWifiChange(wifi_request_id id,
 
         setStringField(env, scanResult, "BSSID", bssid);
 
-        setIntField(env, scanResult, "level", result.rssi[7]);
+        setIntField(env, scanResult, "level", result.rssi[0]);
         setIntField(env, scanResult, "frequency", result.channel);
         // setLongField(env, scanResult, "timestamp", result.ts);
 
@@ -759,7 +759,7 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
         memcpy(params.ap[i].bssid, addr, sizeof(mac_addr));
 
         char bssidOut[32];
-        sprintf(bssidOut, "%0x:%0x:%0x:%0x:%0x:%0x", addr[0], addr[1],
+        sprintf(bssidOut, "%02x:%02x:%02x:%02x:%02x:%02x", addr[0], addr[1],
             addr[2], addr[3], addr[4], addr[5]);
 
         params.ap[i].low = getIntField(env, objAp, "low");

@@ -1277,6 +1277,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case WIFI_CHANGE_CMD_NEW_SCAN_RESULTS:
                         if (DBG) Log.d(TAG, "Got scan results");
                         if (mScanResultsPending) {
+                            if (DBG) Log.d(TAG, "reconfiguring scan");
                             reconfigureScan((ScanResult[])msg.obj, STATIONARY_SCAN_PERIOD_MS);
                             mWifiChangeDetected = false;
                             mAlarmManager.setExact(AlarmManager.RTC_WAKEUP,
@@ -1400,13 +1401,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             settings2.rssiSampleSize = 3;
             settings2.lostApSampleSize = 3;
             settings2.unchangedSampleSize = 3;
-            settings2.minApsBreachingThreshold = 3;
+            settings2.minApsBreachingThreshold = 2;
             settings2.bssidInfos = new WifiScanner.BssidInfo[brightest.length];
 
             for (int i = 0; i < brightest.length; i++) {
                 WifiScanner.BssidInfo BssidInfo = new WifiScanner.BssidInfo();
                 BssidInfo.bssid = brightest[i].BSSID;
-                int threshold = (100 + brightest[i].level) / 64 + 2;
+                int threshold = (100 + brightest[i].level) / 32 + 2;
                 BssidInfo.low = brightest[i].level - threshold;
                 BssidInfo.high = brightest[i].level + threshold;
                 settings2.bssidInfos[i] = BssidInfo;
@@ -1499,6 +1500,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         void trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings) {
+            WifiNative.untrackSignificantWifiChange();
             WifiNative.trackSignificantWifiChange(settings, this);
         }
 
