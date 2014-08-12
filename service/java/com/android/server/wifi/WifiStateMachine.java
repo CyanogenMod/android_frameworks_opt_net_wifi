@@ -307,7 +307,7 @@ public class WifiStateMachine extends StateMachine {
 
     public void autoRoamSetBSSID(WifiConfiguration config, String bssid) {
         mTargetRoamBSSID = "any";
-        if (config == null)
+        if (config == null || bssid == null)
             return;
         if (config.bssidOwnerUid == 0 || config.bssidOwnerUid == Process.WIFI_UID) {
             if (VDBG) {
@@ -6115,22 +6115,31 @@ public class WifiStateMachine extends StateMachine {
                     break;
                case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     /**
-                     *  If we get a SUPPLICANT_STATE_CHANGE_EVENT before NETWORK_DISCONNECTION_EVENT
+                     * If we get a SUPPLICANT_STATE_CHANGE_EVENT indicating a DISCONNECT
+                     * before NETWORK_DISCONNECTION_EVENT
+                     * And there is an associated BSSID corresponding to our target BSSID, then
                      * we have missed the network disconnection, transition to mDisconnectedState
-                     * and handle the rest of the events there
+                     * and handle the rest of the events there.
                      */
                     StateChangeResult stateChangeResult = (StateChangeResult) message.obj;
-                    setNetworkDetailedState(WifiInfo.getDetailedStateOf(stateChangeResult.state));
+                    if (stateChangeResult.state == SupplicantState.DISCONNECTED
+                            || stateChangeResult.state == SupplicantState.INACTIVE
+                            || stateChangeResult.state == SupplicantState.INTERFACE_DISABLED) {
+                        if (DBG) {
+                            log("STATE_CHANGE_EVENT in roaming state "
+                                    + stateChangeResult.toString() );
+                        }
+                        if (stateChangeResult.BSSID != null
+                                && stateChangeResult.BSSID.equals(mTargetRoamBSSID)) {
+                            setNetworkDetailedState(DetailedState.OBTAINING_IPADDR);
+                            handleNetworkDisconnect();
+                        }
+                    }
                     break;
                case WifiMonitor.NETWORK_CONNECTION_EVENT:
                    if (DBG) log("roaming and Network connection established");
                    mLastNetworkId = message.arg1;
                    mLastBssid = (String) message.obj;
-                   /**
-                    * We already have an IP address, we are going to the ObtainingIpAddress
-                    * state to renew it. Other parts of the system interpret an
-                    * ObtainingIpState change as not having IP address anymore,
-                    * hence, don't tell it there. */
                    mWifiInfo.setBSSID(mLastBssid);
                    mWifiInfo.setNetworkId(mLastNetworkId);
                    mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, mLastBssid, true);
@@ -6138,7 +6147,7 @@ public class WifiStateMachine extends StateMachine {
                     * We already have an IP address, we are going to the ObtainingIpAddress
                     * state to renew it. Other parts of the system interpret an
                     * ObtainingIpState change as not having IP address anymore,
-                    * hence, don't tell it there. */
+                    * hence, don't send the state change there. */
                    // setNetworkDetailedState(DetailedState.OBTAINING_IPADDR);
                    // sendNetworkStateChangeBroadcast(mLastBssid);
                    transitionTo(mObtainingIpState);
