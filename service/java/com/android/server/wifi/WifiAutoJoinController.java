@@ -80,6 +80,8 @@ public class WifiAutoJoinController {
     public static final int AUTO_JOIN_EXTENDED_ROAMING = 2;
     public static final int AUTO_JOIN_OUT_OF_NETWORK_ROAMING = 3;
 
+    public static final int HIGH_THRESHOLD_MODIFIER = 5;
+
     WifiAutoJoinController(Context c, WifiStateMachine w, WifiConfigStore s,
                            WifiConnectionStatistics st, WifiNative n) {
         mContext = c;
@@ -814,12 +816,12 @@ public class WifiAutoJoinController {
         // Determine which BSSID we want to associate to, taking account
         // relative strength of 5 and 2.4 GHz BSSIDs
         long nowMs = System.currentTimeMillis();
-        int bRssiBoost5 = 0;
-        int aRssiBoost5 = 0;
-        int bRssiBoost = 0;
-        int aRssiBoost = 0;
-        for (ScanResult b : current.scanResultCache.values()) {
 
+        for (ScanResult b : current.scanResultCache.values()) {
+            int bRssiBoost5 = 0;
+            int aRssiBoost5 = 0;
+            int bRssiBoost = 0;
+            int aRssiBoost = 0;
             if ((b.seen == 0) || (b.BSSID == null)
                     || (nowMs - b.seen) > age ) {
                     // TODO: do not apply blacklisting right now so as to leave this
@@ -839,35 +841,61 @@ public class WifiAutoJoinController {
             if (currentBSSID != null && currentBSSID.equals(b.BSSID)) {
                 // Reduce the benefit of hysteresis if RSSI <= -75
                 if (b.level <= WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
-                    bRssiBoost = +6;
+                    bRssiBoost = +8;
                 } else {
-                    bRssiBoost = +10;
+                    bRssiBoost = +14;
                 }
             }
             if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
                 if (a.level <= WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
                     // Reduce the benefit of hysteresis if RSSI <= -75
-                    aRssiBoost = +6;
+                    aRssiBoost = +8;
                 } else {
-                    aRssiBoost = +10;
+                    aRssiBoost = +14;
                 }
             }
 
-            // Favor 5GHz: give a boost to 5GHz BSSIDs
+            // Favor 5GHz: give a boost to 5GHz BSSIDs, with a slightly progressive curve
             //   Boost the BSSID if it is on 5GHz, above a threshold
             //   But penalize it if it is on 5GHz and below threshold
+            //
+            //   With he current threshold values, 5GHz network with RSSI above -55
+            //   Are given a boost of 30DB which is enough to overcome the current BSSID
+            //   hysteresis (+14) plus 2.4/5 GHz signal strength difference on most cases
             if (b.is5GHz() && (b.level+bRssiBoost)
+                    > (WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD
+                    + HIGH_THRESHOLD_MODIFIER) ) {
+                // boost by 30 if > -50
+                bRssiBoost5 = 30;
+            } else if (b.is5GHz() && (b.level+bRssiBoost)
                     > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                // boost by 20 if > -55
                 bRssiBoost5 = 20;
             } else if (b.is5GHz() && (b.level+bRssiBoost)
+                    > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW) {
+                // boost by 10 if > -65
+                bRssiBoost5 = 10;
+            } else if (b.is5GHz() && (b.level+bRssiBoost)
                     < WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                // penalize by 10 if < -75
                 bRssiBoost5 = -10;
             }
             if (a.is5GHz() && (a.level+aRssiBoost)
+                    > (WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD
+                    + HIGH_THRESHOLD_MODIFIER) ) {
+                // boost by 30 if > -50
+                aRssiBoost5 = 30;
+            } else if (a.is5GHz() && (a.level+aRssiBoost)
                     > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                // boost by 20 if -55
                 aRssiBoost5 = 20;
             } else if (a.is5GHz() && (a.level+aRssiBoost)
+                    > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW) {
+                // boost by 10 if > -65
+                aRssiBoost5 = 10;
+            } else if (a.is5GHz() && (a.level+aRssiBoost)
                     < WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                // penalize by 10 if -75
                 aRssiBoost5 = -10;
             }
 
@@ -878,7 +906,8 @@ public class WifiAutoJoinController {
                 }
                 logDbg("attemptRoam: "
                         + b.BSSID + " rssi=" + b.level + " boost=" + Integer.toString(bRssiBoost)
-                        + "/" + Integer.toString(bRssiBoost5) + " freq=" + b.frequency + comp
+                        + "/" + Integer.toString(bRssiBoost5) + " freq=" + b.frequency
+                        + comp
                         + a.BSSID + " rssi=" + a.level + " boost=" + Integer.toString(aRssiBoost)
                         + "/" + Integer.toString(aRssiBoost5) + " freq=" + a.frequency);
             }
