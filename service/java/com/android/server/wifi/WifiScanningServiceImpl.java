@@ -539,7 +539,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             while (it.hasNext()) {
                 int handler = it.next();
                 ScanSettings settings = mScanSettings.get(handler);
-                for (WifiScanner.ChannelSpec channelSpec : settings.channels) {
+                WifiScanner.ChannelSpec desiredChannels[] = settings.channels;
+                if (settings.band != WifiScanner.WIFI_BAND_UNSPECIFIED
+                        || desiredChannels == null || desiredChannels.length == 0)  {
+                    desiredChannels = getChannelsForBand(settings.band);
+                }
+                for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
                     if (channelSpec.frequency == result.frequency) {
                         WifiSsid wifiSsid = WifiSsid.createFromAsciiEncoded(result.SSID);
                         ScanResult newResult = new ScanResult(wifiSsid, result.BSSID, "",
