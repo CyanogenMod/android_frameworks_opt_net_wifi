@@ -276,6 +276,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         @Override
+        public void onHotlistApLost(ScanResult[] results) {
+            if (DBG) Log.d(TAG, "HotlistApLost event received");
+            sendMessage(CMD_HOTLIST_AP_LOST, 0, 0, results);
+        }
+
+        @Override
         public void onChangesFound(ScanResult[] results) {
             if (DBG) Log.d(TAG, "onWifiChangesFound event received");
             sendMessage(CMD_WIFI_CHANGE_DETECTED, 0, 0, results);
@@ -426,7 +432,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                             if (DBG) Log.d(TAG, "Found " + results.length + " results");
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
-                                ci2.reportHotlistResults(results);
+                                ci2.reportHotlistResults(WifiScanner.CMD_AP_FOUND, results);
+                            }
+                        }
+                        break;
+                    case CMD_HOTLIST_AP_LOST: {
+                            ScanResult[] results = (ScanResult[])msg.obj;
+                            if (DBG) Log.d(TAG, "Lost " + results.length + " results");
+                            Collection<ClientInfo> clients = mClients.values();
+                            for (ClientInfo ci2 : clients) {
+                                ci2.reportHotlistResults(WifiScanner.CMD_AP_LOST, results);
                             }
                         }
                         break;
@@ -667,7 +682,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return mHotlistSettings.values();
         }
 
-        void reportHotlistResults(ScanResult[] results) {
+        void reportHotlistResults(int what, ScanResult[] results) {
             Iterator<Map.Entry<Integer, WifiScanner.HotlistSettings>> it =
                     mHotlistSettings.entrySet().iterator();
             while (it.hasNext()) {
@@ -703,7 +718,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 WifiScanner.ParcelableScanResults parcelableScanResults =
                         new WifiScanner.ParcelableScanResults(results2);
 
-                mChannel.sendMessage(WifiScanner.CMD_AP_FOUND, 0, handler, parcelableScanResults);
+                mChannel.sendMessage(what, 0, handler, parcelableScanResults);
             }
         }
 

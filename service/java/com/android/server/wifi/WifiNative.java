@@ -1403,7 +1403,8 @@ public class WifiNative {
     }
 
     public static interface HotlistEventHandler {
-        void onHotlistApFound (ScanResult[]result);
+        void onHotlistApFound (ScanResult[] result);
+        void onHotlistApLost  (ScanResult[] result);
     }
 
     private static int sHotlistCmdId = 0;
@@ -1448,7 +1449,18 @@ public class WifiNative {
                 sHotlistEventHandler.onHotlistApFound(results);
             } else {
                 /* this can happen because of race conditions */
-                Log.d(TAG, "Ignoring hotlist AP found change");
+                Log.d(TAG, "Ignoring hotlist AP found event");
+            }
+        }
+    }
+
+    synchronized public static void onHotlistApLost(int id, ScanResult[] results) {
+        synchronized (mLock) {
+            if (sHotlistCmdId != 0) {
+                sHotlistEventHandler.onHotlistApLost(results);
+            } else {
+                /* this can happen because of race conditions */
+                Log.d(TAG, "Ignoring hotlist AP lost event");
             }
         }
     }
