@@ -212,7 +212,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     break;
                 }
                 case WifiManager.FORGET_NETWORK:
-                    if (isOwner(UserHandle.getUserId(msg.sendingUid))) {
+                    if (isOwner(msg.sendingUid)) {
                         mWifiStateMachine.sendMessage(Message.obtain(msg));
                     } else {
                         Slog.e(TAG, "Forget is not authorized for user");
@@ -952,12 +952,13 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
-     * Returns true if the calling user is the owner or a profile of the owner.
+     * Returns true if uid is an application running under the owner or a profile of the owner.
      *
      * Note: Should not be called if identity is cleared.
      */
-    private boolean isOwner(int userId) {
+    private boolean isOwner(int uid) {
         long ident = Binder.clearCallingIdentity();
+        int userId = UserHandle.getUserId(uid);
         try {
             int ownerUser = UserHandle.USER_OWNER;
             if (userId == ownerUser) {
