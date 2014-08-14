@@ -498,10 +498,10 @@ public class WifiAutoJoinController {
          * Note that 2.4GHz doesn't need a boost since at equal power the RSSI is typically
          * 6-10 dB higher
          */
-        if ((visibility.rssi5 + rssiBoost) > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
+        if ((visibility.rssi5 + rssiBoost) > mWifiConfigStore.thresholdBandPreferenceRssi5) {
             rssiBoost5 = 20;
         } else if ((visibility.rssi5 + rssiBoost)
-                > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW) {
+                > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
             rssiBoost5 = 10;
         }
 
@@ -840,14 +840,14 @@ public class WifiAutoJoinController {
             // Apply hysteresis: we favor the currentBSSID by giving it a boost
             if (currentBSSID != null && currentBSSID.equals(b.BSSID)) {
                 // Reduce the benefit of hysteresis if RSSI <= -75
-                if (b.level <= WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                if (b.level <= mWifiConfigStore.thresholdBandPreferenceRssi24) {
                     bRssiBoost = +8;
                 } else {
                     bRssiBoost = +14;
                 }
             }
             if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
-                if (a.level <= WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                if (a.level <= mWifiConfigStore.thresholdBandPreferenceRssi24) {
                     // Reduce the benefit of hysteresis if RSSI <= -75
                     aRssiBoost = +8;
                 } else {
@@ -863,38 +863,38 @@ public class WifiAutoJoinController {
             //   Are given a boost of 30DB which is enough to overcome the current BSSID
             //   hysteresis (+14) plus 2.4/5 GHz signal strength difference on most cases
             if (b.is5GHz() && (b.level+bRssiBoost)
-                    > (WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD
+                    > (mWifiConfigStore.thresholdBandPreferenceRssi5
                     + HIGH_THRESHOLD_MODIFIER) ) {
                 // boost by 30 if > -50
                 bRssiBoost5 = 30;
             } else if (b.is5GHz() && (b.level+bRssiBoost)
-                    > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                    > mWifiConfigStore.thresholdBandPreferenceRssi5) {
                 // boost by 20 if > -55
                 bRssiBoost5 = 20;
             } else if (b.is5GHz() && (b.level+bRssiBoost)
-                    > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW) {
+                    > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
                 // boost by 10 if > -65
                 bRssiBoost5 = 10;
             } else if (b.is5GHz() && (b.level+bRssiBoost)
-                    < WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                    < mWifiConfigStore.thresholdBandPreferenceRssi24) {
                 // penalize by 10 if < -75
                 bRssiBoost5 = -10;
             }
             if (a.is5GHz() && (a.level+aRssiBoost)
-                    > (WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD
+                    > (mWifiConfigStore.thresholdBandPreferenceRssi5
                     + HIGH_THRESHOLD_MODIFIER) ) {
                 // boost by 30 if > -50
                 aRssiBoost5 = 30;
             } else if (a.is5GHz() && (a.level+aRssiBoost)
-                    > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                    > mWifiConfigStore.thresholdBandPreferenceRssi5) {
                 // boost by 20 if -55
                 aRssiBoost5 = 20;
             } else if (a.is5GHz() && (a.level+aRssiBoost)
-                    > WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW) {
+                    > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
                 // boost by 10 if > -65
                 aRssiBoost5 = 10;
             } else if (a.is5GHz() && (a.level+aRssiBoost)
-                    < WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD) {
+                    < mWifiConfigStore.thresholdBandPreferenceRssi24) {
                 // penalize by 10 if -75
                 aRssiBoost5 = -10;
             }
@@ -1051,6 +1051,11 @@ public class WifiAutoJoinController {
             } else {
                 mCurrentConfigurationKey = currentConfiguration.configKey();
             }
+        } else {
+            if (supplicantNetId != WifiConfiguration.INVALID_NETWORK_ID) {
+                // Maybe in the process of associating, skip this attempt
+                return;
+            }
         }
 
         int currentNetId = -1;
@@ -1112,8 +1117,9 @@ public class WifiAutoJoinController {
             }
 
             // Try to unblacklist based on good visibility
-            if (config.visibility.rssi5 < WifiConfiguration.UNBLACKLIST_THRESHOLD_5_SOFT
-                    && config.visibility.rssi24 < WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT) {
+            if (config.visibility.rssi5 < mWifiConfigStore.thresholdUnblacklistThreshold5Soft
+                    && config.visibility.rssi24
+                    < mWifiConfigStore.thresholdUnblacklistThreshold24Soft) {
                 if (DBG) {
                     logDbg("attemptAutoJoin do not unblacklist due to low visibility "
                             + config.autoJoinStatus
@@ -1123,8 +1129,9 @@ public class WifiAutoJoinController {
                             + ") num=(" + config.visibility.num24
                             + "," + config.visibility.num5 + ")");
                 }
-            } else if (config.visibility.rssi5 < WifiConfiguration.UNBLACKLIST_THRESHOLD_5_HARD
-                    && config.visibility.rssi24 < WifiConfiguration.UNBLACKLIST_THRESHOLD_24_HARD) {
+            } else if (config.visibility.rssi5 < mWifiConfigStore.thresholdUnblacklistThreshold5Hard
+                    && config.visibility.rssi24
+                    < mWifiConfigStore.thresholdUnblacklistThreshold24Hard) {
                 // If the network is simply temporary disabled, don't allow reconnect until
                 // RSSI becomes good enough
                 config.setAutoJoinStatus(config.autoJoinStatus - 1);
@@ -1177,9 +1184,10 @@ public class WifiAutoJoinController {
                 if (config.visibility == null) {
                     continue;
                 }
-                if (config.visibility.rssi5 < WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5
+                if (config.visibility.rssi5
+                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI
                         && config.visibility.rssi24
-                        < WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24) {
+                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin24RSSI) {
                     if (DBG) {
                         logDbg("attemptAutoJoin skip due to low visibility -> status="
                                 + config.autoJoinStatus
@@ -1304,7 +1312,8 @@ public class WifiAutoJoinController {
                         || !untrustedCandidate.SSID.equals(lastUntrustedBSSID)) {
                     // We found a new candidate that we are going to connect to, then
                     // increase its connection count
-                    mWifiConnectionStatistics.incrementOrAddUntrusted(untrustedCandidate.SSID, 1, 0);
+                    mWifiConnectionStatistics.
+                            incrementOrAddUntrusted(untrustedCandidate.SSID, 1, 0);
                     // Remember which SSID we are connecting to
                     lastUntrustedBSSID = untrustedCandidate.SSID;
                 }

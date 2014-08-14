@@ -805,7 +805,8 @@ public class WifiStateMachine extends StateMachine {
         mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s1);
 
         IBinder s2 = ServiceManager.getService(Context.WIFI_PASSPOINT_SERVICE);
-        mPasspointServiceImpl = (WifiPasspointServiceImpl)IWifiPasspointManager.Stub.asInterface(s2);
+        mPasspointServiceImpl =
+                (WifiPasspointServiceImpl)IWifiPasspointManager.Stub.asInterface(s2);
 
         mNetworkInfo.setIsAvailable(false);
         mLastBssid = null;
@@ -2250,6 +2251,10 @@ public class WifiStateMachine extends StateMachine {
                         sb.append(" ,").append(config.visibility.rssi5).append("]");
                     }
                 }
+                if (mTargetRoamBSSID != null) {
+                    sb.append(" ").append(mTargetRoamBSSID);
+                }
+                sb.append(" roam=").append(Integer.toString(mAutoRoaming));
                 break;
             case CMD_AUTO_ROAM:
                 sb.append(" ");
@@ -2262,6 +2267,10 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" freq=").append(result.frequency);
                     sb.append(" ").append(result.BSSID);
                 }
+                if (mTargetRoamBSSID != null) {
+                    sb.append(" ").append(mTargetRoamBSSID);
+                }
+                sb.append(" roam=").append(Integer.toString(mAutoRoaming));
                 break;
             case CMD_ENABLE_NETWORK:
                 sb.append(" ");
@@ -2873,19 +2882,26 @@ public class WifiStateMachine extends StateMachine {
         }
         delta = networkDelta;
         if (mWifiInfo != null) {
-            // TODO: Look at per AC packet count, do not switch if VO/VI traffic is present
-            // TODO: at the interface. We should also discriminate between ucast and mcast,
-            // TODO: since the rxSuccessRate include all the bonjour and Ipv6
-            // TODO: broadcasts
-            if ((mWifiInfo.txSuccessRate > 20) || (mWifiInfo.rxSuccessRate > 80)) {
-                delta -= 999;
-            } else if ((mWifiInfo.txSuccessRate > 5) || (mWifiInfo.rxSuccessRate > 30)) {
-                delta -= 6;
+            if (!mWifiConfigStore.enableAutoJoinWhileAssociated
+                    && mWifiInfo.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
+                // If AutoJoin while associated is not enabled,
+                // we should never switch network when already associated
+                delta = -1000;
+            } else {
+                // TODO: Look at per AC packet count, do not switch if VO/VI traffic is present
+                // TODO: at the interface. We should also discriminate between ucast and mcast,
+                // TODO: since the rxSuccessRate include all the bonjour and Ipv6
+                // TODO: broadcasts
+                if ((mWifiInfo.txSuccessRate > 20) || (mWifiInfo.rxSuccessRate > 80)) {
+                    delta -= 999;
+                } else if ((mWifiInfo.txSuccessRate > 5) || (mWifiInfo.rxSuccessRate > 30)) {
+                    delta -= 6;
+                }
+                loge("WifiStateMachine shouldSwitchNetwork "
+                        + " txSuccessRate=" + String.format("%.2f", mWifiInfo.txSuccessRate)
+                        + " rxSuccessRate=" + String.format("%.2f", mWifiInfo.rxSuccessRate)
+                        + " delta " + networkDelta + " -> " + delta);
             }
-            loge("WifiStateMachine shouldSwitchNetwork "
-                    + " txSuccessRate=" +  String.format( "%.2f", mWifiInfo.txSuccessRate)
-                    + " rxSuccessRate=" +String.format( "%.2f", mWifiInfo.rxSuccessRate)
-                    + " delta " + networkDelta + " -> " + delta);
         } else {
             loge("WifiStateMachine shouldSwitchNetwork "
                     + " delta " + networkDelta + " -> " + delta);
@@ -2950,12 +2966,12 @@ public class WifiStateMachine extends StateMachine {
                 + (homeNetworkBoost ? WifiConfiguration.HOME_NETWORK_RSSI_BOOST : 0);
         boolean is24GHz = use24Thresholds || mWifiInfo.is24GHz();
 
-        boolean isBadRSSI = (is24GHz && rssi < WifiConfiguration.BAD_RSSI_24 )
-                || (!is24GHz && rssi < WifiConfiguration.BAD_RSSI_5);
-        boolean isLowRSSI = (is24GHz && rssi < WifiConfiguration.LOW_RSSI_24)
-                || (!is24GHz && mWifiInfo.getRssi() < WifiConfiguration.LOW_RSSI_5);
-        boolean isHighRSSI = (is24GHz && rssi >= WifiConfiguration.GOOD_RSSI_24)
-                || (!is24GHz && mWifiInfo.getRssi() >= WifiConfiguration.GOOD_RSSI_5);
+        boolean isBadRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdBadRssi24)
+                || (!is24GHz && rssi < mWifiConfigStore.thresholdBadRssi5);
+        boolean isLowRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdLowRssi24)
+                || (!is24GHz && mWifiInfo.getRssi() < mWifiConfigStore.thresholdLowRssi5);
+        boolean isHighRSSI = (is24GHz && rssi >= mWifiConfigStore.thresholdGoodRssi24)
+                || (!is24GHz && mWifiInfo.getRssi() >= mWifiConfigStore.thresholdGoodRssi5);
 
         if (PDBG) {
             String rssiStatus = "";
@@ -5670,7 +5686,8 @@ public class WifiStateMachine extends StateMachine {
         public void exit() {
             // This is handled by receiving a NETWORK_DISCONNECTION_EVENT in ConnectModeState
             // Bug: 15347363
-            // For paranoia's sake, call handleNetworkDisconnect only if BSSID is null or last networkId
+            // For paranoia's sake, call handleNetworkDisconnect
+            // only if BSSID is null or last networkId
             // is not invalid.
             if (mLastBssid != null || mLastNetworkId != WifiConfiguration.INVALID_NETWORK_ID) {
                 handleNetworkDisconnect();
@@ -5766,7 +5783,10 @@ public class WifiStateMachine extends StateMachine {
                                 tryFullBandScan = false;
                             }
 
-                            if (mWifiInfo.txSuccessRate > 50 || mWifiInfo.rxSuccessRate > 100) {
+                            if (mWifiInfo.txSuccessRate >
+                                    mWifiConfigStore.maxTxPacketForNetworkSwitching
+                                    || mWifiInfo.rxSuccessRate >
+                                    mWifiConfigStore.maxRxPacketForNetworkSwitching) {
                                 // Don't scan if lots of packets are being sent
                                 restrictChannelList = true;
                                 if (mAllowScansWithTraffic == 0) {
@@ -5798,9 +5818,11 @@ public class WifiStateMachine extends StateMachine {
                                 handleScanRequest(
                                         WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                             } else {
-                                if (!startScanForConfiguration(currentConfiguration, restrictChannelList)) {
+                                if (!startScanForConfiguration(
+                                        currentConfiguration, restrictChannelList)) {
                                     if (DBG) {
-                                        loge("WifiStateMachine starting scan, did not find channels");
+                                        loge("WifiStateMachine starting scan, " +
+                                                        " did not find channels");
                                         handleScanRequest(
                                                 WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                                     }
@@ -5858,8 +5880,11 @@ public class WifiStateMachine extends StateMachine {
                                     + " autojoin " + mFrameworkAutoJoin.get());
                         }
                         if (mFrameworkAutoJoin.get()) {
-                            /* Tell autojoin the user did try to modify and save that network.
-                             * and interpret the SAVE network command as a manual request to connect */
+                            /**
+                             * Tell autojoin the user did try to modify and save that network.
+                             * and interpret the SAVE network
+                             * command as a manual request to connect
+                             * */
                             mWifiAutoJoinController.updateConfigurationHistory(config.networkId,
                                     true, true);
                             mWifiAutoJoinController.attemptAutoJoin();
@@ -5921,10 +5946,12 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_DELAYED_NETWORK_DISCONNECT:
                     if (!linkDebouncing) {
                         // Ignore if we are not debouncing
-                        loge("CMD_DELAYED_NETWORK_DISCONNECT and not debouncing - ignore " + message.arg1);
+                        loge("CMD_DELAYED_NETWORK_DISCONNECT and not debouncing - ignore "
+                                + message.arg1);
                         return HANDLED;
                     } else {
-                        loge("CMD_DELAYED_NETWORK_DISCONNECT and debouncing - disconnect " + message.arg1);
+                        loge("CMD_DELAYED_NETWORK_DISCONNECT and debouncing - disconnect "
+                                + message.arg1);
 
                         linkDebouncing = false;
                         // If we are still debouncing while this message comes,
@@ -6015,13 +6042,16 @@ public class WifiStateMachine extends StateMachine {
           logStateAndMessage(message, getClass().getSimpleName());
 
           switch(message.what) {
-            case CMD_STATIC_IP_SUCCESS:
+              case CMD_STATIC_IP_SUCCESS:
                   handleIPv4Success((DhcpResults) message.obj, CMD_STATIC_IP_SUCCESS);
                   break;
               case CMD_STATIC_IP_FAILURE:
                   handleIPv4Failure(CMD_STATIC_IP_FAILURE);
                   break;
-             case WifiManager.SAVE_NETWORK:
+              case CMD_AUTO_CONNECT:
+              case CMD_AUTO_ROAM:
+                  break;
+              case WifiManager.SAVE_NETWORK:
                   deferMessage(message);
                   break;
                   /* Defer any power mode changes since we must keep active power mode at DHCP */
@@ -6034,7 +6064,8 @@ public class WifiStateMachine extends StateMachine {
                   break;
               case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
                   if (message.arg1 == obtainingIpWatchdogCount) {
-                      loge("ObtainingIpAddress: Watchdog Triggered, count=" + obtainingIpWatchdogCount);
+                      loge("ObtainingIpAddress: Watchdog Triggered, count="
+                              + obtainingIpWatchdogCount);
                       handleIpConfigurationLost();
                       transitionTo(mDisconnectingState);
                       break;
@@ -6165,19 +6196,26 @@ public class WifiStateMachine extends StateMachine {
                case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                    // Throw away but only if it correspond to the network we're roaming to
                    String bssid = (String)message.obj;
-                   if (DBG) {
+                   if (true) {
+                       String target = "";
+                       if (mTargetRoamBSSID != null) target = mTargetRoamBSSID;
                        log("NETWORK_DISCONNECTION_EVENT in roaming state"
-                               + " BSSID=" + bssid );
+                               + " BSSID=" + bssid
+                               + " target=" + target);
                    }
                    if (bssid != null && bssid.equals(mTargetRoamBSSID)) {
                        handleNetworkDisconnect();
+                       transitionTo(mDisconnectedState);
                    }
                    break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
                     // Auth error while roaming
+                    loge("SSID_TEMP_DISABLED nid=" + Integer.toString(mLastNetworkId)
+                            + " id=" + Integer.toString(message.arg1)
+                            + " isRoaming=" + isRoaming()
+                            + " roam=" + Integer.toString(mAutoRoaming));
                     if (message.arg1 == mLastNetworkId) {
-                        loge("DISABLED while roaming nid=" + Integer.toString(mLastNetworkId));
-                        sendMessage(CMD_DISCONNECT);
+                        handleNetworkDisconnect();
                         transitionTo(mDisconnectingState);
                     }
                     return NOT_HANDLED;
@@ -7108,7 +7146,8 @@ public class WifiStateMachine extends StateMachine {
                 logv("Raw Response - " + tmResponse);
 
                 if (tmResponse != null && tmResponse.length() > 4) {
-                    byte[] result = android.util.Base64.decode(tmResponse, android.util.Base64.DEFAULT);
+                    byte[] result = android.util.Base64.decode(tmResponse,
+                            android.util.Base64.DEFAULT);
                     logv("Hex Response -" + makeHex(result));
                     int sres_len = result[0];
                     String sres = makeHex(result, 1, sres_len);
