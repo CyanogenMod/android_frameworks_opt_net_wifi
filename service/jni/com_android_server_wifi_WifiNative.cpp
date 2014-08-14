@@ -243,14 +243,19 @@ static int android_net_wifi_getInterfaces(JNIEnv *env, jclass cls) {
         return result;
     }
 
-    if (n <= 0) {
-       THROW(env, "android_net_wifi_getInterfaces no interfaces");
+    if (n < 0) {
+        THROW(env, "android_net_wifi_getInterfaces no interfaces");
         return 0;
     }
 
     if (ifaceHandles == NULL) {
        THROW(env, "android_net_wifi_getInterfaces null interface array");
        return 0;
+    }
+
+    if (n > 8) {
+        THROW(env, "Too many interfaces");
+        return 0;
     }
 
     jlongArray array = (env)->NewLongArray(n);
@@ -260,11 +265,6 @@ static int android_net_wifi_getInterfaces(JNIEnv *env, jclass cls) {
     }
 
     jlong elems[8];
-    if (n > 8) {
-        THROW(env, "Too many interfaces");
-        return 0;
-    }
-
     for (int i = 0; i < n; i++) {
         elems[i] = reinterpret_cast<jlong>(ifaceHandles[i]);
     }
