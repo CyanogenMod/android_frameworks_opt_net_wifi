@@ -681,7 +681,7 @@ public class WifiNative {
 
     public boolean simAuthResponse(int id, String response) {
         synchronized (mLock) {
-            return doBooleanCommand("SIM " + id + ":GSM-AUTH:" + response);
+            return doBooleanCommand("CTRL-RSP-SIM-" + id + ":GSM-AUTH" + response);
         }
     }
 
