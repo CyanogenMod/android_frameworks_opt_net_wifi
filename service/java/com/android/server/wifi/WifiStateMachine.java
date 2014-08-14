@@ -3955,6 +3955,32 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, WifiManager.RSSI_PKTCNT_FETCH_FAILED,
                             WifiManager.BUSY);
                     break;
+                case CMD_GET_ADAPTORS:
+                    if (WifiNative.startHal()) {
+                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
+                        int featureSet = WifiNative.getSupportedFeatureSet();
+                        /* TODO: Get capabilities from adaptors themselves */
+                        for (int i = 0; i < WifiNative.getInterfaces(); i++) {
+                            String name = WifiNative.getInterfaceName(i);
+                            WifiAdapter adaptor;
+                            if (name.startsWith("wlan")) {
+                                adaptor = new WifiAdapter(
+                                        name, featureSet & ~WifiAdapter.WIFI_FEATURE_P2P);
+                            } else if (name.startsWith("p2p")) {
+                                adaptor = new WifiAdapter(
+                                        name, featureSet & WifiAdapter.WIFI_FEATURE_P2P);
+                            } else {
+                                logd("Ignoring adaptor with name" + name);
+                                continue;
+                            }
+                            adaptors.add(adaptor);
+                        }
+                        replyToMessage(message, message.what, adaptors);
+                    } else {
+                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
+                        replyToMessage(message, message.what, adaptors);
+                    }
+                    break;
                 case WifiP2pServiceImpl.P2P_CONNECTION_CHANGED:
                     NetworkInfo info = (NetworkInfo) message.obj;
                     mP2pConnected.set(info.isConnected());
@@ -4228,31 +4254,6 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_SET_OPERATIONAL_MODE:
                     mOperationalMode = message.arg1;
                     break;
-                case CMD_GET_ADAPTORS:
-                    if (WifiNative.startHal()) {
-                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
-                        int featureSet = WifiNative.getSupportedFeatureSet();
-                        /* TODO: Get capabilities from adaptors themselves */
-                        for (int i = 0; i < WifiNative.getInterfaces(); i++) {
-                            String name = WifiNative.getInterfaceName(i);
-                            WifiAdapter adaptor;
-                            if (name.startsWith("wlan")) {
-                                adaptor = new WifiAdapter(
-                                        name, featureSet & ~WifiAdapter.WIFI_FEATURE_P2P);
-                            } else if (name.startsWith("p2p")) {
-                                adaptor = new WifiAdapter(
-                                        name, featureSet & WifiAdapter.WIFI_FEATURE_P2P);
-                            } else {
-                                logd("Ignoring adaptor with name" + name);
-                                continue;
-                            }
-                            adaptors.add(adaptor);
-                        }
-                        replyToMessage(message, message.what, adaptors);
-                    } else {
-                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
-                        replyToMessage(message, message.what, adaptors);
-                    }
                 default:
                     return NOT_HANDLED;
             }
