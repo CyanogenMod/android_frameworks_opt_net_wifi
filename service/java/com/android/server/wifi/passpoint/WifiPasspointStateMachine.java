@@ -32,6 +32,7 @@ import android.net.wifi.passpoint.WifiPasspointInfo;
 import android.net.wifi.passpoint.WifiPasspointPolicy;
 import android.net.wifi.passpoint.WifiPasspointOsuProvider;
 import android.net.wifi.passpoint.WifiPasspointManager;
+import android.net.wifi.passpoint.WifiPasspointManager.ParcelableString;
 import android.net.wifi.passpoint.WifiPasspointDmTree;
 import android.os.Handler;
 import android.os.IBinder;
@@ -46,7 +47,6 @@ import android.util.Log;
 import android.net.wifi.IWifiManager;
 
 import com.android.internal.util.AsyncChannel;
-import com.android.internal.util.ParcelableString;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
