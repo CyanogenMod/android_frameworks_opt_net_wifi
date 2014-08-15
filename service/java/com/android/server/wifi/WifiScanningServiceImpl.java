@@ -96,7 +96,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     }
                     if (DBG) Slog.d(TAG, "closing client " + msg.replyTo);
                     ClientInfo ci = mClients.remove(msg.replyTo);
-                    ci.cleanup();
+                    if (ci != null) {                       /* can be null if send failed above */
+                        ci.cleanup();
+                    }
                     return;
                 case AsyncChannel.CMD_CHANNEL_FULL_CONNECTION:
                     AsyncChannel ac = new AsyncChannel();
