@@ -21,6 +21,7 @@ import android.content.BroadcastReceiver;
 import android.net.wifi.passpoint.WifiPasspointCredential;
 import android.net.wifi.passpoint.WifiPasspointDmTree;
 import android.net.wifi.passpoint.WifiPasspointManager;
+import android.net.wifi.passpoint.WifiPasspointManager.ParcelableString;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.Uri;
@@ -51,7 +52,6 @@ import com.android.org.bouncycastle.jce.PKCS10CertificationRequest;
 import com.android.org.bouncycastle.jce.provider.BouncyCastleProvider;
 import com.android.org.bouncycastle.jce.exception.ExtCertPathValidatorException;
 
-import com.android.internal.util.ParcelableString;
 import com.android.internal.util.StateMachine;
 import com.android.server.wifi.passpoint.WifiPasspointClient.AuthenticationElement;
 import com.android.org.conscrypt.TrustManagerImpl;
@@ -2076,7 +2076,7 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                     if (uri == null) {
                         return false;
                     }
-                    ParcelableString launchBrowserUri = new ParcelableString();
+                    ParcelableString launchBrowserUri = new WifiPasspointManager.ParcelableString();
                     launchBrowserUri.string = uri;
                     mTarget.sendMessage(WifiPasspointStateMachine.CMD_LAUNCH_BROWSER, launchBrowserUri);
 
