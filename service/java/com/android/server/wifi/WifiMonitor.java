@@ -18,6 +18,7 @@ package com.android.server.wifi;
 
 import android.net.NetworkInfo;
 import android.net.wifi.SupplicantState;
+import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.p2p.WifiP2pConfig;
@@ -241,9 +242,8 @@ public class WifiMonitor {
      *    3 - Rand3
      *    4 - SSID
      */
-    private static Pattern mRequestSimAuthPattern =
-            Pattern.compile("SIM-([0-9]*):GSM-AUTH(:[0-9a-f]*)(:[0-9a-f]*)(:[0-9a-f]*)?"
-                    + " needed for SSID (.+)");
+    private static Pattern mRequestGsmAuthPattern =
+            Pattern.compile("SIM-([0-9]*):GSM-AUTH((:[0-9a-f]+)+) needed for SSID (.+)");
 
     /**
      * Regex pattern for extracting SSIDs from request identity string.
@@ -1116,16 +1116,14 @@ public class WifiMonitor {
             }
             mStateMachine.sendMessage(SUP_REQUEST_IDENTITY, eventLogCounter, 0, SSID);
         } if (requestName.startsWith(SIM_STR)) {
-            Matcher match = mRequestSimAuthPattern.matcher(requestName);
+            Matcher match = mRequestGsmAuthPattern.matcher(requestName);
             if (match.find()) {
                 WifiStateMachine.SimAuthRequestData data =
                         new WifiStateMachine.SimAuthRequestData();
                 data.networkId = Integer.parseInt(match.group(1));
-                data.ssid = match.group(5);
-                data.rand1 = match.group(2).substring(1);
-                data.rand2 = match.group(3).substring(1);
-                data.rand3 = match.group(4).substring(1);
-
+                data.protocol = WifiEnterpriseConfig.Eap.SIM;
+                data.ssid = match.group(4);
+                data.challenges = match.group(2).split(":");
                 mStateMachine.sendMessage(SUP_REQUEST_SIM_AUTH, data);
             } else {
                 Log.e(TAG, "couldn't parse SIM auth request - " + requestName);
