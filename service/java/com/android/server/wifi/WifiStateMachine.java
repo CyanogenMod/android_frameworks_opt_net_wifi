@@ -3156,6 +3156,7 @@ public class WifiStateMachine extends StateMachine {
                         + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
+            mLinkProperties.setTcpBufferSizes(TCP_BUFFER_SIZES_WIFI);
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
@@ -5643,6 +5644,9 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+    private static final String TCP_BUFFER_SIZES_WIFI =
+            "524288,1048576,2097152,262144,524288,1048576";
+
     class L2ConnectedState extends State {
         @Override
         public void enter() {
@@ -5655,6 +5659,8 @@ public class WifiStateMachine extends StateMachine {
                 setNetworkDetailedState(DetailedState.DISCONNECTED);
             }
             setNetworkDetailedState(DetailedState.CONNECTING);
+            mLinkProperties.setTcpBufferSizes(TCP_BUFFER_SIZES_WIFI);
+
             mNetworkAgent = new WifiNetworkAgent(getHandler().getLooper(), mContext,
                     "WifiNetworkAgent", mNetworkInfo, mNetworkCapabilitiesFilter,
                     mLinkProperties, 60);
