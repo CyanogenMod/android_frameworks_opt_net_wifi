@@ -17,12 +17,11 @@
 package com.android.server.wifi;
 
 import android.content.Context;
-
 import android.net.NetworkKey;
 import android.net.NetworkScoreManager;
 import android.net.WifiKey;
 import android.net.wifi.*;
-
+import android.net.wifi.WifiConfiguration.KeyMgmt;
 import android.os.SystemClock;
 import android.os.Process;
 import android.text.TextUtils;
@@ -63,6 +62,9 @@ public class WifiAutoJoinController {
             new HashMap<String, ScanResult>();
 
     private WifiConnectionStatistics mWifiConnectionStatistics;
+
+    /** Whether to allow connections to untrusted networks. */
+    private boolean mAllowUntrustedConnections = false;
 
     /* for debug purpose only : the untrusted SSID we would be connected to if we had VPN */
     String lastUntrustedBSSID = null;
@@ -1087,6 +1089,23 @@ public class WifiAutoJoinController {
     }
 
     /**
+     * Set whether connections to untrusted connections are allowed.
+     */
+    void setAllowUntrustedConnections(boolean allow) {
+        boolean changed = mAllowUntrustedConnections != allow;
+        mAllowUntrustedConnections = allow;
+        if (changed) {
+            attemptAutoJoin();
+        }
+    }
+
+    private boolean isOpenNetwork(ScanResult result) {
+        return !result.capabilities.contains("WEP") &&
+                !result.capabilities.contains("PSK") &&
+                !result.capabilities.contains("EAP");
+    }
+
+    /**
      * attemptAutoJoin() function implements the core of the a network switching algorithm
      */
     void attemptAutoJoin() {
@@ -1185,6 +1204,14 @@ public class WifiAutoJoinController {
                 logDbg("attemptAutoJoin() ERROR wpa_supplicant out of sync nid="
                         + Integer.toString(supplicantNetId) + " WifiStateMachine="
                         + Integer.toString(currentConfiguration.networkId));
+                mWifiStateMachine.disconnectCommand();
+                return;
+            } else if (currentConfiguration.ephemeral && (!mAllowUntrustedConnections ||
+                    !mNetworkScoreCache.isScoredNetwork(currentConfiguration.lastSeen()))) {
+                // The current connection is untrusted (the framework added it), but we're either
+                // no longer allowed to connect to such networks, or the score has been nullified
+                // since we connected. Drop the current connection and perform the rest of autojoin.
+                logDbg("attemptAutoJoin() disconnecting from unwanted ephemeral network");
                 mWifiStateMachine.disconnectCommand();
                 return;
             } else {
@@ -1415,8 +1442,9 @@ public class WifiAutoJoinController {
             }
         }
 
-        // Wait for VPN to be available on the system to make use of this code
         // Now, go thru scan result to try finding a better untrusted network
+        // TODO: Consider only running this when we can actually connect to these networks. For now,
+        // this is useful for debugging.
         if (mNetworkScoreCache != null) {
             int rssi5 = WifiConfiguration.INVALID_RSSI;
             int rssi24 = WifiConfiguration.INVALID_RSSI;
@@ -1437,7 +1465,8 @@ public class WifiAutoJoinController {
                     int rssiBoost = 0;
                     // We look only at untrusted networks with a valid SSID
                     // A trusted result would have been looked at thru it's Wificonfiguration
-                    if (TextUtils.isEmpty(result.SSID) || !result.untrusted) {
+                    if (TextUtils.isEmpty(result.SSID) || !result.untrusted ||
+                            !isOpenNetwork(result)) {
                         continue;
                     }
                     if ((nowMs - result.seen) < 3000) {
@@ -1476,9 +1505,16 @@ public class WifiAutoJoinController {
                     // Remember which SSID we are connecting to
                     lastUntrustedBSSID = untrustedCandidate.SSID;
                 }
+
+                // At this point, we have an untrusted network candidate.
+                // Create the new ephemeral configuration and see if we should switch over
+                if (mAllowUntrustedConnections) {
+                    candidate =
+                            mWifiConfigStore.wifiConfigurationFromScanResult(untrustedCandidate);
+                    candidate.allowedKeyManagement.set(KeyMgmt.NONE);
+                    candidate.ephemeral = true;
+                }
             }
-            // Now we don't have VPN, and thus don't actually connect to the untrusted candidate
-            untrustedCandidate = null;
         }
 
         /**

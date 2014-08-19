@@ -16,21 +16,20 @@
 
 package com.android.server.wifi;
 
-import static android.net.wifi.WifiManager.WIFI_STATE_DISABLED;
-import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
-import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
-import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
-import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
-
-/**
- * TODO:
- * Deprecate WIFI_STATE_UNKNOWN
- */
 import static android.net.wifi.WifiManager.WIFI_AP_STATE_DISABLED;
 import static android.net.wifi.WifiManager.WIFI_AP_STATE_DISABLING;
 import static android.net.wifi.WifiManager.WIFI_AP_STATE_ENABLED;
 import static android.net.wifi.WifiManager.WIFI_AP_STATE_ENABLING;
 import static android.net.wifi.WifiManager.WIFI_AP_STATE_FAILED;
+import static android.net.wifi.WifiManager.WIFI_STATE_DISABLED;
+import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
+import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
+import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
+/**
+ * TODO:
+ * Deprecate WIFI_STATE_UNKNOWN
+ */
+import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
 
 import android.app.AlarmManager;
 import android.app.PendingIntent;
@@ -53,12 +52,27 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkFactory;
 import android.net.NetworkInfo;
 import android.net.NetworkInfo.DetailedState;
+import android.net.NetworkRequest;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
 import android.net.TrafficStats;
-import android.net.wifi.*;
+import android.net.wifi.BatchedScanResult;
+import android.net.wifi.BatchedScanSettings;
+import android.net.wifi.RssiPacketCountInfo;
+import android.net.wifi.ScanResult;
+import android.net.wifi.ScanSettings;
 import android.net.wifi.SupplicantState;
+import android.net.wifi.WifiChannel;
+import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiConnectionStatistics;
+import android.net.wifi.WifiEnterpriseConfig;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiLinkLayerStats;
+import android.net.wifi.WifiManager;
+import android.net.wifi.WifiSsid;
+import android.net.wifi.WpsInfo;
+import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.os.BatteryStats;
@@ -78,9 +92,9 @@ import android.os.UserHandle;
 import android.os.WorkSource;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
-import android.util.LruCache;
 import android.text.TextUtils;
 import android.util.Log;
+import android.util.LruCache;
 
 import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
@@ -88,23 +102,26 @@ import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
-import com.android.server.net.BaseNetworkObserver;
 import com.android.server.net.NetlinkTracker;
-
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
-import java.io.FileDescriptor;
-import java.io.PrintWriter;
-import java.net.InetAddress;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Pattern;
-import java.io.FileReader;
 import java.io.BufferedReader;
+import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Queue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 /**
  * Track the state of Wifi connectivity. All event handling is done here,
@@ -4290,9 +4307,17 @@ public class WifiStateMachine extends StateMachine {
     private void handleSuccessfulIpConfiguration() {
         mLastSignalLevel = -1; // Force update of signal strength
         WifiConfiguration c = getCurrentWifiConfiguration();
-        // Reset IP failure tracking
         if (c != null) {
+            // Reset IP failure tracking
             c.numConnectionFailures = 0;
+
+            // Tell the framework whether the newly connected network is trusted or untrusted.
+            if (c.ephemeral) {
+                mNetworkCapabilities.removeCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            } else {
+                mNetworkCapabilities.addCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            }
+            mNetworkAgent.sendNetworkCapabilities(mNetworkCapabilities);
         }
         if (c != null) {
             ScanResult result = getCurrentScanResult();
@@ -4419,16 +4444,31 @@ public class WifiStateMachine extends StateMachine {
     }
 
     private class WifiNetworkFactory extends NetworkFactory {
+        /** Number of outstanding NetworkRequests for untrusted networks. */
+        private int mUntrustedReqCount = 0;
+
         public WifiNetworkFactory(Looper l, Context c, String TAG, NetworkCapabilities f) {
             super(l, c, TAG, f);
         }
-        protected void startNetwork() {
-            // TODO
-            // Enter association mode.
+
+        @Override
+        protected void needNetworkFor(NetworkRequest networkRequest, int score) {
+            if (!networkRequest.networkCapabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
+                if (++mUntrustedReqCount == 1) {
+                    mWifiAutoJoinController.setAllowUntrustedConnections(true);
+                }
+            }
         }
-        protected void stopNetwork() {
-            // TODO
-            // Stop associating.
+
+        @Override
+        protected void releaseNetworkFor(NetworkRequest networkRequest) {
+            if (!networkRequest.networkCapabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
+                if (--mUntrustedReqCount == 0) {
+                    mWifiAutoJoinController.setAllowUntrustedConnections(false);
+                }
+            }
         }
     }
     /********************************************************
