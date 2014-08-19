@@ -1894,8 +1894,9 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         //Turn on power save on client
                         mWifiNative.setP2pPowerSave(mGroup.getInterface(), true);
                         try {
-                            mNwService.addInterfaceToLocalNetwork(mGroup.getInterface(),
-                                    dhcpResults.linkProperties.getRoutes());
+                            String iface = mGroup.getInterface();
+                            mNwService.addInterfaceToLocalNetwork(iface,
+                                                                  dhcpResults.getRoutes(iface));
                         } catch (RemoteException e) {
                             loge("Failed to add iface to local network " + e);
                         }

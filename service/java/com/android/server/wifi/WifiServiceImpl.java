@@ -1062,32 +1062,20 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public DhcpInfo getDhcpInfo() {
         enforceAccessPermission();
         DhcpResults dhcpResults = mWifiStateMachine.syncGetDhcpResults();
-        if (dhcpResults.linkProperties == null) return null;
 
         DhcpInfo info = new DhcpInfo();
-        for (LinkAddress la : dhcpResults.linkProperties.getLinkAddresses()) {
-            InetAddress addr = la.getAddress();
-            if (addr instanceof Inet4Address) {
-                info.ipAddress = NetworkUtils.inetAddressToInt((Inet4Address)addr);
-                break;
-            }
+
+        if (dhcpResults.ipAddress != null &&
+                dhcpResults.ipAddress.getAddress() instanceof Inet4Address) {
+            info.ipAddress = NetworkUtils.inetAddressToInt((Inet4Address) dhcpResults.ipAddress.getAddress());
         }
-        for (RouteInfo r : dhcpResults.linkProperties.getRoutes()) {
-            if (r.isDefaultRoute()) {
-                InetAddress gateway = r.getGateway();
-                if (gateway instanceof Inet4Address) {
-                    info.gateway = NetworkUtils.inetAddressToInt((Inet4Address)gateway);
-                }
-            } else if (r.hasGateway() == false) {
-                LinkAddress dest = r.getDestinationLinkAddress();
-                if (dest.getAddress() instanceof Inet4Address) {
-                    info.netmask = NetworkUtils.prefixLengthToNetmaskInt(
-                            dest.getNetworkPrefixLength());
-                }
-            }
+
+        if (dhcpResults.gateway != null) {
+            info.gateway = NetworkUtils.inetAddressToInt((Inet4Address) dhcpResults.gateway);
         }
+
         int dnsFound = 0;
-        for (InetAddress dns : dhcpResults.linkProperties.getDnsServers()) {
+        for (InetAddress dns : dhcpResults.dnsServers) {
             if (dns instanceof Inet4Address) {
                 if (dnsFound == 0) {
                     info.dns1 = NetworkUtils.inetAddressToInt((Inet4Address)dns);
