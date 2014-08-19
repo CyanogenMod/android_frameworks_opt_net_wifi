@@ -759,6 +759,13 @@ public class WifiConfigStore extends IpConfigStore {
                             remove = false;
                         }
                     }
+                } else {
+                    loge("removeNetwork " + Integer.toString(netId)
+                            + " key=" + config.configKey()
+                            + " config.id=" + Integer.toString(config.networkId)
+                            + " didSelfAdd and null peerWifiConfiguration"
+                            + " -> dont remove");
+                    remove = false;
                 }
             }
 
@@ -772,7 +779,6 @@ public class WifiConfigStore extends IpConfigStore {
                  */
                 config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DELETED);
                 mWifiNative.disableNetwork(config.networkId);
-                remove = false;
             }
 
             writeIpAndProxyConfigurations();

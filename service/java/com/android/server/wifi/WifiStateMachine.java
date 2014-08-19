@@ -528,6 +528,8 @@ public class WifiStateMachine extends StateMachine {
     /* Link configuration (IP address, DNS, ...) changes notified via netlink */
     static final int CMD_UPDATE_LINKPROPERTIES            = BASE + 140;
 
+    /* Supplicant is trying to associate to a given BSSID */
+    static final int CMD_TARGET_BSSID                     = BASE + 141;
 
     /* Reload all networks and reconnect */
     static final int CMD_RELOAD_TLS_AND_RECONNECT         = BASE + 142;
@@ -2194,6 +2196,19 @@ public class WifiStateMachine extends StateMachine {
                 if (config != null) {
                     sb.append(" ").append(config.configKey());
                 }
+                break;
+            case CMD_TARGET_BSSID:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                if (msg.obj != null) {
+                    sb.append(" BSSID=").append((String)msg.obj);
+                }
+                if (mTargetRoamBSSID != null) {
+                    sb.append(" Target=").append(mTargetRoamBSSID);
+                }
+                sb.append(" roam=").append(Integer.toString(mAutoRoaming));
                 break;
             case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                 if (msg.obj != null) {
@@ -3927,6 +3942,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_TEST_NETWORK_DISCONNECT:
                 case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
                 case WifiMonitor.SUP_REQUEST_SIM_AUTH:
+                case CMD_TARGET_BSSID:
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
                     mDhcpStateMachine = null;
@@ -4269,6 +4285,8 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_SET_OPERATIONAL_MODE:
                     mOperationalMode = message.arg1;
+                    break;
+                case CMD_TARGET_BSSID:
                     break;
                 default:
                     return NOT_HANDLED;
@@ -4881,6 +4899,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_STOP_SUPPLICANT:
                 s = "CMD_STOP_SUPPLICANT";
                 break;
+            case CMD_STOP_SUPPLICANT_FAILED:
+                s = "CMD_STOP_SUPPLICANT_FAILED";
+                break;
             case CMD_START_SUPPLICANT:
                 s = "CMD_START_SUPPLICANT";
                 break;
@@ -4961,6 +4982,10 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_GET_ADAPTORS:
                 s = "CMD_GET_ADAPTORS";
+                break;
+            case CMD_UNWANTED_NETWORK:
+                s = "CMD_UNWANTED_NETWORK";
+                break;
             case CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS:
                 s = "CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS";
                 break;
@@ -5143,6 +5168,9 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case DhcpStateMachine.DHCP_FAILURE:
                 s = "DHCP_FAILURE";
+                break;
+            case CMD_TARGET_BSSID:
+                s = "CMD_TARGET_BSSID";
                 break;
             default:
                 s = "what:" + Integer.toString(what);

@@ -66,7 +66,9 @@ public class WifiMonitor {
     private static final int ASSOC_REJECT = 9;
     private static final int SSID_TEMP_DISABLE = 10;
     private static final int SSID_REENABLE = 11;
-    private static final int UNKNOWN      = 12;
+    private static final int BSS_ADDED = 12;
+    private static final int BSS_REMOVED = 13;
+    private static final int UNKNOWN      = 14;
 
     /** All events coming from the supplicant start with this prefix */
     private static final String EVENT_PREFIX_STR = "CTRL-EVENT-";
@@ -204,6 +206,15 @@ public class WifiMonitor {
      */
     private static final String REENABLED_STR = "SSID-REENABLED";
 
+    /**
+     * This indicates supplicant found a given BSS
+     */
+    private static final String BSS_ADDED_STR = "BSS-ADDED";
+
+    /**
+     * This indicates supplicant removed a given BSS
+     */
+    private static final String BSS_REMOVED_STR = "BSS-REMOVED";
 
     /**
      * Regex pattern for extracting an Ethernet-style MAC address from a string.
@@ -230,6 +241,16 @@ public class WifiMonitor {
     private static Pattern mAssocRejectEventPattern =
             Pattern.compile("((?:[0-9a-f]{2}:){5}[0-9a-f]{2}) +" +
                     "status_code=([0-9]+)");
+
+    /**
+     * Regex pattern for extracting an Ethernet-style MAC address from a string.
+     * Matches a strings like the following:<pre>
+     * IFNAME=wlan0 Trying to associate with 6c:f3:7f:ae:87:71
+     */
+    private static final String TARGET_BSSID_STR =  "Trying to associate with ";
+
+    private static Pattern mTargetBSSIDPattern =
+            Pattern.compile("Trying to associate with ((?:[0-9a-f]{2}:){5}[0-9a-f]{2}).*");
 
     /**
      * Regex pattern for extracting SSIDs from request identity string.
@@ -690,8 +711,11 @@ public class WifiMonitor {
     private boolean dispatchEvent(String eventStr, String iface) {
 
         if (DBG) {
-            logDbg("WifiMonitor:" + iface + " cnt=" + Integer.toString(eventLogCounter)
-                    + " dispatchEvent: " + eventStr);
+            // Dont log CTRL-EVENT-BSS-ADDED which are too verbose and not handled
+            if (eventStr != null && !eventStr.contains("CTRL-EVENT-BSS-ADDED")) {
+                logDbg("WifiMonitor:" + iface + " cnt=" + Integer.toString(eventLogCounter)
+                        + " dispatchEvent: " + eventStr);
+            }
         }
 
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
@@ -720,6 +744,8 @@ public class WifiMonitor {
                 handleHs20Events(eventStr);
             } else if (eventStr.startsWith(REQUEST_PREFIX_STR)) {
                 handleRequests(eventStr);
+            } else if (eventStr.startsWith(TARGET_BSSID_STR)) {
+                handleTargetBSSIDEvent(eventStr);
             } else {
                 if (DBG) Log.w(TAG, "couldn't identify event type - " + eventStr);
             }
@@ -762,6 +788,10 @@ public class WifiMonitor {
             event = SSID_TEMP_DISABLE;
         } else if (eventName.equals(REENABLED_STR)) {
             event = SSID_REENABLE;
+        } else if (eventName.equals(BSS_ADDED_STR)) {
+            event = BSS_ADDED;
+        } else if (eventName.equals(BSS_REMOVED_STR)) {
+            event = BSS_REMOVED;
         }
         else
             event = UNKNOWN;
@@ -852,8 +882,12 @@ public class WifiMonitor {
                 }
             }
             mStateMachine.sendMessage(ASSOCIATION_REJECTION_EVENT, eventLogCounter, status, BSSID);
-        } else {
-            handleEvent(event, eventData);
+        } else if (event == BSS_ADDED && !VDBG) {
+            // Ignore that event - it is not handled, and dont log it as it is too verbose
+        } else if (event == BSS_REMOVED && !VDBG) {
+            // Ignore that event - it is not handled, and dont log it as it is too verbose
+        }  else {
+                handleEvent(event, eventData);
         }
         sRecvErrors = 0;
         eventLogCounter++;
@@ -897,7 +931,20 @@ public class WifiMonitor {
                     logDbg("handleEvent unknown: " + Integer.toString(event) + "  " + remainder);
                 }
                 break;
+            default:
+                break;
         }
+    }
+
+    private void handleTargetBSSIDEvent(String eventStr) {
+        String BSSID = null;
+        Matcher match = mTargetBSSIDPattern.matcher(eventStr);
+        if (match.find()) {
+            BSSID = match.group(1);
+        } else {
+            Log.e(TAG, "didn't find BSSID " + eventStr);
+        }
+        mStateMachine.sendMessage(WifiStateMachine.CMD_TARGET_BSSID, eventLogCounter, 0, BSSID);
     }
 
     private void handleWpsFailEvent(String dataString) {

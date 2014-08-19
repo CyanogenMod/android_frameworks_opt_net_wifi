@@ -949,12 +949,18 @@ public class WifiAutoJoinController {
      */
     int getConfigNetworkScore(WifiConfiguration config, int age, int rssiBoost) {
 
-        if (VDBG)  logDbg("getConfigNetworkScore for " + config.configKey());
-
         if (mNetworkScoreCache == null) {
+            if (VDBG) {
+                logDbg("getConfigNetworkScore for " + config.configKey()
+                        + "  -> no scorer, hence no scores");
+            }
             return WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
         }
         if (config.scanResultCache == null) {
+            if (VDBG) {
+                logDbg("getConfigNetworkScore for " + config.configKey()
+                        + " -> no scan cache");
+            }
             return WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
         }
 
@@ -975,6 +981,17 @@ public class WifiAutoJoinController {
         if (startScore == -10000) {
             startScore = WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
         }
+        if (VDBG) {
+            if (startScore == WifiNetworkScoreCache.INVALID_NETWORK_SCORE) {
+                logDbg("getConfigNetworkScore for " + config.configKey()
+                        + " -> no available score");
+            } else {
+                logDbg("getConfigNetworkScore for " + config.configKey()
+                        + " boost=" + Integer.toString(rssiBoost)
+                        + " score = " + Integer.toString(startScore));
+            }
+        }
+
         return startScore;
     }
 
