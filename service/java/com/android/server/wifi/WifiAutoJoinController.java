@@ -208,6 +208,12 @@ public class WifiAutoJoinController {
                     }
                     mWifiStateMachine.sendMessage(WifiManager.SAVE_NETWORK, associatedConfig);
                 }
+            } else {
+                // If the scan result has been blacklisted fir 18 hours -> unblacklist
+                long now = System.currentTimeMillis();
+                if ((now - result.blackListTimestamp) > loseBlackListHardMilli) {
+                    result.setAutoJoinStatus(ScanResult.ENABLED);
+                }
             }
         }
 
@@ -823,11 +829,8 @@ public class WifiAutoJoinController {
             int bRssiBoost = 0;
             int aRssiBoost = 0;
             if ((b.seen == 0) || (b.BSSID == null)
-                    || (nowMs - b.seen) > age ) {
-                    // TODO: do not apply blacklisting right now so as to leave this
-                    // bug as apparent
-                    // https://b2.corp.google.com/#/issues/16504012
-                    //                    || b.status != ScanResult.ENABLED) {
+                    || ((nowMs - b.seen) > age)
+                    || b.autoJoinStatus != ScanResult.ENABLED) {
                 continue;
             }
 

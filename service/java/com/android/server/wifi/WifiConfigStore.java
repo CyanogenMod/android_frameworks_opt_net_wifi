@@ -1347,7 +1347,8 @@ public class WifiConfigStore extends IpConfigStore {
                             out.writeUTF(RSSI_KEY + Integer.toString(result.level)
                                     + SEPARATOR_KEY);
 
-                            out.writeUTF(BSSID_STATUS_KEY + Integer.toString(result.status)
+                            out.writeUTF(BSSID_STATUS_KEY
+                                    + Integer.toString(result.autoJoinStatus)
                                     + SEPARATOR_KEY);
 
                             if (result.seen != 0) {
@@ -1645,7 +1646,7 @@ public class WifiConfigStore extends IpConfigStore {
                                         caps, rssi, freq, (long) 0);
                                 result.seen = seen;
                                 config.scanResultCache.put(bssid, result);
-                                result.status = status;
+                                result.autoJoinStatus = status;
                             }
                         }
                     }
@@ -2549,8 +2550,8 @@ public class WifiConfigStore extends IpConfigStore {
             if (config != null) {
                 if (config.scanResultCache != null) {
                     String status = "";
-                    if (scanResult.status > 0) {
-                        status = " status=" + Integer.toString(scanResult.status);
+                    if (scanResult.autoJoinStatus > 0) {
+                        status = " status=" + Integer.toString(scanResult.autoJoinStatus);
                     }
                     loge("                    got known scan result " +
                             scanResult.BSSID + " key : " + key + " num: " +
@@ -3098,12 +3099,12 @@ public class WifiConfigStore extends IpConfigStore {
                 for (ScanResult result: config.scanResultCache.values()) {
                     if (result.BSSID.equals(BSSID)) {
                         if (enable) {
-                            result.status = ScanResult.ENABLED;
+                            result.setAutoJoinStatus(ScanResult.ENABLED);
                         } else {
-                            // Black list the BSSID we we were trying to join
+                            // Black list the BSSID we were trying to join
                             // so as the Roam state machine
                             // doesn't pick it up over and over
-                            result.status = ScanResult.AUTO_ROAM_DISABLED;
+                            result.setAutoJoinStatus(ScanResult.AUTO_ROAM_DISABLED);
                             found = true;
                         }
                     }
