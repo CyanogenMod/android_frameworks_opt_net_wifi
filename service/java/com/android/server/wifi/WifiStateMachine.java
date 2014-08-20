@@ -3098,6 +3098,17 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+    private boolean clearIPv4Address(String iface) {
+        try {
+            InterfaceConfiguration ifcg = new InterfaceConfiguration();
+            ifcg.setLinkAddress(new LinkAddress("0.0.0.0/0"));
+            mNwService.setInterfaceConfig(iface, ifcg);
+            return true;
+        } catch (RemoteException e) {
+            return false;
+        }
+    }
+
     private boolean isProvisioned(LinkProperties lp) {
         // LinkProperties#isProvisioned returns true even if all we have is an IPv4 address and no
         // connectivity. This turns out not to be very useful, because we can't distinguish it from
@@ -3243,18 +3254,13 @@ public class WifiStateMachine extends StateMachine {
                     // address  will cause a CMD_UPDATE_LINKPROPERTIES. If the IPv4 address was
                     // necessary for provisioning, its deletion will cause us to disconnect.
                     //
-                    // This should never happen, because a DHCP failure will have empty DhcpResults
-                    // and thus empty LinkProperties, and isProvisioned will not return true if
-                    // we're using DHCP and don't have an IPv4 default route. So for now it's only
-                    // here for extra redundancy. However, it will increase robustness if we move
-                    // to getting IPv4 routes from netlink as well.
-                    loge("DHCP failure: provisioned, should not happen! Clearing IPv4 address.");
-                    try {
-                        InterfaceConfiguration ifcg = new InterfaceConfiguration();
-                        ifcg.setLinkAddress(new LinkAddress("0.0.0.0/0"));
-                        ifcg.setInterfaceUp();
-                        mNwService.setInterfaceConfig(mInterfaceName, ifcg);
-                    } catch (RemoteException e) {
+                    // This shouldn't be needed, because on an IPv4-only network a DHCP failure will
+                    // have empty DhcpResults and thus empty LinkProperties, and isProvisioned will
+                    // not return true if we're using DHCP and don't have an IPv4 default route. So
+                    // for now it's only here for extra redundancy. However, it will increase
+                    // robustness if we move to getting IPv4 routes from netlink as well.
+                    loge("DHCP failure: provisioned, clearing IPv4 address.");
+                    if (!clearIPv4Address(mInterfaceName)) {
                         sendMessage(CMD_IP_CONFIGURATION_LOST);
                     }
                 }
@@ -5991,6 +5997,7 @@ public class WifiStateMachine extends StateMachine {
                     // Remove any IP address on the interface in case we're switching from static
                     // IP configuration to DHCP. This is safe because if we get here when not
                     // roaming, we don't have a usable address.
+                    clearIPv4Address(mInterfaceName);
                     startDhcp();
                 }
                 obtainingIpWatchdogCount++;

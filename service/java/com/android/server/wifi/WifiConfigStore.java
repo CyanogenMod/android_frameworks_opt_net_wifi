@@ -2626,8 +2626,11 @@ public class WifiConfigStore extends IpConfigStore {
         if (ipChanged) {
             currentConfig.setIpAssignment(newConfig.getIpAssignment());
             currentConfig.setStaticIpConfiguration(newConfig.getStaticIpConfiguration());
-            log("IP config changed SSID = " + currentConfig.SSID +
-                " static configuration: " + currentConfig.getStaticIpConfiguration().toString());
+            log("IP config changed SSID = " + currentConfig.SSID);
+            if (currentConfig.getStaticIpConfiguration() != null) {
+                log(" static configuration: " +
+                    currentConfig.getStaticIpConfiguration().toString());
+            }
         }
 
         if (proxyChanged) {
