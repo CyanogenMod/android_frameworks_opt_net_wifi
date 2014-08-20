@@ -2860,7 +2860,7 @@ public class WifiStateMachine extends StateMachine {
             mWifiInfo.setLinkSpeed(newLinkSpeed);
         }
         if (newFrequency > 0) {
-            if (ScanResult.is24GHz(newFrequency)) {
+            if (ScanResult.is5GHz(newFrequency)) {
                 mWifiConnectionStatistics.num5GhzConnected++;
             }
             if (ScanResult.is24GHz(newFrequency)) {
