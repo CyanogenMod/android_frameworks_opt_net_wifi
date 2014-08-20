@@ -96,19 +96,6 @@ public final class WifiPasspointServiceImpl extends IWifiPasspointManager.Stub {
     }
 
     @Override
-    public List<WifiPasspointPolicy> requestCredentialMatch(List<ScanResult> requested) {
-        return mSm.syncRequestCredentialMatch(requested);
-    }
-
-    public WifiPasspointPolicy getCurrentUsedPolicy() {
-        return mSm.syncGetCurrentUsedPolicy();
-    }
-
-    public void setCurrentUsedPolicy(WifiPasspointPolicy policy) {
-        mSm.syncSetCurrentUsedPolicy(policy);
-    }
-
-    @Override
     protected void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         if (mContext.checkCallingOrSelfPermission(android.Manifest.permission.DUMP)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -120,25 +107,5 @@ public final class WifiPasspointServiceImpl extends IWifiPasspointManager.Stub {
         // TODO
         pw.println("dump test");
         pw.println();
-    }
-
-    @Override
-    public List<WifiPasspointCredential> getCredentials() {
-        return mSm.getCredentials();
-    }
-
-    @Override
-    public boolean addCredential(WifiPasspointCredential cred) {
-        return mSm.addCredential(cred);
-    }
-
-    @Override
-    public boolean updateCredential(WifiPasspointCredential cred) {
-        return mSm.updateCredential(cred);
-    }
-
-    @Override
-    public boolean removeCredential(WifiPasspointCredential cred) {
-        return mSm.removeCredential(cred);
     }
 }
