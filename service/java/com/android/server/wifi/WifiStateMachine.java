@@ -794,6 +794,8 @@ public class WifiStateMachine extends StateMachine {
 
     private AtomicBoolean mFrameworkAutoJoin = new AtomicBoolean(true); //enable by default
 
+    private String mTcpBufferSizes = null;
+
     public WifiStateMachine(Context context, String wlanInterface,
             WifiTrafficPoller trafficPoller){
         super("WifiStateMachine");
@@ -964,6 +966,9 @@ public class WifiStateMachine extends StateMachine {
 
         mSuspendWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiSuspend");
         mSuspendWakeLock.setReferenceCounted(false);
+
+        mTcpBufferSizes = mContext.getResources().getString(
+                com.android.internal.R.string.config_wifi_tcp_buffers);
 
         addState(mDefaultState);
             addState(mInitialState, mDefaultState);
@@ -3215,7 +3220,9 @@ public class WifiStateMachine extends StateMachine {
                         + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
-            mLinkProperties.setTcpBufferSizes(TCP_BUFFER_SIZES_WIFI);
+            if (TextUtils.isEmpty(mTcpBufferSizes) == false) {
+                mLinkProperties.setTcpBufferSizes(mTcpBufferSizes);
+            }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
@@ -5697,9 +5704,6 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
-    private static final String TCP_BUFFER_SIZES_WIFI =
-            "524288,1048576,2097152,262144,524288,1048576";
-
     class L2ConnectedState extends State {
         @Override
         public void enter() {
@@ -5712,8 +5716,10 @@ public class WifiStateMachine extends StateMachine {
                 setNetworkDetailedState(DetailedState.DISCONNECTED);
             }
             setNetworkDetailedState(DetailedState.CONNECTING);
-            mLinkProperties.setTcpBufferSizes(TCP_BUFFER_SIZES_WIFI);
 
+            if (TextUtils.isEmpty(mTcpBufferSizes) == false) {
+                mLinkProperties.setTcpBufferSizes(mTcpBufferSizes);
+            }
             mNetworkAgent = new WifiNetworkAgent(getHandler().getLooper(), mContext,
                     "WifiNetworkAgent", mNetworkInfo, mNetworkCapabilitiesFilter,
                     mLinkProperties, 60);
