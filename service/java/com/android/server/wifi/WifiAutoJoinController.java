@@ -1045,6 +1045,32 @@ public class WifiAutoJoinController {
                         break;
                     }
                 }
+            } else if (key.contains("wpa_state=ASSOCIATING")
+                    || key.contains("wpa_state=ASSOCIATED")
+                    || key.contains("wpa_state=FOUR_WAY_HANDSHAKE")
+                    || key.contains("wpa_state=GROUP_KEY_HANDSHAKE")) {
+                if (DBG) {
+                    logDbg("attemptAutoJoin: bail out due to sup state " + key);
+                }
+                // After WifiStateMachine ask the supplicant to associate or reconnect
+                // we might still obtain scan results from supplicant
+                // however the supplicant state in the mWifiInfo and supplicant state tracker
+                // are updated when we get the supplicant state change message which can be
+                // processed after the SCAN_RESULT message, so at this point the framework doesn't
+                // know that supplicant is ASSOCIATING.
+                // A good fix for this race condition would be for the WifiStateMachine to add
+                // a new transient state where it expects to get the supplicant message indicating
+                // that it started the association process and within which critical operations
+                // like autojoin should be deleted.
+
+                // This transient state would remove the need for the roam Wathchdog which
+                // basically does that.
+
+                // At the moment, we just query the supplicant state synchronously with the
+                // mWifiNative.status() command, which allow us to know that
+                // supplicant has started association process, even though we didnt yet get the
+                // SUPPLICANT_STATE_CHANGE message.
+                return;
             }
         }
         if (DBG) {
