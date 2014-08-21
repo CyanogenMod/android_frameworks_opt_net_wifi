@@ -290,8 +290,11 @@ public class WifiStateMachine extends StateMachine {
 
     private final AtomicInteger mCountryCodeSequence = new AtomicInteger();
 
-    //whether the state machine goes thru the Disconnecting->Disconnected->ObtainingIpAddress
+    // Whether the state machine goes thru the Disconnecting->Disconnected->ObtainingIpAddress
     private int mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
+
+    // Roaming failure count
+    private int mRoamFailCount = 0;
 
     private String mTargetRoamBSSID = "any";
 
@@ -310,7 +313,7 @@ public class WifiStateMachine extends StateMachine {
         mTargetRoamBSSID = "any";
         if (config == null || bssid == null)
             return;
-        if (config.bssidOwnerUid == 0 || config.bssidOwnerUid == Process.WIFI_UID) {
+        if (config.bssidOwnerUid == 0 ||  config.bssidOwnerUid == Process.WIFI_UID) {
             if (VDBG) {
                 loge("autoRoamSetBSSID uid=" + Long.toString(config.bssidOwnerUid)
                         + " bssid=" + bssid
@@ -488,20 +491,32 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_ENABLE_BACKGROUND_SCAN           = BASE + 91;
     /* Enable TDLS on a specific MAC address */
     static final int CMD_ENABLE_TDLS                      = BASE + 92;
-    /* Enable TDLS on a specific MAC address */
+    /* DHCP/IP configuration watchdog */
     static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER    = BASE + 93;
 
     /**
-     * Make this timer 32 seconds, which is about the normal DHCP timeout.
+     * Make this timer 40 seconds, which is about the normal DHCP timeout.
      * In no valid case, the WiFiStateMachine should remain stuck in ObtainingIpAddress
      * for more than 30 seconds.
      */
-    static final int OBTAINING_IP_ADDRESS_GUARD_TIMER_MSEC = 32000;
+    static final int OBTAINING_IP_ADDRESS_GUARD_TIMER_MSEC = 40000;
 
     int obtainingIpWatchdogCount = 0;
+
     /* Commands from/to the SupplicantStateTracker */
     /* Reset the supplicant state tracker */
     static final int CMD_RESET_SUPPLICANT_STATE           = BASE + 111;
+
+
+    /**
+     * Watchdog for protecting against b/16823537
+     * Leave time for 4-ways handshake to succeed
+     */
+    static final int ROAM_GUARD_TIMER_MSEC = 15000;
+
+    int roamWatchdogCount = 0;
+    /* Roam state configuration watchdog */
+    static final int CMD_ROAM_WATCHDOG_TIMER    = BASE + 94;
 
     /* P2p commands */
     /* We are ok with no response here since we wont do much with it anyway */
@@ -2279,6 +2294,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg2));
                 ScanResult result = (ScanResult)msg.obj;
                 if (result != null) {
+                    sb.append(" bssid=").append(result.BSSID);
                     sb.append(" rssi=").append(result.level);
                     sb.append(" freq=").append(result.frequency);
                     sb.append(" ").append(result.BSSID);
@@ -2287,6 +2303,7 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" ").append(mTargetRoamBSSID);
                 }
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
+                sb.append(" fail count=").append(Integer.toString(mRoamFailCount));
                 break;
             case CMD_ENABLE_NETWORK:
                 sb.append(" ");
@@ -5161,6 +5178,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_TARGET_BSSID:
                 s = "CMD_TARGET_BSSID";
                 break;
+            case CMD_ROAM_WATCHDOG_TIMER:
+                s = "CMD_ROAM_WATCHDOG_TIMER";
+                break;
             default:
                 s = "what:" + Integer.toString(what);
                 break;
@@ -6158,7 +6178,12 @@ public class WifiStateMachine extends StateMachine {
                         + " mScreenOn=" + mScreenOn );
             }
             setScanAlarm(false);
-            //TODO: actually implement an alarm, but so as to disconnect if roaming fails
+
+            // Make sure we disconnect if roaming fails
+            roamWatchdogCount++;
+            loge("Start Roam Watchdog " + roamWatchdogCount);
+            sendMessageDelayed(obtainMessage(CMD_ROAM_WATCHDOG_TIMER,
+                    roamWatchdogCount, 0), ROAM_GUARD_TIMER_MSEC);
         }
         @Override
         public boolean processMessage(Message message) {
@@ -6194,9 +6219,17 @@ public class WifiStateMachine extends StateMachine {
                         }
                         if (stateChangeResult.BSSID != null
                                 && stateChangeResult.BSSID.equals(mTargetRoamBSSID)) {
-                            setNetworkDetailedState(DetailedState.OBTAINING_IPADDR);
                             handleNetworkDisconnect();
+                            transitionTo(mDisconnectedState);
                         }
+                    }
+                    break;
+                case CMD_ROAM_WATCHDOG_TIMER:
+                    if (roamWatchdogCount == message.arg1) {
+                        if (DBG) log("roaming watchdog! -> disconnect");
+                        handleNetworkDisconnect();
+                        mWifiNative.disconnect();
+                        transitionTo(mDisconnectedState);
                     }
                     break;
                case WifiMonitor.NETWORK_CONNECTION_EVENT:
@@ -6216,7 +6249,7 @@ public class WifiStateMachine extends StateMachine {
                    transitionTo(mObtainingIpState);
                    break;
                case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
-                   // Throw away but only if it correspond to the network we're roaming to
+                   // Throw away but only if it corresponds to the network we're roaming to
                    String bssid = (String)message.obj;
                    if (true) {
                        String target = "";
