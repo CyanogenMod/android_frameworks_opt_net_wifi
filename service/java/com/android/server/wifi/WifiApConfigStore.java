@@ -100,8 +100,13 @@ class WifiApConfigStore extends StateMachine {
         public boolean processMessage(Message message) {
             switch (message.what) {
                 case WifiStateMachine.CMD_SET_AP_CONFIG:
-                    mWifiApConfig = (WifiConfiguration) message.obj;
-                    transitionTo(mActiveState);
+                    WifiConfiguration config = (WifiConfiguration) message.obj;
+                    if (config.SSID != null) {
+                        mWifiApConfig = (WifiConfiguration) message.obj;
+                        transitionTo(mActiveState);
+                    } else {
+                        Log.e(TAG, "Try to setup AP config without SSID: " + message);
+                    }
                     break;
                 default:
                     return NOT_HANDLED;

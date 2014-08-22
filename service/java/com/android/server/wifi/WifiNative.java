@@ -365,7 +365,7 @@ public class WifiNative {
      * flags=[WPA2-EAP-CCMP][ESS][P2P][HS20]
      * ssid=QCA-HS20-R2-TEST
      * p2p_device_name=
-     * p2p_config_methods=0x0
+     * p2p_config_methods=0x0SET_NE
      * anqp_venue_name=02083d656e6757692d466920416c6c69616e63650a3239383920436f...
      * anqp_network_auth_type=010000
      * anqp_roaming_consortium=03506f9a05001bc504bd
