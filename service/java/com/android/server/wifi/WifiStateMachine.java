@@ -129,6 +129,20 @@ public class WifiStateMachine extends StateMachine {
 
     private static final String GOOGLE_OUI = "DA-A1-19";
 
+    private static final String EXTRA_FEATURE_ID = "cneFeatureId";
+
+    private static final String EXTRA_FEATURE_PARAMETER = "cneFeatureParameter";
+
+    private static final String EXTRA_PARAMETER_VALUE = "cneParameterValue";
+
+    private static final int FEATURE_ID = 1;
+
+    private static final int FEATURE_PARAM = 1;
+
+    private static final int FEATURE_OFF = 1;
+
+    private static final int FEATURE_ON = FEATURE_OFF + 1;
+
     /* temporary debug flag - best network selection development */
     private static boolean PDBG = false;
 
@@ -834,6 +848,9 @@ public class WifiStateMachine extends StateMachine {
 
     // Used for debug and stats gathering
     private static int sScanAlarmIntentCount = 0;
+    private boolean isPropFeatureEnabled = false;
+
+    private static int DEFAULT_SCORE = NetworkAgent.WIFI_BASE_SCORE;
 
     public WifiStateMachine(Context context, String wlanInterface,
             WifiTrafficPoller trafficPoller){
@@ -937,6 +954,15 @@ public class WifiStateMachine extends StateMachine {
         filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(ACTION_REFRESH_BATCHED_SCAN);
+        int val = SystemProperties.getInt("persist.cne.feature", 0);
+        boolean isPropFeatureAvail = (val == 3) ? true : false;
+        if (isPropFeatureAvail) {
+            int featureVal = SystemProperties.getInt("persist.sys.cnd.wqe", 1);
+            DEFAULT_SCORE = (featureVal == 2) ? 10 : NetworkAgent.WIFI_BASE_SCORE;
+            filter.addAction("com.quicinc.cne.CNE_PREFERENCE_CHANGED");
+            filter.addAction("prop_state_change");
+        }
+
         mContext.registerReceiver(
                 new BroadcastReceiver() {
                     @Override
@@ -949,6 +975,14 @@ public class WifiStateMachine extends StateMachine {
                             sendMessage(CMD_SCREEN_STATE_CHANGED, 0);
                         } else if (action.equals(ACTION_REFRESH_BATCHED_SCAN)) {
                             startNextBatchedScanAsync();
+                        } else if (action.equals("com.quicinc.cne.CNE_PREFERENCE_CHANGED")) {
+                            int featureId = intent.getIntExtra(EXTRA_FEATURE_ID, -1);
+                            int featureParam = intent.getIntExtra(EXTRA_FEATURE_PARAMETER, -1);
+                            int featureVal = intent.getIntExtra(EXTRA_PARAMETER_VALUE, -1);
+                            handlePrefChange(featureId, featureParam, featureVal);
+                        } else if (action.equals("prop_state_change")) {
+                            int state = intent.getIntExtra("state", 0);
+                            handleStateChange(state);
                         }
                     }
                 }, filter);
@@ -2866,6 +2900,36 @@ public class WifiStateMachine extends StateMachine {
         return sb.toString();
     }
 
+    private void handleStateChange(int state) {
+        int offset;
+        log("handle state change: " + state);
+        if(state == 0) {
+            // wifi is not good, reduce the score
+            offset = mWifiInfo.score - 50 + 2;
+            mWifiInfo.score -= offset;
+        } else {
+            // wifi is good, increase the score
+            offset = 50 - mWifiInfo.score + 2;
+            mWifiInfo.score += offset;
+        }
+        if(mNetworkAgent != null) {
+            mNetworkAgent.sendNetworkScore(mWifiInfo.score);
+        }
+    }
+
+    private void handlePrefChange(int featureId, int featureParam, int value) {
+        log("handle pref change : featurevalue: " + value);
+        if(featureId == FEATURE_ID && featureParam == FEATURE_PARAM) {
+            if(value == FEATURE_ON) {
+                DEFAULT_SCORE = 10;
+                isPropFeatureEnabled = true;
+            } else if(value == FEATURE_OFF) {
+                DEFAULT_SCORE = NetworkAgent.WIFI_BASE_SCORE;
+                isPropFeatureEnabled = false;
+            }
+        }
+    }
+
     private void handleScreenStateChanged(boolean screenOn, boolean startBackgroundScanIfNeeded) {
         mScreenOn = screenOn;
         if (PDBG) {
@@ -3717,7 +3781,7 @@ public class WifiStateMachine extends StateMachine {
                 loge("calculateWifiScore() report new score " + Integer.toString(score));
             }
             mWifiInfo.score = score;
-            if (mNetworkAgent != null) {
+            if (!isPropFeatureEnabled && mNetworkAgent != null) {
                 mNetworkAgent.sendNetworkScore(score);
             }
         }
@@ -6627,7 +6691,7 @@ public class WifiStateMachine extends StateMachine {
             }
             mNetworkAgent = new WifiNetworkAgent(getHandler().getLooper(), mContext,
                     "WifiNetworkAgent", mNetworkInfo, mNetworkCapabilitiesFilter,
-                    mLinkProperties, 60);
+                    mLinkProperties, DEFAULT_SCORE);
 
             // We must clear the config BSSID, as the wifi chipset may decide to roam
             // from this point on and having the BSSID specified in the network block would
