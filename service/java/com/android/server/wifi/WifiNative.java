@@ -675,7 +675,8 @@ public class WifiNative {
     public boolean setExternalSim(boolean external) {
         synchronized (mLock) {
             String value = external ? "1" : "0";
-            return doBooleanCommand("set external_sim " + value);
+            Log.d(TAG, "Setting external_sim to " + value);
+            return doBooleanCommand("SET external_sim " + value);
         }
     }
 
