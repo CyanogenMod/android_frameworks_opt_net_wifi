@@ -58,6 +58,7 @@ import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
 import android.net.TrafficStats;
 import android.net.wifi.*;
+import android.net.wifi.SupplicantState;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.net.wifi.passpoint.IWifiPasspointManager;
@@ -2810,9 +2811,14 @@ public class WifiStateMachine extends StateMachine {
             }
         }
         boolean attemptAutoJoin = true;
+        SupplicantState state = mWifiInfo.getSupplicantState();
         if (getCurrentState() == mRoamingState
                 || getCurrentState() == mObtainingIpState
-                || linkDebouncing) {
+                || linkDebouncing
+                || state == SupplicantState.ASSOCIATING
+                || state == SupplicantState.AUTHENTICATING
+                || state == SupplicantState.FOUR_WAY_HANDSHAKE
+                || state == SupplicantState.GROUP_HANDSHAKE) {
             // Dont attempt auto-joining again while we are already attempting to join
             // and/or obtaining Ip address
             attemptAutoJoin = false;
@@ -5641,6 +5647,15 @@ public class WifiStateMachine extends StateMachine {
                     transitionTo(mObtainingIpState);
                     break;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
+                    // Calling handleNetworkDisconnect here is redundant because we might already
+                    // have called it when leaving L2ConnectedState to go to disconnecting state
+                    // or thru other path
+                    // We should normally check the mWifiInfo or mLastNetworkId so as to check
+                    // if they are valid, and only in this case call handleNEtworkDisconnect,
+                    // TODO: this should be fixed for a L MR release
+                    // The side effect of calling handleNetworkDisconnect twice is that a bunch of
+                    // idempotent commands are executed twice (stopping Dhcp, enabling the SPS mode
+                    // at the chip etc...
                     if (DBG) log("ConnectModeState: Network connection lost ");
                     handleNetworkDisconnect();
                     transitionTo(mDisconnectedState);
@@ -5729,6 +5744,13 @@ public class WifiStateMachine extends StateMachine {
             // For paranoia's sake, call handleNetworkDisconnect
             // only if BSSID is null or last networkId
             // is not invalid.
+            if (DBG) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("leaving L2ConnectedState state nid=" + Integer.toString(mLastNetworkId));
+                if (mLastBssid !=null) {
+                    sb.append(" ").append(mLastBssid);
+                }
+            }
             if (mLastBssid != null || mLastNetworkId != WifiConfiguration.INVALID_NETWORK_ID) {
                 handleNetworkDisconnect();
             }
