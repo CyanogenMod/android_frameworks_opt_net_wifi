@@ -1167,6 +1167,7 @@ int main(int argc, char *argv[]) {
         printf(" -rtt             Run RTT on nearby APs\n");
         printf(" -rtt_samples     Run RTT on nearby APs\n");
         printf(" -scan_mac_oui XY:AB:CD\n");
+        printf(" -nodfs <0|1>     Turn OFF/ON non-DFS locales\n");
         goto cleanup;
     }
     memset(mac_oui, 0, 3);
@@ -1204,8 +1205,12 @@ int main(int argc, char *argv[]) {
         readTestOptions(argc, argv);
         setPnoMacOui();
         testScan();
+    } else if (strcmp(argv[1], "-nodfs") == 0) {
+        u32 nodfs = 0;
+        if (argc > 2)
+            nodfs = (u32)atoi(argv[2]);
+        wifi_set_nodfs_flag(wlan0Handle, nodfs);
     }
-
 cleanup:
     cleanup();
     return 0;
