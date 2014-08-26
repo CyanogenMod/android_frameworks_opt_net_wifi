@@ -942,7 +942,7 @@ public class WifiMonitor {
         if (match.find()) {
             BSSID = match.group(1);
         } else {
-            Log.e(TAG, "didn't find BSSID " + eventStr);
+            Log.d(TAG, "didn't find BSSID " + eventStr);
         }
         mStateMachine.sendMessage(WifiStateMachine.CMD_TARGET_BSSID, eventLogCounter, 0, BSSID);
     }

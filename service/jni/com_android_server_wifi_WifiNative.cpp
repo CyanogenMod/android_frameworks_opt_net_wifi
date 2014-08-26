@@ -787,11 +787,23 @@ static jboolean android_net_wifi_untrackSignificantWifiChange(
 }
 
 wifi_iface_stat link_stat;
+wifi_radio_stat radio_stat; // L release has support for only one radio
 
 void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
-         int num_radios, wifi_radio_stat *radio_stat)
+         int num_radios, wifi_radio_stat *radio_stats)
 {
-    memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
+    if (iface_stat != 0) {
+        memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
+    } else {
+        memset(&link_stat, 0, sizeof(wifi_iface_stat));
+    }
+    ALOGD("onLinkStatsResults got %p num %u", radio_stats, num_radios);
+
+    if (num_radios > 0 && radio_stats != 0) {
+        memcpy(&radio_stat, radio_stats, sizeof(wifi_radio_stat));
+    } else {
+        memset(&radio_stat, 0, sizeof(wifi_radio_stat));
+    }
 }
 
 static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint iface)  {
@@ -802,7 +814,7 @@ static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     int result = wifi_get_link_stats(0, handle, handler);
     if (result < 0) {
-        ALOGE("failed to get link statistics\n");
+        ALOGE("android_net_wifi_getLinkLayerStats: failed to get link statistics\n");
         return NULL;
     }
 
@@ -830,6 +842,12 @@ static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint
     setLongField(env, wifiLinkLayerStats, "retries_bk", link_stat.ac[WIFI_AC_BK].retries);
     setLongField(env, wifiLinkLayerStats, "retries_vi", link_stat.ac[WIFI_AC_VI].retries);
     setLongField(env, wifiLinkLayerStats, "retries_vo", link_stat.ac[WIFI_AC_VO].retries);
+
+
+    setIntField(env, wifiLinkLayerStats, "on_time", radio_stat.on_time);
+    setIntField(env, wifiLinkLayerStats, "tx_time", radio_stat.tx_time);
+    setIntField(env, wifiLinkLayerStats, "rx_time", radio_stat.rx_time);
+    setIntField(env, wifiLinkLayerStats, "on_time_scan", radio_stat.on_time_scan);
 
     return wifiLinkLayerStats;
 }
