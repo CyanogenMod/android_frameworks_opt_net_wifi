@@ -783,6 +783,29 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
+     * see {@link android.net.wifi.WifiAdapter#reportActivityInfo}
+     */
+    public WifiActivityEnergyInfo reportActivityInfo(WifiAdapter adapter) {
+        enforceAccessPermission();
+        WifiLinkLayerStats stats;
+        WifiActivityEnergyInfo energyInfo = null;
+        if (mWifiStateMachineChannel != null) {
+            stats = mWifiStateMachine.syncGetLinkLayerStats(mWifiStateMachineChannel, adapter);
+            if (stats != null) {
+                // Convert the LinkLayerStats into EnergyActivity
+                energyInfo = new WifiActivityEnergyInfo(
+                        WifiActivityEnergyInfo.STACK_STATE_STATE_IDLE, stats.tx_time,
+                        stats.rx_time, stats.on_time - stats.tx_time - stats.rx_time,
+                        0 /* TBD */);
+            }
+            return energyInfo;
+        } else {
+            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
+            return null;
+        }
+    }
+
+    /**
      * see {@link android.net.wifi.WifiManager#getConfiguredNetworks()}
      * @return the list of configured networks
      */

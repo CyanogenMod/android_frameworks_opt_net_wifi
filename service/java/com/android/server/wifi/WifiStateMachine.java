@@ -289,7 +289,7 @@ public class WifiStateMachine extends StateMachine {
     private DhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
 
-    private int mWifiLinkLayerStatsSupported = 4;
+    private int mWifiLinkLayerStatsSupported = 4; // Temporary disable
 
     private final AtomicInteger mCountryCodeSequence = new AtomicInteger();
 
@@ -436,7 +436,8 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_GET_ADAPTORS                     = BASE + 61;
     /* Get configured networks with real preSharedKey */
     static final int CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS = BASE + 62;
-
+    /* Get Link Layer Stats thru HAL */
+    static final int CMD_GET_LINK_LAYER_STATS             = BASE + 63;
     /* Supplicant commands after driver start*/
     /* Initiate a scan */
     static final int CMD_START_SCAN                       = BASE + 71;
@@ -1870,6 +1871,16 @@ public class WifiStateMachine extends StateMachine {
     public List<WifiAdapter> syncGetAdaptors(AsyncChannel channel) {
         Message resultMsg = channel.sendMessageSynchronously(CMD_GET_ADAPTORS);
         List<WifiAdapter> result = (List<WifiAdapter>) resultMsg.obj;
+        resultMsg.recycle();
+        return result;
+    }
+
+    /**
+     * Get link layers stats for adapter synchronously
+     */
+    public WifiLinkLayerStats syncGetLinkLayerStats(AsyncChannel channel, WifiAdapter adapter) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_LINK_LAYER_STATS, adapter);
+        WifiLinkLayerStats result = (WifiLinkLayerStats) resultMsg.obj;
         resultMsg.recycle();
         return result;
     }
@@ -4034,6 +4045,10 @@ public class WifiStateMachine extends StateMachine {
                         replyToMessage(message, message.what, adaptors);
                     }
                     break;
+                case CMD_GET_LINK_LAYER_STATS:
+                    // Not supported hence reply with error message
+                    replyToMessage(message, message.what, null);
+                    break;
                 case WifiP2pServiceImpl.P2P_CONNECTION_CHANGED:
                     NetworkInfo info = (NetworkInfo) message.obj;
                     mP2pConnected.set(info.isConnected());
@@ -4309,6 +4324,27 @@ public class WifiStateMachine extends StateMachine {
                     mOperationalMode = message.arg1;
                     break;
                 case CMD_TARGET_BSSID:
+                    break;
+                case CMD_GET_LINK_LAYER_STATS:
+                    WifiLinkLayerStats stats = null;
+                    WifiAdapter adapter = (WifiAdapter) message.obj;
+                    if (adapter != null) {
+                        // Try reading L2 stats a couple of time, allow for a few failures
+                        // in case the HAL/drivers are not completely initialized once we get there
+                        if (mWifiLinkLayerStatsSupported > 0) {
+                            String name = adapter.getName();
+                            stats = mWifiNative.getWifiLinkLayerStats(name);
+                            if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
+                                mWifiLinkLayerStatsSupported -= 1;
+                            } else if (DBG && stats != null) {
+                                loge(stats.toString());
+                            }
+                        } else {
+                            // When firmware doesnt support link layer stats, return an empty object
+                            stats = new WifiLinkLayerStats();
+                        }
+                    }
+                    replyToMessage(message, message.what, stats);
                     break;
                 default:
                     return NOT_HANDLED;
@@ -5008,6 +5044,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_UNWANTED_NETWORK:
                 s = "CMD_UNWANTED_NETWORK";
                 break;
+            case CMD_GET_LINK_LAYER_STATS:
+                s = "CMD_GET_LINK_LAYER_STATS";
+                break;
             case CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS:
                 s = "CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS";
                 break;
@@ -5253,10 +5292,10 @@ public class WifiStateMachine extends StateMachine {
             NetworkUpdateResult result;
             logStateAndMessage(message, getClass().getSimpleName());
 
-            switch(message.what) {
+            switch (message.what) {
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
                     didBlackListBSSID = false;
-                    bssid = (String)message.obj;
+                    bssid = (String) message.obj;
                     if (bssid == null || TextUtils.isEmpty(bssid)) {
                         // If BSSID is null, use the target roam BSSID
                         bssid = mTargetRoamBSSID;
@@ -5272,9 +5311,9 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
                 case WifiMonitor.SSID_REENABLED:
-                    String substr = (String)message.obj;
+                    String substr = (String) message.obj;
                     String en = message.what == WifiMonitor.SSID_TEMP_DISABLED ?
-                             "temp-disabled" : "re-enabled";
+                            "temp-disabled" : "re-enabled";
                     loge("ConnectModeState SSID state=" + en + " nid="
                             + Integer.toString(message.arg1) + " [" + substr + "]");
                     mWifiConfigStore.handleSSIDStateChange(message.arg1, message.what ==
@@ -5347,7 +5386,7 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
                 case CMD_ENABLE_ALL_NETWORKS:
-                    long time =  android.os.SystemClock.elapsedRealtime();
+                    long time = android.os.SystemClock.elapsedRealtime();
                     if (time - mLastEnableAllNetworksTime > MIN_INTERVAL_ENABLE_ALL_NETWORKS_MS) {
                         mWifiConfigStore.enableAllNetworks();
                         mLastEnableAllNetworksTime = time;
@@ -5363,7 +5402,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_BLACKLIST_NETWORK:
-                    mWifiNative.addToBlacklist((String)message.obj);
+                    mWifiNative.addToBlacklist((String) message.obj);
                     break;
                 case CMD_CLEAR_BLACKLIST:
                     mWifiNative.clearBlacklist();
@@ -5454,7 +5493,7 @@ public class WifiStateMachine extends StateMachine {
                      *
                      * Hence, sends a disconnect to supplicant first.
                      */
-                     mWifiNative.disconnect();
+                    mWifiNative.disconnect();
 
                     /* connect command coming from auto-join */
                     config = (WifiConfiguration) message.obj;
@@ -5475,11 +5514,11 @@ public class WifiStateMachine extends StateMachine {
 
                     /* Save the network config */
                     loge("CMD_AUTO_CONNECT will save config -> " + config.SSID
-                                + " nid=" + Integer.toString(netId));
+                            + " nid=" + Integer.toString(netId));
                     result = mWifiConfigStore.saveNetwork(config);
                     netId = result.getNetworkId();
                     loge("CMD_AUTO_CONNECT did save config -> "
-                                + " nid=" + Integer.toString(netId));
+                            + " nid=" + Integer.toString(netId));
 
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
@@ -5596,7 +5635,7 @@ public class WifiStateMachine extends StateMachine {
                             /* Tell autojoin the user did try to modify and save that network,
                              * and interpret the SAVE_NETWORK as a request to connect */
                             mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
-                                    ,true, true);
+                                    , true, true);
                             mWifiAutoJoinController.attemptAutoJoin();
                         }
                     } else {
@@ -5973,12 +6012,15 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
                         WifiLinkLayerStats stats = null;
+                        log(" get link layer stats " + mWifiLinkLayerStatsSupported);
                         // Try a reading L2 stats a couple of time, allow for a few failures
                         // in case the HAL/drivers are not completely initialized once we get there
                         if (mWifiLinkLayerStatsSupported > 0) {
-                            stats = mWifiNative.getWifiLinkLayerStats();
+                            stats = mWifiNative.getWifiLinkLayerStats("wlan0");
                             if (stats == null && mWifiLinkLayerStatsSupported > 0) {
-                                mWifiLinkLayerStatsSupported -= 1;
+                               mWifiLinkLayerStatsSupported -= 1;
+                            } else if (DBG) {
+                                loge(stats.toString());
                             }
                         }
                         // Get Info and continue polling
@@ -6017,6 +6059,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_DELAYED_NETWORK_DISCONNECT:
                     if (!linkDebouncing) {
+
                         // Ignore if we are not debouncing
                         loge("CMD_DELAYED_NETWORK_DISCONNECT and not debouncing - ignore "
                                 + message.arg1);

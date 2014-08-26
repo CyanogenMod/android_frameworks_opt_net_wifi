@@ -1463,7 +1463,9 @@ public class WifiNative {
         }
     }
 
-    synchronized public static WifiLinkLayerStats getWifiLinkLayerStats() {
+    synchronized public static WifiLinkLayerStats getWifiLinkLayerStats(String iface) {
+        // TODO: use correct iface name to Index translation
+        if (iface == null) return null;
         synchronized (mLock) {
             if (!sHalIsStarted)
                 startHal();
