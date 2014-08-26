@@ -25,6 +25,10 @@ wifi_error wifi_get_concurrency_matrix(wifi_interface_handle handle, int max_siz
     return WIFI_ERROR_UNINITIALIZED;
 }
 
+wifi_error wifi_set_scanning_mac_oui(wifi_interface_handle handle, unsigned char *oui) {
+    return WIFI_ERROR_UNINITIALIZED;
+}
+
 /* List of all supported channels, including 5GHz channels */
 wifi_error wifi_get_supported_channels(wifi_handle handle, int *size, wifi_channel *list) {
     return WIFI_ERROR_UNINITIALIZED;
