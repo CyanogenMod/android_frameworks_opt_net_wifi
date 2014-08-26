@@ -129,3 +129,7 @@ wifi_error wifi_rtt_range_cancel(wifi_request_id id,  wifi_interface_handle ifac
         unsigned num_devices, mac_addr addr[]) {
     return WIFI_ERROR_NOT_SUPPORTED;
 }
+
+wifi_error wifi_set_nodfs_flag(wifi_interface_handle iface, u32 nodfs) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
