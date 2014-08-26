@@ -232,6 +232,16 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String ENABLE_AUTOJOIN_WHILE_ASSOCIATED_KEY
             = "ENABLE_AUTOJOIN_WHILE_ASSOCIATED:   ";
 
+    private static final String ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY
+            = "ASSOCIATED_PARTIAL_SCAN_PERIOD:   ";
+    private static final String ASSOCIATED_FULL_SCAN_BACKOFF_KEY
+            = "ASSOCIATED_FULL_SCAN_BACKOFF_PERIOD:   ";
+
+    // The Wifi verbose log is provided as a way to persist the verbose logging settings
+    // for testing purpose.
+    // It is not intended for normal use.
+    private static final String WIFI_VERBOSE_LOGS_KEY
+            = "WIFI_VERBOSE_LOGS:   ";
     public boolean enableAutoJoinWhileAssociated = true;
 
     public int maxTxPacketForNetworkSwitching = 40;
@@ -249,6 +259,9 @@ public class WifiConfigStore extends IpConfigStore {
     public int thresholdLowRssi24 = WifiConfiguration.LOW_RSSI_24;
     public int thresholdGoodRssi24 = WifiConfiguration.GOOD_RSSI_24;
 
+    public int associatedFullScanBackoff = 12; // Will be divided by 8 by WifiStateMachine
+    public int associatedPartialScanPeriodMs = 10000;
+
     public int thresholdBandPreferenceRssi24
             = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
     public int thresholdBandPreferenceRssi5
@@ -264,6 +277,7 @@ public class WifiConfigStore extends IpConfigStore {
             = WifiConfiguration.UNBLACKLIST_THRESHOLD_24_HARD;
     public int thresholdUnblacklistThreshold24Soft
             = WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT;
+    public int enableVerboseLogging = 0;
 
     /**
      * Regex pattern for extracting a connect choice.
@@ -1867,6 +1881,17 @@ public class WifiConfigStore extends IpConfigStore {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
                 }
+                if (key.startsWith(WIFI_VERBOSE_LOGS_KEY)) {
+                    String st = key.replace(WIFI_VERBOSE_LOGS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        enableVerboseLogging = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: enable verbose logs = "
+                                + Integer.toString(enableVerboseLogging));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
                 if (key.startsWith(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY)) {
                     String st = key.replace(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
@@ -1874,6 +1899,28 @@ public class WifiConfigStore extends IpConfigStore {
                         thresholdBandPreferenceRssi5 = Integer.parseInt(st);
                         Log.d(TAG,"readAutoJoinConfig: thresholdBandPreferenceRssi5 = "
                             + Integer.toString(thresholdBandPreferenceRssi5));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+                if (key.startsWith(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY)) {
+                    String st = key.replace(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        associatedPartialScanPeriodMs = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: associatedScanPeriod = "
+                                + Integer.toString(associatedPartialScanPeriodMs));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+                if (key.startsWith(ASSOCIATED_FULL_SCAN_BACKOFF_KEY)) {
+                    String st = key.replace(ASSOCIATED_FULL_SCAN_BACKOFF_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        associatedFullScanBackoff = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: associatedFullScanBackoff = "
+                                + Integer.toString(associatedFullScanBackoff));
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
@@ -2378,42 +2425,51 @@ public class WifiConfigStore extends IpConfigStore {
         //need to compare with quoted string
         String SSID = "\"" + result.SSID + "\"";
 
+        if (VDBG) {
+            loge("associateWithConfiguration(): try " + configKey);
+        }
+
         WifiConfiguration config = null;
         for (WifiConfiguration link : mConfiguredNetworks.values()) {
             boolean doLink = false;
 
             if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.didSelfAdd) {
-                //make sure we dont associate the scan result to a deleted config
+                if (VDBG) loge("associateWithConfiguration(): skip selfadd " + link.configKey() );
+                // Make sure we dont associate the scan result to a deleted config
+                continue;
+            }
+
+            if (!link.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
+                if (VDBG) loge("associateWithConfiguration(): skip non-PSK " + link.configKey() );
+                // Make sure we dont associate the scan result to a non-PSK config
                 continue;
             }
 
             if (configKey.equals(link.configKey())) {
                 if (VDBG) loge("associateWithConfiguration(): found it!!! " + configKey );
-                return link; //found it exactly
+                return link; // Found it exactly
             }
 
-            if ((link.scanResultCache != null) && (link.scanResultCache.size() <= 4)) {
-                String bssid = "";
-                for (String key : link.scanResultCache.keySet()) {
-                    bssid = key;
-                }
+            if ((link.scanResultCache != null) && (link.scanResultCache.size() <= 6)) {
+                for (String bssid : link.scanResultCache.keySet()) {
+                    if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
+                            && SSID.regionMatches(false, 0, link.SSID, 0, 4)) {
+                        // If first 16 ascii characters of BSSID matches, and first 3
+                        // characters of SSID match, we assume this is a home setup
+                        // and thus we will try to transfer the password from the known
+                        // BSSID/SSID to the recently found BSSID/SSID
 
-                if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
-                        && SSID.regionMatches(false, 0, link.SSID, 0, 3)) {
-                    // if first 16 ascii characters of BSSID matches, and first 3
-                    // characters of SSID match, we assume this is a home setup
-                    // and thus we will try to transfer the password from the known
-                    // BSSID/SSID to the recently found BSSID/SSID
-
-                    //if (VDBG)
-                    //    loge("associateWithConfiguration OK " );
-                    doLink = true;
+                        // If (VDBG)
+                        //    loge("associateWithConfiguration OK " );
+                        doLink = true;
+                        break;
+                    }
                 }
             }
 
             if (doLink) {
-                //try to make a non verified WifiConfiguration, but only if the original
-                //configuration was not self already added
+                // Try to make a non verified WifiConfiguration, but only if the original
+                // configuration was not self already added
                 if (VDBG) {
                     loge("associateWithConfiguration: will create " +
                             result.SSID + " and associate it with: " + link.SSID);
@@ -2425,7 +2481,7 @@ public class WifiConfigStore extends IpConfigStore {
                     config.peerWifiConfiguration = link.configKey();
                     if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
                             config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-                        //transfer the credentials from the configuration we are linking from
+                        // Transfer the credentials from the configuration we are linking from
                         String psk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
                         if (psk != null) {
                             config.preSharedKey = psk;
@@ -2434,7 +2490,7 @@ public class WifiConfigStore extends IpConfigStore {
                                     loge(" transfer PSK : " + config.preSharedKey);
                             }
 
-                            //link configurations
+                            // Link configurations
                             if (link.linkedConfigurations == null) {
                                 link.linkedConfigurations = new HashMap<String, Integer>();
                             }
@@ -2451,7 +2507,7 @@ public class WifiConfigStore extends IpConfigStore {
                     }
                 }
             } else {
-                //todo if they are linked, break the link
+                // Todo: if they are linked, break the link
             }
         }
         return config;
