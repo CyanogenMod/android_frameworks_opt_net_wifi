@@ -128,6 +128,8 @@ public class WifiStateMachine extends StateMachine {
 
     private static final int ONE_HOUR_MILLI = 1000 * 60 * 60;
 
+    private static final byte[] GOOGLE_OUI = new byte[] { 0x00, 0x1A, 0x11};
+
     /* temporary debug flag - best network selection development */
     private static boolean PDBG = false;
 
@@ -4251,6 +4253,7 @@ public class WifiStateMachine extends StateMachine {
 
             mWifiNative.setScanInterval((int)mSupplicantScanIntervalMs / 1000);
             mWifiNative.setExternalSim(true);
+            mWifiNative.setScanningMacOui(GOOGLE_OUI);
 
             if (mFrameworkAutoJoin.get()) {
                 mWifiNative.enableAutoConnect(false);

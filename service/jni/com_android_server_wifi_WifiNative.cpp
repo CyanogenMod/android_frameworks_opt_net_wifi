@@ -958,7 +958,7 @@ static jboolean android_net_wifi_requestRange(
 }
 
 static jboolean android_net_wifi_cancelRange(
-        JNIEnv *env, jclass cls, jint iface, int id, jobject params)  {
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject params)  {
 
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("cancelling rtt request [%d] = %p", id, handle);
@@ -983,6 +983,28 @@ static jboolean android_net_wifi_cancelRange(
     }
 
     return wifi_rtt_range_cancel(id, handle, len, addrs) == WIFI_SUCCESS;
+}
+
+static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
+        jint iface, jbyteArray param)  {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("setting scan oui %p", handle);
+
+    static const unsigned oui_len = 3;          /* OUI is upper 3 bytes of mac_address */
+    int len = env->GetArrayLength(param);
+    if (len != oui_len) {
+        ALOGE("invalid oui length %d", len);
+        return false;
+    }
+
+    jbyte* bytes = env->GetByteArrayElements(param, NULL);
+    if (bytes == NULL) {
+        ALOGE("failed to get array");
+        return false;
+    }
+
+    return wifi_set_scanning_mac_oui(handle, (byte *)bytes) == WIFI_SUCCESS;
 }
 
 // ----------------------------------------------------------------------------
@@ -1032,7 +1054,8 @@ static JNINativeMethod gWifiMethods[] = {
     { "requestRangeNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
             (void*) android_net_wifi_requestRange},
     { "cancelRangeRequestNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
-            (void*) android_net_wifi_cancelRange}
+            (void*) android_net_wifi_cancelRange},
+    { "setScanningMacOuiNative", "(I[B)Z", (void*) android_net_wifi_setScanningMacOui}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

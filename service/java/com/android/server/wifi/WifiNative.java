@@ -1551,4 +1551,16 @@ public class WifiNative {
             }
         }
     }
+
+    private static native boolean setScanningMacOuiNative(int iface, byte[] oui);
+
+    synchronized public static boolean setScanningMacOui(byte[] oui) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return setScanningMacOuiNative(sWlan0Index, oui);
+            } else {
+                return false;
+            }
+        }
+    }
 }
