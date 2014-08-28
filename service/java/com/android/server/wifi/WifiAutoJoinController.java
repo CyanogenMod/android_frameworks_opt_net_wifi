@@ -502,14 +502,9 @@ public class WifiAutoJoinController {
          * This implements band preference where we prefer 5GHz if RSSI5 is good enough, whereas
          * we prefer 2.4GHz otherwise.
          * Note that 2.4GHz doesn't need a boost since at equal power the RSSI is typically
-         * 6-10 dB higher
+         * at least 6-10 dB higher
          */
-        if ((visibility.rssi5 + rssiBoost) > mWifiConfigStore.thresholdBandPreferenceRssi5) {
-            rssiBoost5 = 20;
-        } else if ((visibility.rssi5 + rssiBoost)
-                > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
-            rssiBoost5 = 10;
-        }
+        rssiBoost5 = rssiBoostFrom5GHzRssi(visibility.rssi5);
 
         // Select which band to use so as to score a
         if (visibility.rssi5 + rssiBoost5 > visibility.rssi24) {
@@ -595,11 +590,13 @@ public class WifiAutoJoinController {
                     + "," + a.visibility.rssi5
                     + ") num=(" + a.visibility.num24
                     + "," + a.visibility.num5 + ")"
+                    + " scorea=" + scoreA
                     + prefer + b.configKey()
                     + " rssi=(" + b.visibility.rssi24
                     + "," + b.visibility.rssi5
                     + ") num=(" + b.visibility.num24
                     + "," + b.visibility.num5 + ")"
+                    + " scoreb=" + scoreB
                     + " -> " + order);
         }
 
@@ -784,22 +781,49 @@ public class WifiAutoJoinController {
         return order;
     }
 
+    public int rssiBoostFrom5GHzRssi(int rssi) {
+        if (rssi
+                > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
+            // Boost by 2 dB for each point
+            //    Start boosting at -65
+            //    Boost by 20 if above -55
+            //    Boost by 40 if abore -45
+            int boost = 5 *(rssi - mWifiConfigStore.thresholdBandPreferenceLowRssi5);
+            if (boost > 50) {
+                // 50 dB boost is set so as to overcome the hysteresis of +20 plus a difference of
+                // 25 dB between 2.4 and 5GHz band. This allows jumping from 2.4 to 5GHz
+                // consistently
+                boost = 50;
+            }
+            return boost;
+        }
+
+        if (rssi
+                < mWifiConfigStore.thresholdBandPreferenceRssi24) {
+            // penalize by 10 if < -75
+            return -10;
+        }
+        return 0;
+    }
         /**
-         * attemptRoam function implements the core of the same SSID switching algorithm
+         * attemptRoam() function implements the core of the same SSID switching algorithm
+         *
+         * Run thru all recent scan result of a WifiConfiguration and select the
+         * best one.
          */
-    public ScanResult attemptRoam(WifiConfiguration current, int age, String currentBSSID) {
-        ScanResult a = null;
+    public ScanResult attemptRoam(ScanResult a,
+                                  WifiConfiguration current, int age, String currentBSSID) {
         if (current == null) {
             if (VDBG)   {
                 logDbg("attemptRoam not associated");
             }
-            return null;
+            return a;
         }
         if (current.scanResultCache == null) {
             if (VDBG)   {
                 logDbg("attemptRoam no scan cache");
             }
-            return null;
+            return a;
         }
         if (current.scanResultCache.size() > 6) {
             if (VDBG)   {
@@ -808,7 +832,7 @@ public class WifiAutoJoinController {
             }
             // Implement same SSID roaming only for configurations
             // that have less than 4 BSSIDs
-            return null;
+            return a;
         }
 
         if (current.bssidOwnerUid!= 0 && current.bssidOwnerUid != Process.WIFI_UID) {
@@ -816,7 +840,7 @@ public class WifiAutoJoinController {
                 logDbg("attemptRoam BSSID owner is "
                         + Long.toString(current.bssidOwnerUid) + " -> bail");
             }
-            return null;
+            return a;
         }
 
         // Determine which BSSID we want to associate to, taking account
@@ -865,41 +889,11 @@ public class WifiAutoJoinController {
             //   With he current threshold values, 5GHz network with RSSI above -55
             //   Are given a boost of 30DB which is enough to overcome the current BSSID
             //   hysteresis (+14) plus 2.4/5 GHz signal strength difference on most cases
-            if (b.is5GHz() && (b.level+bRssiBoost)
-                    > (mWifiConfigStore.thresholdBandPreferenceRssi5
-                    + HIGH_THRESHOLD_MODIFIER) ) {
-                // boost by 30 if > -50
-                bRssiBoost5 = 30;
-            } else if (b.is5GHz() && (b.level+bRssiBoost)
-                    > mWifiConfigStore.thresholdBandPreferenceRssi5) {
-                // boost by 20 if > -55
-                bRssiBoost5 = 20;
-            } else if (b.is5GHz() && (b.level+bRssiBoost)
-                    > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
-                // boost by 10 if > -65
-                bRssiBoost5 = 10;
-            } else if (b.is5GHz() && (b.level+bRssiBoost)
-                    < mWifiConfigStore.thresholdBandPreferenceRssi24) {
-                // penalize by 10 if < -75
-                bRssiBoost5 = -10;
+            if (b.is5GHz()) {
+                bRssiBoost5 = rssiBoostFrom5GHzRssi(b.level);
             }
-            if (a.is5GHz() && (a.level+aRssiBoost)
-                    > (mWifiConfigStore.thresholdBandPreferenceRssi5
-                    + HIGH_THRESHOLD_MODIFIER) ) {
-                // boost by 30 if > -50
-                aRssiBoost5 = 30;
-            } else if (a.is5GHz() && (a.level+aRssiBoost)
-                    > mWifiConfigStore.thresholdBandPreferenceRssi5) {
-                // boost by 20 if -55
-                aRssiBoost5 = 20;
-            } else if (a.is5GHz() && (a.level+aRssiBoost)
-                    > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
-                // boost by 10 if > -65
-                aRssiBoost5 = 10;
-            } else if (a.is5GHz() && (a.level+aRssiBoost)
-                    < mWifiConfigStore.thresholdBandPreferenceRssi24) {
-                // penalize by 10 if -75
-                aRssiBoost5 = -10;
+            if (a.is5GHz()) {
+                aRssiBoost5 = rssiBoostFrom5GHzRssi(a.level);
             }
 
             if (VDBG)  {
@@ -925,16 +919,13 @@ public class WifiAutoJoinController {
         if (a != null) {
             if (VDBG)  {
                 StringBuilder sb = new StringBuilder();
-                sb.append("attemptRoam: Found "
-                        + a.BSSID + " rssi=" + a.level + " freq=" + a.frequency);
+                sb.append("attemptRoam: " + current.configKey() +
+                        " Found " + a.BSSID + " rssi=" + a.level + " freq=" + a.frequency);
                 if (currentBSSID != null) {
                     sb.append(" Current: " + currentBSSID);
                 }
                 sb.append("\n");
                 logDbg(sb.toString());
-            }
-            if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
-                return null;
             }
         }
         return a;
@@ -1411,9 +1402,37 @@ public class WifiAutoJoinController {
         }
 
         if (networkSwitchType == AUTO_JOIN_IDLE) {
+            String currentBSSID = mWifiStateMachine.getCurrentBSSID();
             // Attempt same WifiConfiguration roaming
-            ScanResult roamCandidate = attemptRoam(currentConfiguration, 3000,
-                    mWifiStateMachine.getCurrentBSSID());
+            ScanResult roamCandidate = attemptRoam(null, currentConfiguration, 3000,
+                    currentBSSID);
+            /**
+             *  TODO: (post L initial release)
+             *  consider handling linked configurations roaming (i.e. extended Roaming)
+             *  thru the attemptRoam function which makes use of the RSSI roaming threshold.
+             *  At the moment, extended roaming is only handled thru the attemptAutoJoin()
+             *  function which compare configurations.
+             *
+             *  The advantage of making use of attemptRoam function is that this function
+             *  will looks at all the BSSID of each configurations, instead of only looking
+             *  at WifiConfiguration.visibility which keeps trackonly of the RSSI/band of the
+             *  two highest BSSIDs.
+             */
+            // Attempt linked WifiConfiguration roaming
+            /* if (currentConfiguration != null
+                    && currentConfiguration.linkedConfigurations != null) {
+                for (String key : currentConfiguration.linkedConfigurations.keySet()) {
+                    WifiConfiguration link = mWifiConfigStore.getWifiConfiguration(key);
+                    if (link != null) {
+                        roamCandidate = attemptRoam(roamCandidate, link, 3000,
+                                currentBSSID);
+                    }
+                }
+            }*/
+            if (roamCandidate != null && currentBSSID != null
+                    && currentBSSID.equals(roamCandidate.BSSID)) {
+                roamCandidate = null;
+            }
             if (roamCandidate != null) {
                 if (DBG) {
                     logDbg("AutoJoin auto roam with netId "
