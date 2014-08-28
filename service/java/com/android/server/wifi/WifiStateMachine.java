@@ -1055,6 +1055,7 @@ public class WifiStateMachine extends StateMachine {
             mLogMessages = false;
             mWifiNative.setSupplicantLogLevel("INFO");
         }
+        mWifiP2pServiceImpl.enableVerboseLogging(verbose);
         mWifiAutoJoinController.enableVerboseLogging(verbose);
         mWifiMonitor.enableVerboseLogging(verbose);
         mWifiNative.enableVerboseLogging(verbose);
