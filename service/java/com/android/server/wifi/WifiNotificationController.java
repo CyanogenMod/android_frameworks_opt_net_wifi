@@ -243,6 +243,8 @@ final class WifiNotificationController {
             CharSequence details = mContext.getResources().getQuantityText(
                     com.android.internal.R.plurals.wifi_available_detailed, numNetworks);
             mNotification.tickerText = title;
+            mNotification.color = mContext.getResources().getColor(
+                    com.android.internal.R.color.system_notification_accent_color);
             mNotification.setLatestEventInfo(mContext, title, details, mNotification.contentIntent);
 
             mNotificationRepeatTime = System.currentTimeMillis() + NOTIFICATION_REPEAT_DELAY_MS;
