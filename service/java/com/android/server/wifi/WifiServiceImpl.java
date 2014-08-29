@@ -770,27 +770,27 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
-     * see {@link android.net.wifi.WifiManager#getAdaptors}
+     * see {@link android.net.wifi.WifiManager#getSupportedFeatures}
      */
-    public List<WifiAdapter> getAdaptors() {
+    public int getSupportedFeatures() {
         enforceAccessPermission();
         if (mWifiStateMachineChannel != null) {
-            return mWifiStateMachine.syncGetAdaptors(mWifiStateMachineChannel);
+            return mWifiStateMachine.syncGetSupportedFeatures(mWifiStateMachineChannel);
         } else {
             Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
-            return null;
+            return 0;
         }
     }
 
     /**
      * see {@link android.net.wifi.WifiAdapter#reportActivityInfo}
      */
-    public WifiActivityEnergyInfo reportActivityInfo(WifiAdapter adapter) {
+    public WifiActivityEnergyInfo reportActivityInfo() {
         enforceAccessPermission();
         WifiLinkLayerStats stats;
         WifiActivityEnergyInfo energyInfo = null;
         if (mWifiStateMachineChannel != null) {
-            stats = mWifiStateMachine.syncGetLinkLayerStats(mWifiStateMachineChannel, adapter);
+            stats = mWifiStateMachine.syncGetLinkLayerStats(mWifiStateMachineChannel);
             if (stats != null) {
                 // Convert the LinkLayerStats into EnergyActivity
                 energyInfo = new WifiActivityEnergyInfo(
@@ -1745,7 +1745,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public WifiMonitor getWifiMonitor() {
         return mWifiStateMachine.getWifiMonitor();
     }
-
 
     public void enableVerboseLogging(int verbose) {
         enforceAccessPermission();
