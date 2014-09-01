@@ -141,8 +141,9 @@ public class WifiAutoJoinController {
         }
     }
 
-    void addToScanCache(List<ScanResult> scanList) {
-        WifiConfiguration associatedConfig;
+    int addToScanCache(List<ScanResult> scanList) {
+        int numScanResultsKnown = 0; // Record number of scan results we knew about
+        WifiConfiguration associatedConfig = null;
 
         ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
@@ -192,12 +193,12 @@ public class WifiAutoJoinController {
 
             scanResultCache.put(result.BSSID, new ScanResult(result));
 
-            // Add this BSSID to the scanResultCache of the relevant WifiConfiguration
+            // Add this BSSID to the scanResultCache of a Saved WifiConfiguration
             associatedConfig = mWifiConfigStore.updateSavedNetworkHistory(result);
 
-            // Try to associate this BSSID to an existing Saved WifiConfiguration
+            // If not successful, try to associate this BSSID to an existing Saved WifiConfiguration
             if (associatedConfig == null) {
-                // We couldn't associate the scan result to a saved configuration
+                // We couldn't associate the scan result to a Saved WifiConfiguration
                 // Hence it is untrusted
                 result.untrusted = true;
                 associatedConfig = mWifiConfigStore.associateWithConfiguration(result);
@@ -206,7 +207,8 @@ public class WifiAutoJoinController {
                         logDbg("addToScanCache save associated config "
                                 + associatedConfig.SSID + " with " + associatedConfig.SSID);
                     }
-                    mWifiStateMachine.sendMessage(WifiManager.SAVE_NETWORK, associatedConfig);
+                    mWifiStateMachine.sendMessage(
+                            WifiStateMachine.CMD_AUTO_SAVE_NETWORK, associatedConfig);
                 }
             } else {
                 // If the scan result has been blacklisted fir 18 hours -> unblacklist
@@ -214,6 +216,9 @@ public class WifiAutoJoinController {
                 if ((now - result.blackListTimestamp) > loseBlackListHardMilli) {
                     result.setAutoJoinStatus(ScanResult.ENABLED);
                 }
+            }
+            if (associatedConfig != null) {
+                numScanResultsKnown++;
             }
         }
 
@@ -223,6 +228,7 @@ public class WifiAutoJoinController {
             // Kick the score manager, we will get updated scores asynchronously
             scoreManager.requestScores(newKeys);
         }
+        return numScanResultsKnown;
     }
 
     void logDbg(String message) {
@@ -244,16 +250,20 @@ public class WifiAutoJoinController {
     }
 
     // Called directly from WifiStateMachine
-    void newSupplicantResults(boolean doAutoJoin) {
+    int newSupplicantResults(boolean doAutoJoin) {
+        int numScanResultsKnown;
         List<ScanResult> scanList = mWifiStateMachine.syncGetScanResultsList();
-        addToScanCache(scanList);
+        numScanResultsKnown = addToScanCache(scanList);
         ageScanResultsOut(mScanResultMaximumAge);
-        if (DBG)
-           logDbg("newSupplicantResults size=" + Integer.valueOf(scanResultCache.size()) );
+        if (DBG) {
+            logDbg("newSupplicantResults size=" + Integer.valueOf(scanResultCache.size())
+                        + " known=" + numScanResultsKnown);
+        }
         if (doAutoJoin) {
             attemptAutoJoin();
         }
         mWifiConfigStore.writeKnownNetworkHistory();
+        return numScanResultsKnown;
     }
 
 
