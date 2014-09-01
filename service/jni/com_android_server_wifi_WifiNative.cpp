@@ -797,7 +797,6 @@ void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
     } else {
         memset(&link_stat, 0, sizeof(wifi_iface_stat));
     }
-    ALOGD("onLinkStatsResults got %p num %u", radio_stats, num_radios);
 
     if (num_radios > 0 && radio_stats != 0) {
         memcpy(&radio_stat, radio_stats, sizeof(wifi_radio_stat));
