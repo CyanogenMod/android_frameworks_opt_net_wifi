@@ -859,7 +859,7 @@ public class WifiMonitor {
                 }
             }
 
-            // notify and exit
+            // Notify and exit
             mStateMachine.sendMessage(SUP_DISCONNECTION_EVENT, eventLogCounter);
             return true;
         } else if (event == EAP_FAILURE) {
