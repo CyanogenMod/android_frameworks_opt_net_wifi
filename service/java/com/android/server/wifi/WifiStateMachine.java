@@ -526,6 +526,8 @@ public class WifiStateMachine extends StateMachine {
     int roamWatchdogCount = 0;
     /* Roam state watchdog */
     static final int CMD_ROAM_WATCHDOG_TIMER    = BASE + 94;
+    /* Screen change intent handling */
+    static final int CMD_SCREEN_STATE_CHANGED              = BASE + 95;
 
     int disconnectingWatchdogCount = 0;
     static final int DISCONNECTING_GUARD_TIMER_MSEC = 5000;
@@ -806,6 +808,9 @@ public class WifiStateMachine extends StateMachine {
 
     private String mTcpBufferSizes = null;
 
+    // Used for debug and stats gathering
+    private static int sScanAlarmIntentCount = 0;
+
     public WifiStateMachine(Context context, String wlanInterface,
             WifiTrafficPoller trafficPoller){
         super("WifiStateMachine");
@@ -896,6 +901,7 @@ public class WifiStateMachine extends StateMachine {
                 new BroadcastReceiver() {
                     @Override
                     public void onReceive(Context context, Intent intent) {
+                        sScanAlarmIntentCount++;
                         startScan(SCAN_ALARM_SOURCE, null, null);
                         if (VDBG)
                             loge("WiFiStateMachine SCAN ALARM");
@@ -914,9 +920,9 @@ public class WifiStateMachine extends StateMachine {
                         String action = intent.getAction();
 
                         if (action.equals(Intent.ACTION_SCREEN_ON)) {
-                            handleScreenStateChanged(true);
+                            sendMessage(CMD_SCREEN_STATE_CHANGED, 1);
                         } else if (action.equals(Intent.ACTION_SCREEN_OFF)) {
-                            handleScreenStateChanged(false);
+                            sendMessage(CMD_SCREEN_STATE_CHANGED, 0);
                         } else if (action.equals(ACTION_REFRESH_BATCHED_SCAN)) {
                             startNextBatchedScanAsync();
                         }
@@ -1824,8 +1830,8 @@ public class WifiStateMachine extends StateMachine {
      * @return
      */
 
-    public List<WifiConfiguration> syncGetConfiguredNetworks(AsyncChannel channel) {
-        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_CONFIGURED_NETWORKS);
+    public List<WifiConfiguration> syncGetConfiguredNetworks(int uuid, AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_CONFIGURED_NETWORKS, uuid);
         List<WifiConfiguration> result = (List<WifiConfiguration>) resultMsg.obj;
         resultMsg.recycle();
         return result;
@@ -2157,6 +2163,8 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
+                sb.append(" ");
+                sb.append(Integer.toString(sScanAlarmIntentCount));
                 if (mIsScanOngoing) sb.append(" onGoing");
                 if (mIsFullScanOngoing) sb.append(" full");
                 if (lastStartScanTimeStamp != 0) {
@@ -4010,6 +4018,9 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_START_NEXT_BATCHED_SCAN:
                     startNextBatchedScan();
                     break;
+                case CMD_SCREEN_STATE_CHANGED:
+                    handleScreenStateChanged(message.arg1 != 0);
+                    break;
                     /* Discard */
                 case CMD_START_SCAN:
                 case CMD_START_SUPPLICANT:
@@ -5305,6 +5316,9 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_ROAM_WATCHDOG_TIMER:
                 s = "CMD_ROAM_WATCHDOG_TIMER";
+                break;
+            case CMD_SCREEN_STATE_CHANGED:
+                s = "CMD_SCREEN_STATE_CHANGED";
                 break;
             default:
                 s = "what:" + Integer.toString(what);
