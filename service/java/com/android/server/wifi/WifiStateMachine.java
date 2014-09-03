@@ -438,7 +438,7 @@ public class WifiStateMachine extends StateMachine {
     /* Get available frequencies */
     static final int CMD_GET_CAPABILITY_FREQ              = BASE + 60;
     /* Get adaptors */
-    static final int CMD_GET_ADAPTORS                     = BASE + 61;
+    static final int CMD_GET_SUPPORTED_FEATURES           = BASE + 61;
     /* Get configured networks with real preSharedKey */
     static final int CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS = BASE + 62;
     /* Get Link Layer Stats thru HAL */
@@ -1857,18 +1857,18 @@ public class WifiStateMachine extends StateMachine {
      * Get adaptors synchronously
      */
 
-    public List<WifiAdapter> syncGetAdaptors(AsyncChannel channel) {
-        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_ADAPTORS);
-        List<WifiAdapter> result = (List<WifiAdapter>) resultMsg.obj;
+    public int syncGetSupportedFeatures(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_SUPPORTED_FEATURES);
+        int supportedFeatureSet = resultMsg.arg1;
         resultMsg.recycle();
-        return result;
+        return supportedFeatureSet;
     }
 
     /**
      * Get link layers stats for adapter synchronously
      */
-    public WifiLinkLayerStats syncGetLinkLayerStats(AsyncChannel channel, WifiAdapter adapter) {
-        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_LINK_LAYER_STATS, adapter);
+    public WifiLinkLayerStats syncGetLinkLayerStats(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_LINK_LAYER_STATS);
         WifiLinkLayerStats result = (WifiLinkLayerStats) resultMsg.obj;
         resultMsg.recycle();
         return result;
@@ -4108,30 +4108,12 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, WifiManager.RSSI_PKTCNT_FETCH_FAILED,
                             WifiManager.BUSY);
                     break;
-                case CMD_GET_ADAPTORS:
+                case CMD_GET_SUPPORTED_FEATURES:
                     if (WifiNative.startHal()) {
-                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
                         int featureSet = WifiNative.getSupportedFeatureSet();
-                        /* TODO: Get capabilities from adaptors themselves */
-                        for (int i = 0; i < WifiNative.getInterfaces(); i++) {
-                            String name = WifiNative.getInterfaceName(i);
-                            WifiAdapter adaptor;
-                            if (name.startsWith("wlan")) {
-                                adaptor = new WifiAdapter(
-                                        name, featureSet & ~WifiAdapter.WIFI_FEATURE_P2P);
-                            } else if (name.startsWith("p2p")) {
-                                adaptor = new WifiAdapter(
-                                        name, featureSet & WifiAdapter.WIFI_FEATURE_P2P);
-                            } else {
-                                logd("Ignoring adaptor with name" + name);
-                                continue;
-                            }
-                            adaptors.add(adaptor);
-                        }
-                        replyToMessage(message, message.what, adaptors);
+                        replyToMessage(message, message.what, featureSet);
                     } else {
-                        List<WifiAdapter> adaptors = new ArrayList<WifiAdapter>();
-                        replyToMessage(message, message.what, adaptors);
+                        replyToMessage(message, message.what, 0);
                     }
                     break;
                 case CMD_GET_LINK_LAYER_STATS:
@@ -4417,22 +4399,19 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_GET_LINK_LAYER_STATS:
                     WifiLinkLayerStats stats = null;
-                    WifiAdapter adapter = (WifiAdapter) message.obj;
-                    if (adapter != null) {
-                        // Try reading L2 stats a couple of time, allow for a few failures
-                        // in case the HAL/drivers are not completely initialized once we get there
-                        if (mWifiLinkLayerStatsSupported > 0) {
-                            String name = adapter.getName();
-                            stats = mWifiNative.getWifiLinkLayerStats(name);
-                            if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
-                                mWifiLinkLayerStatsSupported -= 1;
-                            } else if (DBG && stats != null) {
-                                loge(stats.toString());
-                            }
-                        } else {
-                            // When firmware doesnt support link layer stats, return an empty object
-                            stats = new WifiLinkLayerStats();
+                    // Try reading L2 stats a couple of time, allow for a few failures
+                    // in case the HAL/drivers are not completely initialized once we get there
+                    if (mWifiLinkLayerStatsSupported > 0) {
+                        String name = "wlan0";
+                        stats = mWifiNative.getWifiLinkLayerStats(name);
+                        if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
+                            mWifiLinkLayerStatsSupported -= 1;
+                        } else if (DBG && stats != null) {
+                            loge(stats.toString());
                         }
+                    } else {
+                        // When firmware doesnt support link layer stats, return an empty object
+                        stats = new WifiLinkLayerStats();
                     }
                     replyToMessage(message, message.what, stats);
                     break;
@@ -5129,7 +5108,7 @@ public class WifiStateMachine extends StateMachine {
             case CMD_GET_CONFIGURED_NETWORKS:
                 s = "CMD_GET_CONFIGURED_NETWORKS";
                 break;
-            case CMD_GET_ADAPTORS:
+            case CMD_GET_SUPPORTED_FEATURES:
                 s = "CMD_GET_ADAPTORS";
                 break;
             case CMD_UNWANTED_NETWORK:
