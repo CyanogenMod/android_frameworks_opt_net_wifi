@@ -5729,11 +5729,11 @@ public class WifiStateMachine extends StateMachine {
                                 log("Reconfiguring proxy on connection");
                                 updateLinkProperties(CMD_UPDATE_LINKPROPERTIES);
                             }
-                            replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
-                            if (VDBG) {
-                                loge("Success save network nid="
+                        }
+                        replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
+                        if (VDBG) {
+                           loge("Success save network nid="
                                         + Integer.toString(result.getNetworkId()));
-                            }
                         }
 
                         /**
