@@ -214,6 +214,8 @@ public class WifiStateMachine extends StateMachine {
     private static final int SCAN_REQUEST_BUFFER_MAX_SIZE = 10;
     private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
     private static final String CUSTOMIZED_SCAN_WORKSOURCE = "customized_scan_worksource";
+    private static final String SCAN_REQUEST_TIME = "scan_request_time";
+
     private static final String BATCHED_SETTING = "batched_settings";
     private static final String BATCHED_WORKSOURCE = "batched_worksource";
 
@@ -909,7 +911,7 @@ public class WifiStateMachine extends StateMachine {
                     @Override
                     public void onReceive(Context context, Intent intent) {
                         sScanAlarmIntentCount++;
-                        startScan(SCAN_ALARM_SOURCE, null, null);
+                        startScan(SCAN_ALARM_SOURCE, -2, null, null);
                         if (VDBG)
                             loge("WiFiStateMachine SCAN ALARM");
                     }
@@ -1155,11 +1157,13 @@ public class WifiStateMachine extends StateMachine {
      * @param workSource If not null, blame is given to workSource.
      * @param settings Scan settings, see {@link ScanSettings}.
      */
-    public void startScan(int callingUid, ScanSettings settings, WorkSource workSource) {
+    public void startScan(int callingUid, int scanCounter,
+                          ScanSettings settings, WorkSource workSource) {
         Bundle bundle = new Bundle();
         bundle.putParcelable(CUSTOMIZED_SCAN_SETTING, settings);
         bundle.putParcelable(CUSTOMIZED_SCAN_WORKSOURCE, workSource);
-        sendMessage(CMD_START_SCAN, callingUid, 0, bundle);
+        bundle.putLong(SCAN_REQUEST_TIME, System.currentTimeMillis());
+        sendMessage(CMD_START_SCAN, callingUid, scanCounter, bundle);
     }
 
     /**
@@ -1479,13 +1483,27 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
-    //keeping track of scan requests
+    // Keeping track of scan requests
     private long lastStartScanTimeStamp = 0;
     private long lastScanDuration = 0;
-    //last connect attempt is used to prevent scan requests:
-    // - for a period of 10 seconds after attempting to connect
+    // Last connect attempt is used to prevent scan requests:
+    //  - for a period of 10 seconds after attempting to connect
     private long lastConnectAttempt = 0;
     private String lastScanFreqs = null;
+
+    // For debugging, keep track of last message status handling
+    // TODO, find an equivalent mechanism as part of parent class
+    private static int MESSAGE_HANDLING_STATUS_OK = 1;
+    private static int MESSAGE_HANDLING_STATUS_UNKNOWN = 0;
+    private static int MESSAGE_HANDLING_STATUS_REFUSED = -1;
+    private static int MESSAGE_HANDLING_STATUS_FAIL = -2;
+    private static int MESSAGE_HANDLING_STATUS_BUFFERED = -3;
+    private static int MESSAGE_HANDLING_STATUS_DEFERRED = -4;
+    private static int MESSAGE_HANDLING_STATUS_DISCARD = -5;
+    private static int MESSAGE_HANDLING_STATUS_LOOPED = -6;
+    private static int MESSAGE_HANDLING_STATUS_HANDLING_ERROR = -7;
+
+    private int messageHandlingStatus = 0;
 
     //TODO: this is used only to track connection attempts, however the link state and packet per
     //TODO: second logic should be folded into that
@@ -1614,6 +1632,7 @@ public class WifiStateMachine extends StateMachine {
             // a full scan covers everything, clearing scan request buffer
             if (freqs == null)
                 mBufferedScanMsg.clear();
+            messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
             return;
         }
 
@@ -1621,26 +1640,34 @@ public class WifiStateMachine extends StateMachine {
 
         if (!mIsScanOngoing) {
             // if rejection is NOT due to ongoing scan (e.g. bad scan parameters),
+
             // discard this request and pop up the next one
-            if (mBufferedScanMsg.size() > 0)
+            if (mBufferedScanMsg.size() > 0) {
                 sendMessage(mBufferedScanMsg.remove());
+            }
+            messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
         } else if (!mIsFullScanOngoing) {
             // if rejection is due to an ongoing scan, and the ongoing one is NOT a full scan,
             // buffer the scan request to make sure specified channels will be scanned eventually
             if (freqs == null)
                 mBufferedScanMsg.clear();
             if (mBufferedScanMsg.size() < SCAN_REQUEST_BUFFER_MAX_SIZE) {
-                Message msg = obtainMessage(CMD_START_SCAN, message.arg1, 0, bundle);
+                Message msg = obtainMessage(CMD_START_SCAN,
+                        message.arg1, message.arg2, bundle);
                 mBufferedScanMsg.add(msg);
             } else {
                 // if too many requests in buffer, combine them into a single full scan
                 bundle = new Bundle();
                 bundle.putParcelable(CUSTOMIZED_SCAN_SETTING, null);
                 bundle.putParcelable(CUSTOMIZED_SCAN_WORKSOURCE, workSource);
-                Message msg = obtainMessage(CMD_START_SCAN, message.arg1, 0, bundle);
+                Message msg = obtainMessage(CMD_START_SCAN, message.arg1, message.arg2, bundle);
                 mBufferedScanMsg.clear();
                 mBufferedScanMsg.add(msg);
             }
+            messageHandlingStatus = MESSAGE_HANDLING_STATUS_LOOPED;
+        } else {
+            // mIsScanOngoing and mIsFullScanOngoing
+            messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
         }
     }
 
@@ -2142,6 +2169,7 @@ public class WifiStateMachine extends StateMachine {
      ********************************************************/
 
     private void logStateAndMessage(Message message, String state) {
+        messageHandlingStatus = 0;
         if (mLogMessages) {
             //long now = SystemClock.elapsedRealtimeNanos();
             //String ts = String.format("[%,d us]", now/1000);
@@ -2158,24 +2186,37 @@ public class WifiStateMachine extends StateMachine {
      */
     protected String getLogRecString(Message msg) {
         WifiConfiguration config;
+        Long now;
         StringBuilder sb = new StringBuilder();
         if (mScreenOn) {
             sb.append("!");
+        }
+        if (messageHandlingStatus != MESSAGE_HANDLING_STATUS_UNKNOWN) {
+            sb.append("(").append(messageHandlingStatus).append(")");
         }
         sb.append(smToString(msg));
 
         switch (msg.what) {
             case CMD_START_SCAN:
+                now = System.currentTimeMillis();
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
-                sb.append(" ");
+                sb.append(" ic=");
                 sb.append(Integer.toString(sScanAlarmIntentCount));
+                if (msg.obj != null) {
+                    Bundle bundle = (Bundle)msg.obj;
+                    Long request = bundle.getLong(SCAN_REQUEST_TIME, 0);
+                    if (request != 0) {
+                        sb.append(" proc(ms):").append(now - request);
+                    }
+                }
                 if (mIsScanOngoing) sb.append(" onGoing");
                 if (mIsFullScanOngoing) sb.append(" full");
                 if (lastStartScanTimeStamp != 0) {
                     sb.append(" started:").append(lastStartScanTimeStamp);
+                    sb.append(",").append(now - lastStartScanTimeStamp);
                 }
                 if (lastScanDuration != 0) {
                     sb.append(" dur:").append(lastScanDuration);
@@ -2188,7 +2229,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(String.format(" %.1f,", mWifiInfo.txRetriesRate));
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
-                if (lastScanFreqs != null) sb.append(" ").append(lastScanFreqs);
+                if (lastScanFreqs != null) sb.append(" f=").append(lastScanFreqs);
                 break;
             case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                 sb.append(" ");
@@ -2336,7 +2377,7 @@ public class WifiStateMachine extends StateMachine {
                         sb.append(" rs=").append(config.disableReason);
                     }
                     if (config.lastConnected != 0) {
-                        long now = System.currentTimeMillis();
+                        now = System.currentTimeMillis();
                         sb.append(" lastconn=").append(now - config.lastConnected).append("(ms)");
                     }
                     if (mLastBssid != null) {
@@ -3070,6 +3111,14 @@ public class WifiStateMachine extends StateMachine {
         return false;
     }
 
+    // Polling has completed, hence we wont have a score anymore
+    private void cleanWifiScore() {
+        mWifiInfo.txBadRate = 0;
+        mWifiInfo.txSuccessRate = 0;
+        mWifiInfo.txRetriesRate = 0;
+        mWifiInfo.rxSuccessRate = 0;
+    }
+
     private void calculateWifiScore(WifiLinkLayerStats stats) {
 
         if (stats == null || mWifiLinkLayerStatsSupported <= 0) {
@@ -3110,11 +3159,11 @@ public class WifiStateMachine extends StateMachine {
                     use24Thresholds = true;
                 }
             }
-            if (currentConfiguration.scanResultCache.size() <= 4
+            if (currentConfiguration.scanResultCache.size() <= 6
                 && currentConfiguration.allowedKeyManagement.cardinality() == 1
                 && currentConfiguration.allowedKeyManagement.
                     get(WifiConfiguration.KeyMgmt.WPA_PSK) == true) {
-                // A PSK network with less than 4 known BSSIDs
+                // A PSK network with less than 6 known BSSIDs
                 // This is most likely a home network and thus we want to stick to wifi more
                 homeNetworkBoost = true;
             }
@@ -4030,6 +4079,8 @@ public class WifiStateMachine extends StateMachine {
                     break;
                     /* Discard */
                 case CMD_START_SCAN:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    break;
                 case CMD_START_SUPPLICANT:
                 case CMD_STOP_SUPPLICANT:
                 case CMD_STOP_SUPPLICANT_FAILED:
@@ -4082,6 +4133,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_AUTO_CONNECT:
                 case CMD_AUTO_ROAM:
                 case CMD_AUTO_SAVE_NETWORK:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
                     mDhcpStateMachine = null;
@@ -4152,6 +4204,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 case CMD_IP_CONFIGURATION_LOST:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case CMD_GET_CONNECTION_STATISTICS:
                     replyToMessage(message, message.what, mWifiConnectionStatistics);
@@ -4336,6 +4389,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_SET_FREQUENCY_BAND:
                 case CMD_START_PACKET_FILTERING:
                 case CMD_STOP_PACKET_FILTERING:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                     deferMessage(message);
                     break;
                 default:
@@ -4562,6 +4616,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_DISCONNECT:
                 case CMD_REASSOCIATE:
                 case CMD_RECONNECT:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                     deferMessage(message);
                     break;
                 default:
@@ -4891,6 +4946,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_DISCONNECT:
                 case CMD_REASSOCIATE:
                 case CMD_RECONNECT:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                     deferMessage(message);
                     break;
                 default:
@@ -4923,6 +4979,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_DISCONNECT:
                 case CMD_REASSOCIATE:
                 case CMD_RECONNECT:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                     deferMessage(message);
                     break;
                 default:
@@ -5882,6 +5939,7 @@ public class WifiStateMachine extends StateMachine {
                 noteScanStart(SCAN_ALARM_SOURCE, null);
                 // Return true
             }
+            messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
             return true;
         } else {
             return false;
@@ -5983,6 +6041,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_SET_COUNTRY_CODE:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                     deferMessage(message);
                     break;
                 case CMD_START_SCAN:
@@ -6037,6 +6096,7 @@ public class WifiStateMachine extends StateMachine {
                                         + " tx=" + String.format("%.2f", mWifiInfo.txSuccessRate)
                                         + " rx=" + String.format("%.2f", mWifiInfo.rxSuccessRate));
                                     }
+                                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_REFUSED;
                                     return HANDLED;
                                 }
                             }
@@ -6081,8 +6141,12 @@ public class WifiStateMachine extends StateMachine {
                                                 WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                                 }
                             }
+                        } else {
+                            loge("CMD_START_SCAN : connected mode and no configuration");
+                            messageHandlingStatus = MESSAGE_HANDLING_STATUS_HANDLING_ERROR;
                         }
                     } else {
+                        // Not scan alarm source
                         handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                     }
                     break;
@@ -6136,6 +6200,8 @@ public class WifiStateMachine extends StateMachine {
                         fetchRssiLinkSpeedAndFrequencyNative();
                         sendMessageDelayed(obtainMessage(CMD_RSSI_POLL,
                                 mRssiPollToken, 0), POLL_RSSI_INTERVAL_MSECS);
+                    } else {
+                        cleanWifiScore();
                     }
                     break;
                 case WifiManager.RSSI_PKTCNT_FETCH:
@@ -6262,17 +6328,21 @@ public class WifiStateMachine extends StateMachine {
                   break;
               case CMD_AUTO_CONNECT:
               case CMD_AUTO_ROAM:
+                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                   break;
               case WifiManager.SAVE_NETWORK:
               case WifiStateMachine.CMD_AUTO_SAVE_NETWORK:
+                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                   deferMessage(message);
                   break;
                   /* Defer any power mode changes since we must keep active power mode at DHCP */
               case CMD_SET_HIGH_PERF_MODE:
+                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                   deferMessage(message);
                   break;
                   /* Defer scan request since we should not switch to other channels at DHCP */
               case CMD_START_SCAN:
+                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                   deferMessage(message);
                   break;
               case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
@@ -6283,6 +6353,8 @@ public class WifiStateMachine extends StateMachine {
                       transitionTo(mDisconnectingState);
                       break;
                   }
+                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                  break;
               default:
                   return NOT_HANDLED;
           }
@@ -6781,7 +6853,7 @@ public class WifiStateMachine extends StateMachine {
                     if (mP2pConnected.get()) break;
                     if (message.arg1 == mPeriodicScanToken &&
                             mWifiConfigStore.getConfiguredNetworks().size() == 0) {
-                        startScan(UNKNOWN_SCAN_SOURCE, null, null);
+                        startScan(UNKNOWN_SCAN_SOURCE, -1, null, null);
                         sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
                                     ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
                     }
@@ -6969,7 +7041,10 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_AUTO_CONNECT:
                 case CMD_AUTO_ROAM:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    return HANDLED;
                 case CMD_START_SCAN:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     return HANDLED;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     if (DBG) log("Network connection lost");
