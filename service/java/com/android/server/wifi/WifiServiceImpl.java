@@ -812,7 +812,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public List<WifiConfiguration> getConfiguredNetworks() {
         enforceAccessPermission();
         if (mWifiStateMachineChannel != null) {
-            return mWifiStateMachine.syncGetConfiguredNetworks(mWifiStateMachineChannel);
+            return mWifiStateMachine.syncGetConfiguredNetworks(Binder.getCallingUid(),
+                    mWifiStateMachineChannel);
         } else {
             Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
             return null;
