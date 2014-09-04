@@ -111,6 +111,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     private String mInterfaceName;
 
+    // Debug counter tracking scan requests sent by WifiManager
+    private int scanRequestCounter = 0;
+
     /* Tracks the open wi-fi network notification */
     private WifiNotificationController mNotificationController;
     /* Polls traffic stats and notifies clients */
@@ -408,7 +411,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             // supplied WorkSource to allow future WorkSource combining.
             workSource.clearNames();
         }
-        mWifiStateMachine.startScan(Binder.getCallingUid(), settings, workSource);
+        mWifiStateMachine.startScan(Binder.getCallingUid(), scanRequestCounter++,
+                settings, workSource);
     }
 
     private class BatchedScanRequest extends DeathRecipient {
