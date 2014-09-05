@@ -1173,18 +1173,18 @@ public class WifiConfigStore extends IpConfigStore {
                     found = true;
                     networkSsid = null;
                     value = null;
-                } else if (line.matches("[ \\t]*\\{")) {
+                } else if (line.matches("[ \\t]*\\}")) {
                     found = false;
                     networkSsid = null;
                     value = null;
                 }
 
                 if (found) {
-                    int index;
-                    if ((index = line.indexOf("ssid=")) >= 0) {
-                        networkSsid = line.substring(index + 5);
-                    } else if ((index = line.indexOf(key + "=")) >= 0) {
-                        value = line.substring(index + key.length() + 1);
+                    String trimmedLine = line.trim();
+                    if (trimmedLine.startsWith("ssid=")) {
+                        networkSsid = trimmedLine.substring(5);
+                    } else if (trimmedLine.startsWith(key + "=")) {
+                        value = trimmedLine.substring(key.length() + 1);
                     }
 
                     if (networkSsid != null && value != null) {
