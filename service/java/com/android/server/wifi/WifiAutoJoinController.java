@@ -257,7 +257,8 @@ public class WifiAutoJoinController {
         ageScanResultsOut(mScanResultMaximumAge);
         if (DBG) {
             logDbg("newSupplicantResults size=" + Integer.valueOf(scanResultCache.size())
-                        + " known=" + numScanResultsKnown);
+                        + " known=" + numScanResultsKnown
+                        + doAutoJoin);
         }
         if (doAutoJoin) {
             attemptAutoJoin();
@@ -367,6 +368,14 @@ public class WifiAutoJoinController {
             boolean found = false;
             int choice = 0;
             int size = 0;
+
+            // Reset the triggered disabled count, because user wanted to connect to this
+            // configuration, and we were not.
+            selected.numUserTriggeredWifiDisableLowRSSI = 0;
+            selected.numUserTriggeredWifiDisableBadRSSI = 0;
+            selected.numUserTriggeredWifiDisableNotHighRSSI = 0;
+            selected.numUserTriggeredJoinAttempts++;
+
             List<WifiConfiguration> networks =
                     mWifiConfigStore.getRecentConfiguredNetworks(12000, false);
             if (networks != null) size = networks.size();
@@ -503,7 +512,7 @@ public class WifiAutoJoinController {
     }
 
 
-    int getScoreFromVisibility(WifiConfiguration.Visibility visibility, int rssiBoost) {
+    int getScoreFromVisibility(WifiConfiguration.Visibility visibility, int rssiBoost, String dbg) {
         int rssiBoost5 = 0;
         int score = 0;
 
@@ -514,7 +523,7 @@ public class WifiAutoJoinController {
          * Note that 2.4GHz doesn't need a boost since at equal power the RSSI is typically
          * at least 6-10 dB higher
          */
-        rssiBoost5 = rssiBoostFrom5GHzRssi(visibility.rssi5);
+        rssiBoost5 = rssiBoostFrom5GHzRssi(visibility.rssi5, dbg+"->");
 
         // Select which band to use so as to score a
         if (visibility.rssi5 + rssiBoost5 > visibility.rssi24) {
@@ -576,8 +585,8 @@ public class WifiAutoJoinController {
             );
         }
 
-        scoreA = getScoreFromVisibility(astatus, aRssiBoost);
-        scoreB = getScoreFromVisibility(bstatus, bRssiBoost);
+        scoreA = getScoreFromVisibility(astatus, aRssiBoost, a.configKey());
+        scoreB = getScoreFromVisibility(bstatus, bRssiBoost, b.configKey());
 
         // Compare a and b
         // If a score is higher then a > b and the order is descending (negative)
@@ -791,19 +800,23 @@ public class WifiAutoJoinController {
         return order;
     }
 
-    public int rssiBoostFrom5GHzRssi(int rssi) {
+    public int rssiBoostFrom5GHzRssi(int rssi, String dbg) {
         if (rssi
                 > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
             // Boost by 2 dB for each point
             //    Start boosting at -65
             //    Boost by 20 if above -55
             //    Boost by 40 if abore -45
-            int boost = 5 *(rssi - mWifiConfigStore.thresholdBandPreferenceLowRssi5);
+            int boost = mWifiConfigStore.factorBandPreferenceLowRssi5
+                    *(rssi - mWifiConfigStore.thresholdBandPreferenceLowRssi5);
             if (boost > 50) {
                 // 50 dB boost is set so as to overcome the hysteresis of +20 plus a difference of
                 // 25 dB between 2.4 and 5GHz band. This allows jumping from 2.4 to 5GHz
                 // consistently
                 boost = 50;
+            }
+            if (VDBG && dbg != null) {
+                logDbg(dbg + ":    rssi5 " + rssi + " boost " + boost);
             }
             return boost;
         }
@@ -899,11 +912,14 @@ public class WifiAutoJoinController {
             //   With he current threshold values, 5GHz network with RSSI above -55
             //   Are given a boost of 30DB which is enough to overcome the current BSSID
             //   hysteresis (+14) plus 2.4/5 GHz signal strength difference on most cases
+            //
+            // The "current BSSID" Boost must be added to the BSSID's level so as to introduce\
+            // soem amount of hysteresis
             if (b.is5GHz()) {
-                bRssiBoost5 = rssiBoostFrom5GHzRssi(b.level);
+                bRssiBoost5 = rssiBoostFrom5GHzRssi(b.level + bRssiBoost, b.BSSID);
             }
             if (a.is5GHz()) {
-                aRssiBoost5 = rssiBoostFrom5GHzRssi(a.level);
+                aRssiBoost5 = rssiBoostFrom5GHzRssi(a.level + aRssiBoost, a.BSSID);
             }
 
             if (VDBG)  {
@@ -1245,6 +1261,15 @@ public class WifiAutoJoinController {
                     }
                     continue;
                 }
+                if (config.noInternetAccess) {
+                    // Avoid autojoining this network because last time we used it, it didn't
+                    // have internet access
+                    if (DBG) {
+                        logDbg("attemptAutoJoin skip candidate due to noInternetAccess flag "
+                                + config.configKey(true));
+                    }
+                    continue;
+                }
             }
 
             if (DBG) {
@@ -1406,6 +1431,30 @@ public class WifiAutoJoinController {
                 }
                 candidate.numAssociation++;
                 mWifiConnectionStatistics.numAutoJoinAttempt++;
+
+                // First step we selected the configuration we want to connect to
+                // Second step: Look for the best Scan result for this configuration
+                // TODO this algorithm should really be done in one step
+                String currentBSSID = mWifiStateMachine.getCurrentBSSID();
+                ScanResult roamCandidate = attemptRoam(null, currentConfiguration, 3000,
+                        currentBSSID);
+                if (roamCandidate != null && currentBSSID != null
+                        && currentBSSID.equals(roamCandidate.BSSID)) {
+                    roamCandidate = null;
+                }
+                if (roamCandidate != null && roamCandidate.is5GHz()
+                        && (candidate.BSSID == null || candidate.BSSID.equals("any"))) {
+                    // If the configuration hasn't a default BSSID selected, and the best
+                    // candidate is 5GHZ, then select this candidate so as WifiStateMachine and
+                    // supplicant will pick it first
+                    candidate.BSSID = roamCandidate.BSSID;
+                    if (VDBG) {
+                        logDbg("AutoJoinController: lock to 5GHz "
+                                + candidate.SSID
+                                + " RSSI=" + roamCandidate.level
+                                + " freq=" + roamCandidate.frequency);
+                    }
+                }
                 mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
                         candidate.networkId, networkSwitchType, candidate);
             }
