@@ -6578,6 +6578,10 @@ public class WifiStateMachine extends StateMachine {
         DetailedState.CAPTIVE_PORTAL_CHECK);
         sendNetworkStateChangeBroadcast(mLastBssid);
 
+        if (mWifiConfigStore.getLastSelectedConfiguration() != null) {
+            if (mNetworkAgent != null) mNetworkAgent.explicitlySelected();
+        }
+
         setNetworkDetailedState(DetailedState.CONNECTED);
         mWifiConfigStore.updateStatus(mLastNetworkId, DetailedState.CONNECTED);
         sendNetworkStateChangeBroadcast(mLastBssid);
