@@ -55,6 +55,7 @@ import android.util.SparseArray;
 
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.net.IpConfigStore;
+import com.android.internal.R;
 
 import java.io.BufferedReader;
 import java.io.BufferedInputStream;
@@ -194,6 +195,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE:  ";
     private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH:  ";
     private static final String NO_INTERNET_ACCESS_KEY = "NO_INTERNET_ACCESS:  ";
+    private static final String EPHEMERAL_KEY = "EPHEMERAL:   ";
     private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
             = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G:  ";
@@ -286,7 +288,8 @@ public class WifiConfigStore extends IpConfigStore {
     public int thresholdGoodRssi24 = WifiConfiguration.GOOD_RSSI_24;
 
     public int associatedFullScanBackoff = 12; // Will be divided by 8 by WifiStateMachine
-    public int associatedPartialScanPeriodMs = 10000;
+    public int associatedPartialScanPeriodMs
+            = R.integer.config_wifi_framework_associated_scan_interval;
 
     public int thresholdBandPreferenceRssi24
             = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
@@ -1384,6 +1387,9 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(NO_INTERNET_ACCESS_KEY
                             + Boolean.toString(config.noInternetAccess)
                             + SEPARATOR_KEY);
+                    out.writeUTF(EPHEMERAL_KEY
+                            + Boolean.toString(config.ephemeral)
+                            + SEPARATOR_KEY);
                     if (config.peerWifiConfiguration != null) {
                         out.writeUTF(PEER_CONFIGURATION_KEY + config.peerWifiConfiguration
                                 + SEPARATOR_KEY);
@@ -1604,6 +1610,12 @@ public class WifiConfigStore extends IpConfigStore {
                         String access = key.replace(NO_INTERNET_ACCESS_KEY, "");
                         access = access.replace(SEPARATOR_KEY, "");
                         config.noInternetAccess = Boolean.parseBoolean(access);
+                    }
+
+                    if (key.startsWith(EPHEMERAL_KEY)) {
+                        String access = key.replace(EPHEMERAL_KEY, "");
+                        access = access.replace(SEPARATOR_KEY, "");
+                        config.ephemeral = Boolean.parseBoolean(access);
                     }
 
                     if (key.startsWith(CREATOR_UID_KEY)) {

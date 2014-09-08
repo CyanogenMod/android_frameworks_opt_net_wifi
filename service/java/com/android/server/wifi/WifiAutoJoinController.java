@@ -316,6 +316,9 @@ public class WifiAutoJoinController {
             return -2;
         }
 
+        if (DBG) {
+            logDbg("compareNetwork will compare " + candidate.configKey() + " with current");
+        }
         int order = compareWifiConfigurationsTop(currentNetwork, candidate);
         return order;
     }
@@ -560,21 +563,23 @@ public class WifiAutoJoinController {
         WifiConfiguration.Visibility bstatus = b.visibility;
         if (astatus == null || bstatus == null) {
             // Error visibility wasn't set
-            logDbg("compareWifiConfigurations NULL band status!");
+            logDbg("    compareWifiConfigurations NULL band status!");
             return 0;
         }
 
         // Apply Hysteresis, boost RSSI of current configuration
         if (null != currentConfiguration) {
             if (a.configKey().equals(currentConfiguration)) {
-                aRssiBoost += 20;
+                aRssiBoost = +10;
             } else if (b.configKey().equals(currentConfiguration)) {
-                bRssiBoost += 20;
+                bRssiBoost = +10;
             }
+
+
         }
 
         if (VDBG)  {
-            logDbg("compareWifiConfigurationsRSSI: " + a.configKey()
+            logDbg("    compareWifiConfigurationsRSSI: " + a.configKey()
                     + " " + Integer.toString(astatus.rssi24)
                     + "," + Integer.toString(astatus.rssi5)
                     + " boost=" + Integer.toString(aRssiBoost)
@@ -604,7 +609,7 @@ public class WifiAutoJoinController {
             } else if (order < 0) {
                 prefer = " > "; // Descending
             }
-            logDbg("compareWifiConfigurationsRSSI " + a.configKey()
+            logDbg("    compareWifiConfigurationsRSSI " + a.configKey()
                     + " rssi=(" + a.visibility.rssi24
                     + "," + a.visibility.rssi5
                     + ") num=(" + a.visibility.num24
@@ -645,7 +650,7 @@ public class WifiAutoJoinController {
         if (scoreA == WifiNetworkScoreCache.INVALID_NETWORK_SCORE
                 || scoreB == WifiNetworkScoreCache.INVALID_NETWORK_SCORE) {
             if (VDBG)  {
-                logDbg("compareWifiConfigurationsWithScorer no-scores: "
+                logDbg("    compareWifiConfigurationsWithScorer no-scores: "
                         + a.configKey()
                         + " "
                         + b.configKey());
@@ -660,7 +665,7 @@ public class WifiAutoJoinController {
             } if (scoreA > scoreB) {
                 prefer = " > ";
             }
-            logDbg("compareWifiConfigurationsWithScorer " + a.configKey()
+            logDbg("    compareWifiConfigurationsWithScorer " + a.configKey()
                     + " rssi=(" + a.visibility.rssi24
                     + "," + a.visibility.rssi5
                     + ") num=(" + a.visibility.num24
@@ -695,14 +700,14 @@ public class WifiAutoJoinController {
 
         if (a.ephemeral && b.ephemeral == false) {
             if (VDBG) {
-                logDbg("compareWifiConfigurations ephemeral and prefers " + b.configKey()
+                logDbg("    compareWifiConfigurations ephemeral and prefers " + b.configKey()
                         + " over " + a.configKey());
             }
             return 1; // b is of higher priority - ascending
         }
         if (b.ephemeral && a.ephemeral == false) {
             if (VDBG) {
-                logDbg("compareWifiConfigurations ephemeral and prefers " + a.configKey()
+                logDbg("    compareWifiConfigurations ephemeral and prefers " + a.configKey()
                         + " over " + b.configKey());
             }
             return -1; // a is of higher priority - descending
@@ -722,9 +727,10 @@ public class WifiAutoJoinController {
                 // a is of higher priority - descending
                 order = order - choice;
                 if (VDBG) {
-                    logDbg("compareWifiConfigurations prefers " + a.configKey()
+                    logDbg("    compareWifiConfigurations prefers " + a.configKey()
                             + " over " + b.configKey()
-                            + " due to user choice order -> " + Integer.toString(order));
+                            + " due to user choice of " + choice
+                            + " order -> " + Integer.toString(order));
                 }
             }
 
@@ -733,9 +739,9 @@ public class WifiAutoJoinController {
                 // a is of lower priority - ascending
                 order = order + choice;
                 if (VDBG) {
-                    logDbg("compareWifiConfigurations prefers " + b.configKey() + " over "
-                            + a.configKey() + " due to user choice order ->"
-                            + Integer.toString(order));
+                    logDbg("    compareWifiConfigurations prefers " + b.configKey() + " over "
+                            + a.configKey() + " due to user choice of " + choice
+                            + " order ->" + Integer.toString(order));
                 }
             }
         }
@@ -746,7 +752,7 @@ public class WifiAutoJoinController {
             if (a.priority > b.priority) {
                 // a is of higher priority - descending
                 if (VDBG) {
-                    logDbg("compareWifiConfigurations prefers -1 " + a.configKey() + " over "
+                    logDbg("    compareWifiConfigurations prefers -1 " + a.configKey() + " over "
                             + b.configKey() + " due to priority");
                 }
 
@@ -754,7 +760,7 @@ public class WifiAutoJoinController {
             } else if (a.priority < b.priority) {
                 // a is of lower priority - ascending
                 if (VDBG) {
-                    logDbg("compareWifiConfigurations prefers +1 " + b.configKey() + " over "
+                    logDbg("    compareWifiConfigurations prefers +1 " + b.configKey() + " over "
                             + a.configKey() + " due to priority");
                 }
                 order = 1;
@@ -769,7 +775,7 @@ public class WifiAutoJoinController {
         }
 
         if (VDBG) {
-            logDbg("compareWifiConfigurations Done: " + a.configKey() + sorder
+            logDbg("compareWifiConfigurations: " + a.configKey() + sorder
                     + b.configKey() + " order " + Integer.toString(order));
         }
 
@@ -785,6 +791,10 @@ public class WifiAutoJoinController {
         int order = compareWifiConfigurations(a, b);
 
         if (scorerOrder * order < 0) {
+            if (VDBG) {
+                logDbg("    -> compareWifiConfigurationsTop: " +
+                        "scorer override " + scorerOrder + " " + order);
+            }
             // For debugging purpose, remember that an override happened
             // during that autojoin Attempt
             didOverride = true;
@@ -816,7 +826,7 @@ public class WifiAutoJoinController {
                 boost = 50;
             }
             if (VDBG && dbg != null) {
-                logDbg(dbg + ":    rssi5 " + rssi + " boost " + boost);
+                logDbg("        " + dbg + ":    rssi5 " + rssi + " boost " + boost);
             }
             return boost;
         }
@@ -971,14 +981,14 @@ public class WifiAutoJoinController {
 
         if (mNetworkScoreCache == null) {
             if (VDBG) {
-                logDbg("getConfigNetworkScore for " + config.configKey()
+                logDbg("       getConfigNetworkScore for " + config.configKey()
                         + "  -> no scorer, hence no scores");
             }
             return WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
         }
         if (config.scanResultCache == null) {
             if (VDBG) {
-                logDbg("getConfigNetworkScore for " + config.configKey()
+                logDbg("       getConfigNetworkScore for " + config.configKey()
                         + " -> no scan cache");
             }
             return WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
@@ -1003,10 +1013,10 @@ public class WifiAutoJoinController {
         }
         if (VDBG) {
             if (startScore == WifiNetworkScoreCache.INVALID_NETWORK_SCORE) {
-                logDbg("getConfigNetworkScore for " + config.configKey()
+                logDbg("    getConfigNetworkScore for " + config.configKey()
                         + " -> no available score");
             } else {
-                logDbg("getConfigNetworkScore for " + config.configKey()
+                logDbg("    getConfigNetworkScore for " + config.configKey()
                         + " boost=" + Integer.toString(rssiBoost)
                         + " score = " + Integer.toString(startScore));
             }
@@ -1092,12 +1102,16 @@ public class WifiAutoJoinController {
         }
         if (DBG) {
             String conf = "";
+            String last = "";
             if (currentConfiguration != null) {
-                conf = currentConfiguration.configKey();
+                conf = " curent=" + currentConfiguration.configKey();
+            }
+            if (lastSelectedConfiguration != null) {
+                last = " last=" + last;
             }
             logDbg("attemptAutoJoin() num recent config " + Integer.toString(list.size())
-                    + " " + conf
-                    + " ---> suppId=" + Integer.toString(supplicantNetId));
+                    + conf + last
+                    + " ---> suppNetId=" + Integer.toString(supplicantNetId));
         }
 
         if (currentConfiguration != null) {
@@ -1201,7 +1215,7 @@ public class WifiAutoJoinController {
                 if (DBG) {
                     logDbg("attemptAutoJoin good candidate seen, bumped soft -> status="
                             + config.autoJoinStatus
-                            + " key " + config.configKey(true) + " rssi=("
+                            + " " + config.configKey(true) + " rssi=("
                             + config.visibility.rssi24 + "," + config.visibility.rssi5
                             + ") num=(" + config.visibility.num24
                             + "," + config.visibility.num5 + ")");
@@ -1211,7 +1225,7 @@ public class WifiAutoJoinController {
                 if (DBG) {
                     logDbg("attemptAutoJoin good candidate seen, bumped hard -> status="
                             + config.autoJoinStatus
-                            + " key " + config.configKey(true) + " rssi=("
+                            + " " + config.configKey(true) + " rssi=("
                             + config.visibility.rssi24 + "," + config.visibility.rssi5
                             + ") num=(" + config.visibility.num24
                             + "," + config.visibility.num5 + ")");
@@ -1224,7 +1238,7 @@ public class WifiAutoJoinController {
                 if (DBG) {
                     logDbg("attemptAutoJoin skip blacklisted -> status="
                             + config.autoJoinStatus
-                            + " key " + config.configKey(true) + " rssi=("
+                            + " " + config.configKey(true) + " rssi=("
                             + config.visibility.rssi24 + "," + config.visibility.rssi5
                             + ") num=(" + config.visibility.num24
                             + "," + config.visibility.num5 + ")");
@@ -1275,7 +1289,7 @@ public class WifiAutoJoinController {
             if (DBG) {
                 logDbg("attemptAutoJoin trying candidate id="
                         + Integer.toString(config.networkId) + " "
-                        + config.SSID + " key " + config.configKey(true)
+                        + config.configKey(true)
                         + " status=" + config.autoJoinStatus);
             }
 
@@ -1400,11 +1414,22 @@ public class WifiAutoJoinController {
          */
         int networkDelta = compareNetwork(candidate);
         if (DBG && candidate != null) {
-            logDbg("attemptAutoJoin compare SSID candidate : delta="
-                    + Integer.toString(networkDelta) + " "
+            String doSwitch = "";
+            String current = "";
+            if (networkDelta < 0) {
+                doSwitch = " -> not switching";
+            }
+            if (currentConfiguration != null) {
+                current = " with current " + currentConfiguration;
+            }
+            logDbg("attemptAutoJoin networkSwitching candidate "
                     + candidate.configKey()
+                    + current
                     + " linked=" + (currentConfiguration != null
-                    && currentConfiguration.isLinked(candidate)));
+                            && currentConfiguration.isLinked(candidate))
+                    + " : delta="
+                    + Integer.toString(networkDelta) + " "
+                    + doSwitch);
         }
 
         /**
@@ -1436,14 +1461,13 @@ public class WifiAutoJoinController {
                 // Second step: Look for the best Scan result for this configuration
                 // TODO this algorithm should really be done in one step
                 String currentBSSID = mWifiStateMachine.getCurrentBSSID();
-                ScanResult roamCandidate = attemptRoam(null, currentConfiguration, 3000,
-                        currentBSSID);
+                ScanResult roamCandidate = attemptRoam(null, candidate, 3000, null);
                 if (roamCandidate != null && currentBSSID != null
                         && currentBSSID.equals(roamCandidate.BSSID)) {
+                    // Sanity, we were already asociated to that candidate
                     roamCandidate = null;
                 }
-                if (roamCandidate != null && roamCandidate.is5GHz()
-                        && (candidate.BSSID == null || candidate.BSSID.equals("any"))) {
+                if (roamCandidate != null && roamCandidate.is5GHz()) {
                     // If the configuration hasn't a default BSSID selected, and the best
                     // candidate is 5GHZ, then select this candidate so as WifiStateMachine and
                     // supplicant will pick it first

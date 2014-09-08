@@ -209,6 +209,7 @@ public class WifiStateMachine extends StateMachine {
     private WorkSource mScanWorkSource = null;
     private static final int UNKNOWN_SCAN_SOURCE = -1;
     private static final int SCAN_ALARM_SOURCE = -2;
+    private static final int ADD_OR_UPDATE_SOURCE = -3;
 
     private static final int SCAN_REQUEST_BUFFER_MAX_SIZE = 10;
     private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
@@ -2269,7 +2270,8 @@ public class WifiStateMachine extends StateMachine {
                     if (lastSavedConfigurationAttempt.hiddenSSID) {
                         sb.append(" hidden");
                     }
-                    if (lastSavedConfigurationAttempt.preSharedKey != null) {
+                    if (lastSavedConfigurationAttempt.preSharedKey != null
+                            && !lastSavedConfigurationAttempt.preSharedKey.equals("*")) {
                         sb.append(" hasPSK");
                     }
                     if (lastSavedConfigurationAttempt.ephemeral) {
@@ -2414,6 +2416,10 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
+                if (mWifiInfo.getSSID() != null)
+                    sb.append(" ").append(mWifiInfo.getSSID());
+                if (mWifiInfo.getBSSID() != null)
+                    sb.append(" ").append(mWifiInfo.getBSSID());
                 sb.append(" rssi=").append(mWifiInfo.getRssi());
                 sb.append(" f=").append(mWifiInfo.getFrequency());
                 sb.append(" sc=").append(mWifiInfo.score);
@@ -2470,8 +2476,24 @@ public class WifiStateMachine extends StateMachine {
                 if (msg.obj != null) {
                     config = (WifiConfiguration)msg.obj;
                     sb.append(" ").append(config.configKey());
+                    sb.append(" prio=").append(config.priority);
+                    sb.append(" status=").append(config.status);
+                    if (config.BSSID != null) {
+                        sb.append(" ").append(config.BSSID);
+                    }
+                    WifiConfiguration curConfig = getCurrentWifiConfiguration();
+                    if (curConfig != null) {
+                        if (curConfig.configKey().equals(config.configKey())) {
+                            sb.append(" is current");
+                        } else {
+                            sb.append(" current=").append(curConfig.configKey());
+                            sb.append(" prio=").append(curConfig.priority);
+                            sb.append(" status=").append(curConfig.status);
+                        }
+                    }
                 }
                 break;
+            case WifiManager.DISABLE_NETWORK:
             case CMD_ENABLE_NETWORK:
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
@@ -2483,7 +2505,7 @@ public class WifiStateMachine extends StateMachine {
                 }
                 config = mWifiConfigStore.getWifiConfiguration(msg.arg1);
                 if (config != null && (key == null || !config.configKey().equals(key))) {
-                    sb.append(" enabled=").append(key);
+                    sb.append(" target=").append(key);
                 }
                 break;
             case CMD_GET_CONFIGURED_NETWORKS:
@@ -4255,6 +4277,7 @@ public class WifiStateMachine extends StateMachine {
                             WifiManager.BUSY);
                     break;
                 case WifiManager.SAVE_NETWORK:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                     replyToMessage(message, WifiManager.SAVE_NETWORK_FAILED,
                             WifiManager.BUSY);
                     break;
@@ -5544,7 +5567,7 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
-    void setInteretAccessState(boolean enabled) {
+    void setInternetAccessState(boolean enabled) {
         WifiConfiguration config = getCurrentWifiConfiguration();
         if (config != null) {
             config.noInternetAccess = enabled;
@@ -5641,11 +5664,35 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_ADD_OR_UPDATE_NETWORK:
                     config = (WifiConfiguration) message.obj;
-                    replyToMessage(message, CMD_ADD_OR_UPDATE_NETWORK,
-                            mWifiConfigStore.addOrUpdateNetwork(config));
+                    int res = mWifiConfigStore.addOrUpdateNetwork(config);
+                    if (res < 0) {
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
+                    } else {
+                        WifiConfiguration curConfig = getCurrentWifiConfiguration();
+                        if (curConfig != null && config != null) {
+                            if (curConfig.priority < config.priority) {
+                                // Interpret this as a connect attempt
+                                // Set the last selected configuration so as to allow the system to
+                                // stick the last user choice without persisting the choice
+                                mWifiConfigStore.setLastSelectedConfiguration(res);
+
+                                // Remember time of last connection attempt
+                                lastConnectAttempt = System.currentTimeMillis();
+
+                                mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
+
+                                // As a courtesy to the caller, trigger a scan now
+                                startScan(ADD_OR_UPDATE_SOURCE, 0, null, null);
+                            }
+                        }
+                    }
+                    replyToMessage(message, CMD_ADD_OR_UPDATE_NETWORK, res);
                     break;
                 case CMD_REMOVE_NETWORK:
                     ok = mWifiConfigStore.removeNetwork(message.arg1);
+                    if (!ok) {
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
+                    }
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
                 case CMD_ENABLE_NETWORK:
@@ -5668,6 +5715,9 @@ public class WifiStateMachine extends StateMachine {
                     autoRoamSetBSSID(message.arg1, "any");
 
                     ok = mWifiConfigStore.enableNetwork(message.arg1, message.arg2 == 1);
+                    if (!ok) {
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
+                    }
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
                 case CMD_ENABLE_ALL_NETWORKS:
@@ -5682,6 +5732,7 @@ public class WifiStateMachine extends StateMachine {
                             WifiConfiguration.DISABLED_UNKNOWN_REASON) == true) {
                         replyToMessage(message, WifiManager.DISABLE_NETWORK_SUCCEEDED);
                     } else {
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                         replyToMessage(message, WifiManager.DISABLE_NETWORK_FAILED,
                                 WifiManager.ERROR);
                     }
@@ -5768,6 +5819,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_AUTO_ROAM:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     return HANDLED;
                 case CMD_AUTO_CONNECT:
                     /* Work Around: wpa_supplicant can get in a bad state where it returns a non
@@ -5804,6 +5856,9 @@ public class WifiStateMachine extends StateMachine {
                     netId = result.getNetworkId();
                     loge("CMD_AUTO_CONNECT did save config -> "
                             + " nid=" + Integer.toString(netId));
+
+                    // Make sure the network is enabled, since supplicant will not reenable it
+                    mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
@@ -5873,6 +5928,9 @@ public class WifiStateMachine extends StateMachine {
                         mWifiNative.disconnect();
                     }
 
+                    // Make sure the network is enabled, since supplicant will not reenable it
+                    mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
+
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
@@ -5900,6 +5958,7 @@ public class WifiStateMachine extends StateMachine {
                         loge("ERROR: SAVE_NETWORK with null configuration"
                                 + mSupplicantStateTracker.getSupplicantStateName()
                                 + " my state " + getCurrentState().getName());
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                         replyToMessage(message, WifiManager.SAVE_NETWORK_FAILED,
                                 WifiManager.ERROR);
                         break;
@@ -5945,6 +6004,7 @@ public class WifiStateMachine extends StateMachine {
 
                     } else {
                         loge("Failed to save network");
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                         replyToMessage(message, WifiManager.SAVE_NETWORK_FAILED,
                                 WifiManager.ERROR);
                     }
@@ -6843,6 +6903,8 @@ public class WifiStateMachine extends StateMachine {
                         break;
                     };
 
+                    // Make sure the network is enabled, since supplicant will not reenable it
+                    mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
                     boolean ret = false;
                     if (netId != mLastNetworkId) {
