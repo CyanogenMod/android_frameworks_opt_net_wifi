@@ -131,6 +131,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String TAG = "WifiConfigStore";
     private static final boolean DBG = true;
     private static boolean VDBG = false;
+    private static boolean VVDBG = false;
 
     private static final String SUPPLICANT_CONFIG_FILE = "/data/misc/wifi/wpa_supplicant.conf";
 
@@ -192,6 +193,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String NUM_CONNECTION_FAILURES_KEY = "CONNECT_FAILURES:  ";
     private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE:  ";
     private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH:  ";
+    private static final String NO_INTERNET_ACCESS_KEY = "NO_INTERNET_ACCESS:  ";
     private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
             = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G:  ";
@@ -217,10 +219,26 @@ public class WifiConfigStore extends IpConfigStore {
             = "THRESHOLD_LOW_RSSI_24:  ";
     private static final String THRESHOLD_BAD_RSSI_24_KEY
             = "THRESHOLD_BAD_RSSI_24:  ";
+
     private static final String THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY
             = "THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING:   ";
     private static final String THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY
             = "THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING:   ";
+
+    private static final String THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY
+            = "THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS:   ";
+    private static final String THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY
+            = "THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS:   ";
+
+    private static final String THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY
+            = "THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS:   ";
+    private static final String THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY
+            = "THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS:   ";
+
+    private static final String MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY
+            = "MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS:   ";
+    private static final String MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY
+            = "MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS:   ";
 
     private static final String A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW_KEY =
             "A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW:   ";
@@ -236,6 +254,8 @@ public class WifiConfigStore extends IpConfigStore {
             = "ASSOCIATED_PARTIAL_SCAN_PERIOD:   ";
     private static final String ASSOCIATED_FULL_SCAN_BACKOFF_KEY
             = "ASSOCIATED_FULL_SCAN_BACKOFF_PERIOD:   ";
+    private static final String ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY
+            = "ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED:   ";
 
     // The Wifi verbose log is provided as a way to persist the verbose logging settings
     // for testing purpose.
@@ -246,6 +266,12 @@ public class WifiConfigStore extends IpConfigStore {
 
     public int maxTxPacketForNetworkSwitching = 40;
     public int maxRxPacketForNetworkSwitching = 80;
+
+    public int maxTxPacketForFullScans = 8;
+    public int maxRxPacketForFullScans = 16;
+
+    public int maxTxPacketForPartialScans = 40;
+    public int maxRxPacketForPartialScans = 80;
 
     public int thresholdInitialAutoJoinAttemptMin5RSSI
             = WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5;
@@ -268,6 +294,7 @@ public class WifiConfigStore extends IpConfigStore {
             = WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD;
     public int thresholdBandPreferenceLowRssi5
             = WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW;
+    public int factorBandPreferenceLowRssi5 = 5; // Boost by 5 dB per dB above threshold
 
     public int thresholdUnblacklistThreshold5Hard
             = WifiConfiguration.UNBLACKLIST_THRESHOLD_5_HARD;
@@ -278,6 +305,13 @@ public class WifiConfigStore extends IpConfigStore {
     public int thresholdUnblacklistThreshold24Soft
             = WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT;
     public int enableVerboseLogging = 0;
+
+    public int alwaysEnableScansWhileAssociated = 0;
+
+    public int maxNumActiveChannelsForPartialScans = 6;
+    public int maxNumPassiveChannelsForPartialScans = 2;
+
+    public boolean roamOnAny = false;
 
     /**
      * Regex pattern for extracting a connect choice.
@@ -657,6 +691,31 @@ public class WifiConfigStore extends IpConfigStore {
                 WifiManager.CHANGE_REASON_ADDED : WifiManager.CHANGE_REASON_CONFIG_CHANGE);
         return result;
     }
+
+    void saveWifiConfigBSSID(WifiConfiguration config) {
+        String BSSID = "any";
+        if (config == null || (config.networkId == INVALID_NETWORK_ID &&
+                config.SSID == null)) {
+            return;
+        }
+
+        if (config.BSSID != null) {
+            BSSID = config.BSSID;
+        } else {
+            config.BSSID = BSSID;
+        }
+        loge("saveWifiConfigBSSID Setting BSSID for " + config.configKey() + " to " + config.BSSID);
+        if (!mWifiNative.setNetworkVariable(
+                config.networkId,
+                WifiConfiguration.bssidVarName,
+                BSSID)) {
+            loge("failed to set BSSID: " + BSSID);
+        } else if (BSSID.equals("any")) {
+            // Paranoia, we just want to make sure that we restore the config to normal
+            mWifiNative.saveConfig();
+        }
+    }
+
 
     void updateStatus(int netId, DetailedState state) {
         if (netId != INVALID_NETWORK_ID) {
@@ -1322,6 +1381,9 @@ public class WifiConfigStore extends IpConfigStore {
                             + SEPARATOR_KEY);
                     out.writeUTF(DID_SELF_ADD_KEY + Boolean.toString(config.didSelfAdd)
                             + SEPARATOR_KEY);
+                    out.writeUTF(NO_INTERNET_ACCESS_KEY
+                            + Boolean.toString(config.noInternetAccess)
+                            + SEPARATOR_KEY);
                     if (config.peerWifiConfiguration != null) {
                         out.writeUTF(PEER_CONFIGURATION_KEY + config.peerWifiConfiguration
                                 + SEPARATOR_KEY);
@@ -1530,6 +1592,12 @@ public class WifiConfigStore extends IpConfigStore {
                         String didSelfAdd = key.replace(DID_SELF_ADD_KEY, "");
                         didSelfAdd = didSelfAdd.replace(SEPARATOR_KEY, "");
                         config.didSelfAdd = Boolean.parseBoolean(didSelfAdd);
+                    }
+
+                    if (key.startsWith(NO_INTERNET_ACCESS_KEY)) {
+                        String access = key.replace(NO_INTERNET_ACCESS_KEY, "");
+                        access = access.replace(SEPARATOR_KEY, "");
+                        config.noInternetAccess = Boolean.parseBoolean(access);
                     }
 
                     if (key.startsWith(CREATOR_UID_KEY)) {
@@ -1890,6 +1958,52 @@ public class WifiConfigStore extends IpConfigStore {
                     }
                 }
 
+                if (key.startsWith(THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY)) {
+                    String st = key.replace(THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        maxTxPacketForNetworkSwitching = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: maxTxPacketForFullScans = "
+                                + Integer.toString(maxTxPacketForFullScans));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+                if (key.startsWith(THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY)) {
+                    String st = key.replace(THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        maxRxPacketForNetworkSwitching = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: maxRxPacketForFullScans = "
+                                + Integer.toString(maxRxPacketForFullScans));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+
+                if (key.startsWith(THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY)) {
+                    String st = key.replace(THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        maxTxPacketForNetworkSwitching = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: maxTxPacketForPartialScans = "
+                                + Integer.toString(maxTxPacketForPartialScans));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+                if (key.startsWith(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY)) {
+                    String st = key.replace(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        maxRxPacketForNetworkSwitching = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: maxRxPacketForPartialScans = "
+                                + Integer.toString(maxRxPacketForPartialScans));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+
                 if (key.startsWith(A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW_KEY)) {
                     String st = key.replace(A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
@@ -1956,8 +2070,50 @@ public class WifiConfigStore extends IpConfigStore {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
                 }
+                if (key.startsWith(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY)) {
+                    String st = key.replace(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        alwaysEnableScansWhileAssociated = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: alwaysEnableScansWhileAssociated = "
+                                + Integer.toString(alwaysEnableScansWhileAssociated));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+                if (key.startsWith(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY)) {
+                    String st = key.replace(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        maxNumPassiveChannelsForPartialScans = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: maxNumPassiveChannelsForPartialScans = "
+                                + Integer.toString(maxNumPassiveChannelsForPartialScans));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+                if (key.startsWith(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY)) {
+                    String st = key.replace(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        maxNumActiveChannelsForPartialScans = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: maxNumActiveChannelsForPartialScans = "
+                                + Integer.toString(maxNumActiveChannelsForPartialScans));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
             }
         } catch (EOFException ignore) {
+            if (reader != null) {
+                try {
+                    reader.close();
+                    reader = null;
+                } catch (Exception e) {
+                    loge("readAutoJoinStatus: Error closing file" + e);
+                }
+            }
+        } catch (FileNotFoundException ignore) {
             if (reader != null) {
                 try {
                     reader.close();
@@ -2376,7 +2532,7 @@ public class WifiConfigStore extends IpConfigStore {
                 // If both default GW are known, compare based on RSSI only if the GW is equal
                 if (config.defaultGwMacAddress.equals(link.defaultGwMacAddress)) {
                     if (VDBG) {
-                        loge("linkConfiguration link due to same gw" + link.SSID +
+                        loge("linkConfiguration link due to same gw " + link.SSID +
                                 " and " + config.SSID + " GW " + config.defaultGwMacAddress);
                     }
                     doLink = true;
@@ -2420,14 +2576,20 @@ public class WifiConfigStore extends IpConfigStore {
                 link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
                 config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
             } else {
-                if (VDBG) {
-                    loge("linkConfiguration: un-link " + config.configKey()
-                            + " and " + link.configKey());
-                }
-                if (link.linkedConfigurations != null) {
+                if (link.linkedConfigurations != null
+                        && (link.linkedConfigurations.get(config.configKey()) != null)) {
+                    if (VDBG) {
+                        loge("linkConfiguration: un-link " + config.configKey()
+                                + " from " + link.configKey());
+                    }
                     link.linkedConfigurations.remove(config.configKey());
                 }
-                if (config.linkedConfigurations != null) {
+                if (config.linkedConfigurations != null
+                        && (config.linkedConfigurations.get(link.configKey()) != null)) {
+                    if (VDBG) {
+                        loge("linkConfiguration: un-link " + link.configKey()
+                                + " from " + config.configKey());
+                    }
                     config.linkedConfigurations.remove(link.configKey());
                 }
             }
@@ -2457,7 +2619,7 @@ public class WifiConfigStore extends IpConfigStore {
         //need to compare with quoted string
         String SSID = "\"" + result.SSID + "\"";
 
-        if (VDBG) {
+        if (VVDBG) {
             loge("associateWithConfiguration(): try " + configKey);
         }
 
@@ -2466,19 +2628,19 @@ public class WifiConfigStore extends IpConfigStore {
             boolean doLink = false;
 
             if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.didSelfAdd) {
-                if (VDBG) loge("associateWithConfiguration(): skip selfadd " + link.configKey() );
+                if (VVDBG) loge("associateWithConfiguration(): skip selfadd " + link.configKey() );
                 // Make sure we dont associate the scan result to a deleted config
                 continue;
             }
 
             if (!link.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-                if (VDBG) loge("associateWithConfiguration(): skip non-PSK " + link.configKey() );
+                if (VVDBG) loge("associateWithConfiguration(): skip non-PSK " + link.configKey() );
                 // Make sure we dont associate the scan result to a non-PSK config
                 continue;
             }
 
             if (configKey.equals(link.configKey())) {
-                if (VDBG) loge("associateWithConfiguration(): found it!!! " + configKey );
+                if (VVDBG) loge("associateWithConfiguration(): found it!!! " + configKey );
                 return link; // Found it exactly
             }
 
@@ -2570,8 +2732,13 @@ public class WifiConfigStore extends IpConfigStore {
             loge(dbg.toString());
         }
 
+        int numChannels = 0;
         if (config.scanResultCache != null && config.scanResultCache.size() > 0) {
             for (ScanResult result : config.scanResultCache.values()) {
+                //TODO : cout active and passive channels separately
+                if (numChannels > maxNumActiveChannelsForPartialScans) {
+                    break;
+                }
                 if (VDBG) {
                     boolean test = (now_ms - result.seen) < age;
                     loge("has " + result.BSSID + " freq=" + Integer.toString(result.frequency)
@@ -2579,6 +2746,7 @@ public class WifiConfigStore extends IpConfigStore {
                 }
                 if (((now_ms - result.seen) < age)/*||(!restrict || result.is24GHz())*/) {
                     channels.add(result.frequency);
+                    numChannels++;
                 }
             }
         }
@@ -2598,8 +2766,12 @@ public class WifiConfigStore extends IpConfigStore {
                                 + " freq=" + Integer.toString(result.frequency)
                                 + " age=" + Long.toString(now_ms - result.seen));
                     }
+                    if (numChannels > maxNumActiveChannelsForPartialScans) {
+                        break;
+                    }
                     if (((now_ms - result.seen) < age)/*||(!restrict || result.is24GHz())*/) {
                         channels.add(result.frequency);
+                        numChannels++;
                     }
                 }
             }
