@@ -253,6 +253,16 @@ public class WifiMonitor {
             Pattern.compile("Trying to associate with ((?:[0-9a-f]{2}:){5}[0-9a-f]{2}).*");
 
     /**
+     * Regex pattern for extracting an Ethernet-style MAC address from a string.
+     * Matches a strings like the following:<pre>
+     * IFNAME=wlan0 Associated with 6c:f3:7f:ae:87:71
+     */
+    private static final String ASSOCIATED_WITH_STR =  "Associated with ";
+
+    private static Pattern mAssociatedPattern =
+            Pattern.compile("Associated with ((?:[0-9a-f]{2}:){5}[0-9a-f]{2}).*");
+
+    /**
      * Regex pattern for extracting SSIDs from request identity string.
      * Matches a strings like the following:<pre>
      * CTRL-REQ-SIM-<network id>:GSM-AUTH:<RAND1>:<RAND2>[:<RAND3>] needed for SSID <SSID>
@@ -746,6 +756,8 @@ public class WifiMonitor {
                 handleRequests(eventStr);
             } else if (eventStr.startsWith(TARGET_BSSID_STR)) {
                 handleTargetBSSIDEvent(eventStr);
+            } else if (eventStr.startsWith(ASSOCIATED_WITH_STR)) {
+                handleAssociatedBSSIDEvent(eventStr);
             } else {
                 if (DBG) Log.w(TAG, "couldn't identify event type - " + eventStr);
             }
@@ -946,6 +958,18 @@ public class WifiMonitor {
         }
         mStateMachine.sendMessage(WifiStateMachine.CMD_TARGET_BSSID, eventLogCounter, 0, BSSID);
     }
+
+    private void handleAssociatedBSSIDEvent(String eventStr) {
+        String BSSID = null;
+        Matcher match = mAssociatedPattern.matcher(eventStr);
+        if (match.find()) {
+            BSSID = match.group(1);
+        } else {
+            Log.d(TAG, "handleAssociatedBSSIDEvent: didn't find BSSID " + eventStr);
+        }
+        mStateMachine.sendMessage(WifiStateMachine.CMD_ASSOCIATED_BSSID, eventLogCounter, 0, BSSID);
+    }
+
 
     private void handleWpsFailEvent(String dataString) {
         final Pattern p = Pattern.compile(WPS_FAIL_PATTERN);
