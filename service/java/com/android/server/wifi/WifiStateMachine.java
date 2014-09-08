@@ -6703,9 +6703,13 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     config = getCurrentWifiConfiguration();
-                    if (mScreenOn && !linkDebouncing && config != null && config.autoJoinStatus
-                            == WifiConfiguration.AUTO_JOIN_ENABLED && (
-                            (ScanResult.is24GHz(mWifiInfo.getFrequency())
+                    if (mScreenOn
+                            && !linkDebouncing
+                            && config != null
+                            && config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED
+                            && !mWifiConfigStore.isLastSelectedConfiguration(config)
+                            && message.arg2 != 3 /* reason cannot be 3, i.e. locally generated */
+                            && ((ScanResult.is24GHz(mWifiInfo.getFrequency())
                                     && mWifiInfo.getRssi() >
                                     WifiConfiguration.BAD_RSSI_24)
                                     || (ScanResult.is5GHz(mWifiInfo.getFrequency())
@@ -6727,6 +6731,7 @@ public class WifiStateMachine extends StateMachine {
                                     + " BSSID=" + mWifiInfo.getBSSID()
                                     + " RSSI=" + mWifiInfo.getRssi()
                                     + " freq=" + mWifiInfo.getFrequency()
+                                    + " reason=" + message.arg2
                                     + " -> debounce");
                         }
                         return HANDLED;
@@ -6739,22 +6744,12 @@ public class WifiStateMachine extends StateMachine {
                                     + " RSSI=" + mWifiInfo.getRssi()
                                     + " freq=" + mWifiInfo.getFrequency()
                                     + " was debouncing=" + linkDebouncing
+                                    + " reason=" + message.arg2
                                     + " ajst=" + ajst);
                         }
                     }
                     break;
                 case CMD_AUTO_ROAM:
-                    /* This will happen similarly to an Auto_CONNECT, except we specify the BSSID */
-                    /* Work Around: wpa_supplicant can get in a bad state where it returns a non
-                     * associated status thus the STATUS command but somehow-someplace still thinks
-                     * it is associated and thus will ignore select/reconnect command with
-                     * following message:
-                     * "Already associated with the selected network - do nothing"
-                     *
-                     * Hence, sends a disconnect to supplicant first.
-                     */
-                    //mWifiNative.disconnect();
-
                     /* Connect command coming from auto-join */
                     ScanResult candidate = (ScanResult)message.obj;
                     String bssid = "any";

@@ -1487,6 +1487,12 @@ public class WifiConfigStore extends IpConfigStore {
         return lastSelectedConfiguration;
     }
 
+    public boolean isLastSelectedConfiguration(WifiConfiguration config) {
+        return (lastSelectedConfiguration != null
+                && config != null
+                && lastSelectedConfiguration.equals(config.configKey()));
+    }
+
     private void readNetworkHistory() {
         if (VDBG) {
             loge("will readNetworkHistory path:" + networkHistoryConfigFile, true);
