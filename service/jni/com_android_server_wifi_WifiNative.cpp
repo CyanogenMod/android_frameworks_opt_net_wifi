@@ -1024,6 +1024,33 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
     return wifi_set_scanning_mac_oui(handle, (byte *)bytes) == WIFI_SUCCESS;
 }
 
+static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
+        jint iface, jint band)  {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("getting valid channels %p", handle);
+
+    static const int MaxChannels = 64;
+    wifi_channel channels[64];
+    int num_channels = 0;
+    wifi_error result = wifi_get_valid_channels(handle, band, MaxChannels,
+            channels, &num_channels);
+
+    if (result == WIFI_SUCCESS) {
+        jintArray channelArray = env->NewIntArray(num_channels);
+        if (channelArray == NULL) {
+            ALOGE("failed to allocate channel list");
+            return NULL;
+        }
+
+        env->SetIntArrayRegion(channelArray, 0, num_channels, channels);
+        return channelArray;
+    } else {
+        ALOGE("failed to get channel list : %d", result);
+        return NULL;
+    }
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -1072,7 +1099,8 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_requestRange},
     { "cancelRangeRequestNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
             (void*) android_net_wifi_cancelRange},
-    { "setScanningMacOuiNative", "(I[B)Z", (void*) android_net_wifi_setScanningMacOui}
+    { "setScanningMacOuiNative", "(I[B)Z", (void*) android_net_wifi_setScanningMacOui},
+    { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
