@@ -1565,4 +1565,17 @@ public class WifiNative {
             }
         }
     }
+
+    private static native int[] getChannelsForBandNative(
+            int iface, int band);
+
+    synchronized public static int [] getChannelsForBand(int band) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getChannelsForBandNative(sWlan0Index, band);
+            } else {
+                return null;
+            }
+        }
+    }
 }
