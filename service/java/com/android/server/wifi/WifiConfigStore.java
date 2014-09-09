@@ -687,7 +687,7 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         mWifiNative.saveConfig();
-        sendConfiguredNetworksChangedBroadcast(config, result.isNewNetwork() ?
+        sendConfiguredNetworksChangedBroadcast(conf, result.isNewNetwork() ?
                 WifiManager.CHANGE_REASON_ADDED : WifiManager.CHANGE_REASON_CONFIG_CHANGE);
         return result;
     }
