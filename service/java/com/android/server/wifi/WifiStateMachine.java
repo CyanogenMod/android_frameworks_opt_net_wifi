@@ -166,8 +166,10 @@ public class WifiStateMachine extends StateMachine {
     private static final Pattern scanResultPattern = Pattern.compile("\t+");
     private static final int SCAN_RESULT_CACHE_SIZE = 80;
     private final LruCache<String, ScanResult> mScanResultCache;
-    // For debug, number of known scan results that were found as part of last scan result event
+    // For debug, number of known scan results that were found as part of last scan result event,
+    // as well the number of scans results returned by the supplicant with that message
     private int mNumScanResultsKnown;
+    private int mNumScanResultsReturned;
 
     /* Batch scan results */
     private final List<BatchedScanResult> mBatchedScanResults =
@@ -180,6 +182,11 @@ public class WifiStateMachine extends StateMachine {
 
     /* Chipset supports background scan */
     private final boolean mBackgroundScanSupported;
+
+    /* enable autojoin scans and selection when in associated mode */
+    private final boolean mEnableAutoJoinScanWhenAssociated;
+    private final boolean mEnableAutoJoinWhenAssociated;
+
 
     private String mInterfaceName;
     /* Tethering interface could be separate from wlan interface */
@@ -331,23 +338,19 @@ public class WifiStateMachine extends StateMachine {
         if (mTargetRoamBSSID != null && bssid == mTargetRoamBSSID && bssid == config.BSSID) {
             return false; // We didnt change anything
         }
-        if (mTargetRoamBSSID != "any" && bssid == "any") {
+        if (!mTargetRoamBSSID.equals("any") && !bssid.equals("any")) {
             // Changing to ANY
             if (!mWifiConfigStore.roamOnAny) {
                 ret =  false; // Nothing to do
             }
         }
-        if (config.bssidOwnerUid == 0 ||  config.bssidOwnerUid == Process.WIFI_UID) {
-            if (VDBG) {
-                loge("autoRoamSetBSSID uid=" + Long.toString(config.bssidOwnerUid)
-                        + " bssid=" + bssid
-                        + " key=" + config.configKey());
-            }
-            config.bssidOwnerUid = Process.WIFI_UID;
-            config.BSSID = bssid;
-            mTargetRoamBSSID = bssid;
-            mWifiConfigStore.saveWifiConfigBSSID(config);
+        if (VDBG) {
+           loge("autoRoamSetBSSID " + bssid
+                   + " key=" + config.configKey());
         }
+        config.autoJoinBSSID = bssid;
+        mTargetRoamBSSID = bssid;
+        mWifiConfigStore.saveWifiConfigBSSID(config);
         return true;
     }
 
@@ -550,7 +553,7 @@ public class WifiStateMachine extends StateMachine {
     static final int DISCONNECTING_GUARD_TIMER_MSEC = 5000;
 
     /* Disconnecting state watchdog */
-    static final int CMD_DISCONNECTING_WATCHDOG_TIMER     = BASE + 95;
+    static final int CMD_DISCONNECTING_WATCHDOG_TIMER     = BASE + 96;
 
     /* P2p commands */
     /* We are ok with no response here since we wont do much with it anyway */
@@ -888,6 +891,12 @@ public class WifiStateMachine extends StateMachine {
 
         mBackgroundScanSupported = mContext.getResources().getBoolean(
                 R.bool.config_wifi_background_scan_support);
+
+        mEnableAutoJoinScanWhenAssociated = mContext.getResources().getBoolean(
+                R.bool.config_wifi_framework_enable_associated_autojoin_scan);
+
+        mEnableAutoJoinWhenAssociated = mContext.getResources().getBoolean(
+                R.bool.config_wifi_framework_enable_associated_network_selection);
 
         mPrimaryDeviceType = mContext.getResources().getString(
                 R.string.config_wifi_p2p_device_type);
@@ -1510,6 +1519,7 @@ public class WifiStateMachine extends StateMachine {
 
     // For debugging, keep track of last message status handling
     // TODO, find an equivalent mechanism as part of parent class
+    private static int MESSAGE_HANDLING_STATUS_PROCESSED = 2;
     private static int MESSAGE_HANDLING_STATUS_OK = 1;
     private static int MESSAGE_HANDLING_STATUS_UNKNOWN = 0;
     private static int MESSAGE_HANDLING_STATUS_REFUSED = -1;
@@ -2212,7 +2222,9 @@ public class WifiStateMachine extends StateMachine {
             sb.append("(").append(messageHandlingStatus).append(")");
         }
         sb.append(smToString(msg));
-
+        if (msg.sendingUid != 0 && msg.sendingUid != Process.WIFI_UID) {
+            sb.append(" uid=" + msg.sendingUid);
+        }
         switch (msg.what) {
             case CMD_START_SCAN:
                 now = System.currentTimeMillis();
@@ -2331,6 +2343,7 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(mScanResults.size());
                 }
                 sb.append(" known=").append(mNumScanResultsKnown);
+                sb.append(" got=").append(mNumScanResultsReturned);
                 if (lastScanDuration != 0) {
                     sb.append(" dur:").append(lastScanDuration);
                 }
@@ -2665,7 +2678,8 @@ public class WifiStateMachine extends StateMachine {
         if (screenOn) {
             fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMs;
             // Start the scan alarm so as to enable autojoin
-            if (getCurrentState() == mConnectedState) {
+            if (getCurrentState() == mConnectedState
+                    && mEnableAutoJoinScanWhenAssociated) {
                 mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMs;
                 // Scan after 200ms
                 setScanAlarm(true, 200);
@@ -2910,6 +2924,7 @@ public class WifiStateMachine extends StateMachine {
      */
     private void setScanResults() {
         mNumScanResultsKnown = 0;
+        mNumScanResultsReturned = 0;
         String bssid = "";
         int level = 0;
         int freq = 0;
@@ -3009,6 +3024,8 @@ public class WifiStateMachine extends StateMachine {
                             scanResult.seen = System.currentTimeMillis();
                             mScanResultCache.put(key, scanResult);
                         }
+                        mNumScanResultsReturned ++; // Keep track of how many scan results we got
+                                                    // as part of this scan's processing
                         mScanResults.add(scanResult);
                     }
                     bssid = null;
@@ -3026,6 +3043,8 @@ public class WifiStateMachine extends StateMachine {
                 || getCurrentState() == mObtainingIpState
                 || getCurrentState() == mScanModeState
                 || getCurrentState() == mDisconnectingState
+                || (getCurrentState() == mConnectedState
+                && !mEnableAutoJoinWhenAssociated)
                 || linkDebouncing
                 || state == SupplicantState.ASSOCIATING
                 || state == SupplicantState.AUTHENTICATING
@@ -3039,6 +3058,9 @@ public class WifiStateMachine extends StateMachine {
             loge("wifi setScanResults state" + getCurrentState()
                     + " sup_state=" + state
                     + " debouncing=" + linkDebouncing);
+        }
+        if (attemptAutoJoin) {
+            messageHandlingStatus = MESSAGE_HANDLING_STATUS_PROCESSED;
         }
         mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
         if (linkDebouncing) {
@@ -3795,6 +3817,7 @@ public class WifiStateMachine extends StateMachine {
                 +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
                 +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
 
+
         clearCurrentConfigBSSID("handleNetworkDisconnect");
 
         stopDhcp();
@@ -4251,6 +4274,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_AUTO_CONNECT:
                 case CMD_AUTO_ROAM:
                 case CMD_AUTO_SAVE_NETWORK:
+                case CMD_ASSOCIATED_BSSID:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
@@ -5664,13 +5688,14 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_ADD_OR_UPDATE_NETWORK:
                     config = (WifiConfiguration) message.obj;
-                    int res = mWifiConfigStore.addOrUpdateNetwork(config);
+                    int res = mWifiConfigStore.addOrUpdateNetwork(config, message.sendingUid);
                     if (res < 0) {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                     } else {
                         WifiConfiguration curConfig = getCurrentWifiConfiguration();
                         if (curConfig != null && config != null) {
-                            if (curConfig.priority < config.priority) {
+                            if (curConfig.priority < config.priority
+                                    && config.status == WifiConfiguration.Status.ENABLED) {
                                 // Interpret this as a connect attempt
                                 // Set the last selected configuration so as to allow the system to
                                 // stick the last user choice without persisting the choice
@@ -5904,10 +5929,24 @@ public class WifiStateMachine extends StateMachine {
                                 + " config=" + config.SSID
                                 + " cnid=" + config.networkId
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
-                                + " my state " + getCurrentState().getName());
+                                + " my state " + getCurrentState().getName()
+                                + " uid = " + message.sendingUid);
                     }
 
+
                     autoRoamSetBSSID(netId, "any");
+
+                    if (message.sendingUid == Process.WIFI_UID
+                        || message.sendingUid == Process.SYSTEM_UID) {
+                        // As a sanity measure, clear the BSSID in the supplicant network block.
+                        // If system or Wifi Settings want to connect, they will not
+                        // specify the BSSID.
+                        // If an app however had added a BSSID to this configuration, and the BSSID
+                        // was wrong, Then we would forever fail to connect until that BSSID
+                        // is cleaned up.
+                        clearConfigBSSID(config, "CONNECT_NETWORK");
+                    }
+
                     mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
 
                     /* Save the network config */
@@ -6142,19 +6181,22 @@ public class WifiStateMachine extends StateMachine {
         WifiConfiguration config = getCurrentWifiConfiguration();
         if (config == null)
             return;
+        clearConfigBSSID(config, dbg);
+    }
+    void clearConfigBSSID(WifiConfiguration config, String dbg) {
+        if (config == null)
+            return;
         if (DBG) {
             loge(dbg + " " + mTargetRoamBSSID + " config " + config.configKey()
                     + " config.bssid " + config.BSSID);
         }
-        if (config.BSSID != "any") {
-                /* Restore the network config */
-            if (DBG) {
-                loge(dbg + " " + config.SSID
-                        + " nid=" + Integer.toString(config.networkId));
-            }
-            config.BSSID = "any";
-            mWifiConfigStore.saveWifiConfigBSSID(config);
+        config.autoJoinBSSID = "any";
+        config.BSSID = "any";
+        if (DBG) {
+           loge(dbg + " " + config.SSID
+                    + " nid=" + Integer.toString(config.networkId));
         }
+        mWifiConfigStore.saveWifiConfigBSSID(config);
     }
 
     class L2ConnectedState extends State {
@@ -6177,6 +6219,9 @@ public class WifiStateMachine extends StateMachine {
                     "WifiNetworkAgent", mNetworkInfo, mNetworkCapabilitiesFilter,
                     mLinkProperties, 60);
 
+            // We must clear the config BSSID, as the wifi chipset may decide to roam
+            // from this point on and having the BSSID specified in the network block would
+            // cause the roam to faile and the device to disconnect
             clearCurrentConfigBSSID("L2ConnectedState");
         }
 
@@ -6494,6 +6539,9 @@ public class WifiStateMachine extends StateMachine {
             // We might still be roaming
             linkDebouncing = false;
 
+            // We must clear the config BSSID, as the wifi chipset may decide to roam
+            // from this point on and having the BSSID specified in the network block would
+            // cause the roam to faile and the device to disconnect
             clearCurrentConfigBSSID("ObtainingIpAddress");
 
             try {
@@ -6617,9 +6665,6 @@ public class WifiStateMachine extends StateMachine {
                     log(getName() + " GOOD_LINK_DETECTED: transition to CONNECTED");
                     sendConnectedState();
                     transitionTo(mConnectedState);
-                    break;
-                case CMD_START_SCAN:
-                    deferMessage(message);
                     break;
                 default:
                     if (DBG) log(getName() + " what=" + message.what + " NOT_HANDLED");
@@ -6774,7 +6819,8 @@ public class WifiStateMachine extends StateMachine {
                         + " scanperiod="
                         + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMs) );
             }
-            if (mScreenOn) {
+            if (mScreenOn
+                    && mEnableAutoJoinScanWhenAssociated) {
                 mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMs;
                 // Scan after 200ms
                 setScanAlarm(true, 200);
