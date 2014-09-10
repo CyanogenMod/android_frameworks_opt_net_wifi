@@ -237,15 +237,14 @@ public class WifiAutoJoinController {
 
     void logDbg(String message, boolean stackTrace) {
         long now = SystemClock.elapsedRealtimeNanos();
-        String ts = String.format("[%,d us] ", now / 1000);
         if (stackTrace) {
-            Log.e(TAG, ts + message + " stack:"
+            Log.e(TAG, message + " stack:"
                     + Thread.currentThread().getStackTrace()[2].getMethodName() + " - "
                     + Thread.currentThread().getStackTrace()[3].getMethodName() + " - "
                     + Thread.currentThread().getStackTrace()[4].getMethodName() + " - "
                     + Thread.currentThread().getStackTrace()[5].getMethodName());
         } else {
-            Log.e(TAG, ts + message);
+            Log.e(TAG, message);
         }
     }
 
@@ -257,7 +256,7 @@ public class WifiAutoJoinController {
         ageScanResultsOut(mScanResultMaximumAge);
         if (DBG) {
             logDbg("newSupplicantResults size=" + Integer.valueOf(scanResultCache.size())
-                        + " known=" + numScanResultsKnown
+                        + " known=" + numScanResultsKnown + " "
                         + doAutoJoin);
         }
         if (doAutoJoin) {
@@ -408,17 +407,15 @@ public class WifiAutoJoinController {
                         choice = 50;
                     } else if (order < -10) {
                         choice = 40;
-                    } else if (order < 10) {
+                    } else if (order < 20) {
                         // Selected configuration is about same or has a slightly better RSSI
                         // hence register a weaker choice, here a difference of at least +/-30 in
                         // RSSI comparison triggered by autoJoin will override the choice
                         choice = 30;
-                    } else if (order <= 30) {
+                    } else {
                         // Selected configuration is better than the visible configuration
                         // hence we do not know if the user prefers this configuration strongly
                         choice = 20;
-                    } else {
-                        choice = 10;
                     }
 
                     // The selected configuration was preferred over a recently seen config
@@ -434,14 +431,12 @@ public class WifiAutoJoinController {
                             + " choice " + Integer.toString(choice));
 
                     Integer currentChoice = selected.connectChoices.get(config.configKey(true));
-                    if (currentChoice == null || currentChoice.intValue() < choice) {
-                        if (currentChoice != null) {
-                            // User has made this choice multiple time in a row so bump up
-                            choice += currentChoice.intValue() / 2;
-                        }
-                        // Add the visible config to the selected's connect choice list
-                        selected.connectChoices.put(config.configKey(true), choice);
+                    if (currentChoice != null) {
+                        // User has made this choice multiple time in a row, so bump up a lot
+                        choice += currentChoice.intValue();
                     }
+                    // Add the visible config to the selected's connect choice list
+                    selected.connectChoices.put(config.configKey(true), choice);
 
                     if (config.connectChoices != null) {
                         if (VDBG) {
@@ -868,10 +863,10 @@ public class WifiAutoJoinController {
             return a;
         }
 
-        if (current.bssidOwnerUid!= 0 && current.bssidOwnerUid != Process.WIFI_UID) {
+        if (current.BSSID != null && !current.BSSID.equals("any")) {
             if (DBG)   {
-                logDbg("attemptRoam BSSID owner is "
-                        + Long.toString(current.bssidOwnerUid) + " -> bail");
+                logDbg("attemptRoam() BSSID is set "
+                        + current.BSSID + " -> bail");
             }
             return a;
         }
@@ -1044,7 +1039,8 @@ public class WifiAutoJoinController {
         // Obtain the subset of recently seen networks
         List<WifiConfiguration> list = mWifiConfigStore.getRecentConfiguredNetworks(3000, false);
         if (list == null) {
-            if (VDBG)  logDbg("attemptAutoJoin nothing");
+            if (VDBG)  logDbg("attemptAutoJoin nothing known=" +
+                    mWifiConfigStore.getconfiguredNetworkSize());
             return;
         }
 
@@ -1107,7 +1103,7 @@ public class WifiAutoJoinController {
                 conf = " curent=" + currentConfiguration.configKey();
             }
             if (lastSelectedConfiguration != null) {
-                last = " last=" + last;
+                last = " last=" + lastSelectedConfiguration;
             }
             logDbg("attemptAutoJoin() num recent config " + Integer.toString(list.size())
                     + conf + last
@@ -1315,7 +1311,7 @@ public class WifiAutoJoinController {
                     // by reducing order by -100
                     order = order - 100;
                     if (VDBG)   {
-                        logDbg("  prefers -100 " + candidate.configKey()
+                        logDbg("     ...and prefers -100 " + candidate.configKey()
                                 + " over " + config.configKey()
                                 + " because it is the last selected -> "
                                 + Integer.toString(order));
@@ -1328,7 +1324,7 @@ public class WifiAutoJoinController {
                     // by increasing order by +100
                     order = order + 100;
                     if (VDBG)   {
-                        logDbg("  prefers +100 " + config.configKey()
+                        logDbg("     ...and prefers +100 " + config.configKey()
                                 + " over " + candidate.configKey()
                                 + " because it is the last selected -> "
                                 + Integer.toString(order));
@@ -1420,7 +1416,7 @@ public class WifiAutoJoinController {
                 doSwitch = " -> not switching";
             }
             if (currentConfiguration != null) {
-                current = " with current " + currentConfiguration;
+                current = " with current " + currentConfiguration.configKey();
             }
             logDbg("attemptAutoJoin networkSwitching candidate "
                     + candidate.configKey()
@@ -1457,30 +1453,32 @@ public class WifiAutoJoinController {
                 candidate.numAssociation++;
                 mWifiConnectionStatistics.numAutoJoinAttempt++;
 
-                // First step we selected the configuration we want to connect to
-                // Second step: Look for the best Scan result for this configuration
-                // TODO this algorithm should really be done in one step
-                String currentBSSID = mWifiStateMachine.getCurrentBSSID();
-                ScanResult roamCandidate = attemptRoam(null, candidate, 3000, null);
-                if (roamCandidate != null && currentBSSID != null
-                        && currentBSSID.equals(roamCandidate.BSSID)) {
-                    // Sanity, we were already asociated to that candidate
-                    roamCandidate = null;
-                }
-                if (roamCandidate != null && roamCandidate.is5GHz()) {
-                    // If the configuration hasn't a default BSSID selected, and the best
-                    // candidate is 5GHZ, then select this candidate so as WifiStateMachine and
-                    // supplicant will pick it first
-                    candidate.BSSID = roamCandidate.BSSID;
-                    if (VDBG) {
-                        logDbg("AutoJoinController: lock to 5GHz "
-                                + candidate.SSID
-                                + " RSSI=" + roamCandidate.level
-                                + " freq=" + roamCandidate.frequency);
+                if (candidate.BSSID == null || candidate.BSSID.equals("any")) {
+                    // First step we selected the configuration we want to connect to
+                    // Second step: Look for the best Scan result for this configuration
+                    // TODO this algorithm should really be done in one step
+                    String currentBSSID = mWifiStateMachine.getCurrentBSSID();
+                    ScanResult roamCandidate = attemptRoam(null, candidate, 3000, null);
+                    if (roamCandidate != null && currentBSSID != null
+                            && currentBSSID.equals(roamCandidate.BSSID)) {
+                        // Sanity, we were already asociated to that candidate
+                        roamCandidate = null;
                     }
+                    if (roamCandidate != null && roamCandidate.is5GHz()) {
+                        // If the configuration hasn't a default BSSID selected, and the best
+                        // candidate is 5GHZ, then select this candidate so as WifiStateMachine and
+                        // supplicant will pick it first
+                        candidate.autoJoinBSSID = roamCandidate.BSSID;
+                        if (VDBG) {
+                            logDbg("AutoJoinController: lock to 5GHz "
+                                    + candidate.autoJoinBSSID
+                                    + " RSSI=" + roamCandidate.level
+                                    + " freq=" + roamCandidate.frequency);
+                        }
+                    }
+                    mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
+                            candidate.networkId, networkSwitchType, candidate);
                 }
-                mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
-                        candidate.networkId, networkSwitchType, candidate);
             }
         }
 
@@ -1516,7 +1514,7 @@ public class WifiAutoJoinController {
                     && currentBSSID.equals(roamCandidate.BSSID)) {
                 roamCandidate = null;
             }
-            if (roamCandidate != null) {
+            if (roamCandidate != null && mWifiStateMachine.shouldSwitchNetwork(999)) {
                 if (DBG) {
                     logDbg("AutoJoin auto roam with netId "
                             + Integer.toString(currentConfiguration.networkId)
