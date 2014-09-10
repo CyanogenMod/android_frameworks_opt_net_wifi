@@ -78,6 +78,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         return b;
     }
 
+    private void enforceConnectivityInternalPermission() {
+        mContext.enforceCallingOrSelfPermission(
+                android.Manifest.permission.CONNECTIVITY_INTERNAL,
+                "WifiScanningServiceImpl");
+    }
+
     private class ClientHandler extends Handler {
 
         ClientHandler(android.os.Looper looper) {
@@ -124,6 +130,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             if (ci == null) {
                 Slog.e(TAG, "Could not find client info for message " + msg.replyTo);
                 replyFailed(msg, WifiScanner.REASON_INVALID_LISTENER, "Could not find listener");
+                return;
+            }
+
+            try {
+                enforceConnectivityInternalPermission();
+            } catch (SecurityException e) {
+                replyFailed(msg, WifiScanner.REASON_NOT_AUTHORIZED, "Not authorized");
                 return;
             }
 
