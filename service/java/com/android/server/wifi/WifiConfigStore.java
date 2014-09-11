@@ -289,15 +289,18 @@ public class WifiConfigStore extends IpConfigStore {
     public int thresholdGoodRssi24 = WifiConfiguration.GOOD_RSSI_24;
 
     public int associatedFullScanBackoff = 12; // Will be divided by 8 by WifiStateMachine
-    public int associatedPartialScanPeriodMs;
+    public int associatedFullScanMaxIntervalMilli = 300000;
 
-    public int thresholdBandPreferenceRssi24
-            = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
-    public int thresholdBandPreferenceRssi5
-            = WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD;
-    public int thresholdBandPreferenceLowRssi5
-            = WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW;
-    public int factorBandPreferenceLowRssi5 = 5; // Boost by 5 dB per dB above threshold
+    public int associatedPartialScanPeriodMilli;
+
+    public int bandPreferenceBoostFactor5 = 5; // Boost by 5 dB per dB above threshold
+    public int bandPreferencePenaltyFactor5 = 2; // Penalize by 2 dB per dB below threshold
+    public int bandPreferencePenaltyThreshold5 = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
+    public int bandPreferenceBoostThreshold5 = WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD;
+
+    // Boost RSSI values of associated networks
+    public int associatedHysteresisHigh = +14;
+    public int associatedHysteresisLow = +8;
 
     public int thresholdUnblacklistThreshold5Hard
             = WifiConfiguration.UNBLACKLIST_THRESHOLD_5_HARD;
@@ -317,6 +320,8 @@ public class WifiConfigStore extends IpConfigStore {
     public boolean roamOnAny = false;
     public boolean onlyLinkSameCredentialConfigurations;
 
+    public boolean enableLinkDebouncing = true;
+    public boolean enable5GHzPreference = true;
 
     /**
      * Regex pattern for extracting a connect choice.
@@ -391,12 +396,40 @@ public class WifiConfigStore extends IpConfigStore {
             mFileObserver = null;
         }
 
-        associatedPartialScanPeriodMs = mContext.getResources().getInteger(
+        associatedPartialScanPeriodMilli = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_associated_scan_interval);
-        loge("associatedPartialScanPeriodMs set to " + associatedPartialScanPeriodMs);
+        loge("associatedPartialScanPeriodMilli set to " + associatedPartialScanPeriodMilli);
 
         onlyLinkSameCredentialConfigurations = mContext.getResources().getBoolean(
                 R.bool.config_wifi_only_link_same_credential_configurations);
+        maxNumActiveChannelsForPartialScans = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_partial_scan_max_num_active_channels);
+        maxNumPassiveChannelsForPartialScans = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_partial_scan_max_num_passive_channels);
+        associatedFullScanMaxIntervalMilli = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_partial_scan_max_num_passive_channels);
+        associatedFullScanBackoff = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_full_scan_backoff);
+        enableLinkDebouncing = mContext.getResources().getBoolean(
+                R.bool.config_wifi_enable_disconnection_debounce);
+
+        enable5GHzPreference = mContext.getResources().getBoolean(
+                R.bool.config_wifi_enable_5GHz_preference);
+
+        bandPreferenceBoostFactor5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_5GHz_preference_boost_factor);
+        bandPreferencePenaltyFactor5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_5GHz_preference_penalty_factor);
+
+        bandPreferencePenaltyThreshold5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_5GHz_preference_penalty_threshold);
+        bandPreferenceBoostThreshold5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_5GHz_preference_boost_threshold);
+
+        associatedHysteresisHigh = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_current_association_hysteresis_high);
+        associatedHysteresisLow = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_current_association_hysteresis_low);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -629,7 +662,7 @@ public class WifiConfigStore extends IpConfigStore {
             for(WifiConfiguration config : mConfiguredNetworks.values()) {
                 if (config.networkId != INVALID_NETWORK_ID) {
                     config.priority = 0;
-                    addOrUpdateNetworkNative(config);
+                    addOrUpdateNetworkNative(config, -1);
                 }
             }
             mLastPriority = 0;
@@ -640,7 +673,7 @@ public class WifiConfigStore extends IpConfigStore {
         config.networkId = netId;
         config.priority = ++mLastPriority;
 
-        addOrUpdateNetworkNative(config);
+        addOrUpdateNetworkNative(config, -1);
         mWifiNative.saveConfig();
 
         /* Enable the given network while disabling all other networks */
@@ -657,7 +690,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @param config WifiConfiguration to be saved
      * @return network update result
      */
-    NetworkUpdateResult saveNetwork(WifiConfiguration config) {
+    NetworkUpdateResult saveNetwork(WifiConfiguration config, int uid) {
         WifiConfiguration conf;
 
         // A new network cannot have null SSID
@@ -673,7 +706,7 @@ public class WifiConfigStore extends IpConfigStore {
                     + "/" + Integer.toString(config.lastUpdateUid));
         }
         boolean newNetwork = (config.networkId == INVALID_NETWORK_ID);
-        NetworkUpdateResult result = addOrUpdateNetworkNative(config);
+        NetworkUpdateResult result = addOrUpdateNetworkNative(config, uid);
         int netId = result.getNetworkId();
 
         if (VDBG) localLog("WifiConfigStore: saveNetwork got it back netId=", netId);
@@ -800,7 +833,7 @@ public class WifiConfigStore extends IpConfigStore {
         Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId)
                 + " uid=" + Integer.toString(config.creatorUid)
                 + "/" + Integer.toString(config.lastUpdateUid));
-        NetworkUpdateResult result = addOrUpdateNetworkNative(config);
+        NetworkUpdateResult result = addOrUpdateNetworkNative(config, uid);
         if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
             WifiConfiguration conf = mConfiguredNetworks.get(result.getNetworkId());
             if (conf != null) {
@@ -1000,11 +1033,19 @@ public class WifiConfigStore extends IpConfigStore {
                         + " reason=" + Integer.toString(config.disableReason));
             }
         }
-        /* Only change the reason if the network was not previously disabled */
-        if (config != null && config.status != Status.DISABLED) {
+        /* Only change the reason if the network was not previously disabled
+        /* and the reason is not DISABLED_BY_WIFI_MANAGER, that is, if a 3rd party
+         * set its configuration as disabled, then leave it disabled */
+        if (config != null && config.status != Status.DISABLED
+                && config.disableReason != WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
             config.status = Status.DISABLED;
             config.disableReason = reason;
             network = config;
+        }
+        if (reason == WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
+            // Make sure autojoin wont reenable this configuration without further user
+            // intervention
+            config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_USER_ACTION;
         }
         if (network != null) {
             sendConfiguredNetworksChangedBroadcast(network,
@@ -2070,17 +2111,6 @@ public class WifiConfigStore extends IpConfigStore {
                     }
                 }
 
-                if (key.startsWith(A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW_KEY)) {
-                    String st = key.replace(A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdBandPreferenceLowRssi5 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdBandPreferenceLowRssi5 = "
-                            + Integer.toString(thresholdBandPreferenceLowRssi5));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
                 if (key.startsWith(WIFI_VERBOSE_LOGS_KEY)) {
                     String st = key.replace(WIFI_VERBOSE_LOGS_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
@@ -2096,9 +2126,9 @@ public class WifiConfigStore extends IpConfigStore {
                     String st = key.replace(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
                     try {
-                        thresholdBandPreferenceRssi5 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdBandPreferenceRssi5 = "
-                            + Integer.toString(thresholdBandPreferenceRssi5));
+                        bandPreferenceBoostThreshold5 = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: bandPreferenceBoostThreshold5 = "
+                            + Integer.toString(bandPreferenceBoostThreshold5));
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
@@ -2107,9 +2137,9 @@ public class WifiConfigStore extends IpConfigStore {
                     String st = key.replace(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
                     try {
-                        associatedPartialScanPeriodMs = Integer.parseInt(st);
+                        associatedPartialScanPeriodMilli = Integer.parseInt(st);
                         Log.d(TAG,"readAutoJoinConfig: associatedScanPeriod = "
-                                + Integer.toString(associatedPartialScanPeriodMs));
+                                + Integer.toString(associatedPartialScanPeriodMilli));
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
@@ -2129,9 +2159,9 @@ public class WifiConfigStore extends IpConfigStore {
                     String st = key.replace(G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
                     try {
-                        thresholdBandPreferenceRssi24 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdBandPreferenceRssi24 = "
-                            + Integer.toString(thresholdBandPreferenceRssi24));
+                        bandPreferencePenaltyThreshold5 = Integer.parseInt(st);
+                        Log.d(TAG,"readAutoJoinConfig: bandPreferencePenaltyThreshold5 = "
+                            + Integer.toString(bandPreferencePenaltyThreshold5));
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
@@ -2247,7 +2277,7 @@ public class WifiConfigStore extends IpConfigStore {
         return String.format("%x", new BigInteger(1, tmp.getBytes(Charset.forName("UTF-8"))));
     }
 
-    private NetworkUpdateResult addOrUpdateNetworkNative(WifiConfiguration config) {
+    private NetworkUpdateResult addOrUpdateNetworkNative(WifiConfiguration config, int uid) {
         /*
          * If the supplied networkId is INVALID_NETWORK_ID, we create a new empty
          * network configuration. Otherwise, the networkId should
@@ -2525,9 +2555,12 @@ public class WifiConfigStore extends IpConfigStore {
             currentConfig.setProxySettings(ProxySettings.NONE);
             currentConfig.networkId = netId;
             if (config != null) {
-                //carry over the creation parameters
+                // Carry over the creation parameters
                 currentConfig.selfAdded = config.selfAdded;
                 currentConfig.didSelfAdd = config.didSelfAdd;
+                currentConfig.ephemeral = config.ephemeral;
+                currentConfig.autoJoinUseAggressiveJoinAttemptThreshold
+                        = config.autoJoinUseAggressiveJoinAttemptThreshold;
                 currentConfig.lastConnectUid = config.lastConnectUid;
                 currentConfig.lastUpdateUid = config.lastUpdateUid;
                 currentConfig.creatorUid = config.creatorUid;
@@ -2539,6 +2572,14 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
+        if (uid >= 0) {
+            if (newNetwork) {
+                currentConfig.creatorUid = uid;
+            } else {
+                currentConfig.lastUpdateUid = uid;
+            }
+        }
+
         if (currentConfig.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
             // Make sure the configuration is not deleted anymore since we just
             // added or modified it.
@@ -2547,6 +2588,11 @@ public class WifiConfigStore extends IpConfigStore {
             currentConfig.didSelfAdd = false;
             if (DBG) loge("remove deleted status netId=" + Integer.toString(netId)
                                 + " " + currentConfig.configKey());
+        }
+
+        if (currentConfig.status == WifiConfiguration.Status.ENABLED) {
+            // Make sure autojoin remain in sync with user modifying the configuration
+            currentConfig.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
         }
 
         if (DBG) loge("will read network variables netId=" + Integer.toString(netId));
@@ -3490,7 +3536,14 @@ public class WifiConfigStore extends IpConfigStore {
                     config.disableReason = WifiConfiguration.DISABLED_AUTH_FAILURE;
                 } else {
                     if (message != null) {
-                        if (message.contains("WRONG_KEY")
+                        if (message.contains("no identity")) {
+                            config.setAutoJoinStatus(
+                                    WifiConfiguration.AUTO_JOIN_DISABLED_NO_CREDENTIALS);
+                            if (DBG) {
+                                loge("no identity blacklisted " + config.configKey() + " to "
+                                        + Integer.toString(config.autoJoinStatus));
+                            }
+                        } else if (message.contains("WRONG_KEY")
                                 || message.contains("AUTH_FAILED")) {
                             // This configuration has received an auth failure, so disable it
                             // temporarily because we don't want auto-join to try it out.
