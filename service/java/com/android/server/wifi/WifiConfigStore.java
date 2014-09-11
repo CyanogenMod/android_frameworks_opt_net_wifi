@@ -288,8 +288,7 @@ public class WifiConfigStore extends IpConfigStore {
     public int thresholdGoodRssi24 = WifiConfiguration.GOOD_RSSI_24;
 
     public int associatedFullScanBackoff = 12; // Will be divided by 8 by WifiStateMachine
-    public int associatedPartialScanPeriodMs
-            = R.integer.config_wifi_framework_associated_scan_interval;
+    public int associatedPartialScanPeriodMs;
 
     public int thresholdBandPreferenceRssi24
             = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
@@ -388,6 +387,10 @@ public class WifiConfigStore extends IpConfigStore {
             mLocalLog = null;
             mFileObserver = null;
         }
+
+        associatedPartialScanPeriodMs = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_scan_interval);
+        loge("associatedPartialScanPeriodMs set to " + associatedPartialScanPeriodMs);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -472,6 +475,12 @@ public class WifiConfigStore extends IpConfigStore {
      */
     private Map<String, String> getCredentialsBySsidMap() {
         return readNetworkVariablesFromSupplicantFile("psk");
+    }
+
+    int getconfiguredNetworkSize() {
+        if (mConfiguredNetworks == null)
+            return 0;
+        return mConfiguredNetworks.size();
     }
 
     /**
@@ -696,26 +705,30 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void saveWifiConfigBSSID(WifiConfiguration config) {
-        String BSSID = "any";
+        // Sanity check the config is valid
         if (config == null || (config.networkId == INVALID_NETWORK_ID &&
                 config.SSID == null)) {
             return;
         }
 
-        if (config.BSSID != null) {
-            BSSID = config.BSSID;
-        } else {
-            config.BSSID = BSSID;
+        // If an app specified a BSSID then dont over-write it
+        if (config.BSSID != null && config.BSSID != "any") {
+            return;
         }
-        loge("saveWifiConfigBSSID Setting BSSID for " + config.configKey() + " to " + config.BSSID);
-        if (!mWifiNative.setNetworkVariable(
-                config.networkId,
-                WifiConfiguration.bssidVarName,
-                BSSID)) {
-            loge("failed to set BSSID: " + BSSID);
-        } else if (BSSID.equals("any")) {
-            // Paranoia, we just want to make sure that we restore the config to normal
-            mWifiNative.saveConfig();
+
+        // If autojoin specified a BSSID then write it in the network block
+        if (config.autoJoinBSSID != null) {
+            loge("saveWifiConfigBSSID Setting BSSID for " + config.configKey()
+                    + " to " + config.autoJoinBSSID);
+            if (!mWifiNative.setNetworkVariable(
+                    config.networkId,
+                    WifiConfiguration.bssidVarName,
+                    config.autoJoinBSSID)) {
+                loge("failed to set BSSID: " + config.autoJoinBSSID);
+            } else if (config.autoJoinBSSID.equals("any")) {
+                // Paranoia, we just want to make sure that we restore the config to normal
+                mWifiNative.saveConfig();
+            }
         }
     }
 
@@ -775,7 +788,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @param config wifi configuration to add/update
      * @return network Id
      */
-    int addOrUpdateNetwork(WifiConfiguration config) {
+    int addOrUpdateNetwork(WifiConfiguration config, int uid) {
         if (VDBG) localLog("addOrUpdateNetwork id=", config.networkId);
         //adding unconditional message to chase b/15111865
         Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId)
@@ -1350,8 +1363,6 @@ public class WifiConfigStore extends IpConfigStore {
                                 + " choices:" + Integer.toString(num)
                                 + " link:" + Integer.toString(numlink));
                     }
-                    if (config.ephemeral == true)
-                        continue;
 
                     if (config.isValid() == false)
                         continue;
@@ -2564,7 +2575,7 @@ public class WifiConfigStore extends IpConfigStore {
                         && (link.scanResultCache != null) && (link.scanResultCache.size() <= 6)) {
                     for (String abssid : config.scanResultCache.keySet()) {
                         for (String bbssid : link.scanResultCache.keySet()) {
-                            if (VDBG) {
+                            if (VVDBG) {
                                 loge("linkConfiguration try to link due to DBDC BSSID match "
                                         + link.SSID +
                                         " and " + config.SSID + " bssida " + abssid
