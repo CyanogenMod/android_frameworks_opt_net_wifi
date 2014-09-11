@@ -5920,6 +5920,12 @@ public class WifiStateMachine extends StateMachine {
                     config = (WifiConfiguration) message.obj;
                     mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
 
+                    /* Save the network config */
+                    if (config != null) {
+                        result = mWifiConfigStore.saveNetwork(config);
+                        netId = result.getNetworkId();
+                    }
+
                     if (config == null) {
                         loge("CONNECT_NETWORK id=" + Integer.toString(netId) + " "
                                 + mSupplicantStateTracker.getSupplicantStateName() + " my state "
@@ -5932,7 +5938,6 @@ public class WifiStateMachine extends StateMachine {
                                 + " my state " + getCurrentState().getName()
                                 + " uid = " + message.sendingUid);
                     }
-
 
                     autoRoamSetBSSID(netId, "any");
 
@@ -5949,11 +5954,6 @@ public class WifiStateMachine extends StateMachine {
 
                     mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
 
-                    /* Save the network config */
-                    if (config != null) {
-                        result = mWifiConfigStore.saveNetwork(config);
-                        netId = result.getNetworkId();
-                    }
                     /* Tell autojoin the user did try to connect to that network */
                     mWifiAutoJoinController.updateConfigurationHistory(netId, true, true);
 
@@ -6689,6 +6689,7 @@ public class WifiStateMachine extends StateMachine {
     }
 
     class RoamingState extends State {
+        boolean mAssociated;
         @Override
         public void enter() {
             if (DBG) {
@@ -6702,6 +6703,7 @@ public class WifiStateMachine extends StateMachine {
             loge("Start Roam Watchdog " + roamWatchdogCount);
             sendMessageDelayed(obtainMessage(CMD_ROAM_WATCHDOG_TIMER,
                     roamWatchdogCount, 0), ROAM_GUARD_TIMER_MSEC);
+            mAssociated = false;
         }
         @Override
         public boolean processMessage(Message message) {
@@ -6741,6 +6743,10 @@ public class WifiStateMachine extends StateMachine {
                             transitionTo(mDisconnectedState);
                         }
                     }
+                    if (stateChangeResult.state == SupplicantState.ASSOCIATED) {
+                        // We completed the layer2 roaming part
+                        mAssociated = true;
+                    }
                     break;
                 case CMD_ROAM_WATCHDOG_TIMER:
                     if (roamWatchdogCount == message.arg1) {
@@ -6752,20 +6758,17 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                case WifiMonitor.NETWORK_CONNECTION_EVENT:
-                   if (DBG) log("roaming and Network connection established");
-                   mLastNetworkId = message.arg1;
-                   mLastBssid = (String) message.obj;
-                   mWifiInfo.setBSSID(mLastBssid);
-                   mWifiInfo.setNetworkId(mLastNetworkId);
-                   mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, mLastBssid, true);
-                   /**
-                    * We already have an IP address, we are going to the ObtainingIpAddress
-                    * state to renew it. Other parts of the system interpret an
-                    * ObtainingIpState change as not having IP address anymore,
-                    * hence, don't send the state change there. */
-                   // setNetworkDetailedState(DetailedState.OBTAINING_IPADDR);
-                   // sendNetworkStateChangeBroadcast(mLastBssid);
-                   transitionTo(mObtainingIpState);
+                   if (mAssociated) {
+                       if (DBG) log("roaming and Network connection established");
+                       mLastNetworkId = message.arg1;
+                       mLastBssid = (String) message.obj;
+                       mWifiInfo.setBSSID(mLastBssid);
+                       mWifiInfo.setNetworkId(mLastNetworkId);
+                       mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, mLastBssid, true);
+                       transitionTo(mObtainingIpState);
+                   } else {
+                       messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                   }
                    break;
                case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                    // Throw away but only if it corresponds to the network we're roaming to
