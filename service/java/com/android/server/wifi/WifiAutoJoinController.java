@@ -1475,10 +1475,13 @@ public class WifiAutoJoinController {
                                     + " RSSI=" + roamCandidate.level
                                     + " freq=" + roamCandidate.frequency);
                         }
+                    } else {
+                        // We couldnt find a roam candidate
+                        candidate.autoJoinBSSID = "any";
                     }
-                    mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
-                            candidate.networkId, networkSwitchType, candidate);
                 }
+                mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
+                            candidate.networkId, networkSwitchType, candidate);
             }
         }
 
