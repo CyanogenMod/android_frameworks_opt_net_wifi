@@ -258,7 +258,8 @@ public class WifiConfigStore extends IpConfigStore {
             = "ASSOCIATED_FULL_SCAN_BACKOFF_PERIOD:   ";
     private static final String ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY
             = "ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED:   ";
-
+    private static final String ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY
+            = "ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS:   ";
     // The Wifi verbose log is provided as a way to persist the verbose logging settings
     // for testing purpose.
     // It is not intended for normal use.
@@ -314,6 +315,8 @@ public class WifiConfigStore extends IpConfigStore {
     public int maxNumPassiveChannelsForPartialScans = 2;
 
     public boolean roamOnAny = false;
+    public boolean onlyLinkSameCredentialConfigurations;
+
 
     /**
      * Regex pattern for extracting a connect choice.
@@ -391,6 +394,9 @@ public class WifiConfigStore extends IpConfigStore {
         associatedPartialScanPeriodMs = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_associated_scan_interval);
         loge("associatedPartialScanPeriodMs set to " + associatedPartialScanPeriodMs);
+
+        onlyLinkSameCredentialConfigurations = mContext.getResources().getBoolean(
+                R.bool.config_wifi_only_link_same_credential_configurations);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -862,13 +868,14 @@ public class WifiConfigStore extends IpConfigStore {
                  * Instead mark it as deleted and completely hide it from the rest of the system.
                  */
                 config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DELETED);
+                // Disable
                 mWifiNative.disableNetwork(config.networkId);
-                // Since we don't delete the configuration, clean it up and loost the history
+                config.status = WifiConfiguration.Status.DISABLED;
+                // Since we don't delete the configuration, clean it up and loose the history
                 config.linkedConfigurations = null;
                 config.scanResultCache = null;
                 config.connectChoices = null;
                 config.defaultGwMacAddress = null;
-
                 config.setIpConfiguration(new IpConfiguration());
                 // Loose the PSK
                 if (!mWifiNative.setNetworkVariable(
@@ -876,7 +883,25 @@ public class WifiConfigStore extends IpConfigStore {
                         WifiConfiguration.pskVarName,
                         "\"xxxxxxxx\"")) {
                     loge("removeNetwork, failed to clear PSK, nid=" + config.networkId);
-                };
+                }
+                // Loose the BSSID
+                config.BSSID = null;
+                config.autoJoinBSSID = null;
+                if (!mWifiNative.setNetworkVariable(
+                        config.networkId,
+                        WifiConfiguration.bssidVarName,
+                        "any")) {
+                    loge("removeNetwork, failed to remove BSSID");
+                }
+                // Loose the hiddenSSID flag
+                config.hiddenSSID = false;
+                if (!mWifiNative.setNetworkVariable(
+                        config.networkId,
+                        WifiConfiguration.hiddenSSIDVarName,
+                        Integer.toString(0))) {
+                    loge("removeNetwork, failed to remove hiddenSSID");
+                }
+
                 mWifiNative.saveConfig();
             }
 
@@ -1825,6 +1850,18 @@ public class WifiConfigStore extends IpConfigStore {
                     }
                 }
 
+                if (key.startsWith(ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY)) {
+                    String st = key.replace(ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        onlyLinkSameCredentialConfigurations = Integer.parseInt(st) != 0;
+                        Log.d(TAG,"readAutoJoinConfig: enabled = "
+                                + onlyLinkSameCredentialConfigurations);
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+
                 if (key.startsWith(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY)) {
                     String st =
                             key.replace(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY, "");
@@ -2526,7 +2563,12 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
 
+    /**
+     * This function run thru the Saved WifiConfigurations and check if some should be linked.
+     * @param config
+     */
     public void linkConfiguration(WifiConfiguration config) {
+
         if (config.scanResultCache != null && config.scanResultCache.size() > 6) {
             // Ignore configurations with large number of BSSIDs
             return;
@@ -2558,7 +2600,7 @@ public class WifiConfigStore extends IpConfigStore {
             }
 
             if (config.defaultGwMacAddress != null && link.defaultGwMacAddress != null) {
-                // If both default GW are known, compare based on RSSI only if the GW is equal
+                // If both default GW are known, link only if they are equal
                 if (config.defaultGwMacAddress.equals(link.defaultGwMacAddress)) {
                     if (VDBG) {
                         loge("linkConfiguration link due to same gw " + link.SSID +
@@ -2591,10 +2633,18 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
 
+            if (doLink == true && onlyLinkSameCredentialConfigurations) {
+                String apsk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
+                String bpsk = readNetworkVariableFromSupplicantFile(config.SSID, "psk");
+                if (apsk == null || bpsk == null || !apsk.equals(bpsk)) {
+                    doLink = false;
+                }
+            }
+
             if (doLink) {
                 if (VDBG) {
-                    loge("linkConfiguration: will link " + link.configKey()
-                            + " and " + config.configKey());
+                   loge("linkConfiguration: will link " + link.configKey()
+                           + " and " + config.configKey());
                 }
                 if (link.linkedConfigurations == null) {
                     link.linkedConfigurations = new HashMap<String, Integer>();
