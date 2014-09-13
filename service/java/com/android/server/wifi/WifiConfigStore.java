@@ -298,6 +298,11 @@ public class WifiConfigStore extends IpConfigStore {
     public int bandPreferencePenaltyThreshold5 = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
     public int bandPreferenceBoostThreshold5 = WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD;
 
+    public int badLinkSpeed24 = 6;
+    public int badLinkSpeed5 = 12;
+    public int goodLinkSpeed24 = 24;
+    public int goodLinkSpeed5 = 36;
+
     // Boost RSSI values of associated networks
     public int associatedHysteresisHigh = +14;
     public int associatedHysteresisLow = +8;
@@ -322,6 +327,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     public boolean enableLinkDebouncing = true;
     public boolean enable5GHzPreference = true;
+    public boolean enableWifiCellularHandoverUserTriggeredAdjustment = true;
 
     /**
      * Regex pattern for extracting a connect choice.
@@ -430,6 +436,32 @@ public class WifiConfigStore extends IpConfigStore {
                 R.integer.config_wifi_framework_current_association_hysteresis_high);
         associatedHysteresisLow = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_current_association_hysteresis_low);
+
+        thresholdBadRssi5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_5GHz);
+        thresholdLowRssi5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_5GHz);
+        thresholdGoodRssi5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
+        thresholdBadRssi24 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
+        thresholdLowRssi24 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
+        thresholdGoodRssi24 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
+
+        enableWifiCellularHandoverUserTriggeredAdjustment = mContext.getResources().getBoolean(
+                R.bool.config_wifi_framework_cellular_handover_enable_user_triggered_adjustment);
+
+        badLinkSpeed24 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_bad_link_speed_24);
+        badLinkSpeed5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_bad_link_speed_5);
+        goodLinkSpeed24 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_link_speed_24);
+        goodLinkSpeed5 = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_link_speed_5);
+
     }
 
     void enableVerboseLogging(int verbose) {
