@@ -279,11 +279,10 @@ public class WifiMonitor {
     /**
      * Regex pattern for extracting SSIDs from request identity string.
      * Matches a strings like the following:<pre>
-     * CTRL-REQ-IDENTITY-1:Identity needed for SSID XXXX</pre>
+     * CTRL-REQ-IDENTITY-xx:Identity needed for SSID XXXX</pre>
      */
     private static Pattern mRequestIdentityPattern =
-            Pattern.compile("IDENTITY-[0-9]:Identity needed for SSID (.+)");
-
+            Pattern.compile("IDENTITY-([0-9]+):Identity needed for SSID (.+)");
 
     /** P2P events */
     private static final String P2P_EVENT_PREFIX_STR = "P2P";
@@ -1174,6 +1173,7 @@ public class WifiMonitor {
      */
     private void handleRequests(String dataString) {
         String SSID = null;
+        int reason = -2;
         String requestName = dataString.substring(REQUEST_PREFIX_LEN_STR);
         if (TextUtils.isEmpty(requestName)) {
             return;
@@ -1181,11 +1181,16 @@ public class WifiMonitor {
         if (requestName.startsWith(IDENTITY_STR)) {
             Matcher match = mRequestIdentityPattern.matcher(requestName);
             if (match.find()) {
-                SSID = match.group(1);
+                SSID = match.group(2);
+                try {
+                    reason = Integer.parseInt(match.group(1));
+                } catch (NumberFormatException e) {
+                    reason = -1;
+                }
             } else {
                 Log.e(TAG, "didn't find SSID " + requestName);
             }
-            mStateMachine.sendMessage(SUP_REQUEST_IDENTITY, eventLogCounter, 0, SSID);
+            mStateMachine.sendMessage(SUP_REQUEST_IDENTITY, eventLogCounter, reason, SSID);
         } if (requestName.startsWith(SIM_STR)) {
             Matcher match = mRequestGsmAuthPattern.matcher(requestName);
             if (match.find()) {

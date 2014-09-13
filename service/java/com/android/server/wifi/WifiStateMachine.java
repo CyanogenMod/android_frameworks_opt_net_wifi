@@ -1509,6 +1509,17 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+    private long mDisconnectedTimeStamp = 0;
+
+    public long getDisconnectedTimeMilli() {
+        if (getCurrentState() == mDisconnectedState
+                && mDisconnectedTimeStamp != 0) {
+            long now_ms = System.currentTimeMillis();
+            return now_ms - mDisconnectedTimeStamp;
+        }
+        return 0;
+    }
+
     // Keeping track of scan requests
     private long lastStartScanTimeStamp = 0;
     private long lastScanDuration = 0;
@@ -1542,6 +1553,47 @@ public class WifiStateMachine extends StateMachine {
         return true;
     }
 
+    private int mOnTime = 0;
+    private int mTxTime = 0;
+    private int mRxTime = 0;
+    private int mOnTimeScan = 0;
+    private int mTxTimeScan = 0;
+    private int mRxTimeScan = 0;
+    private int mOnTimeThisScan = 0;
+    private int mTxTimeThisScan = 0;
+    private int mRxTimeThisScan = 0;
+
+    void getRadioScanStats() {
+        if (mWifiLinkLayerStatsSupported > 0) {
+            String name = "wlan0";
+            WifiLinkLayerStats stats = mWifiNative.getWifiLinkLayerStats(name);
+            if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
+                mWifiLinkLayerStatsSupported -= 1;
+            } else if (stats != null) {
+                mOnTimeThisScan = stats.on_time - mOnTime;
+                mTxTimeThisScan = stats.tx_time - mTxTime;
+                mRxTimeThisScan = stats.rx_time - mRxTime;
+                mOnTimeScan += mOnTimeThisScan;
+                mTxTimeScan += mTxTimeThisScan;
+                mRxTimeScan += mRxTimeThisScan;
+            }
+        }
+    }
+
+    void closeRadioScanStats() {
+        if (mWifiLinkLayerStatsSupported > 0) {
+            String name = "wlan0";
+            WifiLinkLayerStats stats = mWifiNative.getWifiLinkLayerStats(name);
+            if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
+                mWifiLinkLayerStatsSupported -= 1;
+            } else if (stats != null) {
+                mOnTime = stats.on_time;
+                mTxTime = stats.tx_time;
+                mRxTime = stats.rx_time;
+            }
+        }
+    }
+
     // If workSource is not null, blame is given to it, otherwise blame is given to callingUid.
     private void noteScanStart(int callingUid, WorkSource workSource) {
         long now = System.currentTimeMillis();
@@ -1556,6 +1608,7 @@ public class WifiStateMachine extends StateMachine {
                 loge(ts + " noteScanstart no scan source");
             }
         }
+        getRadioScanStats();
         if (mScanWorkSource == null && ((callingUid != UNKNOWN_SCAN_SOURCE
                 && callingUid != SCAN_ALARM_SOURCE)
                 || workSource != null)) {
@@ -1576,7 +1629,6 @@ public class WifiStateMachine extends StateMachine {
         lastStartScanTimeStamp = 0;
         if (DBG) {
             String ts = String.format("[%,d ms]", now);
-
             if (mScanWorkSource != null)
                 loge(ts + " noteScanEnd " + mScanWorkSource.toString());
             else
@@ -2347,6 +2399,18 @@ public class WifiStateMachine extends StateMachine {
                 if (lastScanDuration != 0) {
                     sb.append(" dur:").append(lastScanDuration);
                 }
+                if (mOnTime != 0) {
+                    sb.append(" on:").append(mOnTimeThisScan).append(" ").append(mOnTimeScan);
+                    sb.append(" ").append(mOnTime);
+                }
+                if (mTxTime != 0) {
+                    sb.append(" tx:").append(mTxTimeThisScan).append(" ").append(mTxTimeScan);
+                    sb.append(" ").append(mTxTime);
+                }
+                if (mRxTime != 0) {
+                    sb.append(" rx:").append(mRxTimeThisScan).append(" ").append(mRxTimeScan);
+                    sb.append(" ").append(mRxTime);
+                }
                 break;
             case WifiMonitor.NETWORK_CONNECTION_EVENT:
                 sb.append(" ");
@@ -2441,6 +2505,8 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(String.format(" %.1f,", mWifiInfo.txRetriesRate));
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
+                sb.append(" [on:").append(mOnTime).append(" tx:").append(mTxTime);
+                sb.append(" rx:").append(mRxTime).append("]");
                 break;
             case CMD_AUTO_CONNECT:
             case WifiManager.CONNECT_NETWORK:
@@ -2676,11 +2742,11 @@ public class WifiStateMachine extends StateMachine {
         mScreenBroadcastReceived.set(true);
 
         if (screenOn) {
-            fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMs;
+            fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMilli;
             // Start the scan alarm so as to enable autojoin
             if (getCurrentState() == mConnectedState
                     && mEnableAutoJoinScanWhenAssociated) {
-                mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMs;
+                mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMilli;
                 // Scan after 200ms
                 setScanAlarm(true, 200);
             } else if (getCurrentState() == mDisconnectedState) {
@@ -3062,6 +3128,10 @@ public class WifiStateMachine extends StateMachine {
         if (attemptAutoJoin) {
             messageHandlingStatus = MESSAGE_HANDLING_STATUS_PROCESSED;
         }
+        // Loose last selected configuration if we have been disconnected for 30 minutes
+        if (getDisconnectedTimeMilli() > 1000 * 60 * 30) {
+            mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+        }
         mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
         if (linkDebouncing) {
             // If debouncing, we dont re-select a SSID or BSSID hence
@@ -3259,23 +3329,7 @@ public class WifiStateMachine extends StateMachine {
         boolean isHighRSSI = (is24GHz && rssi >= mWifiConfigStore.thresholdGoodRssi24)
                 || (!is24GHz && mWifiInfo.getRssi() >= mWifiConfigStore.thresholdGoodRssi5);
 
-        if (PDBG) {
-            String rssiStatus = "";
-            if (isBadRSSI) rssiStatus += " badRSSI ";
-            else if (isHighRSSI) rssiStatus += " highRSSI ";
-            else if (isLowRSSI) rssiStatus += " lowRSSI ";
-            if (isBadLinkspeed) rssiStatus += " lowSpeed ";
-            loge("calculateWifiScore freq=" + Integer.toString(mWifiInfo.getFrequency())
-                            + " speed=" + Integer.toString(mWifiInfo.getLinkSpeed())
-                            + " score=" + Integer.toString(mWifiInfo.score)
-                            + rssiStatus
-                            + " -> txbadrate=" + String.format( "%.2f", mWifiInfo.txBadRate )
-                            + " txgoodrate=" + String.format("%.2f", mWifiInfo.txSuccessRate)
-                            + " txretriesrate=" + String.format("%.2f", mWifiInfo.txRetriesRate)
-                            + " rxrate=" + String.format("%.2f", mWifiInfo.rxSuccessRate)
-            );
-        }
-
+        int penalizedDueToUserTriggeredDisconnect = 0;        // For debug information
         if (currentConfiguration!= null &&
                 (mWifiInfo.txSuccessRate > 10 || mWifiInfo.rxSuccessRate > 10)) {
             if (isBadRSSI) {
@@ -3294,6 +3348,12 @@ public class WifiStateMachine extends StateMachine {
                     }
                     currentConfiguration.numTicksAtBadRSSI = 0;
                 }
+                if (currentConfiguration.numUserTriggeredWifiDisableBadRSSI > 0
+                        || currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
+                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
+                    score = score -5;
+                    penalizedDueToUserTriggeredDisconnect = 1;
+                }
             } else if (isLowRSSI) {
                 currentConfiguration.numTicksAtLowRSSI++;
                 if (currentConfiguration.numTicksAtLowRSSI > 1000) {
@@ -3307,6 +3367,11 @@ public class WifiStateMachine extends StateMachine {
                     }
                     currentConfiguration.numTicksAtLowRSSI = 0;
                 }
+                if (currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
+                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
+                    score = score -5;
+                    penalizedDueToUserTriggeredDisconnect = 2;
+                }
             } else if (!isHighRSSI) {
                 currentConfiguration.numTicksAtNotHighRSSI++;
                 if (currentConfiguration.numTicksAtNotHighRSSI > 1000) {
@@ -3317,7 +3382,28 @@ public class WifiStateMachine extends StateMachine {
                     }
                     currentConfiguration.numTicksAtNotHighRSSI = 0;
                 }
+                if (currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
+                    score = score -5;
+                    penalizedDueToUserTriggeredDisconnect = 3;
+                }
             }
+        }
+
+        if (PDBG) {
+            String rssiStatus = "";
+            if (isBadRSSI) rssiStatus += " badRSSI ";
+            else if (isHighRSSI) rssiStatus += " highRSSI ";
+            else if (isLowRSSI) rssiStatus += " lowRSSI ";
+            if (isBadLinkspeed) rssiStatus += " lowSpeed ";
+            loge("calculateWifiScore freq=" + Integer.toString(mWifiInfo.getFrequency())
+                            + " speed=" + Integer.toString(mWifiInfo.getLinkSpeed())
+                            + " score=" + Integer.toString(mWifiInfo.score)
+                            + rssiStatus
+                            + " -> txbadrate=" + String.format( "%.2f", mWifiInfo.txBadRate )
+                            + " txgoodrate=" + String.format("%.2f", mWifiInfo.txSuccessRate)
+                            + " txretriesrate=" + String.format("%.2f", mWifiInfo.txRetriesRate)
+                            + " rxrate=" + String.format("%.2f", mWifiInfo.rxSuccessRate)
+                            + " userTriggerdPenalty" + penalizedDueToUserTriggeredDisconnect);
         }
 
         if ((mWifiInfo.txBadRate >= 1) && (mWifiInfo.txSuccessRate < 3)
@@ -4499,8 +4585,8 @@ public class WifiStateMachine extends StateMachine {
                     mWifiNative.enableSaveConfig();
                     mWifiConfigStore.loadAndEnableAllNetworks();
                     enableVerboseLogging(mWifiConfigStore.enableVerboseLogging);
-                    if (mWifiConfigStore.associatedPartialScanPeriodMs < 0) {
-                        mWifiConfigStore.associatedPartialScanPeriodMs = 0;
+                    if (mWifiConfigStore.associatedPartialScanPeriodMilli < 0) {
+                        mWifiConfigStore.associatedPartialScanPeriodMilli = 0;
                     }
                     initializeWpsDetails();
 
@@ -4587,6 +4673,7 @@ public class WifiStateMachine extends StateMachine {
                     sendMessageDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
+                    closeRadioScanStats();
                     setScanResults();
                     sendScanResultsAvailableBroadcast();
                     mIsScanOngoing = false;
@@ -5547,8 +5634,9 @@ public class WifiStateMachine extends StateMachine {
            WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(mLastNetworkId);
            if (config != null) {
                config.lastConnected = System.currentTimeMillis();
+               config.autoJoinBailedDueToLowRssi = false;
+               config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
            }
-           config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
        }
     }
 
@@ -5754,7 +5842,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiManager.DISABLE_NETWORK:
                     if (mWifiConfigStore.disableNetwork(message.arg1,
-                            WifiConfiguration.DISABLED_UNKNOWN_REASON) == true) {
+                            WifiConfiguration.DISABLED_BY_WIFI_MANAGER) == true) {
                         replyToMessage(message, WifiManager.DISABLE_NETWORK_SUCCEEDED);
                     } else {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
@@ -5877,7 +5965,7 @@ public class WifiStateMachine extends StateMachine {
                     /* Save the network config */
                     loge("CMD_AUTO_CONNECT will save config -> " + config.SSID
                             + " nid=" + Integer.toString(netId));
-                    result = mWifiConfigStore.saveNetwork(config);
+                    result = mWifiConfigStore.saveNetwork(config, -1);
                     netId = result.getNetworkId();
                     loge("CMD_AUTO_CONNECT did save config -> "
                             + " nid=" + Integer.toString(netId));
@@ -5922,21 +6010,24 @@ public class WifiStateMachine extends StateMachine {
 
                     /* Save the network config */
                     if (config != null) {
-                        result = mWifiConfigStore.saveNetwork(config);
+                        result = mWifiConfigStore.saveNetwork(config, message.sendingUid);
                         netId = result.getNetworkId();
                     }
+                    config = mWifiConfigStore.getWifiConfiguration(netId);
 
                     if (config == null) {
                         loge("CONNECT_NETWORK id=" + Integer.toString(netId) + " "
                                 + mSupplicantStateTracker.getSupplicantStateName() + " my state "
                                 + getCurrentState().getName());
                     } else {
+                        String wasSkipped = config.autoJoinBailedDueToLowRssi ? " skipped" : "";
                         loge("CONNECT_NETWORK id=" + Integer.toString(netId)
                                 + " config=" + config.SSID
                                 + " cnid=" + config.networkId
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
                                 + " my state " + getCurrentState().getName()
-                                + " uid = " + message.sendingUid);
+                                + " uid = " + message.sendingUid
+                                + wasSkipped);
                     }
 
                     autoRoamSetBSSID(netId, "any");
@@ -6010,7 +6101,7 @@ public class WifiStateMachine extends StateMachine {
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
                                 + " my state " + getCurrentState().getName());
 
-                    result = mWifiConfigStore.saveNetwork(config);
+                    result = mWifiConfigStore.saveNetwork(config, -1);
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         if (mWifiInfo.getNetworkId() == result.getNetworkId()) {
                             if (result.hasIpChanged()) {
@@ -6375,13 +6466,13 @@ public class WifiStateMachine extends StateMachine {
                             if (tryFullBandScan) {
                                 lastFullBandConnectedTimeMilli = now_ms;
                                 if (fullBandConnectedTimeIntervalMilli
-                                        < mWifiConfigStore.associatedPartialScanPeriodMs) {
+                                        < mWifiConfigStore.associatedPartialScanPeriodMilli) {
                                     // Sanity
                                     fullBandConnectedTimeIntervalMilli
-                                            = mWifiConfigStore.associatedPartialScanPeriodMs;
+                                            = mWifiConfigStore.associatedPartialScanPeriodMilli;
                                 }
                                 if (fullBandConnectedTimeIntervalMilli
-                                        < maxFullBandConnectedTimeIntervalMilli) {
+                                        < mWifiConfigStore.associatedFullScanMaxIntervalMilli) {
                                     // Increase the interval
                                     fullBandConnectedTimeIntervalMilli
                                             = fullBandConnectedTimeIntervalMilli
@@ -6436,6 +6527,9 @@ public class WifiStateMachine extends StateMachine {
                                 loge(stats.toString());
                             }
                             if (stats != null) {
+                                mOnTime = stats.on_time;
+                                mTxTime = stats.tx_time;
+                                mRxTime = stats.rx_time;
                                 // Sanity check the results provided by driver
                                 if (mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI
                                         && (stats.rssi_mgmt == 0
@@ -6485,7 +6579,7 @@ public class WifiStateMachine extends StateMachine {
                     sendMessage(CMD_DISCONNECT);
                     break;
                 case CMD_DELAYED_NETWORK_DISCONNECT:
-                    if (!linkDebouncing) {
+                    if (!linkDebouncing && mWifiConfigStore.enableLinkDebouncing) {
 
                         // Ignore if we are not debouncing
                         loge("CMD_DELAYED_NETWORK_DISCONNECT and not debouncing - ignore "
@@ -6820,11 +6914,11 @@ public class WifiStateMachine extends StateMachine {
                 log("ConnectedState Enter "
                         + " mScreenOn=" + mScreenOn
                         + " scanperiod="
-                        + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMs) );
+                        + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMilli) );
             }
             if (mScreenOn
                     && mEnableAutoJoinScanWhenAssociated) {
-                mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMs;
+                mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMilli;
                 // Scan after 200ms
                 setScanAlarm(true, 200);
             } else {
@@ -7114,6 +7208,9 @@ public class WifiStateMachine extends StateMachine {
                 sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
                         ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
             }
+
+            mDisconnectedTimeStamp = System.currentTimeMillis();
+
         }
         @Override
         public boolean processMessage(Message message) {

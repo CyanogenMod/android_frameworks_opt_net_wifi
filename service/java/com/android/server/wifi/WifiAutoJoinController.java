@@ -806,14 +806,17 @@ public class WifiAutoJoinController {
     }
 
     public int rssiBoostFrom5GHzRssi(int rssi, String dbg) {
+        if (!mWifiConfigStore.enable5GHzPreference) {
+            return 0;
+        }
         if (rssi
-                > mWifiConfigStore.thresholdBandPreferenceLowRssi5) {
+                > mWifiConfigStore.bandPreferenceBoostThreshold5) {
             // Boost by 2 dB for each point
             //    Start boosting at -65
             //    Boost by 20 if above -55
             //    Boost by 40 if abore -45
-            int boost = mWifiConfigStore.factorBandPreferenceLowRssi5
-                    *(rssi - mWifiConfigStore.thresholdBandPreferenceLowRssi5);
+            int boost = mWifiConfigStore.bandPreferenceBoostFactor5
+                    *(rssi - mWifiConfigStore.bandPreferenceBoostThreshold5);
             if (boost > 50) {
                 // 50 dB boost is set so as to overcome the hysteresis of +20 plus a difference of
                 // 25 dB between 2.4 and 5GHz band. This allows jumping from 2.4 to 5GHz
@@ -827,9 +830,11 @@ public class WifiAutoJoinController {
         }
 
         if (rssi
-                < mWifiConfigStore.thresholdBandPreferenceRssi24) {
-            // penalize by 10 if < -75
-            return -10;
+                < mWifiConfigStore.bandPreferencePenaltyThreshold5) {
+            // penalize if < -75
+            int boost = mWifiConfigStore.bandPreferencePenaltyFactor5
+                    *(rssi - mWifiConfigStore.bandPreferencePenaltyThreshold5);
+            return boost;
         }
         return 0;
     }
@@ -895,18 +900,18 @@ public class WifiAutoJoinController {
             // Apply hysteresis: we favor the currentBSSID by giving it a boost
             if (currentBSSID != null && currentBSSID.equals(b.BSSID)) {
                 // Reduce the benefit of hysteresis if RSSI <= -75
-                if (b.level <= mWifiConfigStore.thresholdBandPreferenceRssi24) {
-                    bRssiBoost = +8;
+                if (b.level <= mWifiConfigStore.bandPreferencePenaltyThreshold5) {
+                    bRssiBoost = mWifiConfigStore.associatedHysteresisLow;
                 } else {
-                    bRssiBoost = +14;
+                    bRssiBoost = mWifiConfigStore.associatedHysteresisHigh;
                 }
             }
             if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
-                if (a.level <= mWifiConfigStore.thresholdBandPreferenceRssi24) {
+                if (a.level <= mWifiConfigStore.bandPreferencePenaltyThreshold5) {
                     // Reduce the benefit of hysteresis if RSSI <= -75
-                    aRssiBoost = +8;
+                    aRssiBoost = mWifiConfigStore.associatedHysteresisLow;
                 } else {
-                    aRssiBoost = +14;
+                    aRssiBoost = mWifiConfigStore.associatedHysteresisHigh;
                 }
             }
 
@@ -1250,36 +1255,50 @@ public class WifiAutoJoinController {
                 continue;
             }
 
-            if (lastSelectedConfiguration == null ||
-                    !config.configKey().equals(lastSelectedConfiguration)) {
+            boolean isLastSelected = false;
+            if (lastSelectedConfiguration != null &&
+                    config.configKey().equals(lastSelectedConfiguration)) {
+                isLastSelected = true;
+            }
+
+            if (config.visibility == null) {
+                continue;
+            }
+            int boost = config.autoJoinUseAggressiveJoinAttemptThreshold;
+            if ((config.visibility.rssi5 + boost)
+                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI
+                        && (config.visibility.rssi24 + boost)
+                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin24RSSI) {
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip due to low visibility -> status="
+                            + config.autoJoinStatus
+                            + " key " + config.configKey(true) + " rssi="
+                            + config.visibility.rssi24 + ", " + config.visibility.rssi5
+                            + " num=" + config.visibility.num24
+                            + ", " + config.visibility.num5);
+                }
+
                 // Don't try to autojoin a network that is too far but
                 // If that configuration is a user's choice however, try anyway
-                if (config.visibility == null) {
+                if (!isLastSelected) {
+                    config.autoJoinBailedDueToLowRssi = true;
                     continue;
-                }
-                if (config.visibility.rssi5
-                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI
-                        && config.visibility.rssi24
-                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin24RSSI) {
-                    if (DBG) {
-                        logDbg("attemptAutoJoin skip due to low visibility -> status="
-                                + config.autoJoinStatus
-                                + " key " + config.configKey(true) + " rssi="
-                                + config.visibility.rssi24 + ", " + config.visibility.rssi5
-                                + " num=" + config.visibility.num24
-                                + ", " + config.visibility.num5);
+                } else {
+                    // Next time, try to be a bit more aggressive in auto-joining
+                    if (config.autoJoinUseAggressiveJoinAttemptThreshold
+                            < WifiConfiguration.MAX_INITIAL_AUTO_JOIN_RSSI_BOOST) {
+                        config.autoJoinUseAggressiveJoinAttemptThreshold += 2;
                     }
-                    continue;
                 }
-                if (config.noInternetAccess) {
-                    // Avoid autojoining this network because last time we used it, it didn't
-                    // have internet access
-                    if (DBG) {
-                        logDbg("attemptAutoJoin skip candidate due to noInternetAccess flag "
-                                + config.configKey(true));
-                    }
-                    continue;
+            }
+            if (config.noInternetAccess && !isLastSelected) {
+                // Avoid autojoining this network because last time we used it, it didn't
+                // have internet access
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip candidate due to noInternetAccess flag "
+                            + config.configKey(true));
                 }
+                continue;
             }
 
             if (DBG) {

@@ -619,7 +619,7 @@ public class WifiWatchdogStateMachine extends StateMachine {
         public void enter() {
             if (DBG) logd(getName());
             mSampleCount = 0;
-            mCurrentBssid.newLinkDetected();
+            if (mCurrentBssid != null) mCurrentBssid.newLinkDetected();
             sendMessage(obtainMessage(CMD_RSSI_FETCH, ++mRssiFetchToken, 0));
         }
 
@@ -646,6 +646,9 @@ public class WifiWatchdogStateMachine extends StateMachine {
                     break;
 
                 case WifiManager.RSSI_PKTCNT_FETCH_SUCCEEDED:
+                    if (mCurrentBssid == null || msg.obj == null) {
+                        break;
+                    }
                     RssiPacketCountInfo info = (RssiPacketCountInfo) msg.obj;
                     int rssi = info.rssi;
                     if (DBG) logd("Fetch RSSI succeed, rssi=" + rssi);
@@ -790,6 +793,9 @@ public class WifiWatchdogStateMachine extends StateMachine {
                     break;
 
                 case WifiManager.RSSI_PKTCNT_FETCH_SUCCEEDED:
+                    if (mCurrentBssid == null) {
+                        break;
+                    }
                     RssiPacketCountInfo info = (RssiPacketCountInfo) msg.obj;
                     int rssi = info.rssi;
                     int mrssi = (mLastRssi + rssi) / 2;
