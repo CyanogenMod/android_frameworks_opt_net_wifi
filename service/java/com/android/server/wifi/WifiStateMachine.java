@@ -3280,12 +3280,13 @@ public class WifiStateMachine extends StateMachine {
         }
         int score = 56; //starting score, temporarily hardcoded in between 50 and 60
         boolean isBadLinkspeed = (mWifiInfo.is24GHz()
-                && mWifiInfo.getLinkSpeed() < 6)
-                || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed() < 12);
+                && mWifiInfo.getLinkSpeed() < mWifiConfigStore.badLinkSpeed24)
+                || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed()
+                < mWifiConfigStore.badLinkSpeed5);
         boolean isGoodLinkspeed = (mWifiInfo.is24GHz()
-                && mWifiInfo.getLinkSpeed() >= 24)
-                || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed() >= 48);
-
+                && mWifiInfo.getLinkSpeed() >= mWifiConfigStore.goodLinkSpeed24)
+                || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed()
+                >= mWifiConfigStore.goodLinkSpeed5);
 
         /**
          * We want to make sure that we use the 24GHz RSSI thresholds is
@@ -3348,9 +3349,10 @@ public class WifiStateMachine extends StateMachine {
                     }
                     currentConfiguration.numTicksAtBadRSSI = 0;
                 }
-                if (currentConfiguration.numUserTriggeredWifiDisableBadRSSI > 0
+                if (mWifiConfigStore.enableWifiCellularHandoverUserTriggeredAdjustment &&
+                        (currentConfiguration.numUserTriggeredWifiDisableBadRSSI > 0
                         || currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
-                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
+                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
                     score = score -5;
                     penalizedDueToUserTriggeredDisconnect = 1;
                 }
@@ -3367,8 +3369,9 @@ public class WifiStateMachine extends StateMachine {
                     }
                     currentConfiguration.numTicksAtLowRSSI = 0;
                 }
-                if (currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
-                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
+                if (mWifiConfigStore.enableWifiCellularHandoverUserTriggeredAdjustment &&
+                        (currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
+                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
                     score = score -5;
                     penalizedDueToUserTriggeredDisconnect = 2;
                 }
@@ -3382,7 +3385,8 @@ public class WifiStateMachine extends StateMachine {
                     }
                     currentConfiguration.numTicksAtNotHighRSSI = 0;
                 }
-                if (currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
+                if (mWifiConfigStore.enableWifiCellularHandoverUserTriggeredAdjustment &&
+                        currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
                     score = score -5;
                     penalizedDueToUserTriggeredDisconnect = 3;
                 }
