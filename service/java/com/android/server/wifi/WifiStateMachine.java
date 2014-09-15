@@ -516,8 +516,6 @@ public class WifiStateMachine extends StateMachine {
 
    /* Set the frequency band */
     static final int CMD_SET_FREQUENCY_BAND               = BASE + 90;
-    /* Enable background scan for configured networks */
-    static final int CMD_ENABLE_BACKGROUND_SCAN           = BASE + 91;
     /* Enable TDLS on a specific MAC address */
     static final int CMD_ENABLE_TDLS                      = BASE + 92;
     /* DHCP/IP configuration watchdog */
@@ -1112,7 +1110,15 @@ public class WifiStateMachine extends StateMachine {
             } else {
                 initialDelayMilli = delayMilli;
             }
-            mAlarmManager.setRepeating(AlarmManager.RTC_WAKEUP,
+
+            int type = AlarmManager.RTC;
+
+            /* Set RTC_WAKEUP alarms if PNO is not supported - because no one is */
+            /* going to wake up the host processor to look for access points */
+            if (mBackgroundScanSupported == false)
+                type = AlarmManager.RTC_WAKEUP;
+
+            mAlarmManager.setRepeating(type,
                     System.currentTimeMillis() + initialDelayMilli,
                     mCurrentScanAlarmMs,
                     mScanIntent);
@@ -2063,10 +2069,6 @@ public class WifiStateMachine extends StateMachine {
        sendMessage(CMD_ENABLE_RSSI_POLL, enabled ? 1 : 0, 0);
     }
 
-    public void enableBackgroundScanCommand(boolean enabled) {
-       sendMessage(CMD_ENABLE_BACKGROUND_SCAN, enabled ? 1 : 0, 0);
-    }
-
     public void enableAllNetworks() {
         sendMessage(CMD_ENABLE_ALL_NETWORKS);
     }
@@ -2715,7 +2717,7 @@ public class WifiStateMachine extends StateMachine {
         return sb.toString();
     }
 
-    private void handleScreenStateChanged(boolean screenOn) {
+    private void handleScreenStateChanged(boolean screenOn, boolean startBackgroundScanIfNeeded) {
         mScreenOn = screenOn;
         if (PDBG) {
             loge(" handleScreenStateChanged Enter: screenOn=" + screenOn
@@ -2725,10 +2727,6 @@ public class WifiStateMachine extends StateMachine {
                     + " suppState:" + mSupplicantStateTracker.getSupplicantStateName());
         }
         enableRssiPolling(screenOn);
-        if (mBackgroundScanSupported) {
-            enableBackgroundScanCommand(screenOn == false);
-        }
-
         if (screenOn) enableAllNetworks();
         if (mUserWantsSuspendOpt.get()) {
             if (screenOn) {
@@ -2756,6 +2754,17 @@ public class WifiStateMachine extends StateMachine {
             }
         } else {
             setScanAlarm(false, 0);
+        }
+
+        if (mBackgroundScanSupported) {
+            mEnableBackgroundScan = (screenOn == false);
+        }
+
+        if (DBG) logd("backgroundScan enabled=" + mEnableBackgroundScan
+                + " startBackgroundScanIfNeeded:" + startBackgroundScanIfNeeded);
+
+        if (startBackgroundScanIfNeeded) {
+            mWifiNative.enableBackgroundScan(mEnableBackgroundScan);
         }
 
         if (DBG) log("handleScreenStateChanged Exit: " + screenOn);
@@ -4265,9 +4274,6 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_ENABLE_RSSI_POLL:
                     mEnableRssiPolling = (message.arg1 == 1);
                     break;
-                case CMD_ENABLE_BACKGROUND_SCAN:
-                    mEnableBackgroundScan = (message.arg1 == 1);
-                    break;
                 case CMD_SET_HIGH_PERF_MODE:
                     if (message.arg1 == 1) {
                         setSuspendOptimizations(SUSPEND_DUE_TO_HIGH_PERF, false);
@@ -4306,7 +4312,8 @@ public class WifiStateMachine extends StateMachine {
                     startNextBatchedScan();
                     break;
                 case CMD_SCREEN_STATE_CHANGED:
-                    handleScreenStateChanged(message.arg1 != 0);
+                    handleScreenStateChanged(message.arg1 != 0,
+                            /* startBackgroundScanIfNeeded = */ false);
                     break;
                     /* Discard */
                 case CMD_START_SCAN:
@@ -4925,7 +4932,8 @@ public class WifiStateMachine extends StateMachine {
             if (mScreenBroadcastReceived.get() == false) {
                 PowerManager powerManager = (PowerManager)mContext.getSystemService(
                         Context.POWER_SERVICE);
-                handleScreenStateChanged(powerManager.isScreenOn());
+                handleScreenStateChanged(powerManager.isScreenOn(),
+                        /* startBackgroundScanIfNeeded = */ false);
             } else {
                 // Set the right suspend mode settings
                 mWifiNative.setSuspendOptimizations(mSuspendOptNeedsDisabled == 0
@@ -5535,9 +5543,6 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case CMD_START_SCAN:
                 s = "CMD_START_SCAN";
-                break;
-            case CMD_ENABLE_BACKGROUND_SCAN:
-                s = "CMD_ENABLE_BACKGROUND_SCAN";
                 break;
             case CMD_DISABLE_P2P_RSP:
                 s = "CMD_DISABLE_P2P_RSP";
@@ -7254,19 +7259,6 @@ public class WifiStateMachine extends StateMachine {
                         transitionTo(mScanModeState);
                     }
                     break;
-                case CMD_ENABLE_BACKGROUND_SCAN:
-                    mEnableBackgroundScan = (message.arg1 == 1);
-                    loge("CMD_ENABLE_BACKGROUND_SCAN enabled=" + mEnableBackgroundScan
-                            + " suppState:" + mSupplicantStateTracker.getSupplicantStateName());
-
-                    if (mEnableBackgroundScan) {
-                        mWifiNative.enableBackgroundScan(true);
-                        setScanAlarm(false, 0);
-                    } else {
-                        mWifiNative.enableBackgroundScan(false);
-                        setScanAlarm(true, 0);
-                    }
-                    break;
                     /* Ignore network disconnect */
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     break;
@@ -7326,6 +7318,10 @@ public class WifiStateMachine extends StateMachine {
                         // ConnectModeState handles it
                         ret = NOT_HANDLED;
                     }
+                    break;
+                case CMD_SCREEN_STATE_CHANGED:
+                    handleScreenStateChanged(message.arg1 != 0,
+                            /* startBackgroundScanIfNeeded = */ true);
                     break;
                 default:
                     ret = NOT_HANDLED;
