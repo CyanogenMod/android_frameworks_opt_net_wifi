@@ -139,14 +139,17 @@ final class WifiNotificationController {
 
     private synchronized void checkAndSetNotification(NetworkInfo networkInfo,
             List<ScanResult> scanResults) {
+
         // TODO: unregister broadcast so we do not have to check here
         // If we shouldn't place a notification on available networks, then
         // don't bother doing any of the following
         if (!mNotificationEnabled) return;
-        if (networkInfo == null) return;
         if (mWifiState != WifiManager.WIFI_STATE_ENABLED) return;
 
-        NetworkInfo.State state = networkInfo.getState();
+        NetworkInfo.State state = NetworkInfo.State.DISCONNECTED;
+        if (networkInfo != null)
+            state = networkInfo.getState();
+
         if ((state == NetworkInfo.State.DISCONNECTED)
                 || (state == NetworkInfo.State.UNKNOWN)) {
             if (scanResults != null) {
