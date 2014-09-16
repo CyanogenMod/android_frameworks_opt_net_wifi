@@ -1977,6 +1977,8 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                                                                   dhcpResults.getRoutes(iface));
                         } catch (RemoteException e) {
                             loge("Failed to add iface to local network " + e);
+                        } catch (IllegalStateException ie) {
+                            loge("Failed to add iface to local network " + ie);
                         }
                     } else {
                         loge("DHCP failed");
@@ -2830,6 +2832,8 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                 mNwService.removeInterfaceFromLocalNetwork(mGroup.getInterface());
             } catch (RemoteException e) {
                 loge("Failed to remove iface from local network " + e);
+            } catch (IllegalStateException ie) {
+                loge("Failed to remove iface from local network " + ie);
             }
         }
 
