@@ -1050,7 +1050,7 @@ public class WifiAutoJoinController {
         }
 
         // Find the currently connected network: ask the supplicant directly
-        String val = mWifiNative.status();
+        String val = mWifiNative.status(true);
         String status[] = val.split("\\r?\\n");
         if (VDBG) {
             logDbg("attemptAutoJoin() status=" + val + " split="
