@@ -315,8 +315,17 @@ public class WifiNative {
     }
 
     public String status() {
-        return doStringCommand("STATUS");
+        return status(false);
     }
+
+    public String status(boolean noEvents) {
+        if (noEvents) {
+            return doStringCommand("STATUS-NO_EVENTS");
+        } else {
+            return doStringCommand("STATUS");
+        }
+    }
+
 
     public String getMacAddress() {
         //Macaddr = XX.XX.XX.XX.XX.XX
