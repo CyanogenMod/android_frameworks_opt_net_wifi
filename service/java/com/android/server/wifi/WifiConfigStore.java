@@ -465,6 +465,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void enableVerboseLogging(int verbose) {
+        enableVerboseLogging = verbose;
         if (verbose > 0) {
             VDBG = true;
         } else {

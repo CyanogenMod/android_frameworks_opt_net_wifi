@@ -2543,10 +2543,16 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg2));
                 ScanResult result = (ScanResult)msg.obj;
                 if (result != null) {
+                    now = System.currentTimeMillis();
                     sb.append(" bssid=").append(result.BSSID);
                     sb.append(" rssi=").append(result.level);
                     sb.append(" freq=").append(result.frequency);
-                    sb.append(" ").append(result.BSSID);
+                    if (result.seen > 0 && result.seen < now) {
+                        sb.append(" seen=").append(now - result.seen);
+                    } else {
+                        // Somehow the timestamp for this scan result is inconsistent
+                        sb.append(" !seen=").append(result.seen);
+                    }
                 }
                 if (mTargetRoamBSSID != null) {
                     sb.append(" ").append(mTargetRoamBSSID);
@@ -7058,6 +7064,7 @@ public class WifiStateMachine extends StateMachine {
                     if (!autoRoamSetBSSID(config, bssid)) {
                         loge("AUTO_ROAM nothing to do");
                         // Same BSSID, nothing to do
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                         break;
                     };
 
@@ -7085,6 +7092,7 @@ public class WifiStateMachine extends StateMachine {
                         loge("Failed to connect config: " + config + " netId: " + netId);
                         replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
                                 WifiManager.ERROR);
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                         break;
                     }
                     break;
