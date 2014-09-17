@@ -444,11 +444,11 @@ public class WifiConfigStore extends IpConfigStore {
         thresholdGoodRssi5 = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
         thresholdBadRssi24 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
+                R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_24GHz);
         thresholdLowRssi24 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
+                R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_24GHz);
         thresholdGoodRssi24 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
+                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_24GHz);
 
         enableWifiCellularHandoverUserTriggeredAdjustment = mContext.getResources().getBoolean(
                 R.bool.config_wifi_framework_cellular_handover_enable_user_triggered_adjustment);

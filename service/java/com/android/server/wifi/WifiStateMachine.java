@@ -2237,7 +2237,7 @@ public class WifiStateMachine extends StateMachine {
         pw.println("mOperationalMode " + mOperationalMode);
         pw.println("mUserWantsSuspendOpt " + mUserWantsSuspendOpt);
         pw.println("mSuspendOptNeedsDisabled " + mSuspendOptNeedsDisabled);
-        pw.println("Supplicant status " + mWifiNative.status());
+        pw.println("Supplicant status " + mWifiNative.status(true));
         pw.println("mEnableBackgroundScan " + mEnableBackgroundScan);
         pw.println("mLastSetCountryCode " + mLastSetCountryCode);
         pw.println("mPersistedCountryCode " + mPersistedCountryCode);
