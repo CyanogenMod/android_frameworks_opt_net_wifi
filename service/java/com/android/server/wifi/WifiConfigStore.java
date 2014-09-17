@@ -316,6 +316,7 @@ public class WifiConfigStore extends IpConfigStore {
     public int thresholdUnblacklistThreshold24Soft
             = WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT;
     public int enableVerboseLogging = 0;
+    boolean showNetworks = true; // TODO set this back to false, used for debugging 17516271
 
     public int alwaysEnableScansWhileAssociated = 0;
 
@@ -393,7 +394,7 @@ public class WifiConfigStore extends IpConfigStore {
         mContext = c;
         mWifiNative = wn;
 
-        if (VDBG) {
+        if (showNetworks) {
             mLocalLog = mWifiNative.getLocalLog();
             mFileObserver = new WpaConfigFileObserver();
             mFileObserver.startWatching();
@@ -413,7 +414,7 @@ public class WifiConfigStore extends IpConfigStore {
         maxNumPassiveChannelsForPartialScans = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_associated_partial_scan_max_num_passive_channels);
         associatedFullScanMaxIntervalMilli = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_associated_partial_scan_max_num_passive_channels);
+                R.integer.config_wifi_framework_associated_full_scan_max_interval);
         associatedFullScanBackoff = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_associated_full_scan_backoff);
         enableLinkDebouncing = mContext.getResources().getBoolean(
@@ -468,8 +469,14 @@ public class WifiConfigStore extends IpConfigStore {
         enableVerboseLogging = verbose;
         if (verbose > 0) {
             VDBG = true;
+            showNetworks = true;
         } else {
             VDBG = false;
+        }
+        if (verbose > 1) {
+            VVDBG = true;
+        } else {
+            VVDBG = false;
         }
     }
 
@@ -573,7 +580,6 @@ public class WifiConfigStore extends IpConfigStore {
 
             // Calculate the RSSI for scan results that are more recent than milli
             config.setVisibility(milli);
-
             if (config.visibility == null) {
                 continue;
             }
@@ -835,7 +841,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
     boolean forgetNetwork(int netId) {
-        if (VDBG) localLog("forgetNetwork", netId);
+        if (showNetworks) localLog("forgetNetwork", netId);
 
         boolean remove = removeConfigAndSendBroadcastIfNeeded(netId);
         if (!remove) {
@@ -861,7 +867,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return network Id
      */
     int addOrUpdateNetwork(WifiConfiguration config, int uid) {
-        if (VDBG) localLog("addOrUpdateNetwork id=", config.networkId);
+        if (showNetworks) localLog("addOrUpdateNetwork id=", config.networkId);
         //adding unconditional message to chase b/15111865
         Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId)
                 + " uid=" + Integer.toString(config.creatorUid)
@@ -888,7 +894,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
     boolean removeNetwork(int netId) {
-        if (VDBG) localLog("removeNetwork", netId);
+        if (showNetworks) localLog("removeNetwork", netId);
         boolean ret = mWifiNative.removeNetwork(netId);
         if (ret) {
             removeConfigAndSendBroadcastIfNeeded(netId);
@@ -1248,9 +1254,11 @@ public class WifiConfigStore extends IpConfigStore {
 
         String[] lines = listStr.split("\n");
 
-        if (VDBG) {
-            loge("loadConfiguredNetworks: found " + Integer.toString(lines.length)
-                    + " networks", true);
+        if (showNetworks) {
+            localLog("WifiConfigStore: loadConfiguredNetworks:  ");
+            for (String net : lines) {
+                localLog(net);
+            }
         }
 
         // Skip the first line, which is a header
@@ -1284,13 +1292,13 @@ public class WifiConfigStore extends IpConfigStore {
 
             if (mNetworkIds.containsKey(configKey(config))) {
                 // That SSID is already known, just ignore this duplicate entry
-                if (VDBG) localLog("discarded duplicate network ", config.networkId);
+                if (showNetworks) localLog("discarded duplicate network ", config.networkId);
             } else if(config.isValid()){
                 mConfiguredNetworks.put(config.networkId, config);
                 mNetworkIds.put(configKey(config), config.networkId);
-                if (VDBG) localLog("loaded configured network", config.networkId);
+                if (showNetworks) localLog("loaded configured network", config.networkId);
             } else {
-                if (DBG) log("Ignoring loaded configured for network " + config.networkId
+                if (showNetworks) log("Ignoring loaded configured for network " + config.networkId
                     + " because config are not valid");
             }
         }
@@ -1301,22 +1309,24 @@ public class WifiConfigStore extends IpConfigStore {
 
         sendConfiguredNetworksChangedBroadcast();
 
-        if (VDBG) localLog("loadConfiguredNetworks loaded " + mNetworkIds.size() + " networks");
+        if (showNetworks) localLog("loadConfiguredNetworks loaded " + mNetworkIds.size() + " networks");
 
         if (mNetworkIds.size() == 0) {
             // no networks? Lets log if the wpa_supplicant.conf file contents
             BufferedReader reader = null;
             try {
                 reader = new BufferedReader(new FileReader(SUPPLICANT_CONFIG_FILE));
-                if (VDBG) localLog("--- Begin wpa_supplicant.conf Contents ---");
-                for (String line = reader.readLine(); line != null; line = reader.readLine()) {
-                    if (VDBG) localLog(line);
+                if (DBG) {
+                    localLog("--- Begin wpa_supplicant.conf Contents ---", true);
+                    for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                        localLog(line, true);
+                    }
+                    localLog("--- End wpa_supplicant.conf Contents ---", true);
                 }
-                if (VDBG) localLog("--- End wpa_supplicant.conf Contents ---");
             } catch (FileNotFoundException e) {
-                if (VDBG) localLog("Could not open " + SUPPLICANT_CONFIG_FILE + ", " + e);
+                localLog("Could not open " + SUPPLICANT_CONFIG_FILE + ", " + e, true);
             } catch (IOException e) {
-                if (VDBG) localLog("Could not read " + SUPPLICANT_CONFIG_FILE + ", " + e);
+                localLog("Could not read " + SUPPLICANT_CONFIG_FILE + ", " + e, true);
             } finally {
                 try {
                     if (reader != null) {
@@ -1457,10 +1467,12 @@ public class WifiConfigStore extends IpConfigStore {
                             numlink = config.linkedConfigurations.size();
                         }
                         loge("saving network history: " + config.configKey()  + " gw: " +
-                                config.defaultGwMacAddress + " autojoin status: " +
+                                config.defaultGwMacAddress + " autojoin-status: " +
                                 config.autoJoinStatus + " ephemeral=" + config.ephemeral
                                 + " choices:" + Integer.toString(num)
-                                + " link:" + Integer.toString(numlink));
+                                + " link:" + Integer.toString(numlink)
+                                + " status:" + Integer.toString(config.status)
+                                + " nid:" + Integer.toString(config.networkId));
                     }
 
                     if (config.isValid() == false)
@@ -1610,8 +1622,8 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private void readNetworkHistory() {
-        if (VDBG) {
-            loge("will readNetworkHistory path:" + networkHistoryConfigFile, true);
+        if (showNetworks) {
+            localLog("readNetworkHistory() path:" + networkHistoryConfigFile);
         }
         DataInputStream in = null;
         try {
@@ -1641,14 +1653,14 @@ public class WifiConfigStore extends IpConfigStore {
                     // skip reading that configuration data
                     // since we don't have a corresponding network ID
                     if (n == null) {
-                        loge("readNetworkHistory didnt find netid for hash="
+                        localLog("readNetworkHistory didnt find netid for hash="
                                 + Integer.toString(configKey.hashCode())
                                 + " key: " + configKey);
                         continue;
                     }
                     config = mConfiguredNetworks.get(n);
                     if (config == null) {
-                        loge("readNetworkHistory didnt find config for netid="
+                        localLog("readNetworkHistory didnt find config for netid="
                                 + n.toString()
                                 + " key: " + configKey);
                     }
@@ -2619,8 +2631,10 @@ public class WifiConfigStore extends IpConfigStore {
             currentConfig.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
             currentConfig.selfAdded = false;
             currentConfig.didSelfAdd = false;
-            if (DBG) loge("remove deleted status netId=" + Integer.toString(netId)
-                                + " " + currentConfig.configKey());
+            if (DBG) {
+                loge("remove deleted status netId=" + Integer.toString(netId)
+                        + " " + currentConfig.configKey());
+            }
         }
 
         if (currentConfig.status == WifiConfiguration.Status.ENABLED) {
@@ -2774,7 +2788,7 @@ public class WifiConfigStore extends IpConfigStore {
             return null;
         }
 
-        //need to compare with quoted string
+        // Need to compare with quoted string
         String SSID = "\"" + result.SSID + "\"";
 
         if (VVDBG) {
@@ -2880,7 +2894,8 @@ public class WifiConfigStore extends IpConfigStore {
         if (VDBG) {
             StringBuilder dbg = new StringBuilder();
             dbg.append("makeChannelList age=" + Integer.toString(age)
-                    + " for " + config.configKey());
+                    + " for " + config.configKey()
+                    + " max=" + maxNumActiveChannelsForPartialScans);
             if (config.scanResultCache != null) {
                 dbg.append(" bssids=" + config.scanResultCache.size());
             }
@@ -2937,55 +2952,83 @@ public class WifiConfigStore extends IpConfigStore {
         return channels;
     }
 
-    public WifiConfiguration updateSavedNetworkHistory(ScanResult scanResult) {
-        WifiConfiguration found = null;
+    // Update the WifiConfiguration database with the new scan result
+    // A scan result can be associated to multiple WifiConfigurations
+    public boolean updateSavedNetworkHistory(ScanResult scanResult) {
+        int numConfigFound = 0;
         if (scanResult == null)
-            return found;
+            return false;
 
-        // First step, look for this scan Result by SSID + Key Management
-        String key = WifiConfiguration.configKey(scanResult);
-        int hash = key.hashCode();
+        String SSID = "\"" + scanResult.SSID + "\"";
 
-        Integer netId = mNetworkIds.get(hash);
-        if (netId == null) return null;
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null) {
-           if (config.scanResultCache == null) {
-                config.scanResultCache = new HashMap<String, ScanResult>();
-           }
-           if (config.scanResultCache == null) {
-                return null;
-           }
-           // Add the scan result to this WifiConfiguration
-           config.scanResultCache.put(scanResult.BSSID, scanResult);
-           mConfiguredNetworks.put(netId, config);
-           // Since we added a scan result to this configuration, re-attempt linking
-           linkConfiguration(config);
-           found = config;
-        }
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            boolean found = false;
 
-        if (VDBG) {
-            config = mConfiguredNetworks.get(netId);
-            if (config != null) {
-                if (config.scanResultCache != null) {
-                    String status = "";
-                    if (scanResult.autoJoinStatus > 0) {
-                        status = " status=" + Integer.toString(scanResult.autoJoinStatus);
-                    }
-                    loge("                    got known scan result " +
-                            scanResult.BSSID + " key : " + key + " num: " +
-                            Integer.toString(config.scanResultCache.size())
-                            + " rssi=" + Integer.toString(scanResult.level)
-                            + " freq=" + Integer.toString(scanResult.frequency)
-                            + status);
-                } else {
-                    loge("                    got known scan result and no cache" +
-                            scanResult.BSSID + " key : " + key);
+            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
+                if (VVDBG) {
+                    loge("updateSavedNetworkHistory(): skip deleted " + config.configKey());
                 }
+                // Make sure we dont add the scan result to a deleted config
+                continue;
+            }
+
+            if (config.SSID == null || !config.SSID.equals(SSID)) {
+                // SSID mismatch
+                if (VVDBG) {
+                    loge("updateSavedNetworkHistory(): SSID mismatch " + config.configKey()
+                            + " SSID=" + config.SSID + " " + SSID);
+                }
+                continue;
+            }
+            if (VDBG) {
+                loge("updateSavedNetworkHistory(): try " + config.configKey()
+                        + " SSID=" + config.SSID + " " + scanResult.SSID
+                        + " " + scanResult.capabilities);
+            }
+            if (scanResult.capabilities.contains("WEP")
+                    && config.configKey().contains("WEP")) {
+                found = true;
+            } else if (scanResult.capabilities.contains("PSK")
+                    && config.configKey().contains("PSK")) {
+                found = true;
+            } else if (scanResult.capabilities.contains("EAP")
+                    && config.configKey().contains("EAP")) {
+                found = true;
+            } else if (!scanResult.capabilities.contains("WEP")
+                && !scanResult.capabilities.contains("PSK")
+                && !scanResult.capabilities.contains("EAP")
+                && !config.configKey().contains("WEP")
+                    && !config.configKey().contains("PSK")
+                    && !config.configKey().contains("EAP")) {
+                found = true;
+            }
+
+            if (found) {
+                if (config.scanResultCache == null) {
+                    config.scanResultCache = new HashMap<String, ScanResult>();
+                }
+                numConfigFound ++;
+                // Add the scan result to this WifiConfiguration
+                config.scanResultCache.put(scanResult.BSSID, scanResult);
+                // Since we added a scan result to this configuration, re-attempt linking
+                linkConfiguration(config);
+            }
+
+            if (VDBG && found) {
+                String status = "";
+                if (scanResult.autoJoinStatus > 0) {
+                    status = " status=" + Integer.toString(scanResult.autoJoinStatus);
+                }
+                loge("        got known scan result " +
+                        scanResult.BSSID + " key : "
+                        + config.configKey() + " num: " +
+                        Integer.toString(config.scanResultCache.size())
+                        + " rssi=" + Integer.toString(scanResult.level)
+                        + " freq=" + Integer.toString(scanResult.frequency)
+                        + status);
             }
         }
-        return found;
-
+        return numConfigFound != 0;
     }
 
     /* Compare current and new configuration and write to file on change */
@@ -3392,6 +3435,11 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    private void localLog(String s, boolean force) {
+        localLog(s);
+        if (force) loge(s);
+    }
+
     private void localLog(String s, int netId) {
         if (mLocalLog == null) {
             return;
@@ -3403,7 +3451,7 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         if (config != null) {
-            mLocalLog.log(s + " " + config.getPrintableSsid());
+            mLocalLog.log(s + " " + config.getPrintableSsid() + " " + netId);
         } else {
             mLocalLog.log(s + " " + netId);
         }
