@@ -160,7 +160,7 @@ class WifiController extends StateMachine {
                 ", isWifiEnabled = " + isWifiEnabled +
                 ", isScanningAvailable = " + isScanningAlwaysAvailable);
 
-        if (isWifiEnabled && isScanningAlwaysAvailable) {
+        if (isScanningAlwaysAvailable) {
             setInitialState(mStaDisabledWithScanState);
         } else {
             setInitialState(mApStaDisabledState);
@@ -418,6 +418,8 @@ class WifiController extends StateMachine {
                         } else {
                             checkLocksAndTransitionWhenDeviceIdle();
                         }
+                    } else if (mSettingsStore.isScanAlwaysAvailable()) {
+                        transitionTo(mStaDisabledWithScanState);
                     }
                     break;
                 case CMD_SCAN_ALWAYS_MODE_CHANGED:
