@@ -160,9 +160,9 @@ public class WifiNative {
         if (DBG) Log.d(mTAG, "doBoolean: " + command);
         synchronized (mLock) {
             int cmdId = getNewCmdIdLocked();
-            localLog(cmdId + "->" + mInterfacePrefix + command);
+            String toLog = Integer.toString(cmdId) + ":" + mInterfacePrefix + command;
             boolean result = doBooleanCommandNative(mInterfacePrefix + command);
-            localLog(cmdId + "<-" + result);
+            localLog(toLog + " -> " + result);
             if (DBG) Log.d(mTAG, command + ": returned " + result);
             return result;
         }
@@ -172,9 +172,9 @@ public class WifiNative {
         if (DBG) Log.d(mTAG, "doInt: " + command);
         synchronized (mLock) {
             int cmdId = getNewCmdIdLocked();
-            localLog(cmdId + "->" + mInterfacePrefix + command);
+            String toLog = Integer.toString(cmdId) + ":" + mInterfacePrefix + command;
             int result = doIntCommandNative(mInterfacePrefix + command);
-            localLog(cmdId + "<-" + result);
+            localLog(toLog + " -> " + result);
             if (DBG) Log.d(mTAG, "   returned " + result);
             return result;
         }
@@ -189,12 +189,14 @@ public class WifiNative {
         }
         synchronized (mLock) {
             int cmdId = getNewCmdIdLocked();
-            localLog(cmdId + "->" + mInterfacePrefix + command);
+            String toLog = Integer.toString(cmdId) + ":" + mInterfacePrefix + command;
             String result = doStringCommandNative(mInterfacePrefix + command);
             if (result == null) {
                 if (DBG) Log.d(mTAG, "doStringCommandNative no result");
             } else {
-                localLog(cmdId + "<-" + result);
+                if (!command.startsWith("STATUS-")) {
+                    localLog(toLog + " -> " + result);
+                }
                 if (DBG) Log.d(mTAG, "   returned " + result.replace("\n", " "));
             }
             return result;

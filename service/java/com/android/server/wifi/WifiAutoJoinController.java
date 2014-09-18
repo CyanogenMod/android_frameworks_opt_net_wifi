@@ -144,6 +144,7 @@ public class WifiAutoJoinController {
     int addToScanCache(List<ScanResult> scanList) {
         int numScanResultsKnown = 0; // Record number of scan results we knew about
         WifiConfiguration associatedConfig = null;
+        boolean didAssociate = false;
 
         ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
@@ -180,24 +181,29 @@ public class WifiAutoJoinController {
                     unknownScanResults.add(nkey);
                 }
                 if (VDBG) {
+                    String cap = "";
+                    if (result.capabilities != null)
+                        cap = result.capabilities;
                     logDbg(result.SSID + " " + result.BSSID + " rssi="
-                            + result.level + " is not scored");
+                            + result.level + " cap " + cap + " is not scored");
                 }
             } else {
                 if (VDBG) {
+                    String cap = "";
+                    if (result.capabilities != null)
+                        cap = result.capabilities;
                     int score = mNetworkScoreCache.getNetworkScore(result);
                     logDbg(result.SSID + " " + result.BSSID + " rssi="
-                            + result.level + " is scored : " + score);
+                            + result.level + " cap " + cap + " is scored : " + score);
                 }
             }
 
             scanResultCache.put(result.BSSID, new ScanResult(result));
-
             // Add this BSSID to the scanResultCache of a Saved WifiConfiguration
-            associatedConfig = mWifiConfigStore.updateSavedNetworkHistory(result);
+            didAssociate = mWifiConfigStore.updateSavedNetworkHistory(result);
 
             // If not successful, try to associate this BSSID to an existing Saved WifiConfiguration
-            if (associatedConfig == null) {
+            if (!didAssociate) {
                 // We couldn't associate the scan result to a Saved WifiConfiguration
                 // Hence it is untrusted
                 result.untrusted = true;
@@ -205,10 +211,11 @@ public class WifiAutoJoinController {
                 if (associatedConfig != null && associatedConfig.SSID != null) {
                     if (VDBG) {
                         logDbg("addToScanCache save associated config "
-                                + associatedConfig.SSID + " with " + associatedConfig.SSID);
+                                + associatedConfig.SSID + " with " + result.SSID);
                     }
                     mWifiStateMachine.sendMessage(
                             WifiStateMachine.CMD_AUTO_SAVE_NETWORK, associatedConfig);
+                    didAssociate = true;
                 }
             } else {
                 // If the scan result has been blacklisted fir 18 hours -> unblacklist
@@ -217,7 +224,7 @@ public class WifiAutoJoinController {
                     result.setAutoJoinStatus(ScanResult.ENABLED);
                 }
             }
-            if (associatedConfig != null) {
+            if (didAssociate) {
                 numScanResultsKnown++;
             }
         }
