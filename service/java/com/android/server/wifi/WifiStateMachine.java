@@ -1569,6 +1569,9 @@ public class WifiStateMachine extends StateMachine {
     private int mOnTime = 0;
     private int mTxTime = 0;
     private int mRxTime = 0;
+    private int mOnTimeStartScan = 0;
+    private int mTxTimeStartScan = 0;
+    private int mRxTimeStartScan = 0;
     private int mOnTimeScan = 0;
     private int mTxTimeScan = 0;
     private int mRxTimeScan = 0;
@@ -1576,34 +1579,78 @@ public class WifiStateMachine extends StateMachine {
     private int mTxTimeThisScan = 0;
     private int mRxTimeThisScan = 0;
 
-    void getRadioScanStats() {
+    private int mOnTimeScreenStateChange = 0;
+    private int mOnTimeAtLastReport = 0;
+    private long lastOntimeReportTimeStamp = 0;
+    private long lastScreenStateChangeTimeStamp = 0;
+    private int mOnTimeLastReport = 0;
+    private int mTxTimeLastReport = 0;
+    private int mRxTimeLastReport = 0;
+
+    private long lastLinkLayerStatsUpdate = 0;
+
+    String reportOnTime() {
+        long now = System.currentTimeMillis();
+        StringBuilder sb = new StringBuilder();
+        // Report stats since last report
+        int on = mOnTime - mOnTimeLastReport;
+        mOnTimeLastReport = mOnTime;
+        int tx = mTxTime - mTxTimeLastReport;
+        mTxTimeLastReport = mTxTime;
+        int rx = mRxTime - mRxTimeLastReport;
+        mRxTimeLastReport = mRxTime;
+        int period = (int)(now - lastOntimeReportTimeStamp);
+        lastOntimeReportTimeStamp = now;
+        sb.append(String.format("[on:%d tx:%d rx:%d period:%d]", on, tx, rx, period));
+        // Report stats since Screen State Changed
+        on = mOnTime - mOnTimeScreenStateChange;
+        period = (int)(now - lastScreenStateChangeTimeStamp);
+        sb.append(String.format(" from screen [on:%d period:%d]", on, period));
+        return sb.toString();
+    }
+
+    WifiLinkLayerStats getWifiLinkLayerStats(boolean dbg) {
+        WifiLinkLayerStats stats = null;
         if (mWifiLinkLayerStatsSupported > 0) {
             String name = "wlan0";
-            WifiLinkLayerStats stats = mWifiNative.getWifiLinkLayerStats(name);
+            stats = mWifiNative.getWifiLinkLayerStats(name);
             if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
                 mWifiLinkLayerStatsSupported -= 1;
             } else if (stats != null) {
-                mOnTimeThisScan = stats.on_time - mOnTime;
-                mTxTimeThisScan = stats.tx_time - mTxTime;
-                mRxTimeThisScan = stats.rx_time - mRxTime;
-                mOnTimeScan += mOnTimeThisScan;
-                mTxTimeScan += mTxTimeThisScan;
-                mRxTimeScan += mRxTimeThisScan;
+                lastLinkLayerStatsUpdate = System.currentTimeMillis();
+                mOnTime = stats.on_time;
+                mTxTime = stats.tx_time;
+                mRxTime = stats.rx_time;
+                if (dbg) {
+                    loge("WifiLinkLayerStats:");
+                    loge(stats.toString());
+                }
             }
+        }
+        return stats;
+    }
+
+    void startRadioScanStats() {
+        WifiLinkLayerStats stats = getWifiLinkLayerStats(false);
+        if (stats != null) {
+            mOnTimeStartScan = stats.on_time;
+            mTxTimeStartScan = stats.tx_time;
+            mRxTimeStartScan = stats.rx_time;
+            mOnTime = stats.on_time;
+            mTxTime = stats.tx_time;
+            mRxTime = stats.rx_time;
         }
     }
 
     void closeRadioScanStats() {
-        if (mWifiLinkLayerStatsSupported > 0) {
-            String name = "wlan0";
-            WifiLinkLayerStats stats = mWifiNative.getWifiLinkLayerStats(name);
-            if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
-                mWifiLinkLayerStatsSupported -= 1;
-            } else if (stats != null) {
-                mOnTime = stats.on_time;
-                mTxTime = stats.tx_time;
-                mRxTime = stats.rx_time;
-            }
+        WifiLinkLayerStats stats = getWifiLinkLayerStats(false);
+        if (stats != null) {
+            mOnTimeThisScan = stats.on_time - mOnTimeStartScan;
+            mTxTimeThisScan = stats.tx_time - mTxTimeStartScan;
+            mRxTimeThisScan = stats.rx_time - mRxTimeStartScan;
+            mOnTimeScan += mOnTimeThisScan;
+            mTxTimeScan += mTxTimeThisScan;
+            mRxTimeScan += mRxTimeThisScan;
         }
     }
 
@@ -1621,7 +1668,7 @@ public class WifiStateMachine extends StateMachine {
                 loge(ts + " noteScanstart no scan source");
             }
         }
-        getRadioScanStats();
+        startRadioScanStats();
         if (mScanWorkSource == null && ((callingUid != UNKNOWN_SCAN_SOURCE
                 && callingUid != SCAN_ALARM_SOURCE)
                 || workSource != null)) {
@@ -2275,6 +2322,7 @@ public class WifiStateMachine extends StateMachine {
     protected String getLogRecString(Message msg) {
         WifiConfiguration config;
         Long now;
+        String report;
         StringBuilder sb = new StringBuilder();
         if (mScreenOn) {
             sb.append("!");
@@ -2283,7 +2331,7 @@ public class WifiStateMachine extends StateMachine {
             sb.append("(").append(messageHandlingStatus).append(")");
         }
         sb.append(smToString(msg));
-        if (msg.sendingUid != 0 && msg.sendingUid != Process.WIFI_UID) {
+        if (msg.sendingUid > 0 && msg.sendingUid != Process.WIFI_UID) {
             sb.append(" uid=" + msg.sendingUid);
         }
         switch (msg.what) {
@@ -2319,7 +2367,11 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(String.format(" %.1f,", mWifiInfo.txRetriesRate));
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
-                if (lastScanFreqs != null) sb.append(" f=").append(lastScanFreqs);
+                if (lastScanFreqs != null) sb.append(" list=").append(lastScanFreqs);
+                report = reportOnTime();
+                if (report != null) {
+                    sb.append(" ").append(report);
+                }
                 break;
             case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                 sb.append(" ");
@@ -2409,16 +2461,16 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" dur:").append(lastScanDuration);
                 }
                 if (mOnTime != 0) {
-                    sb.append(" on:").append(mOnTimeThisScan).append(" ").append(mOnTimeScan);
-                    sb.append(" ").append(mOnTime);
+                    sb.append(" on:").append(mOnTimeThisScan).append(",").append(mOnTimeScan);
+                    sb.append(",").append(mOnTime);
                 }
                 if (mTxTime != 0) {
-                    sb.append(" tx:").append(mTxTimeThisScan).append(" ").append(mTxTimeScan);
-                    sb.append(" ").append(mTxTime);
+                    sb.append(" tx:").append(mTxTimeThisScan).append(",").append(mTxTimeScan);
+                    sb.append(",").append(mTxTime);
                 }
                 if (mRxTime != 0) {
-                    sb.append(" rx:").append(mRxTimeThisScan).append(" ").append(mRxTimeScan);
-                    sb.append(" ").append(mRxTime);
+                    sb.append(" rx:").append(mRxTimeThisScan).append(",").append(mRxTimeScan);
+                    sb.append(",").append(mRxTime);
                 }
                 break;
             case WifiMonitor.NETWORK_CONNECTION_EVENT:
@@ -2503,6 +2555,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 if (mWifiInfo.getSSID() != null)
+                if (mWifiInfo.getSSID() != null)
                     sb.append(" ").append(mWifiInfo.getSSID());
                 if (mWifiInfo.getBSSID() != null)
                     sb.append(" ").append(mWifiInfo.getBSSID());
@@ -2514,8 +2567,13 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(String.format(" %.1f,", mWifiInfo.txRetriesRate));
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
-                sb.append(" [on:").append(mOnTime).append(" tx:").append(mTxTime);
-                sb.append(" rx:").append(mRxTime).append("]");
+                report = reportOnTime();
+                if (report != null) {
+                    sb.append(" ").append(report);
+                }
+                if (wifiScoringReport != null) {
+                    sb.append(wifiScoringReport);
+                }
                 break;
             case CMD_AUTO_CONNECT:
             case WifiManager.CONNECT_NETWORK:
@@ -2745,12 +2803,16 @@ public class WifiStateMachine extends StateMachine {
             if (screenOn) {
                 sendMessage(CMD_SET_SUSPEND_OPT_ENABLED, 0, 0);
             } else {
-                //Allow 2s for suspend optimizations to be set
+                // Allow 2s for suspend optimizations to be set
                 mSuspendWakeLock.acquire(2000);
                 sendMessage(CMD_SET_SUSPEND_OPT_ENABLED, 1, 0);
             }
         }
         mScreenBroadcastReceived.set(true);
+
+        getWifiLinkLayerStats(false);
+        mOnTimeScreenStateChange = mOnTime;
+        lastScreenStateChangeTimeStamp = lastLinkLayerStatsUpdate;
 
         if (screenOn) {
             fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMilli;
@@ -3290,17 +3352,19 @@ public class WifiStateMachine extends StateMachine {
         mWifiInfo.rxSuccessRate = 0;
     }
 
+    // For debug, provide information about the last scoring operation
+    String wifiScoringReport = null;
     private void calculateWifiScore(WifiLinkLayerStats stats) {
-
+        StringBuilder sb = new StringBuilder();
         if (stats == null || mWifiLinkLayerStatsSupported <= 0) {
             long mTxPkts = TrafficStats.getTxPackets(mInterfaceName);
             long mRxPkts = TrafficStats.getRxPackets(mInterfaceName);
             mWifiInfo.updatePacketRates(mTxPkts, mRxPkts);
-
         } else {
+            sb.append(" stats");
             mWifiInfo.updatePacketRates(stats);
         }
-        int score = 56; //starting score, temporarily hardcoded in between 50 and 60
+        int score = 56; // Starting score, temporarily hardcoded in between 50 and 60
         boolean isBadLinkspeed = (mWifiInfo.is24GHz()
                 && mWifiInfo.getLinkSpeed() < mWifiConfigStore.badLinkSpeed24)
                 || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed()
@@ -3309,6 +3373,9 @@ public class WifiStateMachine extends StateMachine {
                 && mWifiInfo.getLinkSpeed() >= mWifiConfigStore.goodLinkSpeed24)
                 || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed()
                 >= mWifiConfigStore.goodLinkSpeed5);
+
+        if (isBadLinkspeed) sb.append(" bl");
+        if (isGoodLinkspeed) sb.append(" gl");
 
         /**
          * We want to make sure that we use the 24GHz RSSI thresholds is
@@ -3340,9 +3407,13 @@ public class WifiStateMachine extends StateMachine {
                 homeNetworkBoost = true;
             }
         }
+        if (homeNetworkBoost) sb.append(" hn");
+        if (use24Thresholds) sb.append(" u24");
 
         int rssi = mWifiInfo.getRssi() - 6 * mAggressiveHandover
                 + (homeNetworkBoost ? WifiConfiguration.HOME_NETWORK_RSSI_BOOST : 0);
+        sb.append(String.format(" rssi=%d ag=%d", rssi, mAggressiveHandover));
+
         boolean is24GHz = use24Thresholds || mWifiInfo.is24GHz();
 
         boolean isBadRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdBadRssi24)
@@ -3352,9 +3423,13 @@ public class WifiStateMachine extends StateMachine {
         boolean isHighRSSI = (is24GHz && rssi >= mWifiConfigStore.thresholdGoodRssi24)
                 || (!is24GHz && mWifiInfo.getRssi() >= mWifiConfigStore.thresholdGoodRssi5);
 
+        if (isBadRSSI) sb.append(" br");
+        if (isLowRSSI) sb.append(" lr");
+        if (isHighRSSI) sb.append(" hr");
+
         int penalizedDueToUserTriggeredDisconnect = 0;        // For debug information
         if (currentConfiguration!= null &&
-                (mWifiInfo.txSuccessRate > 10 || mWifiInfo.rxSuccessRate > 10)) {
+                (mWifiInfo.txSuccessRate > 5 || mWifiInfo.rxSuccessRate > 5)) {
             if (isBadRSSI) {
                 currentConfiguration.numTicksAtBadRSSI++;
                 if (currentConfiguration.numTicksAtBadRSSI > 1000) {
@@ -3377,6 +3452,7 @@ public class WifiStateMachine extends StateMachine {
                         || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
                     score = score -5;
                     penalizedDueToUserTriggeredDisconnect = 1;
+                    sb.append(" p1");
                 }
             } else if (isLowRSSI) {
                 currentConfiguration.numTicksAtLowRSSI++;
@@ -3396,6 +3472,7 @@ public class WifiStateMachine extends StateMachine {
                         || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
                     score = score -5;
                     penalizedDueToUserTriggeredDisconnect = 2;
+                    sb.append(" p2");
                 }
             } else if (!isHighRSSI) {
                 currentConfiguration.numTicksAtNotHighRSSI++;
@@ -3411,9 +3488,13 @@ public class WifiStateMachine extends StateMachine {
                         currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
                     score = score -5;
                     penalizedDueToUserTriggeredDisconnect = 3;
+                    sb.append(" p3");
                 }
             }
         }
+        sb.append(String.format(" ticks %d,%d,%d", currentConfiguration.numTicksAtBadRSSI,
+                currentConfiguration.numTicksAtLowRSSI,
+                currentConfiguration.numTicksAtNotHighRSSI));
 
         if (PDBG) {
             String rssiStatus = "";
@@ -3437,19 +3518,24 @@ public class WifiStateMachine extends StateMachine {
             // Link is stuck
             if (mWifiInfo.linkStuckCount < 5)
                 mWifiInfo.linkStuckCount += 1;
+            sb.append(String.format(" ls+=%d", mWifiInfo.linkStuckCount));
             if (PDBG) loge(" bad link -> stuck count ="
                     + Integer.toString(mWifiInfo.linkStuckCount));
         } else if (mWifiInfo.txSuccessRate > 2 || mWifiInfo.txBadRate < 0.1) {
             if (mWifiInfo.linkStuckCount > 0)
                 mWifiInfo.linkStuckCount -= 1;
+            sb.append(String.format(" ls-=%d", mWifiInfo.linkStuckCount));
             if (PDBG) loge(" good link -> stuck count ="
                     + Integer.toString(mWifiInfo.linkStuckCount));
         }
+
+        sb.append(String.format(" [%d", score));
 
         if (mWifiInfo.linkStuckCount > 1) {
             // Once link gets stuck for more than 3 seconds, start reducing the score
             score = score - 2 * (mWifiInfo.linkStuckCount - 1);
         }
+        sb.append(String.format(",%d", score));
 
         if (isBadLinkspeed) {
             score -= 4;
@@ -3457,13 +3543,15 @@ public class WifiStateMachine extends StateMachine {
         } else if ((isGoodLinkspeed) && (mWifiInfo.txSuccessRate > 5)) {
             score += 4; // So as bad rssi alone dont kill us
         }
+        sb.append(String.format(",%d", score));
 
         if (isBadRSSI) {
             if (mWifiInfo.badRssiCount < 7)
                 mWifiInfo.badRssiCount += 1;
         } else if (isLowRSSI) {
-            mWifiInfo.lowRssiCount = 1; // Dont increment
+            mWifiInfo.lowRssiCount = 1; // Dont increment the lowRssi count above 1
             if (mWifiInfo.badRssiCount > 0) {
+                // Decrement bad Rssi count
                 mWifiInfo.badRssiCount -= 1;
             }
         } else {
@@ -3472,6 +3560,7 @@ public class WifiStateMachine extends StateMachine {
         }
 
         score -= mWifiInfo.badRssiCount * 2 +  mWifiInfo.lowRssiCount ;
+        sb.append(String.format(",%d", score));
 
         if (PDBG) loge(" badRSSI count" + Integer.toString(mWifiInfo.badRssiCount)
                      + " lowRSSI count" + Integer.toString(mWifiInfo.lowRssiCount)
@@ -3482,6 +3571,9 @@ public class WifiStateMachine extends StateMachine {
             score += 5;
             if (PDBG) loge(" isHighRSSI       ---> score=" + Integer.toString(score));
         }
+        sb.append(String.format(",%d]", score));
+
+        sb.append(String.format(" brc=%d lrc=%d", mWifiInfo.badRssiCount, mWifiInfo.lowRssiCount));
 
         //sanitize boundaries
         if (score > NetworkAgent.WIFI_BASE_SCORE)
@@ -3499,6 +3591,7 @@ public class WifiStateMachine extends StateMachine {
                 mNetworkAgent.sendNetworkScore(score);
             }
         }
+        wifiScoringReport = sb.toString();
     }
 
     public double getTxPacketRate() {
@@ -3792,7 +3885,6 @@ public class WifiStateMachine extends StateMachine {
       }
 
     private void sendScanResultsAvailableBroadcast() {
-        noteScanEnd();
         Intent intent = new Intent(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
@@ -4698,6 +4790,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                     closeRadioScanStats();
+                    noteScanEnd();
                     setScanResults();
                     sendScanResultsAvailableBroadcast();
                     mIsScanOngoing = false;
@@ -4724,18 +4817,8 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_TARGET_BSSID:
                     break;
                 case CMD_GET_LINK_LAYER_STATS:
-                    WifiLinkLayerStats stats = null;
-                    // Try reading L2 stats a couple of time, allow for a few failures
-                    // in case the HAL/drivers are not completely initialized once we get there
-                    if (mWifiLinkLayerStatsSupported > 0) {
-                        String name = "wlan0";
-                        stats = mWifiNative.getWifiLinkLayerStats(name);
-                        if (name != null && stats == null && mWifiLinkLayerStatsSupported > 0) {
-                            mWifiLinkLayerStatsSupported -= 1;
-                        } else if (DBG && stats != null) {
-                            loge(stats.toString());
-                        }
-                    } else {
+                    WifiLinkLayerStats stats = getWifiLinkLayerStats(DBG);
+                    if (stats == null) {
                         // When firmware doesnt support link layer stats, return an empty object
                         stats = new WifiLinkLayerStats();
                     }
@@ -5641,6 +5724,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_SCREEN_STATE_CHANGED:
                 s = "CMD_SCREEN_STATE_CHANGED";
                 break;
+            case CMD_DISCONNECTING_WATCHDOG_TIMER:
+                s = "CMD_DISCONNECTING_WATCHDOG_TIMER";
+                break;
             default:
                 s = "what:" + Integer.toString(what);
                 break;
@@ -6263,6 +6349,8 @@ public class WifiStateMachine extends StateMachine {
     }
 
     boolean startScanForConfiguration(WifiConfiguration config, boolean restrictChannelList) {
+        if (config == null)
+            return false;
         HashSet<Integer> channels
                 = mWifiConfigStore.makeChannelList(config,
                 ONE_HOUR_MILLI, restrictChannelList);
@@ -6289,6 +6377,7 @@ public class WifiStateMachine extends StateMachine {
             messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
             return true;
         } else {
+            if (DBG) loge("WifiStateMachine no channels for " + config.configKey());
             return false;
         }
     }
@@ -6543,29 +6632,15 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
-                        WifiLinkLayerStats stats = null;
                         if (VVDBG) log(" get link layer stats " + mWifiLinkLayerStatsSupported);
-                        // Try a reading L2 stats a couple of time, allow for a few failures
-                        // in case the HAL/drivers are not completely initialized once we get there
-                        if (mWifiLinkLayerStatsSupported > 0) {
-                            stats = mWifiNative.getWifiLinkLayerStats("wlan0");
-                            if (DBG && stats != null) {
-                                loge(stats.toString());
-                            }
-                            if (stats != null) {
-                                mOnTime = stats.on_time;
-                                mTxTime = stats.tx_time;
-                                mRxTime = stats.rx_time;
-                                // Sanity check the results provided by driver
-                                if (mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI
-                                        && (stats.rssi_mgmt == 0
-                                        || stats.beacon_rx == 0)) {
-                                    stats = null;
-                                }
-                            }
-                            if (stats == null && mWifiLinkLayerStatsSupported > 0) {
-                               mWifiLinkLayerStatsSupported -= 1;
-                            }
+                        WifiLinkLayerStats stats = getWifiLinkLayerStats(VVDBG);
+                        if (stats != null) {
+                           // Sanity check the results provided by driver
+                           if (mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI
+                                    && (stats.rssi_mgmt == 0
+                                    || stats.beacon_rx == 0)) {
+                                stats = null;
+                           }
                         }
                         // Get Info and continue polling
                         fetchRssiLinkSpeedAndFrequencyNative();
