@@ -198,7 +198,8 @@ public class WifiAutoJoinController {
                 }
             }
 
-            scanResultCache.put(result.BSSID, new ScanResult(result));
+            // scanResultCache.put(result.BSSID, new ScanResult(result));
+            scanResultCache.put(result.BSSID, result);
             // Add this BSSID to the scanResultCache of a Saved WifiConfiguration
             didAssociate = mWifiConfigStore.updateSavedNetworkHistory(result);
 
@@ -258,7 +259,7 @@ public class WifiAutoJoinController {
     // Called directly from WifiStateMachine
     int newSupplicantResults(boolean doAutoJoin) {
         int numScanResultsKnown;
-        List<ScanResult> scanList = mWifiStateMachine.syncGetScanResultsList();
+        List<ScanResult> scanList = mWifiStateMachine.getScanResultsListNoCopyUnsync();
         numScanResultsKnown = addToScanCache(scanList);
         ageScanResultsOut(mScanResultMaximumAge);
         if (DBG) {
@@ -307,7 +308,8 @@ public class WifiAutoJoinController {
      * Negatve return values from this functions are meaningless per se, just trying to
      * keep them distinct for debug purpose (i.e. -1, -2 etc...)
      */
-    private int compareNetwork(WifiConfiguration candidate) {
+    private int compareNetwork(WifiConfiguration candidate,
+                               String lastSelectedConfiguration) {
         if (candidate == null)
             return -3;
 
@@ -323,9 +325,44 @@ public class WifiAutoJoinController {
         }
 
         if (DBG) {
-            logDbg("compareNetwork will compare " + candidate.configKey() + " with current");
+            logDbg("compareNetwork will compare " + candidate.configKey()
+                    + " with current " + currentNetwork.configKey());
         }
         int order = compareWifiConfigurationsTop(currentNetwork, candidate);
+
+        // The lastSelectedConfiguration is the configuration the user has manually selected
+        // thru WifiPicker, or that a 3rd party app asked us to connect to via the
+        // enableNetwork with disableOthers=true WifiManager API
+        // As this is a direct user choice, we strongly prefer this configuration,
+        // hence give +/-100
+        if ((lastSelectedConfiguration != null)
+                && currentNetwork.configKey().equals(lastSelectedConfiguration)) {
+            // currentNetwork is the last selected configuration,
+            // so keep it above connect choices (+/-60) and
+            // above RSSI/scorer based selection of linked configuration (+/- 50)
+            // by reducing order by -100
+            order = order - 100;
+            if (VDBG)   {
+                logDbg("     ...and prefers -100 " + currentNetwork.configKey()
+                        + " over " + candidate.configKey()
+                        + " because it is the last selected -> "
+                        + Integer.toString(order));
+            }
+        } else if ((lastSelectedConfiguration != null)
+                && candidate.configKey().equals(lastSelectedConfiguration)) {
+            // candidate is the last selected configuration,
+            // so keep it above connect choices (+/-60) and
+            // above RSSI/scorer based selection of linked configuration (+/- 50)
+            // by increasing order by +100
+            order = order + 100;
+            if (VDBG)   {
+                logDbg("     ...and prefers +100 " + candidate.configKey()
+                        + " over " + currentNetwork.configKey()
+                        + " because it is the last selected -> "
+                        + Integer.toString(order));
+            }
+        }
+
         return order;
     }
 
@@ -358,6 +395,7 @@ public class WifiAutoJoinController {
             // since the user want to connect to this configuration
             selected.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
             selected.selfAdded = false;
+            selected.dirty = true;
         }
 
         if (DBG && userTriggered) {
@@ -894,12 +932,25 @@ public class WifiAutoJoinController {
             int aRssiBoost = 0;
             if ((b.seen == 0) || (b.BSSID == null)
                     || ((nowMs - b.seen) > age)
-                    || b.autoJoinStatus != ScanResult.ENABLED) {
+                    || b.autoJoinStatus != ScanResult.ENABLED
+                    || b.numIpConfigFailures > 8) {
                 continue;
             }
 
             // Pick first one
             if (a == null) {
+                a = b;
+                continue;
+            }
+
+            if (b.numIpConfigFailures < (a.numIpConfigFailures - 1)) {
+                // Prefer a BSSID that doesn't have less number of Ip config failures
+                logDbg("attemptRoam: "
+                        + b.BSSID + " rssi=" + b.level + " ipfail=" +b.numIpConfigFailures
+                        + " freq=" + b.frequency
+                        + " > "
+                        + a.BSSID + " rssi=" + a.level + " ipfail=" +a.numIpConfigFailures
+                        + " freq=" + a.frequency);
                 a = b;
                 continue;
             }
@@ -1112,7 +1163,7 @@ public class WifiAutoJoinController {
             String conf = "";
             String last = "";
             if (currentConfiguration != null) {
-                conf = " curent=" + currentConfiguration.configKey();
+                conf = " current=" + currentConfiguration.configKey();
             }
             if (lastSelectedConfiguration != null) {
                 last = " last=" + lastSelectedConfiguration;
@@ -1156,15 +1207,6 @@ public class WifiAutoJoinController {
          * select Best Network candidate from known WifiConfigurations
          */
         for (WifiConfiguration config : list) {
-            if ((config.status == WifiConfiguration.Status.DISABLED)
-                    && (config.disableReason == WifiConfiguration.DISABLED_AUTH_FAILURE)) {
-                if (DBG) {
-                    logDbg("attemptAutoJoin skip candidate due to auth failure: "
-                            + config.configKey(true));
-                }
-                continue;
-            }
-
             if (config.SSID == null) {
                 continue;
             }
@@ -1175,7 +1217,8 @@ public class WifiAutoJoinController {
                 if (DBG) {
                     logDbg("attemptAutoJoin skip candidate due to auto join status "
                             + Integer.toString(config.autoJoinStatus) + " key "
-                            + config.configKey(true));
+                            + config.configKey(true)
+                    + " reason " + config.disableReason);
                 }
                 continue;
             }
@@ -1309,10 +1352,15 @@ public class WifiAutoJoinController {
             }
 
             if (DBG) {
-                logDbg("attemptAutoJoin trying candidate id="
+                String cur = "";
+                if (candidate != null) {
+                    cur = " current candidate " + candidate.configKey();
+                }
+                logDbg("attemptAutoJoin trying id="
                         + Integer.toString(config.networkId) + " "
                         + config.configKey(true)
-                        + " status=" + config.autoJoinStatus);
+                        + " status=" + config.autoJoinStatus
+                        + cur);
             }
 
             if (candidate == null) {
@@ -1434,7 +1482,7 @@ public class WifiAutoJoinController {
          *  If candidate is found, check the state of the connection so as
          *  to decide if we should be acting on this candidate and switching over
          */
-        int networkDelta = compareNetwork(candidate);
+        int networkDelta = compareNetwork(candidate, lastSelectedConfiguration);
         if (DBG && candidate != null) {
             String doSwitch = "";
             String current = "";
