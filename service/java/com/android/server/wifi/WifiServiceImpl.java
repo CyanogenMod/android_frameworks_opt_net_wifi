@@ -690,6 +690,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      * @param enabled true to enable and false to disable
      */
     public void setWifiApEnabled(WifiConfiguration wifiConfig, boolean enabled) {
+        enforceChangePermission();
         ConnectivityManager.enforceTetherChangePermission(mContext);
         UserManager um = UserManager.get(mContext);
         if (um.hasUserRestriction(UserManager.DISALLOW_CONFIG_TETHERING)) {
