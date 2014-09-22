@@ -127,7 +127,7 @@ public class WifiStateMachine extends StateMachine {
 
     private static final int ONE_HOUR_MILLI = 1000 * 60 * 60;
 
-    private static final byte[] GOOGLE_OUI = new byte[] { 0x00, 0x1A, 0x11};
+    private static final String GOOGLE_OUI = "DA-A1-19";
 
     /* temporary debug flag - best network selection development */
     private static boolean PDBG = false;
@@ -1127,6 +1127,19 @@ public class WifiStateMachine extends StateMachine {
             mAlarmManager.cancel(mScanIntent);
             mAlarmEnabled = false;
         }
+    }
+
+    private boolean setRandomMacOui() {
+        String oui = mContext.getResources().getString(
+                R.string.config_wifi_random_mac_oui, GOOGLE_OUI);
+        String[] ouiParts = oui.split("-");
+        byte[] ouiBytes = new byte[3];
+        ouiBytes[0] = (byte) (Integer.parseInt(ouiParts[0], 16) & 0xFF);
+        ouiBytes[1] = (byte) (Integer.parseInt(ouiParts[1], 16) & 0xFF);
+        ouiBytes[2] = (byte) (Integer.parseInt(ouiParts[2], 16) & 0xFF);
+
+        logd("Setting OUI to " + oui);
+        return mWifiNative.setScanningMacOui(ouiBytes);
     }
 
     /*********************************************************
@@ -4753,10 +4766,11 @@ public class WifiStateMachine extends StateMachine {
 
             mWifiNative.setScanInterval((int)mSupplicantScanIntervalMs / 1000);
             mWifiNative.setExternalSim(true);
-            mWifiNative.setScanningMacOui(GOOGLE_OUI);
 
+            setRandomMacOui();
             mWifiNative.enableAutoConnect(false);
         }
+
         @Override
         public boolean processMessage(Message message) {
             logStateAndMessage(message, getClass().getSimpleName());
