@@ -33,14 +33,18 @@ import static android.net.wifi.WifiManager.WIFI_AP_STATE_ENABLING;
 import static android.net.wifi.WifiManager.WIFI_AP_STATE_FAILED;
 
 import android.app.AlarmManager;
+import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.app.backup.IBackupManager;
 import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
@@ -82,6 +86,7 @@ import android.telephony.TelephonyManager;
 import android.util.LruCache;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.WindowManager;
 
 import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
@@ -146,6 +151,9 @@ public class WifiStateMachine extends StateMachine {
      */
     protected void loge(String s) {
         Log.e(getName(), s);
+    }
+    protected void logd(String s) {
+        Log.d(getName(), s);
     }
     protected void log(String s) {;
         Log.e(getName(), s);
@@ -355,6 +363,139 @@ public class WifiStateMachine extends StateMachine {
     }
 
     /**
+     * Save the UID correctly depending on if this is a new or existing network.
+     * @return true if operation is authorized, false otherwise
+     */
+    boolean recordUidIfAuthorized(WifiConfiguration config, int uid) {
+        if (!mWifiConfigStore.isNetworkConfigured(config)) {
+            config.creatorUid = uid;
+            config.creatorName = mContext.getPackageManager().getNameForUid(uid);
+        } else if (!mWifiConfigStore.canModifyNetwork(uid, config)) {
+            return false;
+        }
+
+        config.lastUpdateUid = uid;
+        config.lastUpdateName = mContext.getPackageManager().getNameForUid(uid);
+
+        return true;
+
+    }
+
+    /**
+     * Checks to see if user has specified if the apps configuration is connectable.
+     * If the user hasn't specified we query the user and return true.
+     *
+     * @param message The message to be deffered
+     * @param netId Network id of the configuration to check against
+     * @param allowOverride If true we won't defer to the user if the uid of the message holds the
+     *                      CONFIG_OVERRIDE_PERMISSION
+     * @return True if we are waiting for user feedback or netId is invalid. False otherwise.
+     */
+    boolean deferForUserInput(Message message, int netId, boolean allowOverride){
+        final WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(netId);
+
+        // We can only evaluate saved configurations.
+        if (config == null) {
+            loge("deferForUserInput: configuration for netId="+netId+" not stored");
+            return true;
+        }
+
+        // User initiated actions and system networks don't need to be queried
+        if ((allowOverride && mWifiConfigStore.checkConfigOverridePermission(message.sendingUid))
+            || (mWifiConfigStore.checkConfigOverridePermission(config.lastUpdateUid))) {
+            config.userApproved = WifiConfiguration.USER_APPROVED;
+
+            if (config.linkedConfigurations != null) {
+                for (String key : config.linkedConfigurations.keySet()) {
+                    WifiConfiguration linked =
+                        mWifiConfigStore.getWifiConfiguration(key);
+                    linked.userApproved = config.userApproved;
+                }
+            }
+
+            return false;
+        }
+
+        switch (config.userApproved) {
+            case WifiConfiguration.USER_APPROVED:
+            case WifiConfiguration.USER_BANNED:
+                return false;
+            case WifiConfiguration.USER_PENDING:
+                return true;
+            default: // USER_UNSPECIFIED
+                break;
+        }
+
+        // Stop multiple connects from opening multiple alerts
+        config.userApproved = WifiConfiguration.USER_PENDING;
+
+        final Message newMessage = Message.obtain(message);
+
+        String appLabel;
+        try {
+            PackageManager pm = mContext.getPackageManager();
+            ApplicationInfo info = pm.getApplicationInfo(config.creatorName, 0);
+            appLabel = pm.getApplicationLabel(info).toString();
+        } catch( NameNotFoundException e) {
+            // This will happen when a shared user owns the network.
+            // In that case we might be able to display something more meaningful
+            appLabel = mContext.getString(R.string.wifi_connect_default_application);
+        }
+
+        String alertMessage = mContext.getResources()
+                .getString(R.string.wifi_connect_alert_message, appLabel, config.SSID);
+
+        AlertDialog alert = new AlertDialog.Builder(mContext)
+                .setTitle(R.string.wifi_connect_alert_title)
+                .setMessage(alertMessage)
+                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        config.userApproved = WifiConfiguration.USER_APPROVED;
+
+                        if (config.linkedConfigurations != null) {
+                            for (String key : config.linkedConfigurations.keySet()) {
+                                WifiConfiguration linked =
+                                    mWifiConfigStore.getWifiConfiguration(key);
+                                linked.userApproved = config.userApproved;
+                            }
+                        }
+
+                        mWifiConfigStore.writeKnownNetworkHistory();
+
+                        sendMessage(newMessage);
+                        dialog.dismiss();
+                    }
+                })
+                .setNegativeButton(android.R.string.no, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        config.userApproved = WifiConfiguration.USER_BANNED;
+
+                        if (config.linkedConfigurations != null) {
+                            for (String key : config.linkedConfigurations.keySet()) {
+                                WifiConfiguration linked = mWifiConfigStore.getWifiConfiguration(key);
+                                linked.userApproved = config.userApproved;
+                            }
+                        }
+
+                        mWifiConfigStore.writeKnownNetworkHistory();
+
+                        dialog.dismiss();
+                    }
+                })
+                .setCancelable(false)
+                .create();
+        alert.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
+        WindowManager.LayoutParams attrs = alert.getWindow().getAttributes();
+        attrs.privateFlags = WindowManager.LayoutParams.PRIVATE_FLAG_SHOW_FOR_ALL_USERS;
+        alert.getWindow().setAttributes(attrs);
+        alert.show();
+
+        return true;
+    }
+
+    /**
      * Subset of link properties coming from netlink.
      * Currently includes IPv4 and IPv6 addresses. In the future will also include IPv6 DNS servers
      * and domains obtained from router advertisements (RFC 6106).
@@ -521,6 +662,8 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_ENABLE_TDLS                      = BASE + 92;
     /* DHCP/IP configuration watchdog */
     static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER    = BASE + 93;
+    /* Remove a packages associated configrations */
+    static final int CMD_REMOVE_APP_CONFIGURATIONS        = BASE + 97;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
@@ -2242,6 +2385,13 @@ public class WifiStateMachine extends StateMachine {
      */
     public void sendBluetoothAdapterStateChange(int state) {
         sendMessage(CMD_BLUETOOTH_ADAPTER_STATE_CHANGE, state, 0);
+    }
+
+    /**
+     * Send a message indicating a package has been uninstalled.
+     */
+    public void removeAppConfigs(String packageName) {
+        sendMessage(CMD_REMOVE_APP_CONFIGURATIONS, packageName);
     }
 
     /**
@@ -4040,7 +4190,6 @@ public class WifiStateMachine extends StateMachine {
         return mNetworkInfo.getDetailedState();
     }
 
-
     private SupplicantState handleSupplicantStateChange(Message message) {
         StateChangeResult stateChangeResult = (StateChangeResult) message.obj;
         SupplicantState state = stateChangeResult.state;
@@ -4625,6 +4774,9 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_GET_CONNECTION_STATISTICS:
                     replyToMessage(message, message.what, mWifiConnectionStatistics);
+                    break;
+                case CMD_REMOVE_APP_CONFIGURATIONS:
+                    deferMessage(message);
                     break;
                 default:
                     loge("Error! unhandled message" + message);
@@ -5795,6 +5947,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_ASSOCIATED_BSSID:
                 s = "CMD_ASSOCIATED_BSSID";
                 break;
+            case CMD_REMOVE_APP_CONFIGURATIONS:
+                s = "CMD_REMOVE_APP_CONFIGURATIONS";
+                break;
             case CMD_ROAM_WATCHDOG_TIMER:
                 s = "CMD_ROAM_WATCHDOG_TIMER";
                 break;
@@ -5986,6 +6141,16 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_ADD_OR_UPDATE_NETWORK:
                     config = (WifiConfiguration) message.obj;
+
+                    if (!recordUidIfAuthorized(config, message.sendingUid)) {
+                        loge("Not authorized to update network "
+                             + " config=" + config.SSID
+                             + " cnid=" + config.networkId
+                             + " uid=" + message.sendingUid);
+                        replyToMessage(message, message.what, FAILURE);
+                        break;
+                    }
+
                     int res = mWifiConfigStore.addOrUpdateNetwork(config, message.sendingUid);
                     if (res < 0) {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
@@ -6012,6 +6177,15 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, CMD_ADD_OR_UPDATE_NETWORK, res);
                     break;
                 case CMD_REMOVE_NETWORK:
+                    netId = message.arg1;
+                    if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId)) {
+                        loge("Not authorized to remove network "
+                             + " cnid=" + netId
+                             + " uid=" + message.sendingUid);
+                        replyToMessage(message, message.what, FAILURE);
+                        break;
+                    }
+
                     ok = mWifiConfigStore.removeNetwork(message.arg1);
                     if (!ok) {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
@@ -6187,6 +6361,15 @@ public class WifiStateMachine extends StateMachine {
                     loge("CMD_AUTO_CONNECT did save config -> "
                             + " nid=" + Integer.toString(netId));
 
+                    if (deferForUserInput(message, netId, false)) {
+                        break;
+                    } else if (mWifiConfigStore.getWifiConfiguration(netId).userApproved ==
+                                                                   WifiConfiguration.USER_BANNED) {
+                        replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
@@ -6216,6 +6399,9 @@ public class WifiStateMachine extends StateMachine {
                         break;
                     }
                     break;
+                case CMD_REMOVE_APP_CONFIGURATIONS:
+                    mWifiConfigStore.removeNetworksForApp((String) message.obj);
+                    break;
                 case WifiManager.CONNECT_NETWORK:
                     /**
                      *  The connect message can contain a network id passed as arg1 on message or
@@ -6229,6 +6415,15 @@ public class WifiStateMachine extends StateMachine {
 
                     /* Save the network config */
                     if (config != null) {
+                        if (!recordUidIfAuthorized(config, message.sendingUid)) {
+                            loge("Not authorized to update network "
+                                 + " config=" + config.SSID
+                                 + " cnid=" + config.networkId
+                                 + " uid=" + message.sendingUid);
+                            replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+                                           WifiManager.NOT_AUTHORIZED);
+                            break;
+                        }
                         result = mWifiConfigStore.saveNetwork(config, message.sendingUid);
                         netId = result.getNetworkId();
                     }
@@ -6262,10 +6457,21 @@ public class WifiStateMachine extends StateMachine {
                         clearConfigBSSID(config, "CONNECT_NETWORK");
                     }
 
+                    if (deferForUserInput(message, netId, true)) {
+                        break;
+                    } else if (mWifiConfigStore.getWifiConfiguration(netId).userApproved ==
+                                                                    WifiConfiguration.USER_BANNED) {
+                        replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
 
-                    /* Tell autojoin the user did try to connect to that network */
-                    mWifiAutoJoinController.updateConfigurationHistory(netId, true, true);
+                    /* Tell autojoin the user did try to connect to that network if from settings */
+                    boolean persist =
+                        mWifiConfigStore.checkConfigOverridePermission(message.sendingUid);
+                    mWifiAutoJoinController.updateConfigurationHistory(netId, true, persist);
 
                     mWifiConfigStore.setLastSelectedConfiguration(netId);
 
@@ -6330,6 +6536,18 @@ public class WifiStateMachine extends StateMachine {
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
                                 + " my state " + getCurrentState().getName());
 
+                    // Only record the uid if this is user initiated
+                    boolean checkUid = (message.what == WifiManager.SAVE_NETWORK);
+                    if (checkUid && !recordUidIfAuthorized(config, message.sendingUid)) {
+                        loge("Not authorized to update network "
+                             + " config=" + config.SSID
+                             + " cnid=" + config.networkId
+                             + " uid=" + message.sendingUid);
+                        replyToMessage(message, WifiManager.SAVE_NETWORK_FAILED,
+                                       WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     result = mWifiConfigStore.saveNetwork(config, -1);
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         if (mWifiInfo.getNetworkId() == result.getNetworkId()) {
@@ -6362,8 +6580,13 @@ public class WifiStateMachine extends StateMachine {
                              * and interpret the SAVE_NETWORK as a request to connect
                              */
                             boolean user = message.what == WifiManager.SAVE_NETWORK;
+
+                            // Did this connect come from settings
+                            boolean persistConnect =
+                                mWifiConfigStore.checkConfigOverridePermission(message.sendingUid);
+
                             mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
-                                    , user, true);
+                                    , user, persistConnect);
                             mWifiAutoJoinController.attemptAutoJoin();
                         }
                     } else {
@@ -6382,6 +6605,18 @@ public class WifiStateMachine extends StateMachine {
                     } else {
                         lastForgetConfigurationAttempt = new WifiConfiguration(toRemove);
                     }
+                    // check that the caller owns this network
+                    netId = message.arg1;
+
+                    if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId)) {
+                        loge("Not authorized to forget network "
+                             + " cnid=" + netId
+                             + " uid=" + message.sendingUid);
+                        replyToMessage(message, WifiManager.FORGET_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     if (mWifiConfigStore.forgetNetwork(message.arg1)) {
                         replyToMessage(message, WifiManager.FORGET_NETWORK_SUCCEEDED);
                         broadcastWifiCredentialChanged(WifiManager.WIFI_CREDENTIAL_FORGOT,
@@ -7296,6 +7531,15 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
+                    if (deferForUserInput(message, netId, false)) {
+                        break;
+                    } else if (mWifiConfigStore.getWifiConfiguration(netId).userApproved ==
+                            WifiConfiguration.USER_BANNED) {
+                        replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     boolean ret = false;
                     if (netId != mLastNetworkId) {
                         if (mWifiConfigStore.selectNetwork(netId) &&
@@ -7478,6 +7722,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiManager.FORGET_NETWORK:
                 case CMD_REMOVE_NETWORK:
+                case CMD_REMOVE_APP_CONFIGURATIONS:
                     // Set up a delayed message here. After the forget/remove is handled
                     // the handled delayed message will determine if there is a need to
                     // scan and continue

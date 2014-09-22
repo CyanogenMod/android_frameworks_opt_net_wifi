@@ -1223,6 +1223,16 @@ public class WifiAutoJoinController {
                 continue;
             }
 
+            if (config.userApproved == WifiConfiguration.USER_PENDING ||
+                    config.userApproved == WifiConfiguration.USER_BANNED) {
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip candidate due to user approval status "
+                            + WifiConfiguration.userApprovedAsString(config.userApproved) + " key "
+                            + config.configKey(true));
+                }
+                continue;
+            }
+
             // Try to un-blacklist based on elapsed time
             if (config.blackListTimestamp > 0) {
                 long now = System.currentTimeMillis();
