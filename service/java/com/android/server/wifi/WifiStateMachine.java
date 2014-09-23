@@ -164,7 +164,7 @@ public class WifiStateMachine extends StateMachine {
     /* Scan results handling */
     private List<ScanResult> mScanResults = new ArrayList<ScanResult>();
     private static final Pattern scanResultPattern = Pattern.compile("\t+");
-    private static final int SCAN_RESULT_CACHE_SIZE = 80;
+    private static final int SCAN_RESULT_CACHE_SIZE = 160;
     private final LruCache<String, ScanResult> mScanResultCache;
     // For debug, number of known scan results that were found as part of last scan result event,
     // as well the number of scans results returned by the supplicant with that message
@@ -310,6 +310,9 @@ public class WifiStateMachine extends StateMachine {
     // Roaming failure count
     private int mRoamFailCount = 0;
 
+    // This is the BSSID we are trying to associate to, it can be set to "any"
+    // if we havent selected a BSSID for joining.
+    // The BSSID we are associated to is found in mWifiInfo
     private String mTargetRoamBSSID = "any";
 
     private WifiConfiguration targetWificonfiguration = null;
@@ -338,7 +341,7 @@ public class WifiStateMachine extends StateMachine {
         if (mTargetRoamBSSID != null && bssid == mTargetRoamBSSID && bssid == config.BSSID) {
             return false; // We didnt change anything
         }
-        if (!mTargetRoamBSSID.equals("any") && !bssid.equals("any")) {
+        if (!mTargetRoamBSSID.equals("any") && bssid.equals("any")) {
             // Changing to ANY
             if (!mWifiConfigStore.roamOnAny) {
                 ret =  false; // Nothing to do
@@ -351,7 +354,7 @@ public class WifiStateMachine extends StateMachine {
         config.autoJoinBSSID = bssid;
         mTargetRoamBSSID = bssid;
         mWifiConfigStore.saveWifiConfigBSSID(config);
-        return true;
+        return ret;
     }
 
     /**
@@ -586,6 +589,9 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_RELOAD_TLS_AND_RECONNECT         = BASE + 142;
 
     static final int CMD_AUTO_CONNECT                     = BASE + 143;
+
+    static final int network_status_unwanted_disconnect = 0;
+    static final int network_status_unwanted_disable_autojoin = 1;
 
     static final int CMD_UNWANTED_NETWORK                 = BASE + 144;
 
@@ -1950,6 +1956,14 @@ public class WifiStateMachine extends StateMachine {
     }
 
     /**
+     * Get unsynchronized pointer to scan result list
+     * Can be called only from AutoJoinController which runs in the WifiStateMachine context
+     */
+    public List<ScanResult> getScanResultsListNoCopyUnsync() {
+        return mScanResults;
+    }
+
+    /**
      * Disconnect from Access Point
      */
     public void disconnectCommand() {
@@ -3035,6 +3049,21 @@ public class WifiStateMachine extends StateMachine {
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
 
+    /*
+    void ageOutScanResults(int age) {
+        synchronized(mScanResultCache) {
+            // Trim mScanResults, which prevent WifiStateMachine to return
+            // obsolete scan results to queriers
+            long now = System.CurrentTimeMillis();
+            for (int i = 0; i < mScanResults.size(); i++) {
+                ScanResult result = mScanResults.get(i);
+                if ((result.seen > now || (now - result.seen) > age)) {
+                    mScanResults.remove(i);
+                }
+            }
+        }
+    }*/
+
     private static final String ID_STR = "id=";
     private static final String BSSID_STR = "bssid=";
     private static final String FREQ_STR = "freq=";
@@ -3101,6 +3130,10 @@ public class WifiStateMachine extends StateMachine {
             if (sid == -1) break;
         }
 
+        // Age out scan results, we return all scan results found in the last 12 seconds,
+        // and NOT all scan results since last scan.
+        // ageOutScanResults(12000);
+
         scanResults = scanResultsBuf.toString();
         if (TextUtils.isEmpty(scanResults)) {
            return;
@@ -3151,6 +3184,7 @@ public class WifiStateMachine extends StateMachine {
                         String key = bssid + ssid;
                         ScanResult scanResult = mScanResultCache.get(key);
                         if (scanResult != null) {
+                            // TODO: average the RSSI, instead of overwriting it
                             scanResult.level = level;
                             scanResult.wifiSsid = wifiSsid;
                             // Keep existing API
@@ -3209,7 +3243,11 @@ public class WifiStateMachine extends StateMachine {
         if (getDisconnectedTimeMilli() > 1000 * 60 * 30) {
             mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
         }
-        mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
+        synchronized(mScanResultCache) {
+            // AutoJoincontroller will directly acces the scan result list and update it with
+            // ScanResult status
+            mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
+        }
         if (linkDebouncing) {
             // If debouncing, we dont re-select a SSID or BSSID hence
             // there is no need to call the network selection code
@@ -4178,8 +4216,6 @@ public class WifiStateMachine extends StateMachine {
             } else {
                 loge("handleIPv4Success, roaming and didnt get an IPv4 address" +
                         addr.toString());
-
-
             }
         }
         mWifiInfo.setInetAddress(addr);
@@ -4193,6 +4229,22 @@ public class WifiStateMachine extends StateMachine {
         // Reset IP failure tracking
         if (c != null) {
             c.numConnectionFailures = 0;
+        }
+        if (c != null) {
+            ScanResult result = getCurrentScanResult();
+            if (result == null) {
+                loge("WifiStateMachine: handleSuccessfulIpConfiguration and no scan results" +
+                        c.configKey());
+            } else {
+                // Clear the per BSSID failure count
+                result.numIpConfigFailures = 0;
+                // Clear the WHOLE BSSID blacklist, which means supplicant is free to retry
+                // any BSSID, even though it may already have a non zero ip failure count,
+                // this will typically happen if the user walks away and come back to his arrea
+                // TODO: implement blacklisting based on a timer, i.e. keep BSSID blacklisted
+                // in supplicant for a couple of hours or a day
+                mWifiNative.blackListBSSID(null);
+            }
         }
     }
 
@@ -4212,7 +4264,8 @@ public class WifiStateMachine extends StateMachine {
         mWifiInfo.setInetAddress(null);
         mWifiInfo.setMeteredHint(false);
 
-        mWifiConfigStore.handleSSIDStateChange(mLastNetworkId, false, "DHCP FAILURE");
+        mWifiConfigStore.handleSSIDStateChange(mLastNetworkId, false,
+                "DHCP FAILURE", mWifiInfo.getBSSID());
 
         /* DHCP times out after about 30 seconds, we do a
          * disconnect thru supplicant, we will let autojoin retry connecting to the network
@@ -4470,6 +4523,8 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_AUTO_ROAM:
                 case CMD_AUTO_SAVE_NETWORK:
                 case CMD_ASSOCIATED_BSSID:
+                case CMD_UNWANTED_NETWORK:
+                case CMD_DISCONNECTING_WATCHDOG_TIMER:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
@@ -4808,6 +4863,10 @@ public class WifiStateMachine extends StateMachine {
                     mOperationalMode = message.arg1;
                     break;
                 case CMD_TARGET_BSSID:
+                    // Trying to associate to this BSSID
+                    if (message.obj != null) {
+                        mTargetRoamBSSID = (String) message.obj;
+                    }
                     break;
                 case CMD_GET_LINK_LAYER_STATS:
                     WifiLinkLayerStats stats = getWifiLinkLayerStats(DBG);
@@ -5737,6 +5796,10 @@ public class WifiStateMachine extends StateMachine {
                config.lastConnected = System.currentTimeMillis();
                config.autoJoinBailedDueToLowRssi = false;
                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+               config.numConnectionFailures = 0;
+               config.numIpConfigFailures = 0;
+               config.numAuthFailures = 0;
+               config.numAssociation++;
            }
        }
     }
@@ -5794,6 +5857,21 @@ public class WifiStateMachine extends StateMachine {
         return mWifiConfigStore.getWifiConfiguration(mLastNetworkId);
     }
 
+    ScanResult getCurrentScanResult() {
+        WifiConfiguration config = getCurrentWifiConfiguration();
+        if (config == null) {
+            return null;
+        }
+        String BSSID = mWifiInfo.getBSSID();
+        if (BSSID == null) {
+            BSSID = mTargetRoamBSSID;
+        }
+        if (config.scanResultCache == null) {
+            return null;
+        }
+        return config.scanResultCache.get(BSSID);
+    }
+
     String getCurrentBSSID() {
         if (linkDebouncing) {
             return null;
@@ -5807,6 +5885,7 @@ public class WifiStateMachine extends StateMachine {
             WifiConfiguration config;
             int netId;
             boolean ok;
+            boolean didDisconnect;
             String bssid;
             String ssid;
             NetworkUpdateResult result;
@@ -5822,8 +5901,10 @@ public class WifiStateMachine extends StateMachine {
                     }
                     if (bssid != null) {
                         // If we have a BSSID, tell configStore to black list it
-                        didBlackListBSSID = mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId,
-                                bssid, false);
+                        synchronized(mScanResultCache) {
+                            didBlackListBSSID = mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId,
+                                    bssid, false);
+                        }
                     }
                     mSupplicantStateTracker.sendMessage(WifiMonitor.ASSOCIATION_REJECTION_EVENT);
                     break;
@@ -5837,8 +5918,10 @@ public class WifiStateMachine extends StateMachine {
                             "temp-disabled" : "re-enabled";
                     loge("ConnectModeState SSID state=" + en + " nid="
                             + Integer.toString(message.arg1) + " [" + substr + "]");
-                    mWifiConfigStore.handleSSIDStateChange(message.arg1, message.what ==
-                            WifiMonitor.SSID_REENABLED, substr);
+                    synchronized(mScanResultCache) {
+                        mWifiConfigStore.handleSSIDStateChange(message.arg1, message.what ==
+                                WifiMonitor.SSID_REENABLED, substr, mWifiInfo.getBSSID());
+                    }
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     SupplicantState state = handleSupplicantStateChange(message);
@@ -5986,7 +6069,7 @@ public class WifiStateMachine extends StateMachine {
                             && targetWificonfiguration.SSID != null
                             && targetWificonfiguration.SSID.equals("\"" + ssid + "\"")) {
                         mWifiConfigStore.handleSSIDStateChange(targetWificonfiguration.networkId,
-                                false, "AUTH_FAILED no identity");
+                                false, "AUTH_FAILED no identity", null);
                     }
                     // Disconnect now, as we don't have any way to fullfill the  supplicant request.
                     mWifiConfigStore.setLastSelectedConfiguration
@@ -6044,7 +6127,14 @@ public class WifiStateMachine extends StateMachine {
                      *
                      * Hence, sends a disconnect to supplicant first.
                      */
-                    mWifiNative.disconnect();
+                    didDisconnect = false;
+                    if (getCurrentState() != mDisconnectedState) {
+                        /** Supplicant will ignore the reconnect if we are currently associated,
+                         * hence trigger a disconnect
+                         */
+                        didDisconnect = true;
+                        mWifiNative.disconnect();
+                    }
 
                     /* connect command coming from auto-join */
                     config = (WifiConfiguration) message.obj;
@@ -6088,8 +6178,10 @@ public class WifiStateMachine extends StateMachine {
                         mAutoRoaming = roam;
                         if (isRoaming() || linkDebouncing) {
                             transitionTo(mRoamingState);
-                        } else {
+                        } else if (didDisconnect) {
                             transitionTo(mDisconnectingState);
+                        } else {
+                            transitionTo(mDisconnectedState);
                         }
                     } else {
                         loge("Failed to connect config: " + config + " netId: " + netId);
@@ -6151,11 +6243,13 @@ public class WifiStateMachine extends StateMachine {
 
                     mWifiConfigStore.setLastSelectedConfiguration(netId);
 
+                    didDisconnect = false;
                     if (mLastNetworkId != WifiConfiguration.INVALID_NETWORK_ID
                             && mLastNetworkId != netId) {
                         /** Supplicant will ignore the reconnect if we are currently associated,
                          * hence trigger a disconnect
                          */
+                        didDisconnect = true;
                         mWifiNative.disconnect();
                     }
 
@@ -6170,8 +6264,16 @@ public class WifiStateMachine extends StateMachine {
                         /* The state tracker handles enabling networks upon completion/failure */
                         mSupplicantStateTracker.sendMessage(WifiManager.CONNECT_NETWORK);
                         replyToMessage(message, WifiManager.CONNECT_NETWORK_SUCCEEDED);
-                        /* Expect a disconnection from the old connection */
-                        transitionTo(mDisconnectingState);
+                        if (didDisconnect) {
+                            /* Expect a disconnection from the old connection */
+                            transitionTo(mDisconnectingState);
+                        } else {
+                            /**
+                             *  Directly go to disconnected state where we
+                             * process the connection events from supplicant
+                             **/
+                            transitionTo(mDisconnectedState);
+                        }
                     } else {
                         loge("Failed to connect config: " + config + " netId: " + netId);
                         replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
@@ -6229,10 +6331,11 @@ public class WifiStateMachine extends StateMachine {
                          * Tell autojoin the user did try to modify and save that network,
                          * and interpret the SAVE_NETWORK as a request to connect
                          */
-                        mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
+                        synchronized(mScanResultCache) {
+                            mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
                                     , true, true);
-                        mWifiAutoJoinController.attemptAutoJoin();
-
+                            mWifiAutoJoinController.attemptAutoJoin();
+                        }
                     } else {
                         loge("Failed to save network");
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
@@ -6326,16 +6429,24 @@ public class WifiStateMachine extends StateMachine {
         protected void unwanted() {
             // Ignore if we're not the current networkAgent.
             if (this != mNetworkAgent) return;
-            // TODO - don't want this network.  What to do?
             if (DBG) log("WifiNetworkAgent -> Wifi unwanted score "
                     + Integer.toString(mWifiInfo.score));
-            unwantedNetwork();
+            unwantedNetwork(network_status_unwanted_disconnect);
+        }
+
+        protected void networkStatus(int status) {
+            if (status == NetworkAgent.INVALID_NETWORK) {
+                if (DBG) log("WifiNetworkAgent -> Wifi networkStatus invalid score "
+                        + Integer.toString(mWifiInfo.score));
+                unwantedNetwork(network_status_unwanted_disable_autojoin);
+            }
         }
     }
 
-    void unwantedNetwork() {
-        sendMessage(CMD_UNWANTED_NETWORK);
+    void unwantedNetwork(int reason) {
+        sendMessage(CMD_UNWANTED_NETWORK, reason);
     }
+
 
     boolean startScanForConfiguration(WifiConfiguration config, boolean restrictChannelList) {
         if (config == null)
@@ -6505,7 +6616,7 @@ public class WifiStateMachine extends StateMachine {
                         loge("WifiStateMachine CMD_START_SCAN source " + message.arg1
                               + " txSuccessRate="+String.format( "%.2f", mWifiInfo.txSuccessRate)
                               + " rxSuccessRate="+String.format( "%.2f", mWifiInfo.rxSuccessRate)
-                              + " BSSID=" + mTargetRoamBSSID
+                              + " targetRoamBSSID=" + mTargetRoamBSSID
                               + " RSSI=" + mWifiInfo.getRssi());
                     }
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
@@ -6622,7 +6733,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
                         if (VVDBG) log(" get link layer stats " + mWifiLinkLayerStatsSupported);
-                        WifiLinkLayerStats stats = getWifiLinkLayerStats(VVDBG);
+                        WifiLinkLayerStats stats = getWifiLinkLayerStats(VDBG);
                         if (stats != null) {
                            // Sanity check the results provided by driver
                            if (mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI
@@ -6659,14 +6770,6 @@ public class WifiStateMachine extends StateMachine {
                     info.rssi = mWifiInfo.getRssi();
                     fetchPktcntNative(info);
                     replyToMessage(message, WifiManager.RSSI_PKTCNT_FETCH_SUCCEEDED, info);
-                    break;
-                case CMD_UNWANTED_NETWORK:
-                    // mWifiConfigStore.handleBadNetworkDisconnectReport(mLastNetworkId, mWifiInfo);
-                    // disconnecting is probably too rough and reduce the chance we recover quickly.
-                    // we should not have to disconnect, instead rely on network stack to send data
-                    // traffic somewhere else but remember that this network is roamable with a
-                    // low wifi score threshold
-                    sendMessage(CMD_DISCONNECT);
                     break;
                 case CMD_DELAYED_NETWORK_DISCONNECT:
                     if (!linkDebouncing && mWifiConfigStore.enableLinkDebouncing) {
@@ -6934,6 +7037,9 @@ public class WifiStateMachine extends StateMachine {
                     if (stateChangeResult.state == SupplicantState.ASSOCIATED) {
                         // We completed the layer2 roaming part
                         mAssociated = true;
+                        if (stateChangeResult.BSSID != null) {
+                            mTargetRoamBSSID = (String) stateChangeResult.BSSID;
+                        }
                     }
                     break;
                 case CMD_ROAM_WATCHDOG_TIMER:
@@ -7049,9 +7155,17 @@ public class WifiStateMachine extends StateMachine {
                     transitionTo(mVerifyingLinkState);
                     break;
                 case CMD_UNWANTED_NETWORK:
-                    mWifiConfigStore.handleBadNetworkDisconnectReport(mLastNetworkId, mWifiInfo);
-                    mWifiNative.disconnect();
-                    transitionTo(mDisconnectingState);
+                    if (message.arg1 == network_status_unwanted_disconnect) {
+                        mWifiConfigStore.handleBadNetworkDisconnectReport(mLastNetworkId, mWifiInfo);
+                        mWifiNative.disconnect();
+                        transitionTo(mDisconnectingState);
+                    } else if (message.arg1 == network_status_unwanted_disconnect) {
+                        config = getCurrentWifiConfiguration();
+                        if (config != null) {
+                            // Disable autojoin
+                            config.noInternetAccess = true;
+                        }
+                    }
                     return HANDLED;
                 case CMD_TEST_NETWORK_DISCONNECT:
                     // Force a disconnect
