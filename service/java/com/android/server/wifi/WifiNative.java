@@ -966,13 +966,19 @@ public class WifiNative {
     }
 
     public String p2pGetDeviceAddress() {
+
         Log.d(TAG, "p2pGetDeviceAddress");
+
+        String status = null;
 
         /* Explicitly calling the API without IFNAME= prefix to take care of the devices that
         don't have p2p0 interface. Supplicant seems to be returning the correct address anyway. */
-        String status = doStringCommandNative("STATUS");
-        String result = "";
 
+        synchronized (mLock) {
+            status = doStringCommandNative("STATUS");
+        }
+
+        String result = "";
         if (status != null) {
             String[] tokens = status.split("\n");
             for (String token : tokens) {
