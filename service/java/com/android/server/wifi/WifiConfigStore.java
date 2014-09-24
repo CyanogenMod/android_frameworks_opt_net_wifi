@@ -192,6 +192,8 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON:  ";
     private static final String FQDN_KEY = "FQDN:  ";
     private static final String NUM_CONNECTION_FAILURES_KEY = "CONNECT_FAILURES:  ";
+    private static final String NUM_IP_CONFIG_FAILURES_KEY = "IP_CONFIG_FAILURES:  ";
+    private static final String NUM_AUTH_FAILURES_KEY = "AUTH_FAILURES:  ";
     private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE:  ";
     private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH:  ";
     private static final String NO_INTERNET_ACCESS_KEY = "NO_INTERNET_ACCESS:  ";
@@ -303,6 +305,10 @@ public class WifiConfigStore extends IpConfigStore {
     public int goodLinkSpeed24 = 24;
     public int goodLinkSpeed5 = 36;
 
+    public int maxAuthErrorsToBlacklist = 4;
+    public int maxConnectionErrorsToBlacklist = 4;
+    public int wifiConfigBlacklistMinTimeMilli = 1000 * 60 * 20;
+
     // Boost RSSI values of associated networks
     public int associatedHysteresisHigh = +14;
     public int associatedHysteresisLow = +8;
@@ -324,7 +330,7 @@ public class WifiConfigStore extends IpConfigStore {
     public int maxNumPassiveChannelsForPartialScans = 2;
 
     public boolean roamOnAny = false;
-    public boolean onlyLinkSameCredentialConfigurations;
+    public boolean onlyLinkSameCredentialConfigurations = true;
 
     public boolean enableLinkDebouncing = true;
     public boolean enable5GHzPreference = true;
@@ -463,6 +469,12 @@ public class WifiConfigStore extends IpConfigStore {
         goodLinkSpeed5 = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_good_link_speed_5);
 
+        maxAuthErrorsToBlacklist = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_max_auth_errors_to_blacklist);
+        maxConnectionErrorsToBlacklist = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_max_connection_errors_to_blacklist);
+        wifiConfigBlacklistMinTimeMilli = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_network_black_list_min_time_milli);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -521,6 +533,7 @@ public class WifiConfigStore extends IpConfigStore {
                 //directly by the key or networkId
                 continue;
             }
+
             if (pskMap != null && config.allowedKeyManagement != null
                     && config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK)
                     && pskMap.containsKey(config.SSID)) {
@@ -659,11 +672,24 @@ public class WifiConfigStore extends IpConfigStore {
      * of configured networks indicates all networks as being enabled
      */
     void enableAllNetworks() {
+        long now = System.currentTimeMillis();
         boolean networkEnabledStateChanged = false;
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             if(config != null && config.status == Status.DISABLED
                     && (config.autoJoinStatus
                     <= WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)) {
+
+                // Wait for 20 minutes before reenabling config that have known, repeated connection
+                // or DHCP failures
+                if (config.disableReason == WifiConfiguration.DISABLED_DHCP_FAILURE
+                        || config.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT
+                        || config.disableReason == WifiConfiguration.DISABLED_AUTH_FAILURE) {
+                    if (config.blackListTimestamp != 0
+                           && (now - config.blackListTimestamp) < wifiConfigBlacklistMinTimeMilli) {
+                        continue;
+                    }
+                }
+
                 if(mWifiNative.enableNetwork(config.networkId, false)) {
                     networkEnabledStateChanged = true;
                     config.status = Status.ENABLED;
@@ -1436,17 +1462,24 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     public void writeKnownNetworkHistory() {
-        if (VDBG) {
-            loge(" writeKnownNetworkHistory() num networks:" +
-                    Integer.toString(mConfiguredNetworks.size()), true);
-        }
+        boolean needUpdate = false;
 
         /* Make a copy */
         final List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             networks.add(new WifiConfiguration(config));
+            if (config.dirty == true) {
+                config.dirty = false;
+                needUpdate = true;
+            }
         }
-
+        if (VDBG) {
+            loge(" writeKnownNetworkHistory() num networks:" +
+                    mConfiguredNetworks.size() + " needWrite=" + needUpdate);
+        }
+        if (needUpdate == false) {
+            return;
+        }
         mWriter.write(networkHistoryConfigFile, new DelayedDiskWrite.Writer() {
             public void onWriteCalled(DataOutputStream out) throws IOException {
                 for (WifiConfiguration config : networks) {
@@ -1519,6 +1552,12 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(NUM_CONNECTION_FAILURES_KEY
                             + Integer.toString(config.numConnectionFailures)
                             + SEPARATOR_KEY);
+                    out.writeUTF(NUM_AUTH_FAILURES_KEY
+                            + Integer.toString(config.numAuthFailures)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(NUM_IP_CONFIG_FAILURES_KEY
+                            + Integer.toString(config.numIpConfigFailures)
+                            + SEPARATOR_KEY);
                     out.writeUTF(SCORER_OVERRIDE_KEY + Integer.toString(config.numScorerOverride)
                             + SEPARATOR_KEY);
                     out.writeUTF(SCORER_OVERRIDE_AND_SWITCH_KEY
@@ -1527,8 +1566,8 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(NUM_ASSOCIATION_KEY
                             + Integer.toString(config.numAssociation)
                             + SEPARATOR_KEY);
-                    out.writeUTF(BLACKLIST_MILLI_KEY + Long.toString(config.blackListTimestamp)
-                            + SEPARATOR_KEY);
+                    //out.writeUTF(BLACKLIST_MILLI_KEY + Long.toString(config.blackListTimestamp)
+                    //        + SEPARATOR_KEY);
                     out.writeUTF(CREATOR_UID_KEY + Integer.toString(config.creatorUid)
                             + SEPARATOR_KEY);
                     out.writeUTF(CONNECT_UID_KEY + Integer.toString(config.lastConnectUid)
@@ -1575,10 +1614,10 @@ public class WifiConfigStore extends IpConfigStore {
                                     + Integer.toString(result.autoJoinStatus)
                                     + SEPARATOR_KEY);
 
-                            if (result.seen != 0) {
-                                out.writeUTF(MILLI_KEY + Long.toString(result.seen)
-                                        + SEPARATOR_KEY);
-                            }
+                            //if (result.seen != 0) {
+                            //    out.writeUTF(MILLI_KEY + Long.toString(result.seen)
+                            //            + SEPARATOR_KEY);
+                            //}
                             out.writeUTF(BSSID_KEY_END + SEPARATOR_KEY);
                         }
                     }
@@ -1604,6 +1643,8 @@ public class WifiConfigStore extends IpConfigStore {
                 lastSelectedConfiguration = null;
             } else {
                 lastSelectedConfiguration = selected.configKey();
+                selected.numConnectionFailures = 0;
+                selected.numIpConfigFailures = 0;
                 if (VDBG) {
                     loge("setLastSelectedConfiguration now: " + lastSelectedConfiguration);
                 }
@@ -1703,18 +1744,18 @@ public class WifiConfigStore extends IpConfigStore {
                         config.autoJoinStatus = Integer.parseInt(st);
                     }
 
-                    /*
+
                     if (key.startsWith(SUPPLICANT_STATUS_KEY)) {
-                        String status = key.replace(SUPPLICANT_STATUS_KEY, "");
-                        status = status.replace(SEPARATOR_KEY, "");
-                        config.status = Integer.parseInt(status);
+                        String sstatus = key.replace(SUPPLICANT_STATUS_KEY, "");
+                        sstatus = sstatus.replace(SEPARATOR_KEY, "");
+                        config.status = Integer.parseInt(sstatus);
                     }
 
                     if (key.startsWith(SUPPLICANT_DISABLE_REASON_KEY)) {
                         String reason = key.replace(SUPPLICANT_DISABLE_REASON_KEY, "");
                         reason = reason.replace(SEPARATOR_KEY, "");
                         config.disableReason = Integer.parseInt(reason);
-                    }*/
+                    }
 
                     if (key.startsWith(SELF_ADDED_KEY)) {
                         String selfAdded = key.replace(SELF_ADDED_KEY, "");
@@ -1756,6 +1797,18 @@ public class WifiConfigStore extends IpConfigStore {
                         String num = key.replace(NUM_CONNECTION_FAILURES_KEY, "");
                         num = num.replace(SEPARATOR_KEY, "");
                         config.numConnectionFailures = Integer.parseInt(num);
+                    }
+
+                    if (key.startsWith(NUM_IP_CONFIG_FAILURES_KEY)) {
+                        String num = key.replace(NUM_IP_CONFIG_FAILURES_KEY, "");
+                        num = num.replace(SEPARATOR_KEY, "");
+                        config.numIpConfigFailures = Integer.parseInt(num);
+                    }
+
+                    if (key.startsWith(NUM_AUTH_FAILURES_KEY)) {
+                        String num = key.replace(NUM_AUTH_FAILURES_KEY, "");
+                        num = num.replace(SEPARATOR_KEY, "");
+                        config.numIpConfigFailures = Integer.parseInt(num);
                     }
 
                     if (key.startsWith(SCORER_OVERRIDE_KEY)) {
@@ -2336,8 +2389,8 @@ public class WifiConfigStore extends IpConfigStore {
         // networkId of INVALID_NETWORK_ID means we want to create a new network
         if (netId == INVALID_NETWORK_ID) {
             Integer savedNetId = mNetworkIds.get(configKey(config));
-            //paranoia: check if either we have a network Id or a WifiConfiguration
-            //matching the one we are trying to add.
+            // Check if either we have a network Id or a WifiConfiguration
+            // matching the one we are trying to add.
             if (savedNetId == null) {
                 for (WifiConfiguration test : mConfiguredNetworks.values()) {
                     if (test.configKey().equals(config.configKey())) {
@@ -2625,6 +2678,10 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
+        if (newNetwork) {
+            currentConfig.dirty = true;
+        }
+
         if (currentConfig.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
             // Make sure the configuration is not deleted anymore since we just
             // added or modified it.
@@ -2652,6 +2709,9 @@ public class WifiConfigStore extends IpConfigStore {
         NetworkUpdateResult result = writeIpAndProxyConfigurationsOnChange(currentConfig, config);
         result.setIsNewNetwork(newNetwork);
         result.setNetworkId(netId);
+
+        writeKnownNetworkHistory();
+
         return result;
     }
 
@@ -2729,7 +2789,10 @@ public class WifiConfigStore extends IpConfigStore {
             if (doLink == true && onlyLinkSameCredentialConfigurations) {
                 String apsk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
                 String bpsk = readNetworkVariableFromSupplicantFile(config.SSID, "psk");
-                if (apsk == null || bpsk == null || !apsk.equals(bpsk)) {
+                if (apsk == null || bpsk == null
+                        || TextUtils.isEmpty(apsk) || TextUtils.isEmpty(apsk)
+                        || apsk.equals("*") || apsk.equals("xxxxxxxx")
+                        || !apsk.equals(bpsk)) {
                     doLink = false;
                 }
             }
@@ -2745,8 +2808,14 @@ public class WifiConfigStore extends IpConfigStore {
                 if (config.linkedConfigurations == null) {
                     config.linkedConfigurations = new HashMap<String, Integer>();
                 }
-                link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
-                config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
+                if (link.linkedConfigurations.get(config.configKey()) == null) {
+                    link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
+                    link.dirty = true;
+                }
+                if (config.linkedConfigurations.get(link.configKey()) == null) {
+                    config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
+                    config.dirty = true;
+                }
             } else {
                 if (link.linkedConfigurations != null
                         && (link.linkedConfigurations.get(config.configKey()) != null)) {
@@ -2754,6 +2823,7 @@ public class WifiConfigStore extends IpConfigStore {
                         loge("linkConfiguration: un-link " + config.configKey()
                                 + " from " + link.configKey());
                     }
+                    link.dirty = true;
                     link.linkedConfigurations.remove(config.configKey());
                 }
                 if (config.linkedConfigurations != null
@@ -2762,6 +2832,7 @@ public class WifiConfigStore extends IpConfigStore {
                         loge("linkConfiguration: un-link " + link.configKey()
                                 + " from " + config.configKey());
                     }
+                    config.dirty = true;
                     config.linkedConfigurations.remove(link.configKey());
                 }
             }
@@ -2844,6 +2915,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (config != null) {
                     config.selfAdded = true;
                     config.didSelfAdd = true;
+                    config.dirty = true;
                     config.peerWifiConfiguration = link.configKey();
                     if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
                             config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
@@ -2871,9 +2943,8 @@ public class WifiConfigStore extends IpConfigStore {
                     } else {
                         config = null;
                     }
+                    if (config != null) break;
                 }
-            } else {
-                // Todo: if they are linked, break the link
             }
         }
         return config;
@@ -3007,6 +3078,12 @@ public class WifiConfigStore extends IpConfigStore {
                 if (config.scanResultCache == null) {
                     config.scanResultCache = new HashMap<String, ScanResult>();
                 }
+
+                // Adding a new BSSID
+                if (config.scanResultCache.get(scanResult.BSSID) == null) {
+                    config.dirty = true;
+                }
+
                 numConfigFound ++;
                 // Add the scan result to this WifiConfiguration
                 config.scanResultCache.put(scanResult.BSSID, scanResult);
@@ -3587,7 +3664,7 @@ public class WifiConfigStore extends IpConfigStore {
                 DEFAULT_MAX_DHCP_RETRIES);
     }
 
-    void handleSSIDStateChange(int netId, boolean enabled, String message) {
+    void handleSSIDStateChange(int netId, boolean enabled, String message, String BSSID) {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
             if (enabled) {
@@ -3630,36 +3707,22 @@ public class WifiConfigStore extends IpConfigStore {
                             // temporarily because we don't want auto-join to try it out.
                             // this network may be re-enabled by the "usual"
                             // enableAllNetwork function
-                            //TODO: resolve interpretation of WRONG_KEY and AUTH_FAILURE:
-                            //TODO: if we could count on the wrong_ley or auth_failure
-                            //TODO: message to be correct
-                            //TODO: then we could just mark the configuration as
-                            //TODO: DISABLED_ON_AUTH_FAILURE
-                            //TODO: and the configuration will stay there until
-                            //TODO: user enter new credentials
-                            //TODO: It is not the case however, so instead  of disabling, let's
-                            //TODO: start blacklisting hard
-                            //TODO: http://b/16381983 Fix Wifi Network Blacklisting
-                            if (config.autoJoinStatus <=
-                                    WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
-                                // 4 auth failure will reach 128 and disable permanently
-                                // autoJoinStatus: 0 -> 4 -> 20 -> 84 -> 128
-                                config.setAutoJoinStatus(4 + config.autoJoinStatus * 4);
-                                if (config.autoJoinStatus >
-                                        WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
-                                    config.setAutoJoinStatus
-                                            (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
-                            }
-                            if (DBG) {
-                                loge("blacklisted " + config.configKey() + " to "
-                                        + Integer.toString(config.autoJoinStatus));
+                            config.numAuthFailures++;
+                            if (config.numAuthFailures > maxAuthErrorsToBlacklist) {
+                                config.setAutoJoinStatus
+                                        (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
+                                disableNetwork(netId,
+                                        WifiConfiguration.DISABLED_AUTH_FAILURE);
+                                loge("Authentication failure, blacklist " + config.configKey() + " "
+                                            + Integer.toString(config.networkId)
+                                            + " num failures " + config.numAuthFailures);
                             }
                         } else if (message.contains("DHCP FAILURE")) {
-                            config.numConnectionFailures++;
+                            config.numIpConfigFailures++;
                             config.lastConnectionFailure = System.currentTimeMillis();
                             int maxRetries = getMaxDhcpRetries();
                             // maxRetries == 0 means keep trying forever
-                            if (maxRetries > 0 && config.numConnectionFailures > maxRetries) {
+                            if (maxRetries > 0 && config.numIpConfigFailures > maxRetries) {
                                 /**
                                  * If we've exceeded the maximum number of retries for DHCP
                                  * to a given network, disable the network
@@ -3667,12 +3730,43 @@ public class WifiConfigStore extends IpConfigStore {
                                 config.setAutoJoinStatus
                                         (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
                                 disableNetwork(netId, WifiConfiguration.DISABLED_DHCP_FAILURE);
+                                loge("DHCP failure, blacklist " + config.configKey() + " "
+                                        + Integer.toString(config.networkId)
+                                        + " num failures " + config.numIpConfigFailures);
                             }
+
+                            // Also blacklist the BSSId if we find it
+                            ScanResult result = null;
+                            String bssidDbg = "";
+                            if (config.scanResultCache != null && BSSID != null) {
+                                result = config.scanResultCache.get(BSSID);
+                            }
+                            if (result != null) {
+                                result.numIpConfigFailures ++;
+                                bssidDbg = BSSID + " ipfail=" + result.numIpConfigFailures;
+                                if (result.numIpConfigFailures > 3) {
+                                    // Tell supplicant to stop trying this BSSID
+                                    mWifiNative.blackListBSSID(BSSID);
+                                }
+                            }
+
                             if (DBG) {
                                 loge("blacklisted " + config.configKey() + " to "
                                         + config.autoJoinStatus
-                                        + " due to DHCP failure, count="
-                                        + config.numConnectionFailures);
+                                        + " due to IP config failures, count="
+                                        + config.numIpConfigFailures + " "
+                                        + bssidDbg);
+                            }
+                        } else if (message.contains("CONN_FAILED")) {
+                            config.numConnectionFailures++;
+                            if (config.numConnectionFailures > maxConnectionErrorsToBlacklist) {
+                                config.setAutoJoinStatus
+                                        (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
+                                disableNetwork(netId,
+                                        WifiConfiguration.DISABLED_ASSOCIATION_REJECT);
+                                loge("Connection failure, blacklist " + config.configKey() + " "
+                                        + config.networkId
+                                        + " num failures " + config.numConnectionFailures);
                             }
                         }
                         message.replace("\n", "");
