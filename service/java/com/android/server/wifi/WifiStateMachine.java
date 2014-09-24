@@ -6327,13 +6327,15 @@ public class WifiStateMachine extends StateMachine {
                                         + Integer.toString(result.getNetworkId()));
                         }
 
-                        /**
-                         * Tell autojoin the user did try to modify and save that network,
-                         * and interpret the SAVE_NETWORK as a request to connect
-                         */
                         synchronized(mScanResultCache) {
+                            /**
+                             * If the command comes from WifiManager, then
+                             * tell autojoin the user did try to modify and save that network,
+                             * and interpret the SAVE_NETWORK as a request to connect
+                             */
+                            boolean user = message.what == WifiManager.SAVE_NETWORK;
                             mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
-                                    , true, true);
+                                    , user, true);
                             mWifiAutoJoinController.attemptAutoJoin();
                         }
                     } else {
@@ -7248,7 +7250,7 @@ public class WifiStateMachine extends StateMachine {
                             + " targetRoamBSSID " + mTargetRoamBSSID);
 
                     /* Save the BSSID so as to lock it @ firmware */
-                    if (!autoRoamSetBSSID(config, bssid)) {
+                    if (!autoRoamSetBSSID(config, bssid) && !linkDebouncing) {
                         loge("AUTO_ROAM nothing to do");
                         // Same BSSID, nothing to do
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
