@@ -7622,6 +7622,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_ENABLE_NETWORK:
                 case CMD_RECONNECT:
                 case CMD_REASSOCIATE:
+                case CMD_ENABLE_ALL_NETWORKS:
                     deferMessage(message);
                     break;
                 case CMD_AUTO_CONNECT:
