@@ -262,12 +262,28 @@ public class WifiConfigStore extends IpConfigStore {
             = "ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED:   ";
     private static final String ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY
             = "ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS:   ";
+
+    // The three below configurations are mainly for power stats and CPU usage tracking
+    // allowing to incrementally disable framework features
+    private static final String ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY
+            = "ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED:   ";
+    private static final String ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY
+            = "ENABLE_AUTO_JOIN_WHILE_ASSOCIATED:   ";
+    private static final String ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY
+            = "ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED:   ";
+    private static final String ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY
+            = "ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY:   ";
+
     // The Wifi verbose log is provided as a way to persist the verbose logging settings
     // for testing purpose.
     // It is not intended for normal use.
     private static final String WIFI_VERBOSE_LOGS_KEY
             = "WIFI_VERBOSE_LOGS:   ";
-    public boolean enableAutoJoinWhileAssociated = true;
+
+    public boolean enableAutoJoinScanWhenAssociated = true;
+    public boolean enableAutoJoinWhenAssociated = true;
+    public boolean enableChipWakeUpWhenAssociated = true;
+    public boolean enableRssiPollWhenAssociated = true;
 
     public int maxTxPacketForNetworkSwitching = 40;
     public int maxRxPacketForNetworkSwitching = 80;
@@ -475,6 +491,13 @@ public class WifiConfigStore extends IpConfigStore {
                 R.integer.config_wifi_framework_max_connection_errors_to_blacklist);
         wifiConfigBlacklistMinTimeMilli = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_network_black_list_min_time_milli);
+
+
+        enableAutoJoinScanWhenAssociated = mContext.getResources().getBoolean(
+                R.bool.config_wifi_framework_enable_associated_autojoin_scan);
+
+        enableAutoJoinWhenAssociated = mContext.getResources().getBoolean(
+                R.bool.config_wifi_framework_enable_associated_network_selection);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -947,7 +970,7 @@ public class WifiConfigStore extends IpConfigStore {
                 removeKeys(config.enterpriseConfig);
             }
 
-            if (config.didSelfAdd || config.linkedConfigurations != null
+            if (config.selfAdded || config.linkedConfigurations != null
                     || config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
                 remove = false;
                 loge("removeNetwork " + Integer.toString(netId)
@@ -1377,7 +1400,6 @@ public class WifiConfigStore extends IpConfigStore {
             String value = null;
 
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
-                if (VDBG) loge(line);
 
                 if (line.matches("[ \\t]*network=\\{")) {
                     found = true;
@@ -1624,6 +1646,9 @@ public class WifiConfigStore extends IpConfigStore {
                     if (config.lastFailure != null) {
                         out.writeUTF(FAILURE_KEY + config.lastFailure + SEPARATOR_KEY);
                     }
+                    out.writeUTF(SEPARATOR_KEY);
+                    // Add extra blank lines for clarity
+                    out.writeUTF(SEPARATOR_KEY);
                     out.writeUTF(SEPARATOR_KEY);
                 }
             }
@@ -1978,24 +2003,48 @@ public class WifiConfigStore extends IpConfigStore {
                 if (key != null) {
                     Log.d(TAG, "readAutoJoinConfig line: " + key);
                 }
-                if (key.startsWith(ENABLE_AUTOJOIN_WHILE_ASSOCIATED_KEY)) {
-                    String st = key.replace(ENABLE_AUTOJOIN_WHILE_ASSOCIATED_KEY, "");
+                if (key.startsWith(ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY)) {
+                    String st = key.replace(ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
                     try {
-                        enableAutoJoinWhileAssociated = Integer.parseInt(st) != 0;
-                        Log.d(TAG,"readAutoJoinConfig: enabled = " + enableAutoJoinWhileAssociated);
+                        enableAutoJoinWhenAssociated = Integer.parseInt(st) != 0;
+                        Log.d(TAG,"readAutoJoinConfig: enabled = " + enableAutoJoinWhenAssociated);
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
                 }
 
-                if (key.startsWith(ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY)) {
-                    String st = key.replace(ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY, "");
+                if (key.startsWith(ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY)) {
+                    String st = key.replace(ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY, "");
                     st = st.replace(SEPARATOR_KEY, "");
                     try {
-                        onlyLinkSameCredentialConfigurations = Integer.parseInt(st) != 0;
+                        enableAutoJoinScanWhenAssociated = Integer.parseInt(st) != 0;
                         Log.d(TAG,"readAutoJoinConfig: enabled = "
-                                + onlyLinkSameCredentialConfigurations);
+                                + enableAutoJoinScanWhenAssociated);
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+
+                if (key.startsWith(ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY)) {
+                    String st = key.replace(ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        enableChipWakeUpWhenAssociated = Integer.parseInt(st) != 0;
+                        Log.d(TAG,"readAutoJoinConfig: enabled = "
+                                + enableChipWakeUpWhenAssociated);
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+
+                if (key.startsWith(ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY)) {
+                    String st = key.replace(ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        enableRssiPollWhenAssociated = Integer.parseInt(st) != 0;
+                        Log.d(TAG,"readAutoJoinConfig: enabled = "
+                                + enableRssiPollWhenAssociated);
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
@@ -2870,7 +2919,7 @@ public class WifiConfigStore extends IpConfigStore {
         for (WifiConfiguration link : mConfiguredNetworks.values()) {
             boolean doLink = false;
 
-            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.didSelfAdd) {
+            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.selfAdded) {
                 if (VVDBG) loge("associateWithConfiguration(): skip selfadd " + link.configKey() );
                 // Make sure we dont associate the scan result to a deleted config
                 continue;
@@ -3035,14 +3084,6 @@ public class WifiConfigStore extends IpConfigStore {
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             boolean found = false;
 
-            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
-                if (VVDBG) {
-                    loge("updateSavedNetworkHistory(): skip deleted " + config.configKey());
-                }
-                // Make sure we dont add the scan result to a deleted config
-                continue;
-            }
-
             if (config.SSID == null || !config.SSID.equals(SSID)) {
                 // SSID mismatch
                 if (VVDBG) {
@@ -3054,7 +3095,8 @@ public class WifiConfigStore extends IpConfigStore {
             if (VDBG) {
                 loge("updateSavedNetworkHistory(): try " + config.configKey()
                         + " SSID=" + config.SSID + " " + scanResult.SSID
-                        + " " + scanResult.capabilities);
+                        + " " + scanResult.capabilities
+                        + " ajst=" + config.autoJoinStatus);
             }
             if (scanResult.capabilities.contains("WEP")
                     && config.configKey().contains("WEP")) {
@@ -3075,6 +3117,20 @@ public class WifiConfigStore extends IpConfigStore {
             }
 
             if (found) {
+                numConfigFound ++;
+
+                if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
+                    if (VVDBG) {
+                        loge("updateSavedNetworkHistory(): found a deleted, skip it...  "
+                                + config.configKey());
+                    }
+                    // The scan result belongs to a deleted config:
+                    //   - increment numConfigFound to remember that we found a config
+                    //            matching for this scan result
+                    //   - dont do anything since the config was deleted, just skip...
+                    continue;
+                }
+
                 if (config.scanResultCache == null) {
                     config.scanResultCache = new HashMap<String, ScanResult>();
                 }
@@ -3084,7 +3140,6 @@ public class WifiConfigStore extends IpConfigStore {
                     config.dirty = true;
                 }
 
-                numConfigFound ++;
                 // Add the scan result to this WifiConfiguration
                 config.scanResultCache.put(scanResult.BSSID, scanResult);
                 // Since we added a scan result to this configuration, re-attempt linking
@@ -3689,9 +3744,7 @@ public class WifiConfigStore extends IpConfigStore {
                     // This is a network we self added, and we never succeeded,
                     // the user did not create this network and never entered its credentials,
                     // so we want to be very aggressive in disabling it completely.
-                    disableNetwork(config.networkId, WifiConfiguration.DISABLED_AUTH_FAILURE);
-                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
-                    config.disableReason = WifiConfiguration.DISABLED_AUTH_FAILURE;
+                    removeConfigAndSendBroadcastIfNeeded(config.networkId);
                 } else {
                     if (message != null) {
                         if (message.contains("no identity")) {

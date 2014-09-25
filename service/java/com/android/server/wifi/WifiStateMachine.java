@@ -183,11 +183,6 @@ public class WifiStateMachine extends StateMachine {
     /* Chipset supports background scan */
     private final boolean mBackgroundScanSupported;
 
-    /* enable autojoin scans and selection when in associated mode */
-    private final boolean mEnableAutoJoinScanWhenAssociated;
-    private final boolean mEnableAutoJoinWhenAssociated;
-
-
     private String mInterfaceName;
     /* Tethering interface could be separate from wlan interface */
     private String mTetherInterfaceName;
@@ -895,12 +890,6 @@ public class WifiStateMachine extends StateMachine {
 
         mBackgroundScanSupported = mContext.getResources().getBoolean(
                 R.bool.config_wifi_background_scan_support);
-
-        mEnableAutoJoinScanWhenAssociated = mContext.getResources().getBoolean(
-                R.bool.config_wifi_framework_enable_associated_autojoin_scan);
-
-        mEnableAutoJoinWhenAssociated = mContext.getResources().getBoolean(
-                R.bool.config_wifi_framework_enable_associated_network_selection);
 
         mPrimaryDeviceType = mContext.getResources().getString(
                 R.string.config_wifi_p2p_device_type);
@@ -2838,7 +2827,7 @@ public class WifiStateMachine extends StateMachine {
             fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMilli;
             // Start the scan alarm so as to enable autojoin
             if (getCurrentState() == mConnectedState
-                    && mEnableAutoJoinScanWhenAssociated) {
+                    && mWifiConfigStore.enableAutoJoinScanWhenAssociated) {
                 mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMilli;
                 // Scan after 200ms
                 setScanAlarm(true, 200);
@@ -3234,7 +3223,7 @@ public class WifiStateMachine extends StateMachine {
                 || getCurrentState() == mScanModeState
                 || getCurrentState() == mDisconnectingState
                 || (getCurrentState() == mConnectedState
-                && !mEnableAutoJoinWhenAssociated)
+                && !mWifiConfigStore.enableAutoJoinWhenAssociated)
                 || linkDebouncing
                 || state == SupplicantState.ASSOCIATING
                 || state == SupplicantState.AUTHENTICATING
@@ -3358,7 +3347,7 @@ public class WifiStateMachine extends StateMachine {
         }
         delta = networkDelta;
         if (mWifiInfo != null) {
-            if (!mWifiConfigStore.enableAutoJoinWhileAssociated
+            if (!mWifiConfigStore.enableAutoJoinWhenAssociated
                     && mWifiInfo.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                 // If AutoJoin while associated is not enabled,
                 // we should never switch network when already associated
@@ -3535,10 +3524,10 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" p3");
                 }
             }
+            sb.append(String.format(" ticks %d,%d,%d", currentConfiguration.numTicksAtBadRSSI,
+                    currentConfiguration.numTicksAtLowRSSI,
+                    currentConfiguration.numTicksAtNotHighRSSI));
         }
-        sb.append(String.format(" ticks %d,%d,%d", currentConfiguration.numTicksAtBadRSSI,
-                currentConfiguration.numTicksAtLowRSSI,
-                currentConfiguration.numTicksAtNotHighRSSI));
 
         if (PDBG) {
             String rssiStatus = "";
@@ -6748,19 +6737,21 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
-                        if (VVDBG) log(" get link layer stats " + mWifiLinkLayerStatsSupported);
-                        WifiLinkLayerStats stats = getWifiLinkLayerStats(VDBG);
-                        if (stats != null) {
-                           // Sanity check the results provided by driver
-                           if (mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI
-                                    && (stats.rssi_mgmt == 0
-                                    || stats.beacon_rx == 0)) {
-                                stats = null;
-                           }
+                        if (mWifiConfigStore.enableChipWakeUpWhenAssociated) {
+                            if (VVDBG) log(" get link layer stats " + mWifiLinkLayerStatsSupported);
+                            WifiLinkLayerStats stats = getWifiLinkLayerStats(VDBG);
+                            if (stats != null) {
+                                // Sanity check the results provided by driver
+                                if (mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI
+                                        && (stats.rssi_mgmt == 0
+                                        || stats.beacon_rx == 0)) {
+                                    stats = null;
+                                }
+                            }
+                            // Get Info and continue polling
+                            fetchRssiLinkSpeedAndFrequencyNative();
+                            calculateWifiScore(stats);
                         }
-                        // Get Info and continue polling
-                        fetchRssiLinkSpeedAndFrequencyNative();
-                        calculateWifiScore(stats);
                         sendMessageDelayed(obtainMessage(CMD_RSSI_POLL,
                                 mRssiPollToken, 0), POLL_RSSI_INTERVAL_MSECS);
                         if (DBG) sendRssiChangeBroadcast(mWifiInfo.getRssi());
@@ -6769,7 +6760,11 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_ENABLE_RSSI_POLL:
-                    mEnableRssiPolling = (message.arg1 == 1);
+                    if (mWifiConfigStore.enableRssiPollWhenAssociated) {
+                        mEnableRssiPolling = (message.arg1 == 1);
+                    } else {
+                        mEnableRssiPolling = false;
+                    }
                     mRssiPollToken++;
                     if (mEnableRssiPolling) {
                         // First poll
@@ -7133,7 +7128,7 @@ public class WifiStateMachine extends StateMachine {
                         + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMilli) );
             }
             if (mScreenOn
-                    && mEnableAutoJoinScanWhenAssociated) {
+                    && mWifiConfigStore.enableAutoJoinScanWhenAssociated) {
                 mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMilli;
                 // Scan after 200ms
                 setScanAlarm(true, 200);
