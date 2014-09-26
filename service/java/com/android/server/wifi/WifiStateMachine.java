@@ -3392,6 +3392,8 @@ public class WifiStateMachine extends StateMachine {
         mWifiInfo.rxSuccessRate = 0;
     }
 
+    int mBadLinkspeedcount = 0;
+
     // For debug, provide information about the last scoring operation
     String wifiScoringReport = null;
     private void calculateWifiScore(WifiLinkLayerStats stats) {
@@ -3414,7 +3416,15 @@ public class WifiStateMachine extends StateMachine {
                 || (mWifiInfo.is5GHz() && mWifiInfo.getLinkSpeed()
                 >= mWifiConfigStore.goodLinkSpeed5);
 
-        if (isBadLinkspeed) sb.append(" bl");
+        if (isBadLinkspeed) {
+            if (mBadLinkspeedcount < 6)
+                mBadLinkspeedcount++;
+        } else {
+            if (mBadLinkspeedcount > 0)
+                mBadLinkspeedcount--;
+        }
+
+        if (isBadLinkspeed) sb.append(" bl(").append(mBadLinkspeedcount).append(")");
         if (isGoodLinkspeed) sb.append(" gl");
 
         /**
@@ -3578,8 +3588,12 @@ public class WifiStateMachine extends StateMachine {
         sb.append(String.format(",%d", score));
 
         if (isBadLinkspeed) {
-            score -= 4;
-            if (PDBG) loge(" isBadLinkspeed   ---> score=" + Integer.toString(score));
+            // Aggressively drop the score if link speed is bad
+            score -= 2 * mBadLinkspeedcount;
+            if (PDBG) {
+                loge(" isBadLinkspeed   ---> count=" + mBadLinkspeedcount
+                        + " score=" + Integer.toString(score));
+            }
         } else if ((isGoodLinkspeed) && (mWifiInfo.txSuccessRate > 5)) {
             score += 4; // So as bad rssi alone dont kill us
         }
@@ -4074,6 +4088,7 @@ public class WifiStateMachine extends StateMachine {
         }
 
         /* Reset data structures */
+        mBadLinkspeedcount = 0;
         mWifiInfo.reset();
         linkDebouncing = false;
         /* Reset roaming parameters */
@@ -5811,6 +5826,7 @@ public class WifiStateMachine extends StateMachine {
                config.numAuthFailures = 0;
                config.numAssociation++;
            }
+           mBadLinkspeedcount = 0;
        }
     }
 
