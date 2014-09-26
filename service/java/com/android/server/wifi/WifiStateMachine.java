@@ -4858,7 +4858,10 @@ public class WifiStateMachine extends StateMachine {
                     closeRadioScanStats();
                     noteScanEnd();
                     setScanResults();
-                    sendScanResultsAvailableBroadcast();
+                    if (mIsFullScanOngoing) {
+                        /* Just updated results from full scan, let apps know about this */
+                        sendScanResultsAvailableBroadcast();
+                    }
                     mIsScanOngoing = false;
                     mIsFullScanOngoing = false;
                     if (mBufferedScanMsg.size() > 0)
