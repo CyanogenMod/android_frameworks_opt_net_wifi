@@ -18,6 +18,8 @@ package com.android.server.wifi;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
@@ -188,6 +190,9 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String CREATOR_UID_KEY = "CREATOR_UID_KEY:  ";
     private static final String CONNECT_UID_KEY = "CONNECT_UID_KEY:  ";
     private static final String UPDATE_UID_KEY = "UPDATE_UID:  ";
+    private static final String CREATOR_NAME_KEY = "CREATOR_NAME:  ";
+    private static final String UPDATE_NAME_KEY = "UPDATE_NAME:  ";
+    private static final String USER_APPROVED_KEY = "USER_APPROVED:  ";
     private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS:  ";
     private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON:  ";
     private static final String FQDN_KEY = "FQDN:  ";
@@ -1033,6 +1038,36 @@ public class WifiConfigStore extends IpConfigStore {
         return remove;
     }
 
+    /*
+     * Remove all networks associated with an application
+     *
+     * @param packageName name of the package of networks to remove
+     * @return {@code true} if all networks removed successfully, {@code false} otherwise
+     */
+    boolean removeNetworksForApp(String packageName) {
+        if (packageName == null) {
+            return false;
+        }
+
+        boolean success = true;
+
+        WifiConfiguration [] copiedConfigs =
+                mConfiguredNetworks.values().toArray(new WifiConfiguration[0]);
+        for (WifiConfiguration config : copiedConfigs) {
+            if (packageName.equals(config.creatorName)) {
+                success &= removeNetwork(config.networkId);
+                if (showNetworks) {
+                    localLog("Removing network " + config.SSID
+                             + ", application uninstalled");
+                }
+            }
+        }
+
+        mWifiNative.saveConfig();
+
+        return success;
+    }
+
     /**
      * Enable a network. Note that there is no saveConfig operation.
      * This function is retained for compatibility with the public
@@ -1483,7 +1518,7 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
-    public void writeKnownNetworkHistory() {
+    public synchronized void writeKnownNetworkHistory() {
         boolean needUpdate = false;
 
         /* Make a copy */
@@ -1595,6 +1630,10 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(CONNECT_UID_KEY + Integer.toString(config.lastConnectUid)
                             + SEPARATOR_KEY);
                     out.writeUTF(UPDATE_UID_KEY + Integer.toString(config.lastUpdateUid)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(CREATOR_NAME_KEY + config.creatorName + SEPARATOR_KEY);
+                    out.writeUTF(UPDATE_NAME_KEY + config.lastUpdateName + SEPARATOR_KEY);
+                    out.writeUTF(USER_APPROVED_KEY + Integer.toString(config.userApproved)
                             + SEPARATOR_KEY);
                     String allowedKeyManagementString =
                             makeString(config.allowedKeyManagement,
@@ -1710,6 +1749,16 @@ public class WifiConfigStore extends IpConfigStore {
                 if (key.startsWith(CONFIG_KEY)) {
 
                     if (config != null) {
+                        // After an upgrade count old connections as owned by system
+                        if (config.creatorName == null || config.lastUpdateName == null) {
+                            config.creatorName =
+                                mContext.getPackageManager().getNameForUid(Process.SYSTEM_UID);
+                            config.lastUpdateName = config.creatorName;
+
+                            if (DBG) Log.e(TAG, "Upgrading network " + config.networkId
+                                    + " to " + config.creatorName);
+                        }
+
                         config = null;
                     }
                     String configKey = key.replace(CONFIG_KEY, "");
@@ -1864,6 +1913,24 @@ public class WifiConfigStore extends IpConfigStore {
                         String uid = key.replace(UPDATE_UID_KEY, "");
                         uid = uid.replace(SEPARATOR_KEY, "");
                         config.lastUpdateUid = Integer.parseInt(uid);
+                    }
+
+                    if (key.startsWith(CREATOR_NAME_KEY)) {
+                        String name = key.replace(CREATOR_NAME_KEY, "");
+                        name = name.replace(SEPARATOR_KEY, "");
+                        config.creatorName = name;
+                    }
+
+                    if (key.startsWith(UPDATE_NAME_KEY)) {
+                        String name = key.replace(UPDATE_NAME_KEY, "");
+                        name = name.replace(SEPARATOR_KEY, "");
+                        config.lastUpdateName = name;
+                    }
+
+                    if (key.startsWith(USER_APPROVED_KEY)) {
+                        String userApproved = key.replace(USER_APPROVED_KEY, "");
+                        userApproved = userApproved.replace(SEPARATOR_KEY, "");
+                        config.userApproved = Integer.parseInt(userApproved);
                     }
 
                     if (key.startsWith(FAILURE_KEY)) {
@@ -2711,11 +2778,14 @@ public class WifiConfigStore extends IpConfigStore {
                 currentConfig.lastConnectUid = config.lastConnectUid;
                 currentConfig.lastUpdateUid = config.lastUpdateUid;
                 currentConfig.creatorUid = config.creatorUid;
+                currentConfig.creatorName = config.creatorName;
+                currentConfig.lastUpdateName = config.lastUpdateName;
                 currentConfig.peerWifiConfiguration = config.peerWifiConfiguration;
             }
             if (DBG) {
                 loge("created new config netId=" + Integer.toString(netId)
-                        + " uid=" + Integer.toString(currentConfig.creatorUid));
+                        + " uid=" + Integer.toString(currentConfig.creatorUid)
+                        + " name=" + currentConfig.creatorName);
             }
         }
 
@@ -2751,6 +2821,14 @@ public class WifiConfigStore extends IpConfigStore {
         if (DBG) loge("will read network variables netId=" + Integer.toString(netId));
 
         readNetworkVariables(currentConfig);
+
+        // Persist configuration paramaters that are not saved by supplicant.
+        if (config.lastUpdateName != null) {
+            currentConfig.lastUpdateName = config.lastUpdateName;
+        }
+        if (config.lastUpdateUid != -1) {
+            currentConfig.lastUpdateUid = config.lastUpdateUid;
+        }
 
         mConfiguredNetworks.put(netId, currentConfig);
         mNetworkIds.put(configKey(currentConfig), netId);
@@ -2966,6 +3044,12 @@ public class WifiConfigStore extends IpConfigStore {
                     config.didSelfAdd = true;
                     config.dirty = true;
                     config.peerWifiConfiguration = link.configKey();
+                    config.lastUpdateName = link.lastUpdateName;
+                    config.creatorName = link.creatorName;
+                    config.lastUpdateUid = link.lastUpdateUid;
+                    config.creatorUid = link.creatorUid;
+                    config.userApproved = link.userApproved;
+
                     if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
                             config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
                         // Transfer the credentials from the configuration we are linking from
@@ -3659,6 +3743,107 @@ public class WifiConfigStore extends IpConfigStore {
         }
         */
 
+        return false;
+    }
+
+    boolean isNetworkConfigured(WifiConfiguration config) {
+        // Check if either we have a network Id or a WifiConfiguration
+        // matching the one we are trying to add.
+
+        if(config.networkId != INVALID_NETWORK_ID) {
+            return (mConfiguredNetworks.get(config.networkId) != null);
+        }
+
+        Integer savedNetId = mNetworkIds.get(configKey(config));
+        if (savedNetId == null) {
+            for (WifiConfiguration test : mConfiguredNetworks.values()) {
+                if (test.configKey().equals(config.configKey())) {
+                    Log.d(TAG, "isNetworkConfigured " + config.configKey()
+                            + " was found, but no network Id");
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Checks if uid has access to modify the configuration corresponding to networkId.
+     *
+     * uid has access only if was the last to modify this network, or holds the
+     *   OVERRIDE_WIFI_CONFIG permission.
+     */
+    boolean canModifyNetwork(int uid, int networkId) {
+        WifiConfiguration config = mConfiguredNetworks.get(networkId);
+
+        String currentApp = mContext.getPackageManager().getNameForUid(uid);
+
+        if (config == null) {
+            loge("canModifyNetwork: cannot find config networkId " + networkId);
+            return false;
+        } if (currentApp == null) {
+            loge("canModifyNetwork: unkown uid " + uid);
+            return false;
+        }
+
+        if (config.lastUpdateName == null) {
+            Log.e(TAG, "Last update name should not be null");
+            return checkConfigOverridePermission(uid);
+        }
+
+        return config.lastUpdateName.equals( currentApp ) || checkConfigOverridePermission(uid);
+    }
+
+    /**
+     * Checks if uid has access to modify config.
+     */
+    boolean canModifyNetwork(int uid, WifiConfiguration config) {
+        if (config == null) {
+            loge("canModifyNetowrk recieved null configuration");
+            return false;
+        }
+
+        // Resolve the correct network id.
+        int netid;
+        if (config.networkId != INVALID_NETWORK_ID){
+            netid = config.networkId;
+        } else {
+            Integer savedNetId = mNetworkIds.get(configKey(config));
+            if (savedNetId == null) {
+                netid = INVALID_NETWORK_ID;
+
+                for (WifiConfiguration test : mConfiguredNetworks.values()) {
+                    // This should never happen.
+                    if (test.configKey().equals(config.configKey())) {
+                        loge("canModifyNetwork found WifiConfiguration " + config.configKey()
+                                + " , but not saved in configuredNetworks");
+                        netid = test.networkId;
+                    }
+                }
+
+                if (netid == INVALID_NETWORK_ID) {
+                    return false;
+                }
+            } else {
+                netid = savedNetId;
+            }
+        }
+
+        return canModifyNetwork(uid, netid);
+    }
+
+    boolean checkConfigOverridePermission(int uid) {
+        PackageManager pkgMgr = mContext.getPackageManager();
+        for (String packageName : pkgMgr.getPackagesForUid(uid)) {
+            int granted = pkgMgr.checkPermission(
+                                  android.Manifest.permission.OVERRIDE_WIFI_CONFIG, packageName );
+            if (granted == PackageManager.PERMISSION_GRANTED) {
+                return true;
+            }
+        }
         return false;
     }
 

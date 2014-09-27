@@ -33,6 +33,7 @@ import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
+import android.net.Uri;
 import android.net.wifi.*;
 import android.net.wifi.IWifiManager;
 import android.os.AsyncTask;
@@ -172,30 +173,20 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     WifiConfiguration config = (WifiConfiguration) msg.obj;
                     int networkId = msg.arg1;
                     if (msg.what == WifiManager.SAVE_NETWORK) {
-                        if (config != null) {
-                            if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
-                                config.creatorUid = Binder.getCallingUid();
-                            } else {
-                                config.lastUpdateUid = Binder.getCallingUid();
-                            }
-                        }
                         Slog.e("WiFiServiceImpl ", "SAVE"
                                 + " nid=" + Integer.toString(networkId)
-                                + " uid=" + Integer.toString(config.creatorUid)
-                                + "/" + Integer.toString(config.lastUpdateUid));
+                                + " uid=" + msg.sendingUid
+                                + " name="
+                                + mContext.getPackageManager().getNameForUid(msg.sendingUid));
                     }
                     if (msg.what == WifiManager.CONNECT_NETWORK) {
-                        if (config != null) {
-                            if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
-                                config.creatorUid = Binder.getCallingUid();
-                            } else {
-                                config.lastUpdateUid = Binder.getCallingUid();
-                            }
-                        }
                         Slog.e("WiFiServiceImpl ", "CONNECT "
                                 + " nid=" + Integer.toString(networkId)
-                                + " uid=" + Binder.getCallingUid());
+                                + " uid=" + msg.sendingUid
+                                + " name="
+                                + mContext.getPackageManager().getNameForUid(msg.sendingUid));
                     }
+
                     if (config != null && config.isValid()) {
                         if (DBG) Slog.d(TAG, "Connect with config" + config);
                         mWifiStateMachine.sendMessage(Message.obtain(msg));
@@ -349,6 +340,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         // can result in race conditions when apps toggle wifi in the background
         // without active user involvement. Always receive broadcasts.
         registerForBroadcasts();
+        registerForPackageRemoval();
 
         mWifiController.start();
 
@@ -849,15 +841,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
         if (config.isValid()) {
-            //TODO: pass the Uid the WifiStateMachine as a message parameter
             Slog.e("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
                     + " SSID " + config.SSID
                     + " nid=" + Integer.toString(config.networkId));
-            if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
-                config.creatorUid = Binder.getCallingUid();
-            } else {
-                config.lastUpdateUid = Binder.getCallingUid();
-            }
             if (mWifiStateMachineChannel != null) {
                 return mWifiStateMachine.syncAddOrUpdateNetwork(mWifiStateMachineChannel, config);
             } else {
@@ -1336,6 +1322,27 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         intentFilter.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
         intentFilter.addAction(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
         mContext.registerReceiver(mReceiver, intentFilter);
+    }
+
+    private void registerForPackageRemoval() {
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        intentFilter.addDataScheme("package");
+        mContext.registerReceiver(new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+                    Uri uri = intent.getData();
+                    if (uri == null) {
+                        return;
+                    }
+                    String pkgName = uri.getSchemeSpecificPart();
+                    // TODO: we should be checking against getNameForUid()
+                    // check b/17630513 and b/17630093 for more information
+                    mWifiStateMachine.removeAppConfigs(pkgName);
+                }
+            }
+        }, intentFilter);
     }
 
     @Override
