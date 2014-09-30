@@ -525,11 +525,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             // check the channels this client asked for ..
             int num_results = 0;
-            for (ScanResult result : results) {
-                for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
-                    if (channelSpec.frequency == result.frequency) {
-                        num_results++;
-                        break;
+
+            if (results != null) {
+                for (ScanResult result : results) {
+                    for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
+                        if (channelSpec.frequency == result.frequency) {
+                            num_results++;
+                            break;
+                        }
                     }
                 }
             }
@@ -622,11 +625,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 int handler = entry.getKey();
                 WifiScanner.HotlistSettings settings = entry.getValue();
                 int num_results = 0;
-                for (ScanResult result : results) {
-                    for (WifiScanner.BssidInfo BssidInfo : settings.bssidInfos) {
-                        if (result.BSSID.equalsIgnoreCase(BssidInfo.bssid)) {
-                            num_results++;
-                            break;
+
+                if (results != null) {
+                    for (ScanResult result : results) {
+                        for (WifiScanner.BssidInfo BssidInfo : settings.bssidInfos) {
+                            if (result.BSSID.equalsIgnoreCase(BssidInfo.bssid)) {
+                                num_results++;
+                                break;
+                            }
                         }
                     }
                 }
