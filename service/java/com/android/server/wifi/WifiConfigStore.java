@@ -268,6 +268,9 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY
             = "ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS:   ";
 
+    private static final String ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY
+            = "ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED:   ";
+
     // The three below configurations are mainly for power stats and CPU usage tracking
     // allowing to incrementally disable framework features
     private static final String ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY
@@ -298,6 +301,8 @@ public class WifiConfigStore extends IpConfigStore {
 
     public int maxTxPacketForPartialScans = 40;
     public int maxRxPacketForPartialScans = 80;
+
+    public boolean enableFullBandScanWhenAssociated = true;
 
     public int thresholdInitialAutoJoinAttemptMin5RSSI
             = WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5;
@@ -702,6 +707,7 @@ public class WifiConfigStore extends IpConfigStore {
     void enableAllNetworks() {
         long now = System.currentTimeMillis();
         boolean networkEnabledStateChanged = false;
+
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             if(config != null && config.status == Status.DISABLED
                     && (config.autoJoinStatus
@@ -713,6 +719,7 @@ public class WifiConfigStore extends IpConfigStore {
                         || config.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT
                         || config.disableReason == WifiConfiguration.DISABLED_AUTH_FAILURE) {
                     if (config.blackListTimestamp != 0
+                           && now > config.blackListTimestamp
                            && (now - config.blackListTimestamp) < wifiConfigBlacklistMinTimeMilli) {
                         continue;
                     }
@@ -721,6 +728,10 @@ public class WifiConfigStore extends IpConfigStore {
                 if(mWifiNative.enableNetwork(config.networkId, false)) {
                     networkEnabledStateChanged = true;
                     config.status = Status.ENABLED;
+                    // Reset the blacklist condition
+                    config.numConnectionFailures = 0;
+                    config.numIpConfigFailures = 0;
+                    config.numAuthFailures = 0;
                 } else {
                     loge("Enable network failed on " + config.networkId);
                 }
@@ -1709,6 +1720,7 @@ public class WifiConfigStore extends IpConfigStore {
                 lastSelectedConfiguration = selected.configKey();
                 selected.numConnectionFailures = 0;
                 selected.numIpConfigFailures = 0;
+                selected.numAuthFailures = 0;
                 if (VDBG) {
                     loge("setLastSelectedConfiguration now: " + lastSelectedConfiguration);
                 }
@@ -1816,13 +1828,6 @@ public class WifiConfigStore extends IpConfigStore {
                         String st = key.replace(STATUS_KEY, "");
                         st = st.replace(SEPARATOR_KEY, "");
                         config.autoJoinStatus = Integer.parseInt(st);
-                    }
-
-
-                    if (key.startsWith(SUPPLICANT_STATUS_KEY)) {
-                        String sstatus = key.replace(SUPPLICANT_STATUS_KEY, "");
-                        sstatus = sstatus.replace(SEPARATOR_KEY, "");
-                        config.status = Integer.parseInt(sstatus);
                     }
 
                     if (key.startsWith(SUPPLICANT_DISABLE_REASON_KEY)) {
@@ -2076,6 +2081,18 @@ public class WifiConfigStore extends IpConfigStore {
                     try {
                         enableAutoJoinWhenAssociated = Integer.parseInt(st) != 0;
                         Log.d(TAG,"readAutoJoinConfig: enabled = " + enableAutoJoinWhenAssociated);
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+
+                if (key.startsWith(ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY)) {
+                    String st = key.replace(ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY, "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        enableFullBandScanWhenAssociated = Integer.parseInt(st) != 0;
+                        Log.d(TAG,"readAutoJoinConfig: enableFullBandScanWhenAssociated = "
+                                + enableFullBandScanWhenAssociated);
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                     }
@@ -3667,7 +3684,9 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         if (config != null) {
-            mLocalLog.log(s + " " + config.getPrintableSsid() + " " + netId);
+            mLocalLog.log(s + " " + config.getPrintableSsid() + " " + netId
+                    + " status=" + config.status
+                    + " key=" + config.configKey());
         } else {
             mLocalLog.log(s + " " + netId);
         }
@@ -3985,6 +4004,7 @@ public class WifiConfigStore extends IpConfigStore {
                                 if (result.numIpConfigFailures > 3) {
                                     // Tell supplicant to stop trying this BSSID
                                     mWifiNative.blackListBSSID(BSSID);
+                                    result.setAutoJoinStatus(ScanResult.AUTO_JOIN_DISABLED);
                                 }
                             }
 

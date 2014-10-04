@@ -2533,7 +2533,11 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(String.format(" %.1f,", mWifiInfo.txRetriesRate));
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
-                if (lastScanFreqs != null) sb.append(" list=").append(lastScanFreqs);
+                if (lastScanFreqs != null) {
+                    sb.append(" list=").append(lastScanFreqs);
+                } else {
+                    sb.append(" fiv=").append(fullBandConnectedTimeIntervalMilli);
+                }
                 report = reportOnTime();
                 if (report != null) {
                     sb.append(" ").append(report);
@@ -2884,7 +2888,7 @@ public class WifiStateMachine extends StateMachine {
             case CMD_IP_CONFIGURATION_LOST:
                 int count = -1;
                 WifiConfiguration c = getCurrentWifiConfiguration();
-                if (c != null) count = c.numConnectionFailures;
+                if (c != null) count = c.numIpConfigFailures;
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
@@ -2893,6 +2897,17 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(count));
                 sb.append("/");
                 sb.append(Integer.toString(mWifiConfigStore.getMaxDhcpRetries()));
+                if (mWifiInfo.getBSSID() != null) {
+                    sb.append(mWifiInfo.getBSSID());
+                }
+                if (c.scanResultCache != null) {
+                    for (ScanResult r : c.scanResultCache.values()) {
+                        if (r.BSSID.equals(mWifiInfo.getBSSID())) {
+                            sb.append(" ipfail=").append(r.numIpConfigFailures);
+                            sb.append(",st=").append(r.autoJoinStatus);
+                        }
+                    }
+                }
                 break;
             case CMD_UPDATE_LINKPROPERTIES:
                 sb.append(" ");
@@ -2981,6 +2996,8 @@ public class WifiStateMachine extends StateMachine {
         lastScreenStateChangeTimeStamp = lastLinkLayerStatsUpdate;
 
         if (screenOn) {
+            clearBlacklist();
+
             fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMilli;
             // Start the scan alarm so as to enable autojoin
             if (getCurrentState() == mConnectedState
@@ -3233,6 +3250,8 @@ public class WifiStateMachine extends StateMachine {
     private static final String DELIMITER_STR = "====";
     private static final String END_STR = "####";
 
+    int emptyScanResultCount = 0;
+
     /**
      * Format:
      *
@@ -3295,9 +3314,17 @@ public class WifiStateMachine extends StateMachine {
 
         scanResults = scanResultsBuf.toString();
         if (TextUtils.isEmpty(scanResults)) {
+            emptyScanResultCount++;
+            if (emptyScanResultCount > 10) {
+                // If we got too many empty scan results, the current scan cache is stale,
+                // hence clear it.
+                mScanResults = new ArrayList<ScanResult>();
+            }
            return;
         }
 
+        emptyScanResultCount = 0;
+        
         // note that all these splits and substrings keep references to the original
         // huge string buffer while the amount we really want is generally pretty small
         // so make copies instead (one example b/11087956 wasted 400k of heap here).
@@ -3402,10 +3429,13 @@ public class WifiStateMachine extends StateMachine {
         if (getDisconnectedTimeMilli() > 1000 * 60 * 30) {
             mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
         }
-        synchronized(mScanResultCache) {
-            // AutoJoincontroller will directly acces the scan result list and update it with
-            // ScanResult status
-            mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
+
+        if (mWifiConfigStore.enableAutoJoinWhenAssociated) {
+            synchronized(mScanResultCache) {
+                // AutoJoincontroller will directly acces the scan result list and update it with
+                // ScanResult status
+                mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
+            }
         }
         if (linkDebouncing) {
             // If debouncing, we dont re-select a SSID or BSSID hence
@@ -6086,8 +6116,8 @@ public class WifiStateMachine extends StateMachine {
                     if (bssid != null) {
                         // If we have a BSSID, tell configStore to black list it
                         synchronized(mScanResultCache) {
-                            didBlackListBSSID = mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId,
-                                    bssid, false);
+                            didBlackListBSSID = mWifiConfigStore.handleBSSIDBlackList
+                                    (mLastNetworkId, bssid, false);
                         }
                     }
                     mSupplicantStateTracker.sendMessage(WifiMonitor.ASSOCIATION_REJECTION_EVENT);
@@ -6900,7 +6930,8 @@ public class WifiStateMachine extends StateMachine {
                                     + " maxinterval=" + maxFullBandConnectedTimeIntervalMilli);
                         }
                         if (mWifiInfo != null) {
-                            if ((now_ms - lastFullBandConnectedTimeMilli)
+                            if (mWifiConfigStore.enableFullBandScanWhenAssociated &&
+                                    (now_ms - lastFullBandConnectedTimeMilli)
                                     > fullBandConnectedTimeIntervalMilli) {
                                 if (DBG) {
                                     loge("WifiStateMachine CMD_START_SCAN try full band scan age="
@@ -6948,14 +6979,14 @@ public class WifiStateMachine extends StateMachine {
                                     tryFullBandScan);
                         }
                         if (currentConfiguration != null) {
+                            if (fullBandConnectedTimeIntervalMilli
+                                    < mWifiConfigStore.associatedPartialScanPeriodMilli) {
+                                // Sanity
+                                fullBandConnectedTimeIntervalMilli
+                                        = mWifiConfigStore.associatedPartialScanPeriodMilli;
+                            }
                             if (tryFullBandScan) {
                                 lastFullBandConnectedTimeMilli = now_ms;
-                                if (fullBandConnectedTimeIntervalMilli
-                                        < mWifiConfigStore.associatedPartialScanPeriodMilli) {
-                                    // Sanity
-                                    fullBandConnectedTimeIntervalMilli
-                                            = mWifiConfigStore.associatedPartialScanPeriodMilli;
-                                }
                                 if (fullBandConnectedTimeIntervalMilli
                                         < mWifiConfigStore.associatedFullScanMaxIntervalMilli) {
                                     // Increase the interval
@@ -6976,6 +7007,19 @@ public class WifiStateMachine extends StateMachine {
                                     if (DBG) {
                                         loge("WifiStateMachine starting scan, " +
                                                 " did not find channels -> full");
+                                    }
+                                    lastFullBandConnectedTimeMilli = now_ms;
+                                    if (fullBandConnectedTimeIntervalMilli
+                                            < mWifiConfigStore.associatedFullScanMaxIntervalMilli) {
+                                        // Increase the interval
+                                        fullBandConnectedTimeIntervalMilli
+                                                = fullBandConnectedTimeIntervalMilli
+                                                * mWifiConfigStore.associatedFullScanBackoff / 8;
+
+                                        if (DBG) {
+                                            loge("WifiStateMachine CMD_START_SCAN bump interval ="
+                                                    + fullBandConnectedTimeIntervalMilli);
+                                        }
                                     }
                                     handleScanRequest(
                                                 WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
@@ -7019,6 +7063,7 @@ public class WifiStateMachine extends StateMachine {
                         }
                         sendMessageDelayed(obtainMessage(CMD_RSSI_POLL,
                                 mRssiPollToken, 0), POLL_RSSI_INTERVAL_MSECS);
+
                         if (DBG) sendRssiChangeBroadcast(mWifiInfo.getRssi());
                     } else {
                         // Polling has completed
