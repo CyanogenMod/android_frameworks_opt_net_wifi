@@ -23,6 +23,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Messenger;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.internal.util.AsyncChannel;
@@ -229,11 +230,27 @@ class WifiApConfigStore extends StateMachine {
        will keep the device secure after the update */
     private void setDefaultApConfiguration() {
         WifiConfiguration config = new WifiConfiguration();
-        config.SSID = mContext.getString(R.string.wifi_tether_configure_ssid_default);
-        config.allowedKeyManagement.set(KeyMgmt.WPA2_PSK);
-        String randomUUID = UUID.randomUUID().toString();
-        //first 12 chars from xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-        config.preSharedKey = randomUUID.substring(0, 8) + randomUUID.substring(9,13);
+
+        config.SSID = mContext.getResources().getString(
+                org.cyanogenmod.platform.internal.R.string.config_wifiHotSpotSsid);
+        if (TextUtils.isEmpty(config.SSID)) {
+            config.SSID = mContext.getString(R.string.wifi_tether_configure_ssid_default);
+        }
+
+        boolean set_security_none = mContext.getResources().getBoolean(
+                org.cyanogenmod.platform.internal.R.bool.config_wifiHotspotSecurityNone);
+        config.allowedKeyManagement.set(set_security_none ? KeyMgmt.NONE : KeyMgmt.WPA2_PSK);
+
+        config.preSharedKey = mContext.getResources().getString(
+                org.cyanogenmod.platform.internal.R.string.config_wifiHotSpotPass);
+        if (TextUtils.isEmpty(config.preSharedKey)) {
+            String randomUUID = UUID.randomUUID().toString();
+            // first 12 chars from xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+            config.preSharedKey = randomUUID.substring(0, 8)
+                    + randomUUID.substring(9, 13);
+        }
+
         sendMessage(WifiStateMachine.CMD_SET_AP_CONFIG, config);
     }
+
 }
