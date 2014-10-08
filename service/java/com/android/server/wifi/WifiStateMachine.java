@@ -958,7 +958,7 @@ public class WifiStateMachine extends StateMachine {
         boolean isPropFeatureAvail = (val == 3) ? true : false;
         if (isPropFeatureAvail) {
             int featureVal = SystemProperties.getInt("persist.sys.cnd.wqe", 1);
-            DEFAULT_SCORE = (featureVal == 2) ? 10 : NetworkAgent.WIFI_BASE_SCORE;
+            DEFAULT_SCORE = (featureVal == 2) ? 1 : NetworkAgent.WIFI_BASE_SCORE;
             filter.addAction("com.quicinc.cne.CNE_PREFERENCE_CHANGED");
             filter.addAction("prop_state_change");
         }
@@ -2905,12 +2905,10 @@ public class WifiStateMachine extends StateMachine {
         log("handle state change: " + state);
         if(state == 0) {
             // wifi is not good, reduce the score
-            offset = mWifiInfo.score - 50 + 2;
-            mWifiInfo.score -= offset;
+            mWifiInfo.score = 1;
         } else {
             // wifi is good, increase the score
-            offset = 50 - mWifiInfo.score + 2;
-            mWifiInfo.score += offset;
+            mWifiInfo.score = NetworkAgent.WIFI_BASE_SCORE;
         }
         if(mNetworkAgent != null) {
             mNetworkAgent.sendNetworkScore(mWifiInfo.score);
@@ -2921,7 +2919,7 @@ public class WifiStateMachine extends StateMachine {
         log("handle pref change : featurevalue: " + value);
         if(featureId == FEATURE_ID && featureParam == FEATURE_PARAM) {
             if(value == FEATURE_ON) {
-                DEFAULT_SCORE = 10;
+                DEFAULT_SCORE = 1;
                 isPropFeatureEnabled = true;
             } else if(value == FEATURE_OFF) {
                 DEFAULT_SCORE = NetworkAgent.WIFI_BASE_SCORE;
@@ -3780,9 +3778,11 @@ public class WifiStateMachine extends StateMachine {
             if (DBG) {
                 loge("calculateWifiScore() report new score " + Integer.toString(score));
             }
-            mWifiInfo.score = score;
-            if (!isPropFeatureEnabled && mNetworkAgent != null) {
-                mNetworkAgent.sendNetworkScore(score);
+            if (!isPropFeatureEnabled) {
+                mWifiInfo.score = score;
+                if(mNetworkAgent != null) {
+                    mNetworkAgent.sendNetworkScore(score);
+                }
             }
         }
         wifiScoringReport = sb.toString();
