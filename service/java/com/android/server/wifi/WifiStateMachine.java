@@ -3324,7 +3324,7 @@ public class WifiStateMachine extends StateMachine {
         }
 
         emptyScanResultCount = 0;
-        
+
         // note that all these splits and substrings keep references to the original
         // huge string buffer while the amount we really want is generally pretty small
         // so make copies instead (one example b/11087956 wasted 400k of heap here).
@@ -4728,6 +4728,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_ASSOCIATED_BSSID:
                 case CMD_UNWANTED_NETWORK:
                 case CMD_DISCONNECTING_WATCHDOG_TIMER:
+                case CMD_ROAM_WATCHDOG_TIMER:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
@@ -4954,7 +4955,9 @@ public class WifiStateMachine extends StateMachine {
                     mWifiInfo.setMacAddress(mWifiNative.getMacAddress());
                     mWifiNative.enableSaveConfig();
                     mWifiConfigStore.loadAndEnableAllNetworks();
-                    enableVerboseLogging(mWifiConfigStore.enableVerboseLogging);
+                    if (mWifiConfigStore.enableVerboseLogging > 0) {
+                        enableVerboseLogging(mWifiConfigStore.enableVerboseLogging);
+                    }
                     if (mWifiConfigStore.associatedPartialScanPeriodMilli < 0) {
                         mWifiConfigStore.associatedPartialScanPeriodMilli = 0;
                     }
@@ -7720,6 +7723,9 @@ public class WifiStateMachine extends StateMachine {
 
             /** clear the roaming state, if we were roaming, we failed */
             mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
+
+            // Reenable all networks, allow for hidden networks to be scanned
+            mWifiConfigStore.enableAllNetworks();
 
             /**
              * - screen dark and PNO supported => scan alarm disabled

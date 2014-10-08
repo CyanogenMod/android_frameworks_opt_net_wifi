@@ -227,6 +227,9 @@ public class WifiAutoJoinController {
             }
             if (didAssociate) {
                 numScanResultsKnown++;
+                result.isAutoJoinCandidate ++;
+            } else {
+                result.isAutoJoinCandidate = 0;
             }
         }
 

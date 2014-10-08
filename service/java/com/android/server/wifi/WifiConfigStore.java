@@ -560,10 +560,10 @@ public class WifiConfigStore extends IpConfigStore {
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             WifiConfiguration newConfig = new WifiConfiguration(config);
             if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
-                //do not enumerate and return this configuration to any one,
-                //for instance WiFi Picker.
-                //instead treat it as unknown. the configuration can still be retrieved
-                //directly by the key or networkId
+                // Do not enumerate and return this configuration to any one,
+                // for instance WiFi Picker.
+                // instead treat it as unknown. the configuration can still be retrieved
+                // directly by the key or networkId
                 continue;
             }
 
@@ -3185,6 +3185,10 @@ public class WifiConfigStore extends IpConfigStore {
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             boolean found = false;
 
+            if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_DELETED) {
+                continue;
+            }
+
             if (config.SSID == null || !config.SSID.equals(SSID)) {
                 // SSID mismatch
                 if (VVDBG) {
@@ -3624,7 +3628,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-        pw.println("WifiConfigStore");
+        pw.println("Dump of WifiConfigStore");
         pw.println("mLastPriority " + mLastPriority);
         pw.println("Configured networks");
         for (WifiConfiguration conf : getConfiguredNetworks()) {
