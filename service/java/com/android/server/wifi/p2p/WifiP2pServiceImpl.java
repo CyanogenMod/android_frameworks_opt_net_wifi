@@ -398,6 +398,23 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                 "WifiP2pService");
     }
 
+    private int checkConnectivityInternalPermission() {
+        return mContext.checkCallingOrSelfPermission(
+                android.Manifest.permission.CONNECTIVITY_INTERNAL);
+    }
+
+    private int checkLocationHardwarePermission() {
+        return mContext.checkCallingOrSelfPermission(
+                android.Manifest.permission.LOCATION_HARDWARE);
+    }
+
+    private void enforceConnectivityInternalOrLocationHardwarePermission() {
+        if (checkConnectivityInternalPermission() != PackageManager.PERMISSION_GRANTED
+                && checkLocationHardwarePermission() != PackageManager.PERMISSION_GRANTED) {
+            enforceConnectivityInternalPermission();
+        }
+    }
+
     /**
      * Get a reference to handler. This is used by a client to establish
      * an AsyncChannel communication with WifiP2pService
@@ -414,7 +431,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
      * @hide
      */
     public Messenger getP2pStateMachineMessenger() {
-        enforceConnectivityInternalPermission();
+        enforceConnectivityInternalOrLocationHardwarePermission();
         enforceAccessPermission();
         enforceChangePermission();
         return new Messenger(mP2pStateMachine.getHandler());
