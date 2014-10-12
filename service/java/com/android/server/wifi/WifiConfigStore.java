@@ -333,7 +333,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     public int maxAuthErrorsToBlacklist = 4;
     public int maxConnectionErrorsToBlacklist = 4;
-    public int wifiConfigBlacklistMinTimeMilli = 1000 * 60 * 20;
+    public int wifiConfigBlacklistMinTimeMilli = 1000 * 60 * 5;
 
     // Boost RSSI values of associated networks
     public int associatedHysteresisHigh = +14;
@@ -709,6 +709,7 @@ public class WifiConfigStore extends IpConfigStore {
         boolean networkEnabledStateChanged = false;
 
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
+
             if(config != null && config.status == Status.DISABLED
                     && (config.autoJoinStatus
                     <= WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)) {
@@ -728,10 +729,14 @@ public class WifiConfigStore extends IpConfigStore {
                 if(mWifiNative.enableNetwork(config.networkId, false)) {
                     networkEnabledStateChanged = true;
                     config.status = Status.ENABLED;
+
                     // Reset the blacklist condition
                     config.numConnectionFailures = 0;
                     config.numIpConfigFailures = 0;
                     config.numAuthFailures = 0;
+
+                    // Reenable the wifi configuration
+                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 } else {
                     loge("Enable network failed on " + config.networkId);
                 }
@@ -4007,7 +4012,7 @@ public class WifiConfigStore extends IpConfigStore {
                                 bssidDbg = BSSID + " ipfail=" + result.numIpConfigFailures;
                                 if (result.numIpConfigFailures > 3) {
                                     // Tell supplicant to stop trying this BSSID
-                                    mWifiNative.blackListBSSID(BSSID);
+                                    mWifiNative.addToBlacklist(BSSID);
                                     result.setAutoJoinStatus(ScanResult.AUTO_JOIN_DISABLED);
                                 }
                             }
@@ -4016,8 +4021,9 @@ public class WifiConfigStore extends IpConfigStore {
                                 loge("blacklisted " + config.configKey() + " to "
                                         + config.autoJoinStatus
                                         + " due to IP config failures, count="
-                                        + config.numIpConfigFailures + " "
-                                        + bssidDbg);
+                                        + config.numIpConfigFailures
+                                        + " disableReason=" + config.disableReason
+                                        + " " + bssidDbg);
                             }
                         } else if (message.contains("CONN_FAILED")) {
                             config.numConnectionFailures++;

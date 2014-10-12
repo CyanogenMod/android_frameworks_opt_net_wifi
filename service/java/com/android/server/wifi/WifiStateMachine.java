@@ -2837,6 +2837,15 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg2));
                 sb.append(" num=").append(mWifiConfigStore.getConfiguredNetworksSize());
                 break;
+            case DhcpStateMachine.CMD_PRE_DHCP_ACTION:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                sb.append(" txpkts=").append(mWifiInfo.txSuccess);
+                sb.append(",").append(mWifiInfo.txBad);
+                sb.append(",").append(mWifiInfo.txRetries);
+                break;
             case DhcpStateMachine.CMD_POST_DHCP_ACTION:
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
@@ -2898,15 +2907,22 @@ public class WifiStateMachine extends StateMachine {
                 sb.append("/");
                 sb.append(Integer.toString(mWifiConfigStore.getMaxDhcpRetries()));
                 if (mWifiInfo.getBSSID() != null) {
-                    sb.append(mWifiInfo.getBSSID());
+                    sb.append(" ").append(mWifiInfo.getBSSID());
                 }
-                if (c.scanResultCache != null) {
-                    for (ScanResult r : c.scanResultCache.values()) {
-                        if (r.BSSID.equals(mWifiInfo.getBSSID())) {
-                            sb.append(" ipfail=").append(r.numIpConfigFailures);
-                            sb.append(",st=").append(r.autoJoinStatus);
+                if (c != null) {
+                    if (c.scanResultCache != null) {
+                        for (ScanResult r : c.scanResultCache.values()) {
+                            if (r.BSSID.equals(mWifiInfo.getBSSID())) {
+                                sb.append(" ipfail=").append(r.numIpConfigFailures);
+                                sb.append(",st=").append(r.autoJoinStatus);
+                            }
                         }
                     }
+                    sb.append(" -> ajst=").append(c.autoJoinStatus);
+                    sb.append(" ").append(c.disableReason);
+                    sb.append(" txpkts=").append(mWifiInfo.txSuccess);
+                    sb.append(",").append(mWifiInfo.txBad);
+                    sb.append(",").append(mWifiInfo.txRetries);
                 }
                 break;
             case CMD_UPDATE_LINKPROPERTIES:
@@ -3608,7 +3624,7 @@ public class WifiStateMachine extends StateMachine {
         if (isGoodLinkspeed) sb.append(" gl");
 
         /**
-         * We want to make sure that we use the 24GHz RSSI thresholds is
+         * We want to make sure that we use the 24GHz RSSI thresholds if
          * there are 2.4GHz scan results
          * otherwise we end up lowering the score based on 5GHz values
          * which may cause a switch to LTE before roaming has a chance to try 2.4GHz
@@ -3768,8 +3784,7 @@ public class WifiStateMachine extends StateMachine {
         sb.append(String.format(",%d", score));
 
         if (isBadLinkspeed) {
-            // Aggressively drop the score if link speed is bad
-            score -= 2 * mBadLinkspeedcount;
+            score -= 4 ;
             if (PDBG) {
                 loge(" isBadLinkspeed   ---> count=" + mBadLinkspeedcount
                         + " score=" + Integer.toString(score));
@@ -4446,7 +4461,7 @@ public class WifiStateMachine extends StateMachine {
                 // this will typically happen if the user walks away and come back to his arrea
                 // TODO: implement blacklisting based on a timer, i.e. keep BSSID blacklisted
                 // in supplicant for a couple of hours or a day
-                mWifiNative.blackListBSSID(null);
+                mWifiNative.clearBlacklist();
             }
         }
     }
@@ -4504,7 +4519,6 @@ public class WifiStateMachine extends StateMachine {
             }
         }).start();
     }
-
 
     /*
      * Read a MAC address in /proc/arp/table, used by WifistateMachine

@@ -328,15 +328,6 @@ public class WifiNative {
         }
     }
 
-    public String blackListBSSID(String BSSID) {
-        if (BSSID == null) {
-            return doStringCommand("blacklist clear");
-        } else {
-            return doStringCommand("blacklist" + BSSID);
-        }
-    }
-
-
     public String getMacAddress() {
         //Macaddr = XX.XX.XX.XX.XX.XX
         String ret = doStringCommand("DRIVER MACADDR");
