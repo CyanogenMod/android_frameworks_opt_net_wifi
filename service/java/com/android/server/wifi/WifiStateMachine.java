@@ -5081,6 +5081,13 @@ public class WifiStateMachine extends StateMachine {
             mWifiNative.setScanInterval((int)mSupplicantScanIntervalMs / 1000);
             mWifiNative.setExternalSim(true);
 
+            /* turn on use of DFS channels */
+            WifiNative.setDfsFlag(true);
+
+            String countryCode = Settings.Global.getString(mContext.getContentResolver(),
+                    Settings.Global.WIFI_COUNTRY_CODE);
+            mWifiNative.setCountryCode(countryCode);
+
             setRandomMacOui();
             mWifiNative.enableAutoConnect(false);
         }

@@ -586,7 +586,10 @@ public class WifiNative {
     }
 
     public boolean setCountryCode(String countryCode) {
-        return doBooleanCommand("DRIVER COUNTRY " + countryCode.toUpperCase(Locale.ROOT));
+        if (countryCode != null)
+            return doBooleanCommand("DRIVER COUNTRY " + countryCode.toUpperCase(Locale.ROOT));
+        else
+            return doBooleanCommand("DRIVER COUNTRY");
     }
 
     public void enableBackgroundScan(boolean enable) {
@@ -1615,6 +1618,18 @@ public class WifiNative {
                 return getChannelsForBandNative(sWlan0Index, band);
             } else {
                 return null;
+            }
+        }
+    }
+
+
+    private static native boolean setDfsFlagNative(int iface, boolean dfsOn);
+    synchronized public static boolean setDfsFlag(boolean dfsOn) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return setDfsFlagNative(sWlan0Index, dfsOn);
+            } else {
+                return false;
             }
         }
     }
