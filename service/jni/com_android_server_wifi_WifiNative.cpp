@@ -1105,6 +1105,15 @@ static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
     }
 }
 
+static jboolean android_net_wifi_setDfsFlag(JNIEnv *env, jclass cls, jint iface, jboolean dfs) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("setting dfs flag to %s, %p", dfs ? "true" : "false", handle);
+
+    u32 nodfs = dfs ? 0 : 1;
+    wifi_error result = wifi_set_nodfs_flag(handle, nodfs);
+    return result == WIFI_SUCCESS;
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -1153,8 +1162,9 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_requestRange},
     { "cancelRangeRequestNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
             (void*) android_net_wifi_cancelRange},
-    { "setScanningMacOuiNative", "(I[B)Z", (void*) android_net_wifi_setScanningMacOui},
-    { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels}
+    { "setScanningMacOuiNative", "(I[B)Z",  (void*) android_net_wifi_setScanningMacOui},
+    { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels},
+    { "setDfsFlagNative",         "(IZ)Z",  (void*) android_net_wifi_setDfsFlag }
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
