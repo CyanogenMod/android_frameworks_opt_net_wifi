@@ -310,6 +310,8 @@ public class WifiStateMachine extends StateMachine {
     // The BSSID we are associated to is found in mWifiInfo
     private String mTargetRoamBSSID = "any";
 
+    private long mLastDriverRoamAttempt = 0;
+
     private WifiConfiguration targetWificonfiguration = null;
 
     // Used as debug to indicate which configuration last was saved
@@ -7235,6 +7237,8 @@ public class WifiStateMachine extends StateMachine {
 
             // Reenable all networks, allow for hidden networks to be scanned
             mWifiConfigStore.enableAllNetworks();
+
+            mLastDriverRoamAttempt = 0;
         }
         @Override
         public boolean processMessage(Message message) {
@@ -7265,14 +7269,26 @@ public class WifiStateMachine extends StateMachine {
                         mWifiNative.disconnect();
                     }
                     break;
+                case CMD_ASSOCIATED_BSSID:
+                    // ASSOCIATING to a new BSSID while already connected, indicates
+                    // that driver is roaming
+                    mLastDriverRoamAttempt = System.currentTimeMillis();
+                    return NOT_HANDLED;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
+                    long lastRoam = 0;
+                    if (mLastDriverRoamAttempt != 0) {
+                        // Calculate time since last driver roam attempt
+                        lastRoam = System.currentTimeMillis() - mLastDriverRoamAttempt;
+                        mLastDriverRoamAttempt = 0;
+                    }
                     config = getCurrentWifiConfiguration();
                     if (mScreenOn
                             && !linkDebouncing
                             && config != null
                             && config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED
                             && !mWifiConfigStore.isLastSelectedConfiguration(config)
-                            && message.arg2 != 3 /* reason cannot be 3, i.e. locally generated */
+                            && (message.arg2 != 3 /* reason cannot be 3, i.e. locally generated */
+                                || (lastRoam > 0 && lastRoam < 2000) /* unless driver is roaming */)
                             && ((ScanResult.is24GHz(mWifiInfo.getFrequency())
                                     && mWifiInfo.getRssi() >
                                     WifiConfiguration.BAD_RSSI_24)
@@ -7314,6 +7330,9 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_AUTO_ROAM:
+                    // Clear the driver roam indication since we are attempting a framerwork roam
+                    mLastDriverRoamAttempt = 0;
+
                     /* Connect command coming from auto-join */
                     ScanResult candidate = (ScanResult)message.obj;
                     String bssid = "any";
@@ -7385,6 +7404,7 @@ public class WifiStateMachine extends StateMachine {
         public void exit() {
             loge("WifiStateMachine: Leaving Connected state");
             setScanAlarm(false, 0);
+            mLastDriverRoamAttempt = 0;
         }
     }
 
