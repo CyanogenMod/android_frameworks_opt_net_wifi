@@ -1749,7 +1749,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
                         // Reinvocation has failed, try group negotiation
                         mSavedPeerConfig.netId = WifiP2pGroup.PERSISTENT_NET_ID;
-                        p2pConnectWithPinDisplay(mSavedPeerConfig);
+                        transitionTo(mProvisionDiscoveryState);
                     } else if (status == P2pStatus.INFORMATION_IS_CURRENTLY_UNAVAILABLE) {
 
                         // Devices setting persistent_reconnect to 0 in wpa_supplicant
