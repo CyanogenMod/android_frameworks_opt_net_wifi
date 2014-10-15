@@ -2331,6 +2331,7 @@ public class WifiStateMachine extends StateMachine {
     protected String getLogRecString(Message msg) {
         WifiConfiguration config;
         Long now;
+        long milli;
         String report;
         StringBuilder sb = new StringBuilder();
         if (mScreenOn) {
@@ -2387,10 +2388,12 @@ public class WifiStateMachine extends StateMachine {
                 }
                 break;
             case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
+                milli = SystemClock.elapsedRealtime();
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
+                sb.append(" rt=").append(milli).append(" ");
                 StateChangeResult stateChangeResult = (StateChangeResult) msg.obj;
                 if (stateChangeResult != null) {
                     sb.append(stateChangeResult.toString());
@@ -2458,6 +2461,8 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(bssid);
                 }
                 sb.append(" blacklist=" + Boolean.toString(didBlackListBSSID));
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
                 sb.append(" ");
@@ -2497,6 +2502,8 @@ public class WifiStateMachine extends StateMachine {
                 if (config != null) {
                     sb.append(" ").append(config.configKey());
                 }
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case CMD_TARGET_BSSID:
             case CMD_ASSOCIATED_BSSID:
@@ -2511,6 +2518,8 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" Target=").append(mTargetRoamBSSID);
                 }
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                 if (msg.obj != null) {
@@ -2528,6 +2537,8 @@ public class WifiStateMachine extends StateMachine {
                 if (linkDebouncing) {
                     sb.append(" debounce");
                 }
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case WifiMonitor.SSID_TEMP_DISABLED:
             case WifiMonitor.SSID_REENABLED:
@@ -2559,6 +2570,8 @@ public class WifiStateMachine extends StateMachine {
                         sb.append(" bssid=").append(mWifiInfo.getBSSID());
                     }
                 }
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case CMD_RSSI_POLL:
             case CMD_UNWANTED_NETWORK:
@@ -2608,6 +2621,8 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" ").append(mTargetRoamBSSID);
                 }
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case CMD_AUTO_ROAM:
                 sb.append(" ");
@@ -2632,6 +2647,8 @@ public class WifiStateMachine extends StateMachine {
                 }
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
                 sb.append(" fail count=").append(Integer.toString(mRoamFailCount));
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case CMD_ADD_OR_UPDATE_NETWORK:
                 sb.append(" ");
@@ -2767,6 +2784,8 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(",").append(mWifiInfo.txBad);
                     sb.append(",").append(mWifiInfo.txRetries);
                 }
+                milli = SystemClock.elapsedRealtime();
+                sb.append(" rt=").append(milli);
                 break;
             case CMD_UPDATE_LINKPROPERTIES:
                 sb.append(" ");

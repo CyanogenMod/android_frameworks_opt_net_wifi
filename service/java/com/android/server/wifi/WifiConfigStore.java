@@ -3106,10 +3106,6 @@ public class WifiConfigStore extends IpConfigStore {
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             boolean found = false;
 
-            if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_DELETED) {
-                continue;
-            }
-
             if (config.SSID == null || !config.SSID.equals(SSID)) {
                 // SSID mismatch
                 if (VVDBG) {
@@ -3145,7 +3141,7 @@ public class WifiConfigStore extends IpConfigStore {
             if (found) {
                 numConfigFound ++;
 
-                if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
+                if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_DELETED) {
                     if (VVDBG) {
                         loge("updateSavedNetworkHistory(): found a deleted, skip it...  "
                                 + config.configKey());
@@ -3162,8 +3158,16 @@ public class WifiConfigStore extends IpConfigStore {
                 }
 
                 // Adding a new BSSID
-                if (config.scanResultCache.get(scanResult.BSSID) == null) {
+                ScanResult result = config.scanResultCache.get(scanResult.BSSID);
+                if (result == null) {
                     config.dirty = true;
+                } else {
+                    // transfer the black list status
+                    scanResult.autoJoinStatus = result.autoJoinStatus;
+                    scanResult.blackListTimestamp = result.blackListTimestamp;
+                    scanResult.numIpConfigFailures = result.numIpConfigFailures;
+                    scanResult.numConnection = result.numConnection;
+                    scanResult.isAutoJoinCandidate = result.isAutoJoinCandidate;
                 }
 
                 // Add the scan result to this WifiConfiguration
