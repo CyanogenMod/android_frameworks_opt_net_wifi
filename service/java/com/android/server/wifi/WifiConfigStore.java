@@ -559,7 +559,7 @@ public class WifiConfigStore extends IpConfigStore {
         List<WifiConfiguration> networks = new ArrayList<>();
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             WifiConfiguration newConfig = new WifiConfiguration(config);
-            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
+            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || config.ephemeral) {
                 // Do not enumerate and return this configuration to any one,
                 // for instance WiFi Picker.
                 // instead treat it as unknown. the configuration can still be retrieved
@@ -614,10 +614,10 @@ public class WifiConfigStore extends IpConfigStore {
      * @return List of networks
      */
     List<WifiConfiguration> getRecentConfiguredNetworks(int milli, boolean copy) {
-        List<WifiConfiguration> networks = null;
+        List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
 
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
-            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
+            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || config.ephemeral) {
                 // Do not enumerate and return this configuration to any one,
                 // instead treat it as unknown. the configuration can still be retrieved
                 // directly by the key or networkId
@@ -633,8 +633,6 @@ public class WifiConfigStore extends IpConfigStore {
                     config.visibility.rssi24 == WifiConfiguration.INVALID_RSSI) {
                 continue;
             }
-            if (networks == null)
-                networks = new ArrayList<WifiConfiguration>();
             if (copy) {
                 networks.add(new WifiConfiguration(config));
             } else {
@@ -2492,7 +2490,8 @@ public class WifiConfigStore extends IpConfigStore {
             WifiConfiguration config = mConfiguredNetworks.get(mNetworkIds.get(id));
 
 
-            if (config == null || config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
+            if (config == null || config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED ||
+                    config.ephemeral) {
                 loge("configuration found for missing network, nid=" + id
                         +", ignored, networks.size=" + Integer.toString(networks.size()));
             } else {
@@ -2840,6 +2839,14 @@ public class WifiConfigStore extends IpConfigStore {
             currentConfig.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
         }
 
+        if (currentConfig.configKey().equals(getLastSelectedConfiguration()) &&
+                currentConfig.ephemeral) {
+            // Make the config non-ephemeral since the user just explicitly clicked it.
+            currentConfig.ephemeral = false;
+            if (DBG) loge("remove ephemeral status netId=" + Integer.toString(netId)
+                    + " " + currentConfig.configKey());
+        }
+
         if (DBG) loge("will read network variables netId=" + Integer.toString(netId));
 
         readNetworkVariables(currentConfig);
@@ -2886,7 +2893,7 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
+            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.ephemeral) {
                 continue;
             }
 
@@ -3019,7 +3026,8 @@ public class WifiConfigStore extends IpConfigStore {
         for (WifiConfiguration link : mConfiguredNetworks.values()) {
             boolean doLink = false;
 
-            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.selfAdded) {
+            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.selfAdded ||
+                    link.ephemeral) {
                 if (VVDBG) loge("associateWithConfiguration(): skip selfadd " + link.configKey() );
                 // Make sure we dont associate the scan result to a deleted config
                 continue;
