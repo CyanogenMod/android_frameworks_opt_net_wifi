@@ -1594,4 +1594,14 @@ public class WifiNative {
             }
         }
     }
+
+     public boolean disable5GHzFrequencies(boolean disable) {
+        if (disable) {
+            return doBooleanCommand("P2P_SET disallow_freq 2485-6000");
+        } else {
+            //Empty set means,it will enable all frequences
+            return doBooleanCommand("P2P_SET disallow_freq \"\"");
+        }
+    }
+
 }
