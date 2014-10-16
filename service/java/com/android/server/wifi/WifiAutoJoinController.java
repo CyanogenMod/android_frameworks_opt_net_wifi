@@ -1339,8 +1339,9 @@ public class WifiAutoJoinController {
                 } else {
                     // Next time, try to be a bit more aggressive in auto-joining
                     if (config.autoJoinUseAggressiveJoinAttemptThreshold
-                            < WifiConfiguration.MAX_INITIAL_AUTO_JOIN_RSSI_BOOST) {
-                        config.autoJoinUseAggressiveJoinAttemptThreshold += 2;
+                            < WifiConfiguration.MAX_INITIAL_AUTO_JOIN_RSSI_BOOST
+                            && config.autoJoinBailedDueToLowRssi) {
+                        config.autoJoinUseAggressiveJoinAttemptThreshold += 4;
                     }
                 }
             }

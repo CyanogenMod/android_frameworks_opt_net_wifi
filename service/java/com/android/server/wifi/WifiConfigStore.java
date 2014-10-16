@@ -199,6 +199,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String NO_INTERNET_ACCESS_KEY = "NO_INTERNET_ACCESS:  ";
     private static final String EPHEMERAL_KEY = "EPHEMERAL:   ";
     private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
+    private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST:  ";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
             = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G:  ";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY
@@ -1604,6 +1605,9 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(NUM_ASSOCIATION_KEY
                             + Integer.toString(config.numAssociation)
                             + SEPARATOR_KEY);
+                    out.writeUTF(JOIN_ATTEMPT_BOOST_KEY
+                            + Integer.toString(config.autoJoinUseAggressiveJoinAttemptThreshold)
+                            + SEPARATOR_KEY);
                     //out.writeUTF(BLACKLIST_MILLI_KEY + Long.toString(config.blackListTimestamp)
                     //        + SEPARATOR_KEY);
                     out.writeUTF(CREATOR_UID_KEY + Integer.toString(config.creatorUid)
@@ -1862,6 +1866,12 @@ public class WifiConfigStore extends IpConfigStore {
                         String num = key.replace(NUM_ASSOCIATION_KEY, "");
                         num = num.replace(SEPARATOR_KEY, "");
                         config.numAssociation = Integer.parseInt(num);
+                    }
+
+                    if (key.startsWith(JOIN_ATTEMPT_BOOST_KEY)) {
+                        String num = key.replace(JOIN_ATTEMPT_BOOST_KEY, "");
+                        num = num.replace(SEPARATOR_KEY, "");
+                        config.autoJoinUseAggressiveJoinAttemptThreshold = Integer.parseInt(num);
                     }
 
                     if (key.startsWith(CONNECT_UID_KEY)) {
