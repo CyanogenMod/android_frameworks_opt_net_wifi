@@ -684,6 +684,8 @@ public class WifiStateMachine extends StateMachine {
     private static final int MIN_INTERVAL_ENABLE_ALL_NETWORKS_MS = 10 * 60 * 1000; /* 10 minutes */
     private long mLastEnableAllNetworksTime;
 
+    int mRunningBeaconCount = 0;
+
     /**
      * Starting and shutting down driver too quick causes problems leading to driver
      * being in a bad state. Delay driver stop.
@@ -1641,6 +1643,7 @@ public class WifiStateMachine extends StateMachine {
                 mOnTime = stats.on_time;
                 mTxTime = stats.tx_time;
                 mRxTime = stats.rx_time;
+                mRunningBeaconCount = stats.beacon_rx;
                 if (dbg) {
                     loge("WifiLinkLayerStats:");
                     loge(stats.toString());
@@ -2509,6 +2512,7 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" rx:").append(mRxTimeThisScan).append(",").append(mRxTimeScan);
                     sb.append(",").append(mRxTime);
                 }
+                sb.append(String.format(" bcn=%d", mRunningBeaconCount));
                 break;
             case WifiMonitor.NETWORK_CONNECTION_EVENT:
                 sb.append(" ");
@@ -2612,6 +2616,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(String.format(" %.1f,", mWifiInfo.txRetriesRate));
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
+                sb.append(String.format(" bcn=%d", mRunningBeaconCount));
                 report = reportOnTime();
                 if (report != null) {
                     sb.append(" ").append(report);
@@ -2642,6 +2647,16 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
                 milli = SystemClock.elapsedRealtime();
                 sb.append(" rt=").append(milli);
+                config = getCurrentWifiConfiguration();
+                if (config != null) {
+                    sb.append(" ").append(config.configKey());
+                    if (config.visibility != null) {
+                        sb.append(" [").append(config.visibility.num24);
+                        sb.append(" ,").append(config.visibility.rssi24);
+                        sb.append(" ;").append(config.visibility.num5);
+                        sb.append(" ,").append(config.visibility.rssi5).append("]");
+                    }
+                }
                 break;
             case CMD_AUTO_ROAM:
                 sb.append(" ");
@@ -2805,6 +2820,7 @@ public class WifiStateMachine extends StateMachine {
                 }
                 milli = SystemClock.elapsedRealtime();
                 sb.append(" rt=").append(milli);
+                sb.append(String.format(" bcn=%d", mRunningBeaconCount));
                 break;
             case CMD_UPDATE_LINKPROPERTIES:
                 sb.append(" ");
