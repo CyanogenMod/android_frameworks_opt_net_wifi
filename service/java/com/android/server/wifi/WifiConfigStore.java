@@ -3806,6 +3806,29 @@ public class WifiConfigStore extends IpConfigStore {
         return found;
     }
 
+    void handleDisabledAPs( boolean enable, String BSSID, int reason) {
+        if (BSSID == null)
+            return;
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            if (config.scanResultCache != null) {
+                for (ScanResult result: config.scanResultCache.values()) {
+                    if (result.BSSID.equals(BSSID)) {
+                        if (enable) {
+                            config.BSSID = "any";
+                            result.setAutoJoinStatus(ScanResult.ENABLED);
+                            // enable auto join for the blacklisted BSSID
+                            config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+                        } else {
+                            result.setAutoJoinStatus(ScanResult.AUTO_ROAM_DISABLED);
+                            config.BSSID = BSSID;
+                            config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     int getMaxDhcpRetries() {
         return Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.WIFI_MAX_DHCP_RETRY_COUNT,

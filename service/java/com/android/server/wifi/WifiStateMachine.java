@@ -958,10 +958,10 @@ public class WifiStateMachine extends StateMachine {
         int val = SystemProperties.getInt("persist.cne.feature", 0);
         boolean isPropFeatureAvail = (val == 3) ? true : false;
         if (isPropFeatureAvail) {
-            int featureVal = SystemProperties.getInt("persist.sys.cnd.wqe", 1);
-            DEFAULT_SCORE = (featureVal == 2) ? 1 : NetworkAgent.WIFI_BASE_SCORE;
+            DEFAULT_SCORE = 1;
             filter.addAction("com.quicinc.cne.CNE_PREFERENCE_CHANGED");
             filter.addAction("prop_state_change");
+            filter.addAction("blacklist_bad_bssid");
         }
 
         mContext.registerReceiver(
@@ -984,6 +984,12 @@ public class WifiStateMachine extends StateMachine {
                         } else if (action.equals("prop_state_change")) {
                             int state = intent.getIntExtra("state", 0);
                             handleStateChange(state);
+                        } else if (action.equals("blacklist_bad_bssid") ) {
+                            // 1 = blacklist, 0 = unblacklist
+                            int blacklist = intent.getIntExtra("blacklistBSSID", -1);
+                            String bssid  =  intent.getStringExtra("BSSIDToBlacklist");
+                            int reason = intent.getIntExtra("blacklistReason", -1 );
+                            handleBSSIDBlacklist( ( blacklist == 0) ? true : false, bssid, reason );
                         }
                     }
                 }, filter);
@@ -2903,6 +2909,17 @@ public class WifiStateMachine extends StateMachine {
         }
 
         return sb.toString();
+    }
+
+    private void handleBSSIDBlacklist(boolean enable, String bssid, int reason) {
+        log("Blacklisting BSSID: " + bssid + ",reason:" + reason + ",enable:" + enable );
+        if (bssid != null) {
+            // Tell configStore to black list it
+            synchronized(mScanResultCache) {
+                mWifiAutoJoinController.handleBSSIDBlackList( enable, bssid, reason );
+                mWifiConfigStore.handleDisabledAPs( enable, bssid, reason );
+            }
+        }
     }
 
     private void handleStateChange(int state) {
@@ -6689,7 +6706,12 @@ public class WifiStateMachine extends StateMachine {
                     + " config.bssid " + config.BSSID);
         }
         config.autoJoinBSSID = "any";
-        config.BSSID = "any";
+
+        // If an app specified a BSSID then dont over-write it
+        if ( !mWifiAutoJoinController.isBlacklistedBSSID(config.BSSID) ) {
+            config.BSSID = "any";
+        }
+
         if (DBG) {
            loge(dbg + " " + config.SSID
                     + " nid=" + Integer.toString(config.networkId));
