@@ -284,6 +284,10 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String WIFI_VERBOSE_LOGS_KEY
             = "WIFI_VERBOSE_LOGS:   ";
 
+    // As we keep deleted PSK WifiConfiguration for a while, the PSK of
+    // those deleted WifiConfiguration is set to this random unused PSK
+    private static final String DELETED_CONFIG_PSK = "Mjkd86jEMGn79KhKll298Uu7-deleted";
+
     public boolean enableAutoJoinScanWhenAssociated = true;
     public boolean enableAutoJoinWhenAssociated = true;
     public boolean enableChipWakeUpWhenAssociated = true;
@@ -391,6 +395,11 @@ public class WifiConfigStore extends IpConfigStore {
             WifiEnterpriseConfig.ENGINE_KEY, WifiEnterpriseConfig.ENGINE_ID_KEY,
             WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY };
 
+
+    /**
+     * If Connectivity Service has triggered an unwanted network disconnect
+     */
+    public long lastUnwantedNetworkDisconnectTimestamp = 0;
 
     /**
      * The maximum number of times we will retry a connection to an access point
@@ -848,6 +857,33 @@ public class WifiConfigStore extends IpConfigStore {
         return result;
     }
 
+    /**
+     * Firmware is roaming away from this BSSID, and this BSSID was on 5GHz, and it's RSSI was good,
+     * this means we have a situation where we would want to remain on this BSSID but firmware
+     * is not successful at it.
+     * This situation is observed on a small number of Access Points, b/17960587
+     * In that situation, blacklist this BSSID really hard so as framework will not attempt to
+     * roam to it for the next 8 hours. We do not to keep flipping between 2.4 and 5GHz band..
+     * TODO: review the blacklisting strategy so as to make it softer and adaptive
+     * @param info
+     */
+    void driverRoamedFrom(WifiInfo info) {
+        if (info != null
+            && info.getBSSID() != null
+            && ScanResult.is5GHz(info.getFrequency())
+            && info.getRssi() > (bandPreferenceBoostThreshold5 + 3)) {
+            WifiConfiguration config = getWifiConfiguration(info.getNetworkId());
+            if (config != null) {
+                if (config.scanResultCache != null) {
+                    ScanResult result = config.scanResultCache.get(info.getBSSID());
+                    if (result != null) {
+                        result.setAutoJoinStatus(ScanResult.AUTO_ROAM_DISABLED + 1);
+                    }
+                }
+            }
+        }
+    }
+
     void saveWifiConfigBSSID(WifiConfiguration config) {
         // Sanity check the config is valid
         if (config == null || (config.networkId == INVALID_NETWORK_ID &&
@@ -1019,7 +1055,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (!mWifiNative.setNetworkVariable(
                         config.networkId,
                         WifiConfiguration.pskVarName,
-                        "\"xxxxxxxx\"")) {
+                        "\"" + DELETED_CONFIG_PSK + "\"")) {
                     loge("removeNetwork, failed to clear PSK, nid=" + config.networkId);
                 }
                 // Loose the BSSID
@@ -1348,7 +1384,19 @@ public class WifiConfigStore extends IpConfigStore {
             } else {
                 config.status = WifiConfiguration.Status.ENABLED;
             }
+
             readNetworkVariables(config);
+
+            String psk = readNetworkVariableFromSupplicantFile(config.SSID, "psk");
+            if (psk!= null && psk.equals(DELETED_CONFIG_PSK)) {
+                // This is a config we previously deleted, ignore it
+                if (showNetworks) {
+                    localLog("found deleted network " + config.SSID + " ", config.networkId);
+                }
+                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DELETED);
+                config.priority = 0;
+            }
+
             if (config.priority > mLastPriority) {
                 mLastPriority = config.priority;
             }
@@ -2872,7 +2920,7 @@ public class WifiConfigStore extends IpConfigStore {
                 String bpsk = readNetworkVariableFromSupplicantFile(config.SSID, "psk");
                 if (apsk == null || bpsk == null
                         || TextUtils.isEmpty(apsk) || TextUtils.isEmpty(apsk)
-                        || apsk.equals("*") || apsk.equals("xxxxxxxx")
+                        || apsk.equals("*") || apsk.equals(DELETED_CONFIG_PSK)
                         || !apsk.equals(bpsk)) {
                     doLink = false;
                 }
@@ -3727,6 +3775,8 @@ public class WifiConfigStore extends IpConfigStore {
                         + Integer.toString(netId) + " " + info);
             }
         }
+        // Record last time Connectivity Service switched us away from WiFi and onto Cell
+        lastUnwantedNetworkDisconnectTimestamp = System.currentTimeMillis();
     }
 
     boolean handleBSSIDBlackList(int netId, String BSSID, boolean enable) {

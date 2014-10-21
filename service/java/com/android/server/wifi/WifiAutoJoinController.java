@@ -82,6 +82,19 @@ public class WifiAutoJoinController {
 
     public static final int HIGH_THRESHOLD_MODIFIER = 5;
 
+    // Below are AutoJoin wide parameters indicating if we should be aggressive before joining
+    // weak network. Note that we cannot join weak network that are going to be marked as unanted by
+    // ConnectivityService because this will trigger link flapping.
+    /**
+     * There was a non-blacklisted configuration that we bailed from because of a weak signal
+     */
+    boolean didBailDueToWeakRssi = false;
+    /**
+     * number of time we consecutively bailed out of an eligible network because its signal
+     * was too weak
+     */
+    int weakRssiBailCount = 0;
+
     WifiAutoJoinController(Context c, WifiStateMachine w, WifiConfigStore s,
                            WifiConnectionStatistics st, WifiNative n) {
         mContext = c;
@@ -1091,6 +1104,7 @@ public class WifiAutoJoinController {
      */
     void attemptAutoJoin() {
         didOverride = false;
+        didBailDueToWeakRssi = false;
         int networkSwitchType = AUTO_JOIN_IDLE;
 
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
@@ -1317,7 +1331,7 @@ public class WifiAutoJoinController {
             if (config.visibility == null) {
                 continue;
             }
-            int boost = config.autoJoinUseAggressiveJoinAttemptThreshold;
+            int boost = config.autoJoinUseAggressiveJoinAttemptThreshold + weakRssiBailCount;
             if ((config.visibility.rssi5 + boost)
                         < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI
                         && (config.visibility.rssi24 + boost)
@@ -1335,6 +1349,7 @@ public class WifiAutoJoinController {
                 // If that configuration is a user's choice however, try anyway
                 if (!isLastSelected) {
                     config.autoJoinBailedDueToLowRssi = true;
+                    didBailDueToWeakRssi = true;
                     continue;
                 } else {
                     // Next time, try to be a bit more aggressive in auto-joining
@@ -1482,6 +1497,31 @@ public class WifiAutoJoinController {
             untrustedCandidate = null;
         }
 
+        long lastUnwanted =
+                System.currentTimeMillis()
+                        - mWifiConfigStore.lastUnwantedNetworkDisconnectTimestamp;
+        if (candidate == null
+                && lastSelectedConfiguration == null
+                && currentConfiguration == null
+                && didBailDueToWeakRssi
+                && (mWifiConfigStore.lastUnwantedNetworkDisconnectTimestamp == 0
+                    || lastUnwanted > (1000 * 60 * 60 * 24 * 7))
+                ) {
+            // We are bailing out of autojoin although we are seeing a weak configuration, and
+            // - we didn't find another valid candidate
+            // - we are not connected
+            // - without a user network selection choice
+            // - ConnectivityService has not triggered an unwanted network disconnect
+            //       on this device for a week (hence most likely there is no SIM card or cellular)
+            // If all those conditions are met, then boost the RSSI of the weak networks
+            // that we are seeing so as we will eventually pick one
+            if (weakRssiBailCount < 10)
+                weakRssiBailCount += 1;
+        } else {
+            if (weakRssiBailCount > 0)
+                weakRssiBailCount -= 1;
+        }
+
         /**
          *  If candidate is found, check the state of the connection so as
          *  to decide if we should be acting on this candidate and switching over
@@ -1601,7 +1641,7 @@ public class WifiAutoJoinController {
                             + Integer.toString(currentConfiguration.networkId)
                             + " " + currentConfiguration.configKey() + " to BSSID="
                             + roamCandidate.BSSID + " freq=" + roamCandidate.frequency
-                            + " RSSI=" + roamCandidate.frequency);
+                            + " RSSI=" + roamCandidate.level);
                 }
                 networkSwitchType = AUTO_JOIN_ROAMING;
                 mWifiConnectionStatistics.numAutoRoamAttempt++;
