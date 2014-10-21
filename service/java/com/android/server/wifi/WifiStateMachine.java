@@ -6559,6 +6559,18 @@ public class WifiStateMachine extends StateMachine {
     boolean startScanForConfiguration(WifiConfiguration config, boolean restrictChannelList) {
         if (config == null)
             return false;
+
+        // We are still seeing a fairly high power consumption triggered by autojoin scans
+        // Hence do partial scans only for PSK configuration that are roamable since the
+        // primary purpose of the partial scans is roaming.
+        // Full badn scans with exponential backoff for the purpose or extended roaming and
+        // network switching are performed unconditionally.
+        if (config.scanResultCache == null
+                || !config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK)
+                || config.scanResultCache.size() > 6) {
+            //return true but to not trigger the scan
+            return true;
+        }
         HashSet<Integer> channels
                 = mWifiConfigStore.makeChannelList(config,
                 ONE_HOUR_MILLI, restrictChannelList);
@@ -6571,18 +6583,20 @@ public class WifiStateMachine extends StateMachine {
                 freqs.append(channel.toString());
                 first = false;
             }
-            if (DBG) {
-                loge("WifiStateMachine starting scan with " + freqs);
-            }
+            //if (DBG) {
+            loge("WifiStateMachine starting scan for " + config.configKey() + " with " + freqs);
+            //}
             // Call wifi native to start the scan
             if (startScanNative(
                     WifiNative.SCAN_WITHOUT_CONNECTION_SETUP,
                     freqs.toString())) {
                 // Only count battery consumption if scan request is accepted
                 noteScanStart(SCAN_ALARM_SOURCE, null);
-                // Return true
+                messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
+            } else {
+                // used for debug only, mark scan as failed
+                messageHandlingStatus = MESSAGE_HANDLING_STATUS_HANDLING_ERROR;
             }
-            messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
             return true;
         } else {
             if (DBG) loge("WifiStateMachine no channels for " + config.configKey());
@@ -6720,13 +6734,13 @@ public class WifiStateMachine extends StateMachine {
                     deferMessage(message);
                     break;
                 case CMD_START_SCAN:
-                    if (DBG) {
+                    //if (DBG) {
                         loge("WifiStateMachine CMD_START_SCAN source " + message.arg1
                               + " txSuccessRate="+String.format( "%.2f", mWifiInfo.txSuccessRate)
                               + " rxSuccessRate="+String.format( "%.2f", mWifiInfo.rxSuccessRate)
                               + " targetRoamBSSID=" + mTargetRoamBSSID
                               + " RSSI=" + mWifiInfo.getRssi());
-                    }
+                    //}
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
                         boolean tryFullBandScan = false;
                         boolean restrictChannelList = false;
@@ -6751,9 +6765,9 @@ public class WifiStateMachine extends StateMachine {
                             }
 
                             if (mWifiInfo.txSuccessRate >
-                                    mWifiConfigStore.maxTxPacketForPartialScans
+                                    mWifiConfigStore.maxTxPacketForFullScans
                                     || mWifiInfo.rxSuccessRate >
-                                    mWifiConfigStore.maxRxPacketForPartialScans) {
+                                    mWifiConfigStore.maxRxPacketForFullScans) {
                                 // Too much traffic at the interface, hence no full band scan
                                 if (DBG) {
                                     loge("WifiStateMachine CMD_START_SCAN " +
@@ -7308,6 +7322,10 @@ public class WifiStateMachine extends StateMachine {
                     // ASSOCIATING to a new BSSID while already connected, indicates
                     // that driver is roaming
                     mLastDriverRoamAttempt = System.currentTimeMillis();
+                    String toBSSID = (String)message.obj;
+                    if (toBSSID != null && !toBSSID.equals(mWifiInfo.getBSSID())) {
+                        mWifiConfigStore.driverRoamedFrom(mWifiInfo);
+                    }
                     return NOT_HANDLED;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     long lastRoam = 0;
@@ -7405,13 +7423,13 @@ public class WifiStateMachine extends StateMachine {
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
                     boolean ret = false;
-                    if (netId != mLastNetworkId) {
-                        if (mWifiConfigStore.selectNetwork(netId) &&
-                                mWifiNative.reconnect()) {
-                            ret = true;
-                        }
+                    if (mLastNetworkId != netId) {
+                       if (mWifiConfigStore.selectNetwork(netId) &&
+                           mWifiNative.reconnect()) {
+                           ret = true;
+                       }
                     } else {
-                        ret = mWifiNative.reassociate();
+                         ret = mWifiNative.reassociate();
                     }
                     if (ret) {
                         lastConnectAttempt = System.currentTimeMillis();
