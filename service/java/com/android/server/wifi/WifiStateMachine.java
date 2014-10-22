@@ -398,6 +398,7 @@ public class WifiStateMachine extends StateMachine {
     private AsyncChannel mWifiP2pChannel;
     private AsyncChannel mWifiApConfigChannel;
 
+    private int mConnectionRequests = 0;
     private WifiNetworkFactory mNetworkFactory;
     private WifiNetworkAgent mNetworkAgent;
 
@@ -2326,6 +2327,7 @@ public class WifiStateMachine extends StateMachine {
         pw.println("mEnableBackgroundScan " + mEnableBackgroundScan);
         pw.println("mLastSetCountryCode " + mLastSetCountryCode);
         pw.println("mPersistedCountryCode " + mPersistedCountryCode);
+        mNetworkFactory.dump(fd, pw, args);
         pw.println();
         mWifiConfigStore.dump(fd, pw, args);
     }
@@ -3325,7 +3327,8 @@ public class WifiStateMachine extends StateMachine {
                 || state == SupplicantState.ASSOCIATING
                 || state == SupplicantState.AUTHENTICATING
                 || state == SupplicantState.FOUR_WAY_HANDSHAKE
-                || state == SupplicantState.GROUP_HANDSHAKE) {
+                || state == SupplicantState.GROUP_HANDSHAKE
+                || mConnectionRequests == 0) {
             // Dont attempt auto-joining again while we are already attempting to join
             // and/or obtaining Ip address
             attemptAutoJoin = false;
@@ -4488,6 +4491,7 @@ public class WifiStateMachine extends StateMachine {
 
         @Override
         protected void needNetworkFor(NetworkRequest networkRequest, int score) {
+            ++mConnectionRequests;
             if (!networkRequest.networkCapabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
                 if (++mUntrustedReqCount == 1) {
@@ -4498,6 +4502,7 @@ public class WifiStateMachine extends StateMachine {
 
         @Override
         protected void releaseNetworkFor(NetworkRequest networkRequest) {
+            --mConnectionRequests;
             if (!networkRequest.networkCapabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
                 if (--mUntrustedReqCount == 0) {
@@ -4505,6 +4510,12 @@ public class WifiStateMachine extends StateMachine {
                 }
             }
         }
+
+        public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+            pw.println("mConnectionRequests " + mConnectionRequests);
+            pw.println("mUntrustedReqCount " + mUntrustedReqCount);
+        }
+
     }
     /********************************************************
      * HSM states
