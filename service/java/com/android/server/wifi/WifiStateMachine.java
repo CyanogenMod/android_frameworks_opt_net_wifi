@@ -3790,17 +3790,8 @@ public class WifiStateMachine extends StateMachine {
     }
 
     private boolean isProvisioned(LinkProperties lp) {
-        // LinkProperties#isProvisioned returns true even if all we have is an IPv4 address and no
-        // connectivity. This turns out not to be very useful, because we can't distinguish it from
-        // a state where we have an IPv4 address assigned to the interface but are still running
-        // DHCP.
-        // TODO: Fix LinkProperties and remove this function.
-        if (mWifiConfigStore.isUsingStaticIp(mLastNetworkId)) {
-            return lp.hasIPv4Address();
-        } else {
-            return (lp.hasIPv4Address() && lp.hasIPv4DefaultRoute() && lp.hasIPv4DnsServer()) ||
-                   (lp.hasGlobalIPv6Address() && lp.hasIPv6DefaultRoute() && lp.hasIPv6DnsServer());
-        }
+        return lp.isProvisioned() ||
+               (mWifiConfigStore.isUsingStaticIp(mLastNetworkId) && lp.hasIPv4Address());
     }
 
     /**
