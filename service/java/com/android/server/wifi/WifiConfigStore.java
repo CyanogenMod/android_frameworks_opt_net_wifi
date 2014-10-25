@@ -1219,6 +1219,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (reason == WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
             // Make sure autojoin wont reenable this configuration without further user
             // intervention
+            config.status = Status.DISABLED;
             config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_USER_ACTION;
         }
         if (network != null) {
