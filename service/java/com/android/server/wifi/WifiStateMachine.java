@@ -1651,6 +1651,13 @@ public class WifiStateMachine extends StateMachine {
                 }
             }
         }
+        if (stats == null || mWifiLinkLayerStatsSupported <= 0) {
+            long mTxPkts = TrafficStats.getTxPackets(mInterfaceName);
+            long mRxPkts = TrafficStats.getRxPackets(mInterfaceName);
+            mWifiInfo.updatePacketRates(mTxPkts, mRxPkts);
+        } else {
+            mWifiInfo.updatePacketRates(stats);
+        }
         return stats;
     }
 
@@ -3494,14 +3501,7 @@ public class WifiStateMachine extends StateMachine {
     String wifiScoringReport = null;
     private void calculateWifiScore(WifiLinkLayerStats stats) {
         StringBuilder sb = new StringBuilder();
-        if (stats == null || mWifiLinkLayerStatsSupported <= 0) {
-            long mTxPkts = TrafficStats.getTxPackets(mInterfaceName);
-            long mRxPkts = TrafficStats.getRxPackets(mInterfaceName);
-            mWifiInfo.updatePacketRates(mTxPkts, mRxPkts);
-        } else {
-            sb.append(" stats");
-            mWifiInfo.updatePacketRates(stats);
-        }
+
         int score = 56; // Starting score, temporarily hardcoded in between 50 and 60
         boolean isBadLinkspeed = (mWifiInfo.is24GHz()
                 && mWifiInfo.getLinkSpeed() < mWifiConfigStore.badLinkSpeed24)
@@ -4245,6 +4245,9 @@ public class WifiStateMachine extends StateMachine {
 
         stopBatchedScan();
         WifiNative.pauseScan();
+
+        // Update link layer stats
+        getWifiLinkLayerStats(false);
 
         /* P2p discovery breaks dhcp, shut it down in order to get through this */
         Message msg = new Message();
@@ -6748,6 +6751,8 @@ public class WifiStateMachine extends StateMachine {
                     transitionTo(mConnectedState);
                     break;
                 case CMD_IP_CONFIGURATION_LOST:
+                    // Get Link layer stats so as we get fresh tx packet counters
+                    getWifiLinkLayerStats(true);
                     handleIpConfigurationLost();
                     transitionTo(mDisconnectingState);
                     break;
