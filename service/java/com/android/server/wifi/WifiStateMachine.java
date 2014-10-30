@@ -7601,7 +7601,7 @@ public class WifiStateMachine extends StateMachine {
                         mWifiConfigStore.handleBadNetworkDisconnectReport(mLastNetworkId, mWifiInfo);
                         mWifiNative.disconnect();
                         transitionTo(mDisconnectingState);
-                    } else if (message.arg1 == network_status_unwanted_disconnect) {
+                    } else if (message.arg1 == network_status_unwanted_disable_autojoin) {
                         config = getCurrentWifiConfiguration();
                         if (config != null) {
                             // Disable autojoin

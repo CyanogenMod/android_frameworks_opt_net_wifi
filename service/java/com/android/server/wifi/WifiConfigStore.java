@@ -2539,7 +2539,7 @@ public class WifiConfigStore extends IpConfigStore {
     private void readIpAndProxyConfigurations() {
         SparseArray<IpConfiguration> networks = super.readIpAndProxyConfigurations(ipConfigFile);
 
-        if (networks.size() == 0) {
+        if (networks == null || networks.size() == 0) {
             // IpConfigStore.readIpAndProxyConfigurations has already logged an error.
             return;
         }
@@ -3159,6 +3159,11 @@ public class WifiConfigStore extends IpConfigStore {
                             }
                             link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
                             config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
+
+                            // Carry over the Ip configuration
+                            if (link.getIpConfiguration() != null) {
+                                config.setIpConfiguration(link.getIpConfiguration());
+                            }
                         } else {
                             config = null;
                         }
