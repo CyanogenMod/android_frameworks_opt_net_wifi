@@ -399,13 +399,13 @@ jobject createObject(JNIEnv *env, const char *className)
 {
     jclass cls = env->FindClass(className);
     if (cls == NULL) {
-        ALOGE("Error in finding class");
+        ALOGE("Error in finding class %s", className);
         return NULL;
     }
 
     jmethodID constructor = env->GetMethodID(cls, "<init>", "()V");
     if (constructor == NULL) {
-        ALOGE("Error in constructor ID");
+        ALOGE("Error in constructor ID for %s", className);
         return NULL;
     }
     jobject obj = env->NewObject(cls, constructor);
@@ -416,6 +416,24 @@ jobject createObject(JNIEnv *env, const char *className)
 
     env->DeleteLocalRef(cls);
     return obj;
+}
+
+jobjectArray createObjectArray(JNIEnv *env, const char *className, int num)
+{
+    jclass cls = env->FindClass(className);
+    if (cls == NULL) {
+        ALOGE("Error in finding class %s", className);
+        return NULL;
+    }
+
+    jobjectArray array = env->NewObjectArray(num, cls, NULL);
+    if (array == NULL) {
+        ALOGE("Error in creating array of class %s", className);
+        return NULL;
+    }
+
+    env->DeleteLocalRef(cls);
+    return array;
 }
 
 }; // namespace android
