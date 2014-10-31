@@ -17,6 +17,7 @@ void setLongArrayElement(JNIEnv *env, jobject obj, const char *name, int index, 
 void setStringField(JNIEnv *env, jobject obj, const char *name, const char *value);
 void reportEvent(JNIEnv *env, jclass cls, const char *method, const char *signature, ...);
 jobject createObject(JNIEnv *env, const char *className);
+jobjectArray createObjectArray(JNIEnv *env, const char *className, int size);
 void setObjectField(JNIEnv *env, jobject obj, const char *name, const char *type, jobject value);
 
 jlong getStaticLongField(JNIEnv *env, jobject obj, const char *name);

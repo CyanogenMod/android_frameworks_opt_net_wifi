@@ -144,6 +144,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     WifiScanner.CMD_SCAN,
                     WifiScanner.CMD_START_BACKGROUND_SCAN,
                     WifiScanner.CMD_STOP_BACKGROUND_SCAN,
+                    WifiScanner.CMD_START_SINGLE_SCAN,
+                    WifiScanner.CMD_STOP_SINGLE_SCAN,
                     WifiScanner.CMD_SET_HOTLIST,
                     WifiScanner.CMD_RESET_HOTLIST,
                     WifiScanner.CMD_CONFIGURE_WIFI_CHANGE,
@@ -173,6 +175,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final int CMD_DRIVER_UNLOADED                     = BASE + 7;
     private static final int CMD_SCAN_PAUSED                         = BASE + 8;
     private static final int CMD_SCAN_RESTARTED                      = BASE + 9;
+    private static final int CMD_STOP_SCAN_INTERNAL                  = BASE + 10;
 
     private Context mContext;
     private WifiScanningStateMachine mStateMachine;
@@ -241,9 +244,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         @Override
-        public void onSingleScanComplete() {
-            if (DBG) Log.d(TAG, "onSingleScanComplete event received");
-            sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
+        public void onScanStatus() {
+            if (DBG) Log.d(TAG, "onScanStatus event received");
+            /* sendMessage(CMD_SCAN_RESULTS_AVAILABLE); */
         }
 
         @Override
@@ -253,8 +256,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         @Override
-        public void onScanPaused() {
-            sendMessage(CMD_SCAN_PAUSED);
+        public void onScanPaused(WifiScanner.ScanData scanData[]) {
+            sendMessage(CMD_SCAN_PAUSED, scanData);
         }
 
         @Override
@@ -309,6 +312,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case WifiScanner.CMD_SCAN:
                     case WifiScanner.CMD_START_BACKGROUND_SCAN:
                     case WifiScanner.CMD_STOP_BACKGROUND_SCAN:
+                    case WifiScanner.CMD_START_SINGLE_SCAN:
+                    case WifiScanner.CMD_STOP_SINGLE_SCAN:
                     case WifiScanner.CMD_SET_HOTLIST:
                     case WifiScanner.CMD_RESET_HOTLIST:
                     case WifiScanner.CMD_CONFIGURE_WIFI_CHANGE:
@@ -356,7 +361,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         break;
                     case WifiScanner.CMD_START_BACKGROUND_SCAN:
                         if (addScanRequest(ci, msg.arg2, (ScanSettings) msg.obj)) {
-                            replySucceeded(msg, null);
+                            replySucceeded(msg);
                         } else {
                             replyFailed(msg, WifiScanner.REASON_INVALID_REQUEST, "bad request");
                         }
@@ -364,19 +369,34 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case WifiScanner.CMD_STOP_BACKGROUND_SCAN:
                         removeScanRequest(ci, msg.arg2);
                         break;
+                    case WifiScanner.CMD_START_SINGLE_SCAN:
+                        if (addSingleScanRequest(ci, msg.arg2, (ScanSettings) msg.obj)) {
+                            replySucceeded(msg);
+                        } else {
+                            replyFailed(msg, WifiScanner.REASON_INVALID_REQUEST, "bad request");
+                        }
+                        break;
+                    case WifiScanner.CMD_STOP_SINGLE_SCAN:
+                        removeScanRequest(ci, msg.arg2);
+                        break;
+                    case CMD_STOP_SCAN_INTERNAL:
+                        Log.d(TAG, "Removing single shot scan");
+                        removeScanRequest((ClientInfo) msg.obj, msg.arg2);
+                        break;
                     case WifiScanner.CMD_GET_SCAN_RESULTS:
-                        replySucceeded(msg, getScanResults(ci));
+                        reportScanResults(ci);
+                        replySucceeded(msg);
                         break;
                     case WifiScanner.CMD_SET_HOTLIST:
                         setHotlist(ci, msg.arg2, (WifiScanner.HotlistSettings) msg.obj);
-                        replySucceeded(msg, null);
+                        replySucceeded(msg);
                         break;
                     case WifiScanner.CMD_RESET_HOTLIST:
                         resetHotlist(ci, msg.arg2);
                         break;
                     case WifiScanner.CMD_START_TRACKING_CHANGE:
                         trackWifiChanges(ci, msg.arg2);
-                        replySucceeded(msg, null);
+                        replySucceeded(msg);
                         break;
                     case WifiScanner.CMD_STOP_TRACKING_CHANGE:
                         untrackWifiChanges(ci, msg.arg2);
@@ -385,7 +405,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         configureWifiChange((WifiScanner.WifiChangeSettings) msg.obj);
                         break;
                     case CMD_SCAN_RESULTS_AVAILABLE: {
-                            ScanResult[] results = WifiNative.getScanResults();
+                            WifiScanner.ScanData[] results = WifiNative.getScanResults(/* flush = */ true);
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportScanResults(results);
@@ -430,7 +450,15 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                             reportWifiStabilized(results);
                         }
                         break;
-
+                    case CMD_SCAN_PAUSED: {
+                            WifiScanner.ScanData results[] = (WifiScanner.ScanData[]) msg.obj;
+                            Collection<ClientInfo> clients = mClients.values();
+                            for (ClientInfo ci2 : clients) {
+                                ci2.reportScanResults(results);
+                            }
+                            transitionTo(mPausedState);
+                        }
+                        break;
                     default:
                         return NOT_HANDLED;
                 }
@@ -511,7 +539,11 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         void removeScanRequest(int id) {
-            mScanSettings.remove(id);
+            ScanSettings settings = mScanSettings.remove(id);
+            if (settings != null && settings.periodInMs == 0) {
+                /* this was a single shot scan */
+                mChannel.sendMessage(WifiScanner.CMD_SINGLE_SCAN_COMPLETED, 0, id);
+            }
         }
 
         Iterator<Map.Entry<Integer, WifiScanner.ScanSettings>> getScans() {
@@ -522,7 +554,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return mScanSettings.values();
         }
 
-        void reportScanResults(ScanResult[] results) {
+        void reportScanResults(WifiScanner.ScanData[] results) {
             Iterator<Integer> it = mScanSettings.keySet().iterator();
             while (it.hasNext()) {
                 int handler = it.next();
@@ -530,7 +562,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
         }
 
-        void reportScanResults(ScanResult[] results, int handler) {
+        void reportScanResults(WifiScanner.ScanData[] results, int handler) {
             ScanSettings settings = mScanSettings.get(handler);
             WifiScanner.ChannelSpec desiredChannels[] = settings.channels;
             if (settings.band != WifiScanner.WIFI_BAND_UNSPECIFIED
@@ -540,42 +572,58 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             // check the channels this client asked for ..
             int num_results = 0;
-            for (ScanResult result : results) {
-                for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
-                    if (channelSpec.frequency == result.frequency) {
+            for (WifiScanner.ScanData result : results) {
+                boolean copyScanData = false;
+                for (ScanResult scanResult : result.getResults()) {
+                    for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
+                        if (channelSpec.frequency == scanResult.frequency) {
+                            copyScanData = true;
+                            break;
+                        }
+                    }
+                    if (copyScanData) {
                         num_results++;
                         break;
                     }
                 }
             }
 
-            if (num_results == 0) {
-                // nothing to report
-                return;
-            }
+            Log.d(TAG, "results = " + results.length + ", num_results = " + num_results);
 
-            ScanResult results2[] = new ScanResult[num_results];
+            WifiScanner.ScanData results2[] = new WifiScanner.ScanData[num_results];
             int index = 0;
-            for (ScanResult result : results) {
-                for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
-                    if (channelSpec.frequency == result.frequency) {
-                        WifiSsid wifiSsid = WifiSsid.createFromAsciiEncoded(result.SSID);
-                        ScanResult newResult = new ScanResult(wifiSsid, result.BSSID, "",
-                                result.level, result.frequency, result.timestamp);
-                        results2[index] = newResult;
-                        index++;
+            for (WifiScanner.ScanData result : results) {
+                boolean copyScanData = false;
+                for (ScanResult scanResult : result.getResults()) {
+                    for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
+                        if (channelSpec.frequency == scanResult.frequency) {
+                            copyScanData = true;
+                            break;
+                        }
+                    }
+                    if (copyScanData) {
                         break;
                     }
+                }
+
+                if (copyScanData) {
+                    Log.d(TAG, "adding at " + index);
+                    results2[index] = new WifiScanner.ScanData(result);
+                    index++;
                 }
             }
 
             deliverScanResults(handler, results2);
+            if (settings.periodInMs == 0) {
+                /* this is a single shot scan; stop the scan now */
+                mStateMachine.sendMessage(CMD_STOP_SCAN_INTERNAL, 0, handler, this);
+            }
         }
 
-        void deliverScanResults(int handler, ScanResult results[]) {
-            WifiScanner.ParcelableScanResults parcelableScanResults =
-                    new WifiScanner.ParcelableScanResults(results);
-            mChannel.sendMessage(WifiScanner.CMD_SCAN_RESULT, 0, handler, parcelableScanResults);
+        void deliverScanResults(int handler, WifiScanner.ScanData results[]) {
+            WifiScanner.ParcelableScanData parcelableScanData =
+                    new WifiScanner.ParcelableScanData(results);
+            mChannel.sendMessage(WifiScanner.CMD_SCAN_RESULT, 0, handler, parcelableScanData);
         }
 
         void reportFullScanResult(ScanResult result) {
@@ -720,12 +768,11 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
-    void replySucceeded(Message msg, Object obj) {
+    void replySucceeded(Message msg) {
         if (msg.replyTo != null) {
             Message reply = Message.obtain();
             reply.what = WifiScanner.CMD_OP_SUCCEEDED;
             reply.arg2 = msg.arg2;
-            reply.obj = obj;
             try {
                 msg.replyTo.send(reply);
             } catch (RemoteException e) {
@@ -779,15 +826,17 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         private static final int MAX_BUCKETS = 8;
         private static final int MAX_CHANNELS = 8;
         private static final int DEFAULT_MAX_AP_PER_SCAN = 10;
-        private static final int DEFAULT_REPORT_THRESHOLD = 80;
+        private static final int DEFAULT_REPORT_THRESHOLD_PERCENT = 80;
         private static final int DEFAULT_BASE_PERIOD_MS = 5000;
+        private static final int DEFAULT_REPORT_THRESHOLD_NUM_SCANS = 20;
 
         private WifiNative.ScanSettings mSettings;
         {
             mSettings = new WifiNative.ScanSettings();
             mSettings.max_ap_per_scan = DEFAULT_MAX_AP_PER_SCAN;
             mSettings.base_period_ms = DEFAULT_BASE_PERIOD_MS;
-            mSettings.report_threshold = DEFAULT_REPORT_THRESHOLD;
+            mSettings.report_threshold_percent = DEFAULT_REPORT_THRESHOLD_PERCENT;
+            mSettings.report_threshold_num_scans = DEFAULT_REPORT_THRESHOLD_NUM_SCANS;
 
             mSettings.buckets = new WifiNative.BucketSettings[MAX_BUCKETS];
             for (int i = 0; i < mSettings.buckets.length; i++) {
@@ -891,7 +940,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             // merge the channel lists for these buckets
             Log.d(TAG, "merging " + desiredChannels.length + " channels "
-                    + " for period " + settings.periodInMs);
+                    + " for period " + settings.periodInMs
+                    + " maxScans " + settings.maxScansToCache);
 
             WifiNative.BucketSettings bucket = mSettings.buckets[bucketIndex];
             boolean added = (bucket.num_channels == 0)
@@ -952,6 +1002,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             if (mSettings.max_ap_per_scan < settings.numBssidsPerScan) {
                 mSettings.max_ap_per_scan = settings.numBssidsPerScan;
+            }
+
+            if (settings.maxScansToCache != 0) {
+                if (mSettings.report_threshold_num_scans > settings.maxScansToCache) {
+                    mSettings.report_threshold_num_scans = settings.maxScansToCache;
+                }
             }
 
             return bucket.period_ms;
@@ -1070,15 +1126,38 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
+    boolean addSingleScanRequest(ClientInfo ci, int handler, ScanSettings settings) {
+        if (settings.reportEvents == 0) {
+            settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
+        }
+        if (settings.periodInMs == 0) {
+            settings.periodInMs = 10000;        // 10s - although second scan should never happen
+        }
+        ci.addScanRequest(settings, handler);
+        if (resetBuckets()) {
+            /* reset periodInMs to 0 to indicate single shot scan */
+            settings.periodInMs = 0;
+            return true;
+        } else {
+            ci.removeScanRequest(handler);
+            Log.d(TAG, "Failing scan request because failed to reset scan");
+            return false;
+        }
+    }
+
     void removeScanRequest(ClientInfo ci, int handler) {
         ci.removeScanRequest(handler);
         resetBuckets();
     }
 
-    ScanResult[] getScanResults(ClientInfo ci) {
-        ScanResult results[] = WifiNative.getScanResults();
-        ci.reportScanResults(results);
-        return results;
+    boolean reportScanResults(ClientInfo ci) {
+        WifiScanner.ScanData results[] = WifiNative.getScanResults(/* flush = */ true);
+        Collection<ClientInfo> clients = mClients.values();
+        for (ClientInfo ci2 : clients) {
+            ci2.reportScanResults(results);
+        }
+
+        return true;
     }
 
     void resetHotlist() {
@@ -1327,7 +1406,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         if (DBG) Log.d(TAG, "Got scan results");
                         if (mScanResultsPending) {
                             if (DBG) Log.d(TAG, "reconfiguring scan");
-                            reconfigureScan((ScanResult[])msg.obj, STATIONARY_SCAN_PERIOD_MS);
+                            reconfigureScan((WifiScanner.ScanData[])msg.obj,
+                                    STATIONARY_SCAN_PERIOD_MS);
                             mWifiChangeDetected = false;
                             mAlarmManager.setExact(AlarmManager.RTC_WAKEUP,
                                     System.currentTimeMillis() + MOVING_STATE_TIMEOUT_MS,
@@ -1383,7 +1463,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         }
 
-        void reconfigureScan(ScanResult[] results, int period) {
+        void reconfigureScan(WifiScanner.ScanData[] results, int period) {
             // find brightest APs and set them as sentinels
             if (results.length < MAX_APS_TO_TRACK) {
                 Log.d(TAG, "too few APs (" + results.length + ") available to track wifi change");
@@ -1394,7 +1474,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             // remove duplicate BSSIDs
             HashMap<String, ScanResult> bssidToScanResult = new HashMap<String, ScanResult>();
-            for (ScanResult result : results) {
+            for (ScanResult result : results[0].getResults()) {
                 ScanResult saved = bssidToScanResult.get(result.BSSID);
                 if (saved == null) {
                     bssidToScanResult.put(result.BSSID, result);
@@ -1513,7 +1593,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 super(null, null);
             }
             @Override
-            void deliverScanResults(int handler, ScanResult results[]) {
+            void deliverScanResults(int handler, WifiScanner.ScanData results[]) {
                 if (DBG) Log.d(TAG, "Delivering messages directly");
                 sendMessage(WIFI_CHANGE_CMD_NEW_SCAN_RESULTS, 0, 0, results);
             }

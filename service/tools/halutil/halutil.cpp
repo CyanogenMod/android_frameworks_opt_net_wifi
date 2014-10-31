@@ -49,7 +49,8 @@ static int ioctl_sock = 0;
 static int max_event_wait = 5;
 static int stest_max_ap = 10;
 static int stest_base_period = 5000;
-static int stest_threshold = 80;
+static int stest_threshold_percent = 80;
+static int stest_threshold_num_scans = 10;
 static int swctest_rssi_sample_size =  3;
 static int swctest_rssi_lost_ap =  3;
 static int swctest_rssi_min_breaching =  2;
@@ -309,7 +310,7 @@ static int significantChangeCmdId;
 static int rttCmdId;
 
 static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
-                       int max_ap_per_scan, int base_period, int report_threshold) {
+        int max_ap_per_scan, int base_period, int threshold_percent, int threshold_num_scans) {
 
     /* Get capabilties */
     wifi_gscan_capabilities capabilities;
@@ -327,7 +328,8 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
     if(num_channels > 0){
         params.max_ap_per_scan = max_ap_per_scan;
         params.base_period = base_period;                      // 5 second by default
-        params.report_threshold = report_threshold;
+        params.report_threshold_percent = threshold_percent;
+        params.report_threshold_num_scans = threshold_num_scans;
         params.num_buckets = 1;
 
         params.buckets[0].bucket = 0;
@@ -346,7 +348,8 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
 
       params.max_ap_per_scan = max_ap_per_scan;
       params.base_period = base_period;                      // 5 second
-      params.report_threshold = report_threshold;
+      params.report_threshold_percent = threshold_percent;
+      params.report_threshold_num_scans = threshold_num_scans;
       params.num_buckets = 3;
 
       params.buckets[0].bucket = 0;
@@ -438,7 +441,7 @@ static int scanOnce(wifi_band band, wifi_scan_result *results, int num_results) 
 
     params.max_ap_per_scan = 10;
     params.base_period = 5000;                        // 5 second by default
-    params.report_threshold = 90;
+    params.report_threshold_percent = 90;
     params.num_buckets = 1;
 
     params.buckets[0].bucket = 0;
@@ -494,10 +497,10 @@ static int scanOnce(wifi_band band, wifi_scan_result *results, int num_results) 
 
 static void retrieveScanResults() {
 
-    wifi_scan_result results[256];
-    memset(results, 0, sizeof(wifi_scan_result) * 256);
+    int num_results = 64;
+    wifi_cached_scan_results results[64];
+    memset(results, 0, sizeof(wifi_cached_scan_results) * num_results);
     printMsg("Retrieve Scan results available -->\n");
-    int num_results = 256;
     int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
@@ -508,7 +511,9 @@ static void retrieveScanResults() {
 
     printScanHeader();
     for (int i = 0; i < num_results; i++) {
-        printScanResult(results[i]);
+        for (int j = 0; j < results[i].num_results; j++) {
+            printScanResult(results[i].results[j]);
+        }
     }
 }
 
@@ -666,6 +671,27 @@ static void testRTT() {
     }
 }
 
+static int GetCachedGScanResults(int max, wifi_scan_result *results, int *num) {
+    int num_results = 64;
+    wifi_cached_scan_results results2[64];
+    memset(results2, 0, sizeof(wifi_cached_scan_results) * num_results);
+    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results2, &num_results);
+    if (result < 0) {
+        printMsg("failed to fetch scan results : %d\n", result);
+        return result;
+    } else {
+        printMsg("fetched %d scan data\n", num_results);
+    }
+
+    *num = 0;
+    for (int i = 0; i < num_results; i++) {
+        for (int j = 0; j < results2[i].num_results; j++, (*num)++) {
+            memcpy(&(results[*num]), &(results2[i].results[j]), sizeof(wifi_scan_result));
+        }
+    }
+    return result;
+}
+
 
 static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params){
     printMsg("testHotlistAPs Scan started, waiting for event ...\n");
@@ -678,7 +704,7 @@ static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params
 
     printMsg("Retrieving scan results for Hotlist AP setting\n");
     int num_results = 256;
-    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
+    int result = GetCachedGScanResults(num_results, results, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
         return WIFI_ERROR_UNKNOWN;
@@ -746,7 +772,9 @@ static void testHotlistAPs(){
     memset(&info, 0, sizeof(info));
 
     printMsg("starting Hotlist AP scanning\n");
-    if (!startScan(&onScanResultsAvailable, stest_max_ap,stest_base_period, stest_threshold)) {
+    bool startScanResult = startScan(&onScanResultsAvailable, stest_max_ap,
+            stest_base_period, stest_threshold_percent, stest_threshold_num_scans);
+    if (!startScanResult) {
         printMsg("testHotlistAPs failed to start scan!!\n");
         return;
     }
@@ -790,7 +818,7 @@ static int SelectSignificantAPsFromScanResults() {
     memset(results, 0, sizeof(wifi_scan_result) * 256);
     printMsg("Retrieving scan results for significant wifi change setting\n");
     int num_results = 256;
-    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
+    int result = GetCachedGScanResults(num_results, results, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
         return WIFI_ERROR_UNKNOWN;
@@ -843,7 +871,8 @@ static void untrackSignificantChange() {
 static void trackSignificantChange() {
     printMsg("starting trackSignificantChange\n");
 
-    if (!startScan(&onScanResultsAvailable, stest_max_ap,stest_base_period, stest_threshold)) {
+    if (!startScan(&onScanResultsAvailable, stest_max_ap,
+            stest_base_period, stest_threshold_percent, stest_threshold_num_scans)) {
         printMsg("trackSignificantChange failed to start scan!!\n");
         return;
     } else {
@@ -883,8 +912,9 @@ static void trackSignificantChange() {
 
 void testScan() {
     printf("starting scan with max_ap_per_scan#%d  base_period#%d  threshold#%d \n",
-           stest_max_ap,stest_base_period, stest_threshold);
-    if (!startScan(&onScanResultsAvailable, stest_max_ap,stest_base_period, stest_threshold)) {
+           stest_max_ap,stest_base_period, stest_threshold_percent);
+    if (!startScan(&onScanResultsAvailable, stest_max_ap,
+            stest_base_period, stest_threshold_percent, stest_threshold_num_scans)) {
         printMsg("failed to start scan!!\n");
         return;
     } else {
@@ -958,8 +988,8 @@ void readTestOptions(int argc, char *argv[]){
             stest_base_period = atoi(argv[++j]);
             printf(" base_period #%d\n", stest_base_period);
         } else if (strcmp(argv[j], "-threshold") == 0 && isdigit(argv[j+1][0])) {
-            stest_threshold = atoi(argv[++j]);
-            printf(" threshold #%d\n", stest_threshold);
+            stest_threshold_percent = atoi(argv[++j]);
+            printf(" threshold #%d\n", stest_threshold_percent);
         } else if (strcmp(argv[j], "-avg_RSSI") == 0 && isdigit(argv[j+1][0])) {
             swctest_rssi_sample_size = atoi(argv[++j]);
             printf(" avg_RSSI #%d\n", swctest_rssi_sample_size);
@@ -1054,7 +1084,7 @@ void printFeatureListBitMask(void)
     printMsg("WIFI_FEATURE_AP_STA             0x8000      - Support for AP STA Concurrency\n");
 }
 
-char *rates[] = {
+const char *rates[] = {
     "1Mbps",
     "2Mbps",
 	"5.5Mbps",

@@ -4523,7 +4523,7 @@ public class WifiStateMachine extends StateMachine {
         setSuspendOptimizationsNative(SUSPEND_DUE_TO_DHCP, false);
         mWifiNative.setPowerSave(false);
 
-        stopBatchedScan();
+        // stopBatchedScan();
         WifiNative.pauseScan();
 
         // Update link layer stats
@@ -4580,7 +4580,7 @@ public class WifiStateMachine extends StateMachine {
 
         mDhcpActive = false;
 
-        startBatchedScan();
+        // startBatchedScan();
         WifiNative.restartScan();
     }
 
