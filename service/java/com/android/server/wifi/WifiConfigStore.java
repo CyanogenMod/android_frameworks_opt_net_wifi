@@ -3242,6 +3242,12 @@ public class WifiConfigStore extends IpConfigStore {
                     scanResult.isAutoJoinCandidate = result.isAutoJoinCandidate;
                 }
 
+                if (config.ephemeral) {
+                    // For an ephemeral Wi-Fi config, the ScanResult should be considered
+                    // untrusted.
+                    scanResult.untrusted = true;
+                }
+
                 // Add the scan result to this WifiConfiguration
                 config.scanResultCache.put(scanResult.BSSID, scanResult);
                 // Since we added a scan result to this configuration, re-attempt linking
