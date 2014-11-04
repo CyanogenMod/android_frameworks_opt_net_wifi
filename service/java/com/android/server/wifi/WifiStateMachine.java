@@ -5947,6 +5947,7 @@ public class WifiStateMachine extends StateMachine {
                config.numIpConfigFailures = 0;
                config.numAuthFailures = 0;
                config.numAssociation++;
+               config.noInternetAccess = false;
            }
            mBadLinkspeedcount = 0;
        }
@@ -5988,13 +5989,6 @@ public class WifiStateMachine extends StateMachine {
                 // Take note that we got disabled while RSSI was Not high
                 config.numUserTriggeredWifiDisableNotHighRSSI++;
             }
-        }
-    }
-
-    void setInternetAccessState(boolean enabled) {
-        WifiConfiguration config = getCurrentWifiConfiguration();
-        if (config != null) {
-            config.noInternetAccess = enabled;
         }
     }
 
@@ -6404,6 +6398,9 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
+                    // Loose the no Internet Access state, as user is re-trying to connect
+                    config.noInternetAccess = false;
+
                     if (mWifiConfigStore.selectNetwork(netId) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
@@ -6545,8 +6542,7 @@ public class WifiStateMachine extends StateMachine {
 
                     mWifiInfo.setBSSID(mLastBssid);
                     mWifiInfo.setNetworkId(mLastNetworkId);
-                    // Send event to CM & network change broadcast
-                    setNetworkDetailedState(DetailedState.OBTAINING_IPADDR);
+
                     sendNetworkStateChangeBroadcast(mLastBssid);
                     transitionTo(mObtainingIpState);
                     break;
@@ -7010,6 +7006,9 @@ public class WifiStateMachine extends StateMachine {
             // Reset link Debouncing, indicating we have successfully re-connected to the AP
             // We might still be roaming
             linkDebouncing = false;
+
+            // Send event to CM & network change broadcast
+            setNetworkDetailedState(DetailedState.OBTAINING_IPADDR);
 
             // We must clear the config BSSID, as the wifi chipset may decide to roam
             // from this point on and having the BSSID specified in the network block would
