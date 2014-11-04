@@ -4344,12 +4344,7 @@ public class WifiStateMachine extends StateMachine {
             c.numConnectionFailures = 0;
 
             // Tell the framework whether the newly connected network is trusted or untrusted.
-            if (c.ephemeral) {
-                mNetworkCapabilities.removeCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED);
-            } else {
-                mNetworkCapabilities.addCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED);
-            }
-            mNetworkAgent.sendNetworkCapabilities(mNetworkCapabilities);
+            updateCapabilities(c);
         }
         if (c != null) {
             ScanResult result = getCurrentScanResult();
@@ -6351,9 +6346,25 @@ public class WifiStateMachine extends StateMachine {
                     netId = message.arg1;
                     config = (WifiConfiguration) message.obj;
                     mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
+                    boolean updatedExisting = false;
 
                     /* Save the network config */
                     if (config != null) {
+                        String configKey = config.configKey(true /* allowCached */);
+                        WifiConfiguration savedConfig =
+                                mWifiConfigStore.getWifiConfiguration(configKey);
+                        if (savedConfig != null) {
+                            // There is an existing config with this netId, but it wasn't exposed
+                            // (either AUTO_JOIN_DELETED or ephemeral; see WifiConfigStore#
+                            // getConfiguredNetworks). Remove those bits and update the config.
+                            config = savedConfig;
+                            loge("CONNECT_NETWORK updating existing config with id=" +
+                                    config.networkId + " configKey=" + configKey);
+                            config.ephemeral = false;
+                            config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
+                            updatedExisting = true;
+                        }
+
                         result = mWifiConfigStore.saveNetwork(config, message.sendingUid);
                         netId = result.getNetworkId();
                     }
@@ -6418,6 +6429,11 @@ public class WifiStateMachine extends StateMachine {
                         if (didDisconnect) {
                             /* Expect a disconnection from the old connection */
                             transitionTo(mDisconnectingState);
+                        } else if (updatedExisting && getCurrentState() == mConnectedState &&
+                                getCurrentWifiConfiguration().networkId == netId) {
+                            // Update the current set of network capabilities, but stay in the
+                            // current state.
+                            updateCapabilities(config);
                         } else {
                             /**
                              *  Directly go to disconnected state where we
@@ -6572,6 +6588,17 @@ public class WifiStateMachine extends StateMachine {
             }
             return HANDLED;
         }
+    }
+
+    private void updateCapabilities(WifiConfiguration config) {
+        if (config.ephemeral) {
+            mNetworkCapabilities.removeCapability(
+                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+        } else {
+            mNetworkCapabilities.addCapability(
+                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+        }
+        mNetworkAgent.sendNetworkCapabilities(mNetworkCapabilities);
     }
 
     private class WifiNetworkAgent extends NetworkAgent {
