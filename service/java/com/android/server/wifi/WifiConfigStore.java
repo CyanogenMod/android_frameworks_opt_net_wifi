@@ -564,6 +564,8 @@ public class WifiConfigStore extends IpConfigStore {
         List<WifiConfiguration> networks = new ArrayList<>();
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             WifiConfiguration newConfig = new WifiConfiguration(config);
+            // When updating this condition, update WifiStateMachine's CONNECT_NETWORK handler to
+            // correctly handle updating existing configs that are filtered out here.
             if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || config.ephemeral) {
                 // Do not enumerate and return this configuration to any one,
                 // for instance WiFi Picker.
