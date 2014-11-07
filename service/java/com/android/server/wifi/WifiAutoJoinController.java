@@ -63,6 +63,8 @@ public class WifiAutoJoinController {
     private HashMap<String, ScanResult> scanResultCache =
             new HashMap<String, ScanResult>();
 
+    private ArrayList<String> mBlacklistedBssids;
+
     private WifiConnectionStatistics mWifiConnectionStatistics;
 
     /* for debug purpose only : the untrusted SSID we would be connected to if we had VPN */
@@ -118,6 +120,7 @@ public class WifiAutoJoinController {
                     + " service " + Context.NETWORK_SCORE_SERVICE);
             mNetworkScoreCache = null;
         }
+        mBlacklistedBssids = new ArrayList<String>();
     }
 
     void enableRssiThreshold(int enabled) {
@@ -1108,6 +1111,29 @@ public class WifiAutoJoinController {
         return startScore;
     }
 
+    void handleBSSIDBlackList(boolean enable, String bssid, int reason) {
+        if( 5 == reason ) // Enable Auto Join for all BSSIDs
+        {
+            mBlacklistedBssids.clear();
+            return;
+        }
+        if( !enable ) {
+            if( !mBlacklistedBssids.contains(bssid) )
+            {
+                mBlacklistedBssids.add(bssid);
+            }
+        }
+        else {
+            if( mBlacklistedBssids.contains(bssid) ) {
+                mBlacklistedBssids.remove(bssid);
+            }
+        }
+    }
+
+    boolean isBlacklistedBSSID( String bssid ) {
+        return ( mBlacklistedBssids.contains(bssid) ) ? true : false;
+    }
+
     /**
      * attemptAutoJoin() function implements the core of the a network switching algorithm
      */
@@ -1234,6 +1260,12 @@ public class WifiAutoJoinController {
          */
         for (WifiConfiguration config : list) {
             if (config.SSID == null) {
+                continue;
+            }
+
+            if ( this.isBlacklistedBSSID(config.BSSID) ) {
+                logDbg("attemptAutoJoin skip candidate as AP is Blacklisted config.SSID = "
+                        + config.SSID + " config.BSSID=" + config.BSSID);
                 continue;
             }
 
