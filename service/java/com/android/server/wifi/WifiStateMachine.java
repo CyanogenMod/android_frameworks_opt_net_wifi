@@ -900,11 +900,8 @@ public class WifiStateMachine extends StateMachine {
         }
 
         mAlarmManager = (AlarmManager)mContext.getSystemService(Context.ALARM_SERVICE);
-        Intent scanIntent = new Intent(ACTION_START_SCAN, null);
-        mScanIntent = PendingIntent.getBroadcast(mContext, SCAN_REQUEST, scanIntent, 0);
-
-        Intent batchedIntent = new Intent(ACTION_REFRESH_BATCHED_SCAN, null);
-        mBatchedScanIntervalIntent = PendingIntent.getBroadcast(mContext, 0, batchedIntent, 0);
+        mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
+        mBatchedScanIntervalIntent = getPrivateBroadcast(ACTION_REFRESH_BATCHED_SCAN, 0);
 
         mDefaultFrameworkScanIntervalMs = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_scan_interval);
@@ -1052,6 +1049,14 @@ public class WifiStateMachine extends StateMachine {
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_DISABLED);
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+    }
+
+
+    PendingIntent getPrivateBroadcast(String action, int requestCode) {
+        Intent intent = new Intent(action, null);
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);        
+        intent.setPackage(this.getClass().getPackage().getName());
+        return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
     }
 
     private int mVerboseLoggingLevel = 0;
@@ -5341,6 +5346,7 @@ public class WifiStateMachine extends StateMachine {
 
                     /* send regular delayed shut down */
                     Intent driverStopIntent = new Intent(ACTION_DELAYED_DRIVER_STOP, null);
+                    driverStopIntent.setPackage(this.getClass().getPackage().getName());
                     driverStopIntent.putExtra(DELAYED_STOP_COUNTER, mDelayedStopCounter);
                     mDriverStopIntent = PendingIntent.getBroadcast(mContext,
                             DRIVER_STOP_REQUEST, driverStopIntent,
