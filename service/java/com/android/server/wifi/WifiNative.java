@@ -696,6 +696,12 @@ public class WifiNative {
         }
     }
 
+    public boolean simIdentityResponse(int id, String response) {
+        synchronized (mLock) {
+            return doBooleanCommand("CTRL-RSP-IDENTITY-" + id + ":" + response);
+        }
+    }
+
     /* Configures an access point connection */
     public boolean startWpsRegistrar(String bssid, String pin) {
         if (TextUtils.isEmpty(bssid) || TextUtils.isEmpty(pin)) return false;

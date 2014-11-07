@@ -263,7 +263,7 @@ public class WifiMonitor {
             Pattern.compile("Associated with ((?:[0-9a-f]{2}:){5}[0-9a-f]{2}).*");
 
     /**
-     * Regex pattern for extracting SSIDs from request identity string.
+     * Regex pattern for extracting an external GSM sim authentication request from a string.
      * Matches a strings like the following:<pre>
      * CTRL-REQ-SIM-<network id>:GSM-AUTH:<RAND1>:<RAND2>[:<RAND3>] needed for SSID <SSID>
      * This pattern should find
@@ -1191,7 +1191,7 @@ public class WifiMonitor {
                 Log.e(TAG, "didn't find SSID " + requestName);
             }
             mStateMachine.sendMessage(SUP_REQUEST_IDENTITY, eventLogCounter, reason, SSID);
-        } if (requestName.startsWith(SIM_STR)) {
+        } else if (requestName.startsWith(SIM_STR)) {
             Matcher match = mRequestGsmAuthPattern.matcher(requestName);
             if (match.find()) {
                 WifiStateMachine.SimAuthRequestData data =
