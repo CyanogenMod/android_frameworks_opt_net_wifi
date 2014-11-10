@@ -22,8 +22,6 @@ import android.net.NetworkScoreManager;
 import android.net.WifiKey;
 import android.net.wifi.*;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
-import android.os.SystemClock;
-import android.os.Process;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -52,7 +50,6 @@ public class WifiAutoJoinController {
     private static boolean DBG = false;
     private static boolean VDBG = false;
     private static final boolean mStaStaSupported = false;
-    private static final int SCAN_RESULT_CACHE_SIZE = 80;
 
     public static int mScanResultMaximumAge = 40000; /* milliseconds unit */
 
@@ -163,7 +160,6 @@ public class WifiAutoJoinController {
 
         ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
-        long nowMs = System.currentTimeMillis();
         for(ScanResult result: scanList) {
             if (result.SSID == null) continue;
 
@@ -262,7 +258,6 @@ public class WifiAutoJoinController {
     }
 
     void logDbg(String message, boolean stackTrace) {
-        long now = SystemClock.elapsedRealtimeNanos();
         if (stackTrace) {
             Log.e(TAG, message + " stack:"
                     + Thread.currentThread().getStackTrace()[2].getMethodName() + " - "
@@ -688,20 +683,20 @@ public class WifiAutoJoinController {
 
     int compareWifiConfigurationsWithScorer(WifiConfiguration a, WifiConfiguration b) {
 
-        int aRssiBoost = 0;
-        int bRssiBoost = 0;
+        boolean aIsActive = false;
+        boolean bIsActive = false;
 
         // Apply Hysteresis : boost RSSI of current configuration before
         // looking up the score
         if (null != mCurrentConfigurationKey) {
             if (a.configKey().equals(mCurrentConfigurationKey)) {
-                aRssiBoost += 20;
+                aIsActive = true;
             } else if (b.configKey().equals(mCurrentConfigurationKey)) {
-                bRssiBoost += 20;
+                bIsActive = true;
             }
         }
-        int scoreA = getConfigNetworkScore(a, 3000, aRssiBoost);
-        int scoreB = getConfigNetworkScore(b, 3000, bRssiBoost);
+        int scoreA = getConfigNetworkScore(a, 3000, aIsActive);
+        int scoreB = getConfigNetworkScore(b, 3000, bIsActive);
 
         // Both configurations need to have a score for the scorer to be used
         // ...and the scores need to be different:-)
@@ -744,7 +739,6 @@ public class WifiAutoJoinController {
 
     int compareWifiConfigurations(WifiConfiguration a, WifiConfiguration b) {
         int order = 0;
-        String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
         boolean linked = false;
 
         if ((a.linkedConfigurations != null) && (b.linkedConfigurations != null)
@@ -1053,7 +1047,7 @@ public class WifiAutoJoinController {
      * @param config
      * @return score
      */
-    int getConfigNetworkScore(WifiConfiguration config, int age, int rssiBoost) {
+    int getConfigNetworkScore(WifiConfiguration config, int age, boolean isActive) {
 
         if (mNetworkScoreCache == null) {
             if (VDBG) {
@@ -1078,7 +1072,7 @@ public class WifiAutoJoinController {
         // Run thru all cached scan results
         for (ScanResult result : config.scanResultCache.values()) {
             if ((nowMs - result.seen) < age) {
-                int sc = mNetworkScoreCache.getNetworkScore(result, rssiBoost);
+                int sc = mNetworkScoreCache.getNetworkScore(result, isActive);
                 if (sc > startScore) {
                     startScore = sc;
                 }
@@ -1093,7 +1087,7 @@ public class WifiAutoJoinController {
                         + " -> no available score");
             } else {
                 logDbg("    getConfigNetworkScore for " + config.configKey()
-                        + " boost=" + Integer.toString(rssiBoost)
+                        + " isActive=" + isActive
                         + " score = " + Integer.toString(startScore));
             }
         }
@@ -1474,7 +1468,6 @@ public class WifiAutoJoinController {
         if (mNetworkScoreCache != null) {
             int rssi5 = WifiConfiguration.INVALID_RSSI;
             int rssi24 = WifiConfiguration.INVALID_RSSI;
-            WifiConfiguration.Visibility visibility;
             if (candidate != null) {
                 rssi5 = candidate.visibility.rssi5;
                 rssi24 = candidate.visibility.rssi24;
@@ -1488,7 +1481,6 @@ public class WifiAutoJoinController {
             // Look for untrusted scored network only if the current candidate is bad
             if (isBadCandidate(rssi24, rssi5)) {
                 for (ScanResult result : scanResultCache.values()) {
-                    int rssiBoost = 0;
                     // We look only at untrusted networks with a valid SSID
                     // A trusted result would have been looked at thru it's Wificonfiguration
                     if (TextUtils.isEmpty(result.SSID) || !result.untrusted ||
@@ -1499,12 +1491,9 @@ public class WifiAutoJoinController {
                         // Increment usage count for the network
                         mWifiConnectionStatistics.incrementOrAddUntrusted(result.SSID, 0, 1);
 
-                        if (lastUntrustedBSSID != null
-                                && result.BSSID.equals(lastUntrustedBSSID)) {
-                            // Apply a large hysteresis to the untrusted network we are connected to
-                            rssiBoost = 25;
-                        }
-                        int score = mNetworkScoreCache.getNetworkScore(result, rssiBoost);
+                        boolean isActiveNetwork = lastUntrustedBSSID != null
+                                && result.BSSID.equals(lastUntrustedBSSID);
+                        int score = mNetworkScoreCache.getNetworkScore(result, isActiveNetwork);
                         if (score != WifiNetworkScoreCache.INVALID_NETWORK_SCORE
                                 && score > currentScore) {
                             // Highest score: Select this candidate
