@@ -34,8 +34,10 @@ import java.util.Map;
 public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
  {
 
-    // A Network scorer returns a score in the range [-127, +127]
-    public static int INVALID_NETWORK_SCORE = 100000;
+    // A Network scorer returns a score in the range [-128, +127]
+    // We treat the lowest possible score as though there were no score, effectively allowing the
+    // scorer to provide an RSSI threshold below which a network should not be used.
+    public static int INVALID_NETWORK_SCORE = Byte.MIN_VALUE;
 
     private static String TAG = "WifiNetworkScoreCache";
     private boolean DBG = true;
@@ -107,7 +109,7 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
         return score;
     }
 
-    public int getNetworkScore(ScanResult result, int rssiBoost) {
+    public int getNetworkScore(ScanResult result, boolean isActiveNetwork) {
 
         int score = INVALID_NETWORK_SCORE;
 
@@ -118,12 +120,12 @@ public class WifiNetworkScoreCache extends INetworkScoreCache.Stub
         synchronized(mNetworkCache) {
             ScoredNetwork network = mNetworkCache.get(key);
             if (network != null && network.rssiCurve != null) {
-                score = network.rssiCurve.lookupScore(result.level + rssiBoost);
+                score = network.rssiCurve.lookupScore(result.level, isActiveNetwork);
                 if (DBG) {
                     Log.e(TAG, "getNetworkScore found scored network " + key
                             + " score " + Integer.toString(score)
                             + " RSSI " + result.level
-                            + " boost " + rssiBoost);
+                            + " isActiveNetwork " + isActiveNetwork);
                 }
             }
         }
