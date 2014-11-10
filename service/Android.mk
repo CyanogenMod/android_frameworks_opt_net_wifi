@@ -45,7 +45,8 @@ LIB_WIFI_HAL := libwifi-hal
 ifeq ($(BOARD_WLAN_DEVICE), bcmdhd)
   LIB_WIFI_HAL := libwifi-hal-bcm
 else ifeq ($(BOARD_WLAN_DEVICE), qcwcn)
-  LIB_WIFI_HAL := libwifi-hal-qcom
+#  disable building of libwifi-hal-qcom library till HAL src is merged
+#  LIB_WIFI_HAL := libwifi-hal-qcom
 else ifeq ($(BOARD_WLAN_DEVICE), mrvl)
   # this is commented because none of the nexus devices
   # that sport Marvell's wifi have support for HAL
