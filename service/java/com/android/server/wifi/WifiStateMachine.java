@@ -3006,6 +3006,7 @@ public class WifiStateMachine extends StateMachine {
         if (startBackgroundScanIfNeeded) {
             if (mEnableBackgroundScan) {
                 if (!mWifiNative.enableBackgroundScan(true)) {
+                    mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
                     setScanAlarm(true, 200);
                 } else {
                     setScanAlarm(false, 0);
@@ -7667,6 +7668,7 @@ public class WifiStateMachine extends StateMachine {
                  */
                 if (!mIsScanOngoing) {
                     if (!mWifiNative.enableBackgroundScan(true)) {
+                        mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
                         setScanAlarm(true, 200);
                     } else {
                         setScanAlarm(false, 0);
@@ -7757,6 +7759,7 @@ public class WifiStateMachine extends StateMachine {
                     /* Re-enable background scan when a pending scan result is received */
                     if (mEnableBackgroundScan && mIsScanOngoing) {
                         if (!mWifiNative.enableBackgroundScan(true)) {
+                            mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
                             setScanAlarm(true, 200);
                         } else {
                             setScanAlarm(false, 0);
@@ -7782,6 +7785,7 @@ public class WifiStateMachine extends StateMachine {
                     } else if (mEnableBackgroundScan && !mP2pConnected.get() &&
                                (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
                         if (!mWifiNative.enableBackgroundScan(true)) {
+                            mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
                             setScanAlarm(true, 200);
                         } else {
                             setScanAlarm(false, 0);
