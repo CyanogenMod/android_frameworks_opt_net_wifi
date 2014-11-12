@@ -1391,12 +1391,16 @@ public class WifiAutoJoinController {
                     }
                 }
             }
-            if (config.noInternetAccess && !isLastSelected) {
-                // Avoid autojoining this network because last time we used it, it didn't
-                // have internet access
+            if (config.numNoInternetAccessReports > 0
+                    && !isLastSelected
+                    && !config.validatedInternetAccess) {
+                // Avoid autoJoining this network because last time we used it, it didn't
+                // have internet access, and we never manage to validate internet access on this
+                // network configuration
                 if (DBG) {
-                    logDbg("attemptAutoJoin skip candidate due to noInternetAccess flag "
-                            + config.configKey(true));
+                    logDbg("attemptAutoJoin skip candidate due to no InternetAccess  "
+                            + config.configKey(true)
+                            + " num reports " + config.numNoInternetAccessReports);
                 }
                 continue;
             }

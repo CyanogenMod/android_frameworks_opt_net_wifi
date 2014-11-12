@@ -201,7 +201,8 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String NUM_AUTH_FAILURES_KEY = "AUTH_FAILURES:  ";
     private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE:  ";
     private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH:  ";
-    private static final String NO_INTERNET_ACCESS_KEY = "NO_INTERNET_ACCESS:  ";
+    private static final String VALIDATED_INTERNET_ACCESS_KEY = "VALIDATED_INTERNET_ACCESS:  ";
+    private static final String NO_INTERNET_ACCESS_REPORTS_KEY = "NO_INTERNET_ACCESS_REPORTS :   ";
     private static final String EPHEMERAL_KEY = "EPHEMERAL:   ";
     private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
     private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST:  ";
@@ -1662,8 +1663,11 @@ public class WifiConfigStore extends IpConfigStore {
                             + SEPARATOR_KEY);
                     out.writeUTF(DID_SELF_ADD_KEY + Boolean.toString(config.didSelfAdd)
                             + SEPARATOR_KEY);
-                    out.writeUTF(NO_INTERNET_ACCESS_KEY
-                            + Boolean.toString(config.noInternetAccess)
+                    out.writeUTF(NO_INTERNET_ACCESS_REPORTS_KEY
+                            + Integer.toString(config.numNoInternetAccessReports)
+                            + SEPARATOR_KEY);
+                    out.writeUTF(VALIDATED_INTERNET_ACCESS_KEY
+                            + Boolean.toString(config.validatedInternetAccess)
                             + SEPARATOR_KEY);
                     out.writeUTF(EPHEMERAL_KEY
                             + Boolean.toString(config.ephemeral)
@@ -1779,6 +1783,7 @@ public class WifiConfigStore extends IpConfigStore {
                 selected.numConnectionFailures = 0;
                 selected.numIpConfigFailures = 0;
                 selected.numAuthFailures = 0;
+                selected.numNoInternetAccessReports = 0;
                 if (VDBG) {
                     loge("setLastSelectedConfiguration now: " + lastSelectedConfiguration);
                 }
@@ -1906,10 +1911,16 @@ public class WifiConfigStore extends IpConfigStore {
                         config.didSelfAdd = Boolean.parseBoolean(didSelfAdd);
                     }
 
-                    if (key.startsWith(NO_INTERNET_ACCESS_KEY)) {
-                        String access = key.replace(NO_INTERNET_ACCESS_KEY, "");
+                    if (key.startsWith(NO_INTERNET_ACCESS_REPORTS_KEY)) {
+                        String access = key.replace(NO_INTERNET_ACCESS_REPORTS_KEY, "");
                         access = access.replace(SEPARATOR_KEY, "");
-                        config.noInternetAccess = Boolean.parseBoolean(access);
+                        config.numNoInternetAccessReports = Integer.parseInt(access);
+                    }
+
+                    if (key.startsWith(VALIDATED_INTERNET_ACCESS_KEY)) {
+                        String access = key.replace(VALIDATED_INTERNET_ACCESS_KEY, "");
+                        access = access.replace(SEPARATOR_KEY, "");
+                        config.validatedInternetAccess = Boolean.parseBoolean(access);
                     }
 
                     if (key.startsWith(EPHEMERAL_KEY)) {
