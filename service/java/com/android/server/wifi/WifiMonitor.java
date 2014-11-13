@@ -616,6 +616,14 @@ public class WifiMonitor {
         }
 
         public synchronized void killSupplicant(boolean p2pSupported) {
+            String suppState = System.getProperty("init.svc.wpa_supplicant");
+            if (suppState == null) suppState = "unknown";
+            String p2pSuppState = System.getProperty("init.svc.p2p_supplicant");
+            if (p2pSuppState == null) p2pSuppState = "unknown";
+
+            Log.e(TAG, "killSupplicant p2p" + p2pSupported
+                    + " init.svc.wpa_supplicant=" + suppState
+                    + " init.svc.p2p_supplicant=" + p2pSuppState);
             WifiNative.killSupplicant(p2pSupported);
             mConnected = false;
             for (WifiMonitor m : mIfaceMap.values()) {

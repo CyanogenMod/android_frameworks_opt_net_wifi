@@ -283,7 +283,7 @@ public class WifiAutoJoinController {
         if (doAutoJoin) {
             attemptAutoJoin();
         }
-        mWifiConfigStore.writeKnownNetworkHistory();
+        mWifiConfigStore.writeKnownNetworkHistory(false);
         return numScanResultsKnown;
     }
 
@@ -302,7 +302,7 @@ public class WifiAutoJoinController {
         addToScanCache(scanList);
         ageScanResultsOut(0);
         attemptAutoJoin();
-        mWifiConfigStore.writeKnownNetworkHistory();
+        mWifiConfigStore.writeKnownNetworkHistory(false);
     }
 
     /**
@@ -532,7 +532,7 @@ public class WifiAutoJoinController {
 
         // TODO: write only if something changed
         if (userTriggered || connect) {
-            mWifiConfigStore.writeKnownNetworkHistory();
+            mWifiConfigStore.writeKnownNetworkHistory(false);
         }
     }
 
@@ -1102,7 +1102,8 @@ public class WifiAutoJoinController {
         boolean changed = mAllowUntrustedConnections != allow;
         mAllowUntrustedConnections = allow;
         if (changed) {
-            attemptAutoJoin();
+            // Trigger a scan so as to reattempt autojoin
+            mWifiStateMachine.startScanForUntrustedSettingChange();
         }
     }
 
@@ -1205,8 +1206,8 @@ public class WifiAutoJoinController {
 
         if (currentConfiguration != null) {
             if (supplicantNetId != currentConfiguration.networkId
-                    //https://b.corp.google.com/issue?id=16484607
-                    //mark this confition as an error only if the mismatched networkId are valid
+                    // https://b.corp.google.com/issue?id=16484607
+                    // mark this condition as an error only if the mismatched networkId are valid
                     && supplicantNetId != WifiConfiguration.INVALID_NETWORK_ID
                     && currentConfiguration.networkId != WifiConfiguration.INVALID_NETWORK_ID) {
                 logDbg("attemptAutoJoin() ERROR wpa_supplicant out of sync nid="
