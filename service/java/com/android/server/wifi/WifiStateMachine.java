@@ -8788,6 +8788,8 @@ public class WifiStateMachine extends StateMachine {
             StringBuilder sb = new StringBuilder();
             for (String challenge : requestData.data) {
 
+                if (challenge == null || challenge.isEmpty())
+                    continue;
                 logd("RAND = " + challenge);
 
                 byte[] rand = null;
@@ -8801,11 +8803,18 @@ public class WifiStateMachine extends StateMachine {
                 String base64Challenge = android.util.Base64.encodeToString(
                         rand, android.util.Base64.NO_WRAP);
                 /*
-                 * appType = 1 => SIM, 2 => USIM according to
+                 * First, try with appType = 2 => USIM according to
                  * com.android.internal.telephony.PhoneConstants#APPTYPE_xxx
                  */
                 int appType = 2;
                 String tmResponse = tm.getIccSimChallengeResponse(appType, base64Challenge);
+                if (tmResponse == null) {
+                    /* Then, in case of failure, issue may be due to sim type, retry as a simple sim
+                     * appType = 1 => SIM
+                     */
+                    appType = 1;
+                    tmResponse = tm.getIccSimChallengeResponse(appType, base64Challenge);
+                }
                 logv("Raw Response - " + tmResponse);
 
                 if (tmResponse != null && tmResponse.length() > 4) {
