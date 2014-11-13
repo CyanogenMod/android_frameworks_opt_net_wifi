@@ -82,6 +82,8 @@ import java.text.DateFormat;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.*;
+import java.util.zip.Checksum;
+import java.util.zip.CRC32;
 
 /**
  * This class provides the API to manage configured
@@ -152,6 +154,12 @@ public class WifiConfigStore extends IpConfigStore {
     private HashMap<Integer, Integer> mNetworkIds =
             new HashMap<Integer, Integer>();
 
+    /**
+     * Framework keeps a list of (the CRC32 hashes of) all SSIDs that where deleted by user,
+     * so as, framework knows not to re-add those SSIDs automatically to the Saved networks
+     */
+    private Set<Long> mDeletedSSIDs = new HashSet<Long>();
+
     /* Tracks the highest priority of configured networks */
     private int mLastPriority = -1;
 
@@ -205,6 +213,8 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String NO_INTERNET_ACCESS_REPORTS_KEY = "NO_INTERNET_ACCESS_REPORTS :   ";
     private static final String EPHEMERAL_KEY = "EPHEMERAL:   ";
     private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
+    private static final String DELETED_CRC32_KEY = "DELETED_CRC32:  ";
+
     private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST:  ";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
             = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G:  ";
@@ -1011,7 +1021,6 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private boolean removeConfigAndSendBroadcastIfNeeded(int netId) {
-        boolean remove = true;
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
             if (VDBG) {
@@ -1031,65 +1040,28 @@ public class WifiConfigStore extends IpConfigStore {
 
             if (config.selfAdded || config.linkedConfigurations != null
                     || config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-                remove = false;
-                loge("removeNetwork " + Integer.toString(netId)
-                        + " key=" + config.configKey()
-                        + " config.id=" + Integer.toString(config.networkId)
-                        + " -> mark as deleted");
+                if (!TextUtils.isEmpty(config.SSID)) {
+                    /* Remember that we deleted this PSK SSID */
+                    Checksum csum = new CRC32();
+                    if (config.SSID != null) {
+                        csum.update(config.SSID.getBytes(), 0, config.SSID.getBytes().length);
+                        mDeletedSSIDs.add(csum.getValue());
+                    }
+                    loge("removeNetwork " + Integer.toString(netId)
+                            + " key=" + config.configKey()
+                            + " config.id=" + Integer.toString(config.networkId)
+                            + "  crc=" + csum.getValue());
+                }
             }
 
-            if (remove) {
-                mConfiguredNetworks.remove(netId);
-                mNetworkIds.remove(configKey(config));
-            } else {
-                /**
-                 * We can't directly remove the configuration since we could re-add it ourselves,
-                 * and that would look weird to the user.
-                 * Instead mark it as deleted and completely hide it from the rest of the system.
-                 */
-                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DELETED);
-                // Disable
-                mWifiNative.disableNetwork(config.networkId);
-                config.status = WifiConfiguration.Status.DISABLED;
-                // Since we don't delete the configuration, clean it up and loose the history
-                config.linkedConfigurations = null;
-                config.scanResultCache = null;
-                config.connectChoices = null;
-                config.defaultGwMacAddress = null;
-                config.setIpConfiguration(new IpConfiguration());
-                // Loose the PSK
-                if (!mWifiNative.setNetworkVariable(
-                        config.networkId,
-                        WifiConfiguration.pskVarName,
-                        "\"" + DELETED_CONFIG_PSK + "\"")) {
-                    loge("removeNetwork, failed to clear PSK, nid=" + config.networkId);
-                }
-                // Loose the BSSID
-                config.BSSID = null;
-                config.autoJoinBSSID = null;
-                if (!mWifiNative.setNetworkVariable(
-                        config.networkId,
-                        WifiConfiguration.bssidVarName,
-                        "any")) {
-                    loge("removeNetwork, failed to remove BSSID");
-                }
-                // Loose the hiddenSSID flag
-                config.hiddenSSID = false;
-                if (!mWifiNative.setNetworkVariable(
-                        config.networkId,
-                        WifiConfiguration.hiddenSSIDVarName,
-                        Integer.toString(0))) {
-                    loge("removeNetwork, failed to remove hiddenSSID");
-                }
-
-                mWifiNative.saveConfig();
-            }
+            mConfiguredNetworks.remove(netId);
+            mNetworkIds.remove(configKey(config));
 
             writeIpAndProxyConfigurations();
             sendConfiguredNetworksChangedBroadcast(config, WifiManager.CHANGE_REASON_REMOVED);
-            writeKnownNetworkHistory();
+            writeKnownNetworkHistory(true);
         }
-        return remove;
+        return true;
     }
 
     /*
@@ -1382,6 +1354,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void loadConfiguredNetworks() {
+
         String listStr = mWifiNative.listNetworks();
         mLastPriority = 0;
 
@@ -1424,14 +1397,14 @@ public class WifiConfigStore extends IpConfigStore {
 
             readNetworkVariables(config);
 
-            String psk = readNetworkVariableFromSupplicantFile(config.SSID, "psk");
-            if (psk!= null && psk.equals(DELETED_CONFIG_PSK)) {
-                // This is a config we previously deleted, ignore it
-                if (showNetworks) {
-                    localLog("found deleted network " + config.SSID + " ", config.networkId);
+            Checksum csum = new CRC32();
+            if (config.SSID != null) {
+                csum.update(config.SSID.getBytes(), 0, config.SSID.getBytes().length);
+                long d = csum.getValue();
+                loge(" got CRC SSID " + config.SSID + " -> " + d);
+                if (mDeletedSSIDs.contains(d)) {
+                    loge(" was deleted");
                 }
-                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DELETED);
-                config.priority = 0;
             }
 
             if (config.priority > mLastPriority) {
@@ -1544,8 +1517,14 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private String readNetworkVariableFromSupplicantFile(String ssid, String key) {
+        long start = SystemClock.elapsedRealtimeNanos();
         Map<String, String> data = readNetworkVariablesFromSupplicantFile(key);
-        if (VDBG) loge("readNetworkVariableFromSupplicantFile ssid=[" + ssid + "] key=" + key);
+        long end = SystemClock.elapsedRealtimeNanos();
+
+        if (VDBG) {
+            loge("readNetworkVariableFromSupplicantFile ssid=[" + ssid + "] key=" + key
+                    + " duration=" + (long)(end - start));
+        }
         return data.get(ssid);
     }
 
@@ -1585,14 +1564,15 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
-    public synchronized void writeKnownNetworkHistory() {
-        boolean needUpdate = false;
+    public void writeKnownNetworkHistory(boolean force) {
+        boolean needUpdate = force;
 
         /* Make a copy */
         final List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             networks.add(new WifiConfiguration(config));
             if (config.dirty == true) {
+                loge(" rewrite network history for " + config.configKey());
                 config.dirty = false;
                 needUpdate = true;
             }
@@ -1763,8 +1743,14 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(SEPARATOR_KEY);
                     out.writeUTF(SEPARATOR_KEY);
                 }
+                if (mDeletedSSIDs != null && mDeletedSSIDs.size() > 0) {
+                    for (Long i : mDeletedSSIDs) {
+                        out.writeUTF(DELETED_CRC32_KEY);
+                        out.writeUTF(String.valueOf(i));
+                        out.writeUTF(SEPARATOR_KEY);
+                    }
+                }
             }
-
         });
     }
 
@@ -2115,6 +2101,12 @@ public class WifiConfigStore extends IpConfigStore {
                                 config.scanResultCache.put(bssid, result);
                                 result.autoJoinStatus = status;
                             }
+                        }
+
+                        if (key.startsWith(DELETED_CRC32_KEY)) {
+                            String crc = key.replace(DELETED_CRC32_KEY, "");
+                            Long c = Long.parseLong(crc);
+                            mDeletedSSIDs.add(c);
                         }
                     }
                 }
@@ -2938,7 +2930,7 @@ public class WifiConfigStore extends IpConfigStore {
         result.setIsNewNetwork(newNetwork);
         result.setNetworkId(netId);
 
-        writeKnownNetworkHistory();
+        writeKnownNetworkHistory(false);
 
         return result;
     }
@@ -3081,6 +3073,7 @@ public class WifiConfigStore extends IpConfigStore {
      *
      */
     public WifiConfiguration associateWithConfiguration(ScanResult result) {
+        boolean doNotAdd = false;
         String configKey = WifiConfiguration.configKey(result);
         if (configKey == null) {
             if (DBG) loge("associateWithConfiguration(): no config key " );
@@ -3092,6 +3085,12 @@ public class WifiConfigStore extends IpConfigStore {
 
         if (VVDBG) {
             loge("associateWithConfiguration(): try " + configKey);
+        }
+
+        Checksum csum = new CRC32();
+        csum.update(SSID.getBytes(), 0, SSID.getBytes().length);
+        if (mDeletedSSIDs.contains(csum.getValue())) {
+            doNotAdd = true;
         }
 
         WifiConfiguration config = null;
@@ -3116,7 +3115,7 @@ public class WifiConfigStore extends IpConfigStore {
                 return link; // Found it exactly
             }
 
-            if ((link.scanResultCache != null) && (link.scanResultCache.size() <= 6)) {
+            if (!doNotAdd && (link.scanResultCache != null) && (link.scanResultCache.size() <= 6)) {
                 for (String bssid : link.scanResultCache.keySet()) {
                     if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
                             && SSID.regionMatches(false, 0, link.SSID, 0, 4)) {

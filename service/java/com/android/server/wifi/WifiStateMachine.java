@@ -239,6 +239,7 @@ public class WifiStateMachine extends StateMachine {
     private static final int UNKNOWN_SCAN_SOURCE = -1;
     private static final int SCAN_ALARM_SOURCE = -2;
     private static final int ADD_OR_UPDATE_SOURCE = -3;
+    private static final int SET_ALLOW_UNTRUSTED_SOURCE = -4;
 
     private static final int SCAN_REQUEST_BUFFER_MAX_SIZE = 10;
     private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
@@ -333,6 +334,7 @@ public class WifiStateMachine extends StateMachine {
     private int mRoamFailCount = 0;
 
     // This is the BSSID we are trying to associate to, it can be set to "any"
+    // if we havent selected a BSSID for joining.
     // if we havent selected a BSSID for joining.
     // The BSSID we are associated to is found in mWifiInfo
     private String mTargetRoamBSSID = "any";
@@ -1361,6 +1363,13 @@ public class WifiStateMachine extends StateMachine {
         return (list != null && list.size() > 0) ? list : null;
     }
 
+    /**
+     * When settings allowing making use of untrusted networks change, trigger a scan
+     * so as to kick of autojoin.
+     */
+    public void startScanForUntrustedSettingChange() {
+        sendMessage(CMD_START_SCAN, SET_ALLOW_UNTRUSTED_SOURCE);
+    }
 
     /**
      * Initiate a wifi scan. If workSource is not null, blame is given to it, otherwise blame is
@@ -5204,7 +5213,14 @@ public class WifiStateMachine extends StateMachine {
                 mDhcpStateMachine.doQuit();
             }
 
-            if (DBG) log("stopping supplicant");
+            String suppState = System.getProperty("init.svc.wpa_supplicant");
+            if (suppState == null) suppState = "unknown";
+            String p2pSuppState = System.getProperty("init.svc.p2p_supplicant");
+            if (p2pSuppState == null) p2pSuppState = "unknown";
+
+            loge("SupplicantStoppingState: stopSupplicant "
+                    + " init.svc.wpa_supplicant=" + suppState
+                    + " init.svc.p2p_supplicant=" + p2pSuppState);
             mWifiMonitor.stopSupplicant();
 
             /* Send ourselves a delayed message to indicate failure after a wait time */
