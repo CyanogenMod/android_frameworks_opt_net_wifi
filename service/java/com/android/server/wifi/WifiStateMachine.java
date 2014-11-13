@@ -1218,7 +1218,7 @@ public class WifiStateMachine extends StateMachine {
      * so as to kick of autojoin.
      */
     public void startScanForUntrustedSettingChange() {
-        sendMessage(CMD_START_SCAN, SET_ALLOW_UNTRUSTED_SOURCE);
+        startScan(SET_ALLOW_UNTRUSTED_SOURCE, 0, null, null);
     }
 
     /**
