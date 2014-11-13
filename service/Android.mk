@@ -72,6 +72,7 @@ LOCAL_SHARED_LIBRARIES += \
 	libcutils \
 	libnl \
 	libandroid_runtime \
+	libhardware_legacy \
 	libutils \
 	libdl
 
