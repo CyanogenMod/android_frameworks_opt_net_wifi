@@ -726,7 +726,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
 
-            if(config != null && config.status == Status.DISABLED
+            if(config != null && config.status == Status.DISABLED && !config.ephemeral
                     && (config.autoJoinStatus
                     <= WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)) {
 
