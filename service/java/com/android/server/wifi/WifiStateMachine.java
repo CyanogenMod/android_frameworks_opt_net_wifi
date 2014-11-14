@@ -297,6 +297,9 @@ public class WifiStateMachine extends StateMachine {
     /* Tracks sequence number on a periodic scan message */
     private int mPeriodicScanToken = 0;
 
+    /* Tracks sequence number on a periodic scan message in case of PNO failure */
+    private int mPnoPeriodicScanToken = 0;
+
     // Wakelock held during wifi start/stop and driver load/unload
     private PowerManager.WakeLock mWakeLock;
 
@@ -536,6 +539,9 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_ENABLE_TDLS                      = BASE + 92;
     /* DHCP/IP configuration watchdog */
     static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER    = BASE + 93;
+    /* When there are saved networks and PNO fails, we do a periodic scan to notify
+       a saved/open network in suspend mode */
+    static final int CMD_PNO_PERIODIC_SCAN                = BASE + 94;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
@@ -3006,10 +3012,7 @@ public class WifiStateMachine extends StateMachine {
         if (startBackgroundScanIfNeeded) {
             if (mEnableBackgroundScan) {
                 if (!mWifiNative.enableBackgroundScan(true)) {
-                    mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
-                    setScanAlarm(true, 200);
-                } else {
-                    setScanAlarm(false, 0);
+                    handlePnoFailError();
                 }
             } else {
                mWifiNative.enableBackgroundScan(false);
@@ -7659,7 +7662,7 @@ public class WifiStateMachine extends StateMachine {
              * - screen dark and PNO supported => scan alarm disabled
              * - everything else => scan alarm enabled with mDefaultFrameworkScanIntervalMs period
              */
-            if ((mScreenOn == false) && mEnableBackgroundScan) { //mEnableBackgroundScan) {
+            if ((mScreenOn == false) && mEnableBackgroundScan) { //mEnableBackgroundScan)
                 /* If a regular scan result is pending, do not initiate background
                  * scan until the scan results are returned. This is needed because
                  * initiating a background scan will cancel the regular scan and
@@ -7668,10 +7671,7 @@ public class WifiStateMachine extends StateMachine {
                  */
                 if (!mIsScanOngoing) {
                     if (!mWifiNative.enableBackgroundScan(true)) {
-                        mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
-                        setScanAlarm(true, 200);
-                    } else {
-                        setScanAlarm(false, 0);
+                        handlePnoFailError();
                     }
                 }
             } else {
@@ -7691,6 +7691,7 @@ public class WifiStateMachine extends StateMachine {
             mDisconnectedTimeStamp = System.currentTimeMillis();
 
         }
+
         @Override
         public boolean processMessage(Message message) {
             boolean ret = HANDLED;
@@ -7707,6 +7708,16 @@ public class WifiStateMachine extends StateMachine {
                                     ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
                     }
                     break;
+                case CMD_PNO_PERIODIC_SCAN:
+                     if ((message.arg1 == mPnoPeriodicScanToken) &&
+                         (mEnableBackgroundScan) &&
+                       (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
+                         startScan(UNKNOWN_SCAN_SOURCE, -1, null, null);
+                         sendMessageDelayed(obtainMessage(CMD_PNO_PERIODIC_SCAN,
+                                             ++mPnoPeriodicScanToken, 0),
+                                             mDefaultFrameworkScanIntervalMs);
+                     }
+                     break;
                 case WifiManager.FORGET_NETWORK:
                 case CMD_REMOVE_NETWORK:
                     // Set up a delayed message here. After the forget/remove is handled
@@ -7759,10 +7770,7 @@ public class WifiStateMachine extends StateMachine {
                     /* Re-enable background scan when a pending scan result is received */
                     if (mEnableBackgroundScan && mIsScanOngoing) {
                         if (!mWifiNative.enableBackgroundScan(true)) {
-                            mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
-                            setScanAlarm(true, 200);
-                        } else {
-                            setScanAlarm(false, 0);
+                            handlePnoFailError();
                         }
                     }
                     /* Handled in parent state */
@@ -7785,10 +7793,7 @@ public class WifiStateMachine extends StateMachine {
                     } else if (mEnableBackgroundScan && !mP2pConnected.get() &&
                                (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
                         if (!mWifiNative.enableBackgroundScan(true)) {
-                            mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
-                            setScanAlarm(true, 200);
-                        } else {
-                            setScanAlarm(false, 0);
+                            handlePnoFailError();
                         }
                     }
                 case CMD_RECONNECT:
@@ -8364,6 +8369,19 @@ public class WifiStateMachine extends StateMachine {
                             Settings.Global.WIFI_SUPPLICANT_SCAN_INTERVAL_WFD_CONNECTED_MS,
                             defaultWfdIntervel);
             mWifiNative.setScanInterval((int) wfdScanIntervalMs / 1000);
+        }
+    }
+
+    private void handlePnoFailError() {
+        if (!mP2pConnected.get() &&
+            (mWifiConfigStore.getConfiguredNetworks().size() == 0)) {
+            return;
+        }
+        if (mEnableBackgroundScan &&
+            (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
+            sendMessageDelayed(obtainMessage(CMD_PNO_PERIODIC_SCAN,
+                               ++mPnoPeriodicScanToken, 0),
+                               mDefaultFrameworkScanIntervalMs);
         }
     }
 }
