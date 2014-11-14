@@ -482,7 +482,7 @@ public class WifiStateMachine extends StateMachine {
                             }
                         }
 
-                        mWifiConfigStore.writeKnownNetworkHistory();
+                        mWifiConfigStore.writeKnownNetworkHistory(false);
 
                         sendMessage(newMessage);
                         dialog.dismiss();
@@ -500,7 +500,7 @@ public class WifiStateMachine extends StateMachine {
                             }
                         }
 
-                        mWifiConfigStore.writeKnownNetworkHistory();
+                        mWifiConfigStore.writeKnownNetworkHistory(false);
 
                         dialog.dismiss();
                     }
