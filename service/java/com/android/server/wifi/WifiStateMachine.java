@@ -1939,10 +1939,16 @@ public class WifiStateMachine extends StateMachine {
     }
 
     private void handleScanRequest(int type, Message message) {
+        ScanSettings settings = null;
+        WorkSource workSource = null;
+
         // unbundle parameters
         Bundle bundle = (Bundle) message.obj;
-        ScanSettings settings = bundle.getParcelable(CUSTOMIZED_SCAN_SETTING);
-        WorkSource workSource = bundle.getParcelable(CUSTOMIZED_SCAN_WORKSOURCE);
+
+        if (bundle != null) {
+            settings = bundle.getParcelable(CUSTOMIZED_SCAN_SETTING);
+            workSource = bundle.getParcelable(CUSTOMIZED_SCAN_WORKSOURCE);
+        }
 
         // parse scan settings
         String freqs = null;
