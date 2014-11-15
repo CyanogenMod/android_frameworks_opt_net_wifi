@@ -894,8 +894,8 @@ public class WifiStateMachine extends StateMachine {
         mLastSignalLevel = -1;
 
         mNetlinkTracker = new NetlinkTracker(mInterfaceName, new NetlinkTracker.Callback() {
-            public void update() {
-                sendMessage(CMD_UPDATE_LINKPROPERTIES);
+            public void update(LinkProperties lp) {
+                sendMessage(CMD_UPDATE_LINKPROPERTIES, lp);
             }
         });
         try {
@@ -3903,7 +3903,7 @@ public class WifiStateMachine extends StateMachine {
      * - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
      * - HTTP proxy: the wifi config store.
      */
-    private void updateLinkProperties(int reason) {
+    private void updateLinkProperties(int reason, LinkProperties lp) {
         LinkProperties newLp = new LinkProperties();
 
         // Interface name and proxy are locally configured.
@@ -3911,12 +3911,11 @@ public class WifiStateMachine extends StateMachine {
         newLp.setHttpProxy(mWifiConfigStore.getProxyProperties(mLastNetworkId));
 
         // IPv4/v6 addresses, IPv6 routes and IPv6 DNS servers come from netlink.
-        LinkProperties netlinkLinkProperties = mNetlinkTracker.getLinkProperties();
-        newLp.setLinkAddresses(netlinkLinkProperties.getLinkAddresses());
-        for (RouteInfo route : netlinkLinkProperties.getRoutes()) {
+        newLp.setLinkAddresses(lp.getLinkAddresses());
+        for (RouteInfo route : lp.getRoutes()) {
             newLp.addRoute(route);
         }
-        for (InetAddress dns : netlinkLinkProperties.getDnsServers()) {
+        for (InetAddress dns : lp.getDnsServers()) {
             newLp.addDnsServer(dns);
         }
 
@@ -3924,7 +3923,7 @@ public class WifiStateMachine extends StateMachine {
         synchronized (mDhcpResultsLock) {
             // Even when we're using static configuration, we don't need to look at the config
             // store, because static IP configuration also populates mDhcpResults.
-            if ((mDhcpResults != null)) {
+            if ((mDhcpResults != null) && lp.hasIPv4Address()) {
                 for (RouteInfo route : mDhcpResults.getRoutes(mInterfaceName)) {
                     newLp.addRoute(route);
                 }
@@ -4038,7 +4037,8 @@ public class WifiStateMachine extends StateMachine {
 
             case CMD_UPDATE_LINKPROPERTIES:
                 // IP addresses, DNS servers, etc. changed. Act accordingly.
-                if (wasProvisioned && !isProvisioned) {
+                boolean isStatic = mWifiConfigStore.isUsingStaticIp(mLastNetworkId);
+                if (wasProvisioned && !isProvisioned && !isStatic) {
                     // We no longer have a usable network configuration. Disconnect.
                     sendMessage(CMD_IP_CONFIGURATION_LOST);
                 } else if (!wasProvisioned && isProvisioned) {
@@ -4403,7 +4403,7 @@ public class WifiStateMachine extends StateMachine {
         }
         mWifiInfo.setInetAddress(addr);
         mWifiInfo.setMeteredHint(dhcpResults.hasMeteredHint());
-        updateLinkProperties(reason);
+        updateLinkProperties(reason, mNetlinkTracker.getLinkProperties());
     }
 
     private void handleSuccessfulIpConfiguration() {
@@ -4440,7 +4440,7 @@ public class WifiStateMachine extends StateMachine {
         if (PDBG) {
             loge("wifistatemachine handleIPv4Failure");
         }
-        updateLinkProperties(reason);
+        updateLinkProperties(reason, mNetlinkTracker.getLinkProperties());
     }
 
     private void handleIpConfigurationLost() {
@@ -4778,7 +4778,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 /* Link configuration (IP address, DNS, ...) changes notified via netlink */
                 case CMD_UPDATE_LINKPROPERTIES:
-                    updateLinkProperties(CMD_UPDATE_LINKPROPERTIES);
+                    updateLinkProperties(CMD_UPDATE_LINKPROPERTIES, (LinkProperties)message.obj);
                     break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 case CMD_IP_CONFIGURATION_LOST:
@@ -6518,7 +6518,8 @@ public class WifiStateMachine extends StateMachine {
                             }
                             if (result.hasProxyChanged()) {
                                 log("Reconfiguring proxy on connection");
-                                updateLinkProperties(CMD_UPDATE_LINKPROPERTIES);
+                                updateLinkProperties(CMD_UPDATE_LINKPROPERTIES,
+                                        mNetlinkTracker.getLinkProperties());
                             }
                         }
                         replyToMessage(message, WifiManager.SAVE_NETWORK_SUCCEEDED);
