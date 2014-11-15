@@ -1134,6 +1134,7 @@ public class WifiNative {
     private static int sP2p0Index = -1;
 
     private static boolean sHalIsStarted = false;
+    private static boolean sHalFailed = false;
 
     private static native boolean startHalNative();
     private static native void stopHalNative();
@@ -1151,14 +1152,16 @@ public class WifiNative {
         synchronized (mLock) {
             if (sHalIsStarted)
                 return true;
-            if (startHalNative()) {
-                getInterfaces();
+            if (sHalFailed)
+                return false;
+            if (startHalNative() && (getInterfaces() != 0) && (sWlan0Index != -1)) {
                 new MonitorThread().start();
                 sHalIsStarted = true;
                 return true;
             } else {
                 Log.i(TAG, "Could not start hal");
                 sHalIsStarted = false;
+                sHalFailed = true;
                 return false;
             }
         }
