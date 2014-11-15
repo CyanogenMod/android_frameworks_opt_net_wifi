@@ -2162,6 +2162,13 @@ public class WifiStateMachine extends StateMachine {
         return mWifiNative.getNfcWpsConfigurationToken(netId);
     }
 
+    void enableBackgroundScan(boolean enable) {
+        if (enable) {
+            mWifiConfigStore.enableAllNetworks();
+        }
+        mWifiNative.enableBackgroundScan(enable);
+    }
+
     /**
      * Blacklist a BSSID. This will avoid the AP if there are
      * alternate APs to connect
@@ -2966,7 +2973,8 @@ public class WifiStateMachine extends StateMachine {
                 + " startBackgroundScanIfNeeded:" + startBackgroundScanIfNeeded);
 
         if (startBackgroundScanIfNeeded) {
-            mWifiNative.enableBackgroundScan(mEnableBackgroundScan);
+            // to scan for them in background, we need all networks enabled
+            enableBackgroundScan(mEnableBackgroundScan);
         }
 
         if (DBG) log("handleScreenStateChanged Exit: " + screenOn);
@@ -6353,7 +6361,7 @@ public class WifiStateMachine extends StateMachine {
                         } else if (didDisconnect) {
                             transitionTo(mDisconnectingState);
                         } else {
-                            transitionTo(mDisconnectedState);
+                            /* Already in disconnected state, nothing to change */
                         }
                     } else {
                         loge("Failed to connect config: " + config + " netId: " + netId);
@@ -7675,14 +7683,12 @@ public class WifiStateMachine extends StateMachine {
             /** clear the roaming state, if we were roaming, we failed */
             mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
 
-            // Reenable all networks, allow for hidden networks to be scanned
-            mWifiConfigStore.enableAllNetworks();
-
             /**
              * - screen dark and PNO supported => scan alarm disabled
              * - everything else => scan alarm enabled with mDefaultFrameworkScanIntervalMs period
              */
-            if ((mScreenOn == false) && mEnableBackgroundScan) { //mEnableBackgroundScan) {
+            if ((mScreenOn == false) && mEnableBackgroundScan) {
+
                 /* If a regular scan result is pending, do not initiate background
                  * scan until the scan results are returned. This is needed because
                  * initiating a background scan will cancel the regular scan and
@@ -7690,7 +7696,7 @@ public class WifiStateMachine extends StateMachine {
                  * cleared
                  */
                 if (!mIsScanOngoing) {
-                    mWifiNative.enableBackgroundScan(true);
+                    enableBackgroundScan(true);
                 }
             } else {
                 setScanAlarm(true, 200);
@@ -7768,7 +7774,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     /* Disable background scan temporarily during a regular scan */
                     if (mEnableBackgroundScan) {
-                        mWifiNative.enableBackgroundScan(false);
+                        enableBackgroundScan(false);
                     }
                     /* Handled in parent state */
                     ret = NOT_HANDLED;
@@ -7776,7 +7782,7 @@ public class WifiStateMachine extends StateMachine {
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                     /* Re-enable background scan when a pending scan result is received */
                     if (mEnableBackgroundScan && mIsScanOngoing) {
-                        mWifiNative.enableBackgroundScan(true);
+                        enableBackgroundScan(true);
                     }
                     /* Handled in parent state */
                     ret = NOT_HANDLED;
@@ -7821,7 +7827,7 @@ public class WifiStateMachine extends StateMachine {
         public void exit() {
             /* No need for a background scan upon exit from a disconnected state */
             if (mEnableBackgroundScan) {
-                mWifiNative.enableBackgroundScan(false);
+                enableBackgroundScan(false);
             }
             mCurrentScanAlarmMs = 0;
             setScanAlarm(false, 0);
