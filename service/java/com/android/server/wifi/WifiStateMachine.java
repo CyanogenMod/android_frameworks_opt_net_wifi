@@ -1094,10 +1094,6 @@ public class WifiStateMachine extends StateMachine {
         return mVerboseLoggingLevel;
     }
 
-    void enableRssiThreshold(int enabled) {
-        mWifiAutoJoinController.enableRssiThreshold(enabled);
-    }
-
     void enableVerboseLogging(int verbose) {
         mVerboseLoggingLevel = verbose;
         if (verbose > 0) {
