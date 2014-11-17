@@ -98,6 +98,8 @@ LOCAL_C_INCLUDES += \
 	$(JNI_H_INCLUDE) \
 	$(call include-path-for, libhardware)/hardware \
 	$(call include-path-for, libhardware_legacy)/hardware_legacy \
+	external/icu/icu4c/source/common \
+	external/icu/icu4c/source/i18n \
 	libcore/include
 
 LOCAL_SHARED_LIBRARIES += \
@@ -108,12 +110,15 @@ LOCAL_SHARED_LIBRARIES += \
 	libhardware_legacy \
 	libandroid_runtime \
 	libnl \
+	libicuuc \
+	libicui18n \
 	libdl
 
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
 LOCAL_SRC_FILES := \
 	jni/com_android_server_wifi_WifiNative.cpp \
+	jni/com_android_server_wifi_Gbk2Utf.cpp \
 	jni/jni_helper.cpp
 
 LOCAL_MODULE := libwifi-service
