@@ -1454,6 +1454,35 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    public int getNetworkIdFromSsid(String ssid) {
+        int networkId = 0;
+        int ret = -1;
+        String listStr = mWifiNative.listNetworks();
+        if (VDBG) loge("getNetworkIdFromSsid " + ssid);
+        if (listStr == null)
+            return -1;
+        String[] lines = listStr.split("\n");
+
+        /* Skip the first line, which is a header */
+        for (int i = 1; i < lines.length; i++) {
+            String[] result = lines[i].split("\t");
+            if (VDBG) loge("getNetworkIdFromSsid " + result[1]);
+            /* network-id | ssid | bssid | flags */
+
+            if (result[1].equals(ssid)) {
+                try {
+                    networkId = Integer.parseInt(result[0]);
+                    if (VDBG) loge("getNetworkIdFromSsid " + networkId);
+                    return networkId;
+                } catch(NumberFormatException e) {
+                    loge("Failed to read network-id '" + result[0] + "'");
+                    continue;
+                }
+            }
+        }
+        return -1;
+    }
+
     private Map<String, String> readNetworkVariablesFromSupplicantFile(String key) {
         Map<String, String> result = new HashMap<>();
         BufferedReader reader = null;
