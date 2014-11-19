@@ -1056,7 +1056,7 @@ public class WifiStateMachine extends StateMachine {
 
     PendingIntent getPrivateBroadcast(String action, int requestCode) {
         Intent intent = new Intent(action, null);
-        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);        
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.setPackage(this.getClass().getPackage().getName());
         return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
     }
@@ -6280,8 +6280,7 @@ public class WifiStateMachine extends StateMachine {
                     mWifiNative.disconnect();
                     break;
                 case CMD_RECONNECT:
-                    lastConnectAttempt = System.currentTimeMillis();
-                    mWifiNative.reconnect();
+                    mWifiAutoJoinController.attemptAutoJoin();
                     break;
                 case CMD_REASSOCIATE:
                     lastConnectAttempt = System.currentTimeMillis();
