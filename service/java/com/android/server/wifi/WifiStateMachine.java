@@ -198,6 +198,9 @@ public class WifiStateMachine extends StateMachine {
     /* Chipset supports background scan */
     private final boolean mBackgroundScanSupported;
 
+    /* Flag to verify backgroundScan is configured successfully */
+    private boolean mBackgroundScanConfigured = false;
+
     private String mInterfaceName;
     /* Tethering interface could be separate from wlan interface */
     private String mTetherInterfaceName;
@@ -7709,9 +7712,9 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_PNO_PERIODIC_SCAN:
-                     if ((message.arg1 == mPnoPeriodicScanToken) &&
-                         (mEnableBackgroundScan) &&
-                       (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
+                     if ((mBackgroundScanConfigured == false) &&
+                         (message.arg1 == mPnoPeriodicScanToken) &&
+                         (mEnableBackgroundScan)) {
                          startScan(UNKNOWN_SCAN_SOURCE, -1, null, null);
                          sendMessageDelayed(obtainMessage(CMD_PNO_PERIODIC_SCAN,
                                              ++mPnoPeriodicScanToken, 0),
@@ -7794,6 +7797,9 @@ public class WifiStateMachine extends StateMachine {
                                (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
                         if (!mWifiNative.enableBackgroundScan(true)) {
                             handlePnoFailError();
+                        } else {
+                            if (DBG) log("Stop periodic scan on PNO success");
+                            mBackgroundScanConfigured = true;
                         }
                     }
                 case CMD_RECONNECT:
@@ -8373,12 +8379,15 @@ public class WifiStateMachine extends StateMachine {
     }
 
     private void handlePnoFailError() {
+        /* PNO should not fail when P2P is not connected and there are
+           saved profiles */
         if (!mP2pConnected.get() &&
             (mWifiConfigStore.getConfiguredNetworks().size() == 0)) {
             return;
         }
-        if (mEnableBackgroundScan &&
-            (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
+        /* Trigger a periodic scan for every 300Sec if PNO fails */
+        if (mEnableBackgroundScan) {
+            mBackgroundScanConfigured = false;
             sendMessageDelayed(obtainMessage(CMD_PNO_PERIODIC_SCAN,
                                ++mPnoPeriodicScanToken, 0),
                                mDefaultFrameworkScanIntervalMs);
