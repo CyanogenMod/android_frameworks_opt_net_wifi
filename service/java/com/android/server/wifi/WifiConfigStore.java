@@ -261,6 +261,8 @@ public class WifiConfigStore extends IpConfigStore {
             = "ASSOCIATED_FULL_SCAN_BACKOFF_PERIOD:   ";
     private static final String ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY
             = "ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED:   ";
+    private static final String AUTO_JOIN_SCAN_INTERVAL_WHEN_P2P_CONNECTED_KEY
+            = "AUTO_JOIN_SCAN_INTERVAL_WHEN_P2P_CONNECTED:   ";
     private static final String ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY
             = "ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS:   ";
 
@@ -351,6 +353,7 @@ public class WifiConfigStore extends IpConfigStore {
     boolean showNetworks = true; // TODO set this back to false, used for debugging 17516271
 
     public int alwaysEnableScansWhileAssociated = 0;
+    public int autoJoinScanIntervalWhenP2pConnected = 300000;
 
     public int maxNumActiveChannelsForPartialScans = 6;
     public int maxNumPassiveChannelsForPartialScans = 2;
@@ -2454,6 +2457,31 @@ public class WifiConfigStore extends IpConfigStore {
                                 + Integer.toString(maxNumActiveChannelsForPartialScans));
                     } catch (NumberFormatException e) {
                         Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
+                    }
+                }
+                if (key.startsWith(
+                    AUTO_JOIN_SCAN_INTERVAL_WHEN_P2P_CONNECTED_KEY)) {
+                    int scanInterval;
+                    String st = key.replace(
+                                AUTO_JOIN_SCAN_INTERVAL_WHEN_P2P_CONNECTED_KEY,
+                                "");
+                    st = st.replace(SEPARATOR_KEY, "");
+                    try {
+                        scanInterval = Integer.parseInt(st);
+                        if (scanInterval >= 10000) {
+                            autoJoinScanIntervalWhenP2pConnected = scanInterval;
+                        } else {
+                            Log.d(TAG,
+                                  "Cfg value is less then 10sec, Using default="
+                                  + autoJoinScanIntervalWhenP2pConnected);
+                        }
+                        Log.d(TAG, "readAutoJoinConfig: " +
+                              "autoJoinScanIntervalWhenP2pConnected = "
+                              + Integer.toString(
+                              autoJoinScanIntervalWhenP2pConnected));
+                    } catch (NumberFormatException e) {
+                        Log.d(TAG, "readAutoJoinConfig: incorrect format :" +
+                              key);
                     }
                 }
             }

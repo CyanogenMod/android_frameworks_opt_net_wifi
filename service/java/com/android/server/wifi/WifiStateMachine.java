@@ -1619,13 +1619,39 @@ public class WifiStateMachine extends StateMachine {
     private static int MESSAGE_HANDLING_STATUS_HANDLING_ERROR = -7;
 
     private int messageHandlingStatus = 0;
+    private static long lastScanDuringP2p = 0;
 
     //TODO: this is used only to track connection attempts, however the link state and packet per
     //TODO: second logic should be folded into that
-    private boolean isScanAllowed() {
+    private boolean isScanAllowed(int scanSource) {
         long now = System.currentTimeMillis();
         if (lastConnectAttempt != 0 && (now - lastConnectAttempt) < 10000) {
             return false;
+        }
+        if (mP2pConnected.get()) {
+            if (scanSource == SCAN_ALARM_SOURCE) {
+                if (VDBG) {
+                    logd("P2P connected: lastScanDuringP2p=" +
+                         lastScanDuringP2p +
+                         " CurrentTime=" + now +
+                         " autoJoinScanIntervalWhenP2pConnected=" +
+                         mWifiConfigStore.autoJoinScanIntervalWhenP2pConnected);
+                }
+
+                if (lastScanDuringP2p == 0 || (now - lastScanDuringP2p)
+                    < mWifiConfigStore.autoJoinScanIntervalWhenP2pConnected) {
+                    if (lastScanDuringP2p == 0) lastScanDuringP2p = now;
+                    if (VDBG) {
+                        logd("P2P connected, discard scan within " +
+                             mWifiConfigStore.autoJoinScanIntervalWhenP2pConnected
+                             + " milliseconds");
+                    }
+                    return false;
+                }
+                lastScanDuringP2p = now;
+            }
+        } else {
+            lastScanDuringP2p = 0;
         }
         return true;
     }
@@ -6842,6 +6868,11 @@ public class WifiStateMachine extends StateMachine {
                     deferMessage(message);
                     break;
                 case CMD_START_SCAN:
+                    if (!isScanAllowed(message.arg1)) {
+                        // Ignore the scan request
+                        if (VDBG) logd("L2ConnectedState: ignore scan");
+                        return HANDLED;
+                    }
                     //if (DBG) {
                         loge("WifiStateMachine CMD_START_SCAN source " + message.arg1
                               + " txSuccessRate="+String.format( "%.2f", mWifiInfo.txSuccessRate)
@@ -7764,8 +7795,9 @@ public class WifiStateMachine extends StateMachine {
                     ret = NOT_HANDLED;
                     break;
                 case CMD_START_SCAN:
-                    if (!isScanAllowed()) {
+                    if (!isScanAllowed(message.arg1)) {
                         // Ignore the scan request
+                        if (VDBG) logd("DisconnectedState: ignore scan");
                         return HANDLED;
                     }
                     /* Disable background scan temporarily during a regular scan */
