@@ -230,6 +230,7 @@ public class WifiStateMachine extends StateMachine {
     private static final int SCAN_ALARM_SOURCE = -2;
     private static final int ADD_OR_UPDATE_SOURCE = -3;
     private static final int SET_ALLOW_UNTRUSTED_SOURCE = -4;
+    private static final int ENABLE_WIFI = -5;
 
     private static final int SCAN_REQUEST_BUFFER_MAX_SIZE = 10;
     private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
@@ -5615,7 +5616,12 @@ public class WifiStateMachine extends StateMachine {
                             mWifiConfigStore.enableAllNetworks();
                         }
 
-                        mWifiNative.reconnect();
+                        // Try autojoining with recent network already present in the cache
+                        // If none are found then trigger a scan which will trigger autojoin
+                        // upon reception of scan results event
+                        if (!mWifiAutoJoinController.attemptAutoJoin()) {
+                            startScan(ENABLE_WIFI, 0, null, null);
+                        }
 
                         mOperationalMode = CONNECT_MODE;
                         transitionTo(mDisconnectedState);
