@@ -1115,8 +1115,10 @@ public class WifiAutoJoinController {
 
     /**
      * attemptAutoJoin() function implements the core of the a network switching algorithm
+     * Return false if no acceptable networks were found.
      */
-    void attemptAutoJoin() {
+    boolean attemptAutoJoin() {
+        boolean found = false;
         didOverride = false;
         didBailDueToWeakRssi = false;
         int networkSwitchType = AUTO_JOIN_IDLE;
@@ -1135,7 +1137,7 @@ public class WifiAutoJoinController {
         if (list == null) {
             if (VDBG)  logDbg("attemptAutoJoin nothing known=" +
                     mWifiConfigStore.getconfiguredNetworkSize());
-            return;
+            return false;
         }
 
         // Find the currently connected network: ask the supplicant directly
@@ -1187,7 +1189,7 @@ public class WifiAutoJoinController {
                 // mWifiNative.status() command, which allow us to know that
                 // supplicant has started association process, even though we didnt yet get the
                 // SUPPLICANT_STATE_CHANGE message.
-                return;
+                return false;
             }
         }
         if (DBG) {
@@ -1214,7 +1216,7 @@ public class WifiAutoJoinController {
                         + Integer.toString(supplicantNetId) + " WifiStateMachine="
                         + Integer.toString(currentConfiguration.networkId));
                 mWifiStateMachine.disconnectCommand();
-                return;
+                return false;
             } else if (currentConfiguration.ephemeral && (!mAllowUntrustedConnections ||
                     !mNetworkScoreCache.isScoredNetwork(currentConfiguration.lastSeen()))) {
                 // The current connection is untrusted (the framework added it), but we're either
@@ -1222,14 +1224,14 @@ public class WifiAutoJoinController {
                 // since we connected. Drop the current connection and perform the rest of autojoin.
                 logDbg("attemptAutoJoin() disconnecting from unwanted ephemeral network");
                 mWifiStateMachine.disconnectCommand();
-                return;
+                return false;
             } else {
                 mCurrentConfigurationKey = currentConfiguration.configKey();
             }
         } else {
             if (supplicantNetId != WifiConfiguration.INVALID_NETWORK_ID) {
                 // Maybe in the process of associating, skip this attempt
-                return;
+                return false;
             }
         }
 
@@ -1640,6 +1642,7 @@ public class WifiAutoJoinController {
                 }
                 mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
                             candidate.networkId, networkSwitchType, candidate);
+                found = true;
             }
         }
 
@@ -1688,9 +1691,11 @@ public class WifiAutoJoinController {
 
                 mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
                             currentConfiguration.networkId, 1, roamCandidate);
+                found = true;
             }
         }
         if (VDBG) logDbg("Done attemptAutoJoin status=" + Integer.toString(networkSwitchType));
+        return found;
     }
 }
 
