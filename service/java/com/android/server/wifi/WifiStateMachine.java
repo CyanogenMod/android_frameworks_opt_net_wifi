@@ -185,6 +185,9 @@ public class WifiStateMachine extends StateMachine {
     // as well the number of scans results returned by the supplicant with that message
     private int mNumScanResultsKnown;
     private int mNumScanResultsReturned;
+    private int mWpsNetworkId = -1;
+    private boolean mWpsSuccess = false;
+    private final int reason3 = 3;
 
     /* Batch scan results */
     private final List<BatchedScanResult> mBatchedScanResults =
@@ -619,6 +622,9 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_AUTO_SAVE_NETWORK                = BASE + 146;
 
     static final int CMD_ASSOCIATED_BSSID                = BASE + 147;
+
+    /* Supplicant is trying to associate to a given SSID */
+    static final int CMD_TARGET_SSID                     = BASE + 148;
 
     /* Wifi state machine modes of operation */
     /* CONNECT_MODE - connect to any 'known' AP when it becomes available */
@@ -5978,6 +5984,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_DISCONNECTING_WATCHDOG_TIMER:
                 s = "CMD_DISCONNECTING_WATCHDOG_TIMER";
                 break;
+            case CMD_TARGET_SSID:
+                s = "CMD_TARGET_SSID";
+                break;
             default:
                 s = "what:" + Integer.toString(what);
                 break;
@@ -7837,6 +7846,8 @@ public class WifiStateMachine extends StateMachine {
         @Override
         public void enter() {
             mSourceMessage = Message.obtain(getCurrentMessage());
+            mWpsNetworkId = -1;
+            mWpsSuccess = false;
         }
         @Override
         public boolean processMessage(Message message) {
@@ -7845,6 +7856,19 @@ public class WifiStateMachine extends StateMachine {
             switch (message.what) {
                 case WifiMonitor.WPS_SUCCESS_EVENT:
                     // Ignore intermediate success, wait for full connection
+                    if (mWifiConfigStore.enableAutoJoinWhenAssociated) {
+                        mWpsSuccess = true;
+                    }
+                    break;
+                case CMD_TARGET_SSID:
+                    /* Trying to associate to this SSID */
+                    if (mWpsSuccess && message.obj != null) {
+                        String SSID = (String) message.obj;
+                        mWpsNetworkId =
+                            mWifiConfigStore.getNetworkIdFromSsid(SSID);
+                        /* get only once network id , ignore next connect */
+                        mWpsSuccess = false;
+                    }
                     break;
                 case WifiMonitor.NETWORK_CONNECTION_EVENT:
                     replyToMessage(mSourceMessage, WifiManager.WPS_COMPLETED);
@@ -7909,8 +7933,14 @@ public class WifiStateMachine extends StateMachine {
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     return HANDLED;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
-                    if (DBG) log("Network connection lost");
+                    if (DBG) {
+                        loge("Network connection lost reason = "
+                              + message.arg2);
+                    }
                     handleNetworkDisconnect();
+                    if (mWpsNetworkId >= 0 && message.arg2 != reason3) {
+                        mWifiNative.enableNetwork(mWpsNetworkId, true);
+                    }
                     break;
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
                     if (DBG) log("Ignore Assoc reject event during WPS Connection");
