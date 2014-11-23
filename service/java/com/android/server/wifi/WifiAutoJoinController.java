@@ -52,6 +52,7 @@ public class WifiAutoJoinController {
     private static final boolean mStaStaSupported = false;
 
     public static int mScanResultMaximumAge = 40000; /* milliseconds unit */
+    public static int mScanResultAutoJoinAge = 5000; /* milliseconds unit */
 
     private String mCurrentConfigurationKey = null; //used by autojoin
 
@@ -341,7 +342,7 @@ public class WifiAutoJoinController {
             logDbg("compareNetwork will compare " + candidate.configKey()
                     + " with current " + currentNetwork.configKey());
         }
-        int order = compareWifiConfigurationsTop(currentNetwork, candidate);
+        int order = compareWifiConfigurations(currentNetwork, candidate);
 
         // The lastSelectedConfiguration is the configuration the user has manually selected
         // thru WifiPicker, or that a 3rd party app asked us to connect to via the
@@ -680,7 +681,9 @@ public class WifiAutoJoinController {
         return order;
     }
 
-
+    /**
+     * b/18490330 only use scorer for untrusted networks
+     *
     int compareWifiConfigurationsWithScorer(WifiConfiguration a, WifiConfiguration b) {
 
         boolean aIsActive = false;
@@ -695,8 +698,8 @@ public class WifiAutoJoinController {
                 bIsActive = true;
             }
         }
-        int scoreA = getConfigNetworkScore(a, 3000, aIsActive);
-        int scoreB = getConfigNetworkScore(b, 3000, bIsActive);
+        int scoreA = getConfigNetworkScore(a, mScanResultAutoJoinAge, aIsActive);
+        int scoreB = getConfigNetworkScore(b, mScanResultAutoJoinAge, bIsActive);
 
         // Both configurations need to have a score for the scorer to be used
         // ...and the scores need to be different:-)
@@ -736,6 +739,7 @@ public class WifiAutoJoinController {
         // If scoreA > scoreB, the comparison is descending hence the return value is negative
         return scoreB - scoreA;
     }
+     */
 
     int compareWifiConfigurations(WifiConfiguration a, WifiConfiguration b) {
         int order = 0;
@@ -838,6 +842,7 @@ public class WifiAutoJoinController {
         return (rssi5 < -80 && rssi24 < -90);
     }
 
+    /*
     int compareWifiConfigurationsTop(WifiConfiguration a, WifiConfiguration b) {
         int scorerOrder = compareWifiConfigurationsWithScorer(a, b);
         int order = compareWifiConfigurations(a, b);
@@ -861,6 +866,7 @@ public class WifiAutoJoinController {
         }
         return order;
     }
+    */
 
     public int rssiBoostFrom5GHzRssi(int rssi, String dbg) {
         if (!mWifiConfigStore.enable5GHzPreference) {
@@ -1133,7 +1139,8 @@ public class WifiAutoJoinController {
         WifiConfiguration candidate = null;
 
         // Obtain the subset of recently seen networks
-        List<WifiConfiguration> list = mWifiConfigStore.getRecentConfiguredNetworks(3000, false);
+        List<WifiConfiguration> list =
+                mWifiConfigStore.getRecentConfiguredNetworks(mScanResultAutoJoinAge, false);
         if (list == null) {
             if (VDBG)  logDbg("attemptAutoJoin nothing known=" +
                     mWifiConfigStore.getconfiguredNetworkSize());
@@ -1417,7 +1424,7 @@ public class WifiAutoJoinController {
                     logDbg("attemptAutoJoin will compare candidate  " + candidate.configKey()
                             + " with " + config.configKey());
                 }
-                int order = compareWifiConfigurationsTop(candidate, config);
+                int order = compareWifiConfigurations(candidate, config);
 
                 // The lastSelectedConfiguration is the configuration the user has manually selected
                 // thru WifiPicker, or that a 3rd party app asked us to connect to via the
@@ -1460,9 +1467,7 @@ public class WifiAutoJoinController {
         }
 
         // Now, go thru scan result to try finding a better untrusted network
-        // TODO: Consider only running this when we can actually connect to these networks. For now,
-        // this is useful for debugging.
-        if (mNetworkScoreCache != null) {
+        if (mNetworkScoreCache != null && mAllowUntrustedConnections) {
             int rssi5 = WifiConfiguration.INVALID_RSSI;
             int rssi24 = WifiConfiguration.INVALID_RSSI;
             if (candidate != null) {
@@ -1484,7 +1489,7 @@ public class WifiAutoJoinController {
                             !isOpenNetwork(result)) {
                         continue;
                     }
-                    if ((nowMs - result.seen) < 3000) {
+                    if ((nowMs - result.seen) < mScanResultAutoJoinAge) {
                         // Increment usage count for the network
                         mWifiConnectionStatistics.incrementOrAddUntrusted(result.SSID, 0, 1);
 
@@ -1520,12 +1525,10 @@ public class WifiAutoJoinController {
 
                 // At this point, we have an untrusted network candidate.
                 // Create the new ephemeral configuration and see if we should switch over
-                if (mAllowUntrustedConnections) {
-                    candidate =
-                            mWifiConfigStore.wifiConfigurationFromScanResult(untrustedCandidate);
-                    candidate.allowedKeyManagement.set(KeyMgmt.NONE);
-                    candidate.ephemeral = true;
-                }
+                candidate =
+                        mWifiConfigStore.wifiConfigurationFromScanResult(untrustedCandidate);
+                candidate.allowedKeyManagement.set(KeyMgmt.NONE);
+                candidate.ephemeral = true;
             }
         }
 
@@ -1608,7 +1611,8 @@ public class WifiAutoJoinController {
                     // Second step: Look for the best Scan result for this configuration
                     // TODO this algorithm should really be done in one step
                     String currentBSSID = mWifiStateMachine.getCurrentBSSID();
-                    ScanResult roamCandidate = attemptRoam(null, candidate, 3000, null);
+                    ScanResult roamCandidate =
+                            attemptRoam(null, candidate, mScanResultAutoJoinAge, null);
                     if (roamCandidate != null && currentBSSID != null
                             && currentBSSID.equals(roamCandidate.BSSID)) {
                         // Sanity, we were already asociated to that candidate
@@ -1639,8 +1643,8 @@ public class WifiAutoJoinController {
         if (networkSwitchType == AUTO_JOIN_IDLE) {
             String currentBSSID = mWifiStateMachine.getCurrentBSSID();
             // Attempt same WifiConfiguration roaming
-            ScanResult roamCandidate = attemptRoam(null, currentConfiguration, 3000,
-                    currentBSSID);
+            ScanResult roamCandidate =
+                    attemptRoam(null, currentConfiguration, mScanResultAutoJoinAge, currentBSSID);
             /**
              *  TODO: (post L initial release)
              *  consider handling linked configurations roaming (i.e. extended Roaming)
@@ -1659,7 +1663,7 @@ public class WifiAutoJoinController {
                 for (String key : currentConfiguration.linkedConfigurations.keySet()) {
                     WifiConfiguration link = mWifiConfigStore.getWifiConfiguration(key);
                     if (link != null) {
-                        roamCandidate = attemptRoam(roamCandidate, link, 3000,
+                        roamCandidate = attemptRoam(roamCandidate, link, mScanResultAutoJoinAge,
                                 currentBSSID);
                     }
                 }
