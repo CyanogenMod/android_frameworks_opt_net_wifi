@@ -4537,6 +4537,19 @@ public class WifiStateMachine extends StateMachine {
         }
 
     }
+
+    void maybeRegisterNetworkFactory() {
+        if (mNetworkFactory == null) {
+            checkAndSetConnectivityInstance();
+            if (mCm != null) {
+                mNetworkFactory = new WifiNetworkFactory(getHandler().getLooper(), mContext,
+                        NETWORKTYPE, mNetworkCapabilitiesFilter);
+                mNetworkFactory.setScoreFilter(60);
+                mNetworkFactory.register();
+            }
+        }
+    }
+
     /********************************************************
      * HSM states
      *******************************************************/
@@ -4615,12 +4628,7 @@ public class WifiStateMachine extends StateMachine {
                         sendMessageAtFrontOfQueue(CMD_SET_COUNTRY_CODE,
                                 sequenceNum, 0, countryCode);
                     }
-
-                    checkAndSetConnectivityInstance();
-                    mNetworkFactory = new WifiNetworkFactory(getHandler().getLooper(), mContext,
-                            NETWORKTYPE, mNetworkCapabilitiesFilter);
-                    mNetworkFactory.setScoreFilter(60);
-                    mCm.registerNetworkFactory(new Messenger(mNetworkFactory), NETWORKTYPE);
+                    maybeRegisterNetworkFactory();
                     break;
                 case CMD_SET_BATCHED_SCAN:
                     recordBatchedScanSettings(message.arg1, message.arg2, (Bundle)message.obj);
@@ -5010,6 +5018,7 @@ public class WifiStateMachine extends StateMachine {
                     sendMessageDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
+                    maybeRegisterNetworkFactory(); // Make sure our NetworkFactory is registered
                     closeRadioScanStats();
                     noteScanEnd();
                     setScanResults();
