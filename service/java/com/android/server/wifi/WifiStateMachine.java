@@ -3531,7 +3531,8 @@ public class WifiStateMachine extends StateMachine {
         if (DBG) {
             loge("wifi setScanResults state" + getCurrentState()
                     + " sup_state=" + state
-                    + " debouncing=" + linkDebouncing);
+                    + " debouncing=" + linkDebouncing
+                    + " mConnectionRequests=" + mConnectionRequests);
         }
         if (attemptAutoJoin) {
             messageHandlingStatus = MESSAGE_HANDLING_STATUS_PROCESSED;
@@ -6543,13 +6544,24 @@ public class WifiStateMachine extends StateMachine {
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
-                        // We selected a better config,
-                        // maybe because we could not see the last user
-                        // selection, then forget it. We will remember the selection
-                        // only if it was persisted.
-                        mWifiConfigStore.
-                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
-
+                        config = mWifiConfigStore.getWifiConfiguration(netId);
+                        if (config != null
+                                && !mWifiConfigStore.isLastSelectedConfiguration(config)) {
+                            // If we autojoined a different config than the user selected one,
+                            // it means we could not see the last user selection,
+                            // or that the last user selection was faulty and ended up blacklisted
+                            // for some reason (in which case the user is notified with an error
+                            // message in the Wifi picker), and thus we managed to auto-join away
+                            // from the selected  config. -> in that case we need to forget
+                            // the selection because we don't want to abruptly switch back to it.
+                            //
+                            // Note that the user selection is also forgotten after a period of time
+                            // during which the device has been disconnected.
+                            // The default value is 30 minutes : see the code path at bottom of
+                            // setScanResults() function.
+                            mWifiConfigStore.
+                                 setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+                        }
                         mAutoRoaming = roam;
                         if (isRoaming() || linkDebouncing) {
                             transitionTo(mRoamingState);
@@ -7938,7 +7950,8 @@ public class WifiStateMachine extends StateMachine {
             if (PDBG) {
                 loge(" Enter disconnected State scan interval " + mFrameworkScanIntervalMs
                         + " mEnableBackgroundScan= " + mEnableBackgroundScan
-                        + " screenOn=" + mScreenOn);
+                        + " screenOn=" + mScreenOn
+                        + " mFrameworkScanIntervalMs=" + mFrameworkScanIntervalMs);
             }
 
             /** clear the roaming state, if we were roaming, we failed */
