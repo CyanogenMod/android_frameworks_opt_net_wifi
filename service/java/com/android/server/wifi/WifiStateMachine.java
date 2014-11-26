@@ -234,6 +234,8 @@ public class WifiStateMachine extends StateMachine {
     private int mOperationalMode = CONNECT_MODE;
     private boolean mIsScanOngoing = false;
     private boolean mIsFullScanOngoing = false;
+    private boolean mSendScanResultsBroadcast = false;
+
     private final Queue<Message> mBufferedScanMsg = new LinkedList<Message>();
     private WorkSource mScanWorkSource = null;
     private static final int UNKNOWN_SCAN_SOURCE = -1;
@@ -241,6 +243,7 @@ public class WifiStateMachine extends StateMachine {
     private static final int ADD_OR_UPDATE_SOURCE = -3;
     private static final int SET_ALLOW_UNTRUSTED_SOURCE = -4;
     private static final int ENABLE_WIFI = -5;
+    public static final int DFS_RESTRICTED_SCAN_REQUEST = -6;
 
     private static final int SCAN_REQUEST_BUFFER_MAX_SIZE = 10;
     private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
@@ -1976,6 +1979,11 @@ public class WifiStateMachine extends StateMachine {
             if (freqs == null)
                 mBufferedScanMsg.clear();
             messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
+            if (workSource != null) {
+                // External worksource was passed along the scan request,
+                // hence always send a broadcast
+                mSendScanResultsBroadcast = true;
+            }
             return;
         }
 
@@ -5182,10 +5190,11 @@ public class WifiStateMachine extends StateMachine {
                     closeRadioScanStats();
                     noteScanEnd();
                     setScanResults();
-                    if (mIsFullScanOngoing) {
+                    if (mIsFullScanOngoing || mSendScanResultsBroadcast) {
                         /* Just updated results from full scan, let apps know about this */
                         sendScanResultsAvailableBroadcast();
                     }
+                    mSendScanResultsBroadcast = false;
                     mIsScanOngoing = false;
                     mIsFullScanOngoing = false;
                     if (mBufferedScanMsg.size() > 0)
