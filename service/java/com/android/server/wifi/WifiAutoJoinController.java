@@ -158,6 +158,7 @@ public class WifiAutoJoinController {
         int numScanResultsKnown = 0; // Record number of scan results we knew about
         WifiConfiguration associatedConfig = null;
         boolean didAssociate = false;
+        long now = System.currentTimeMillis();
 
         ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
@@ -224,7 +225,11 @@ public class WifiAutoJoinController {
                 if (associatedConfig != null && associatedConfig.SSID != null) {
                     if (VDBG) {
                         logDbg("addToScanCache save associated config "
-                                + associatedConfig.SSID + " with " + result.SSID);
+                                + associatedConfig.SSID + " with " + result.SSID
+                                + " status " + associatedConfig.autoJoinStatus
+                                + " reason " + associatedConfig.disableReason
+                                + " tsp " + associatedConfig.blackListTimestamp
+                                + " was " + (now - associatedConfig.blackListTimestamp));
                     }
                     mWifiStateMachine.sendMessage(
                             WifiStateMachine.CMD_AUTO_SAVE_NETWORK, associatedConfig);
@@ -232,7 +237,6 @@ public class WifiAutoJoinController {
                 }
             } else {
                 // If the scan result has been blacklisted fir 18 hours -> unblacklist
-                long now = System.currentTimeMillis();
                 if ((now - result.blackListTimestamp) > loseBlackListHardMilli) {
                     result.setAutoJoinStatus(ScanResult.ENABLED);
                 }
@@ -1129,6 +1133,8 @@ public class WifiAutoJoinController {
         didBailDueToWeakRssi = false;
         int networkSwitchType = AUTO_JOIN_IDLE;
 
+        long now = System.currentTimeMillis();
+
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
 
         // Reset the currentConfiguration Key, and set it only if WifiStateMachine and
@@ -1300,14 +1306,13 @@ public class WifiAutoJoinController {
                     logDbg("attemptAutoJoin skip candidate due to auto join status "
                             + Integer.toString(config.autoJoinStatus) + " key "
                             + config.configKey(true)
-                    + " reason " + config.disableReason);
+                            + " reason " + config.disableReason);
                 }
                 continue;
             }
 
             // Try to un-blacklist based on elapsed time
             if (config.blackListTimestamp > 0) {
-                long now = System.currentTimeMillis();
                 if (now < config.blackListTimestamp) {
                     /**
                      * looks like there was a change in the system clock since we black listed, and
