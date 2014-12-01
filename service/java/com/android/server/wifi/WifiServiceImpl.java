@@ -124,6 +124,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     final boolean mBatchedScanSupported;
 
+     private boolean mIsControllerStarted = false;
+
     /**
      * Asynchronous channel to WifiStateMachine
      */
@@ -351,6 +353,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         registerForBroadcasts();
 
         mWifiController.start();
+
+        mIsControllerStarted = true;
 
         // If we are already disabled (could be due to airplane mode), avoid changing persist
         // state here
@@ -664,6 +668,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             }
         } finally {
             Binder.restoreCallingIdentity(ident);
+        }
+
+        if (!mIsControllerStarted) {
+            Slog.e(TAG,"WifiController is not yet started, abort setWifiEnabled");
+            return false;
         }
 
         mWifiController.sendMessage(CMD_WIFI_TOGGLED);
@@ -1097,7 +1106,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
         if (dhcpResults.ipAddress != null &&
                 dhcpResults.ipAddress.getAddress() instanceof Inet4Address) {
-            info.ipAddress = NetworkUtils.inetAddressToInt((Inet4Address) dhcpResults.ipAddress.getAddress());
+            info.ipAddress = NetworkUtils.inetAddressToInt(
+               (Inet4Address) dhcpResults.ipAddress.getAddress());
+            info.netmask = NetworkUtils.prefixLengthToNetmaskInt(
+               dhcpResults.ipAddress.getNetworkPrefixLength());
         }
 
         if (dhcpResults.gateway != null) {

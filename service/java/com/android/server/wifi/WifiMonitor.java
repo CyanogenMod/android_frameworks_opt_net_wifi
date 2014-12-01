@@ -252,6 +252,17 @@ public class WifiMonitor {
     private static Pattern mTargetBSSIDPattern =
             Pattern.compile("Trying to associate with ((?:[0-9a-f]{2}:){5}[0-9a-f]{2}).*");
 
+   /**
+     * Regex pattern for extracting an SSID from a string.
+     * Matches a strings like the following:<pre>
+     * IFNAME=wlan0 Trying to associate with SSID 'ssidname'
+     */
+    private static final String TARGET_SSID_STR =
+                         "Trying to associate with SSID ";
+
+    private static Pattern mTargetSSIDPattern =
+            Pattern.compile("Trying to associate with SSID '(.*)'");
+
     /**
      * Regex pattern for extracting an Ethernet-style MAC address from a string.
      * Matches a strings like the following:<pre>
@@ -580,9 +591,9 @@ public class WifiMonitor {
                         mConnected = true;
                         break;
                     }
-                    if (connectTries++ < 5) {
+                    if (connectTries++ < 50) {
                         try {
-                            Thread.sleep(1000);
+                            Thread.sleep(100);
                         } catch (InterruptedException ignore) {
                         }
                     } else {
@@ -759,6 +770,8 @@ public class WifiMonitor {
                 handleHs20Events(eventStr);
             } else if (eventStr.startsWith(REQUEST_PREFIX_STR)) {
                 handleRequests(eventStr);
+            } else if (eventStr.startsWith(TARGET_SSID_STR)) {
+                handleTargetSSIDEvent(eventStr);
             } else if (eventStr.startsWith(TARGET_BSSID_STR)) {
                 handleTargetBSSIDEvent(eventStr);
             } else if (eventStr.startsWith(ASSOCIATED_WITH_STR)) {
@@ -951,6 +964,18 @@ public class WifiMonitor {
             default:
                 break;
         }
+    }
+
+    private void handleTargetSSIDEvent(String eventStr) {
+        String SSID = null;
+        Matcher match = mTargetSSIDPattern.matcher(eventStr);
+        if (match.find()) {
+            SSID = match.group(1);
+        } else {
+            Log.d(TAG, "didn't find SSID " + eventStr);
+        }
+        mStateMachine.sendMessage(WifiStateMachine.CMD_TARGET_SSID,
+                       eventLogCounter, 0, SSID);
     }
 
     private void handleTargetBSSIDEvent(String eventStr) {

@@ -180,6 +180,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
     // set country code
     public static final int SET_COUNTRY_CODE                =   BASE + 16;
+    public static final int P2P_MIRACAST_MODE_CHANGED       =   BASE + 17;
 
     public static final int ENABLED                         = 1;
     public static final int DISABLED                        = 0;
@@ -195,6 +196,8 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
     /* Invitation to join an existing p2p group */
     private boolean mJoinExistingGroup;
+
+    private boolean mIsInvite = false;
 
     /* Track whether we are in p2p discovery. This is used to avoid sending duplicate
      * broadcasts
@@ -1143,6 +1146,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                    break;
                 case SET_MIRACAST_MODE:
                     mWifiNative.setMiracastMode(message.arg1);
+                    sendMiracastModeChanged(message.arg1);
                     break;
                 case WifiP2pManager.START_LISTEN:
                     if (DBG) logd(getName() + " start listen mode");
@@ -1271,6 +1275,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                 case WifiMonitor.P2P_INVITATION_RECEIVED_EVENT:
                     WifiP2pGroup group = (WifiP2pGroup) message.obj;
                     WifiP2pDevice owner = group.getOwner();
+                    mIsInvite = true;
 
                     if (owner == null) {
                         loge("Ignored invitation from null owner");
@@ -2277,6 +2282,11 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                 new NetworkInfo(mNetworkInfo));
     }
 
+    private void sendMiracastModeChanged(int mode) {
+        mWifiChannel
+                .sendMessage(WifiP2pServiceImpl.P2P_MIRACAST_MODE_CHANGED, mode);
+    }
+
     private void sendP2pPersistentGroupsChangedBroadcast() {
         if (DBG) logd("sending p2p persistent groups changed broadcast");
         Intent intent = new Intent(WifiP2pManager.WIFI_P2P_PERSISTENT_GROUPS_CHANGED_ACTION);
@@ -2578,15 +2588,23 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
      * @param config for the peer
      */
     private void p2pConnectWithPinDisplay(WifiP2pConfig config) {
+        boolean join = false;
         WifiP2pDevice dev = fetchCurrentDeviceDetails(config);
 
-        String pin = mWifiNative.p2pConnect(config, dev.isGroupOwner());
+        if (mIsInvite) {
+            join = true;
+        } else {
+            join = dev.isGroupOwner();
+        }
+
+        String pin = mWifiNative.p2pConnect(config, join);
         try {
             Integer.parseInt(pin);
             notifyInvitationSent(pin, config.deviceAddress);
         } catch (NumberFormatException ignore) {
             // do nothing if p2pConnect did not return a pin
         }
+        mIsInvite = false;
     }
 
     /**
@@ -2765,6 +2783,10 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         String deviceName = Settings.Global.getString(mContext.getContentResolver(),
                 Settings.Global.WIFI_P2P_DEVICE_NAME);
         if (deviceName == null) {
+            if (!TextUtils.isEmpty(mContext.getResources().getString(
+                    R.string.def_wifi_direct_name))) {
+                return mContext.getResources().getString(R.string.def_wifi_direct_name);
+            }
             /* We use the 4 digits of the ANDROID_ID to have a friendly
              * default that has low likelihood of collision with a peer */
             String id = Settings.Secure.getString(mContext.getContentResolver(),
