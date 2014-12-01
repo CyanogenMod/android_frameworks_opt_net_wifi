@@ -31,6 +31,7 @@ import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
  */
 import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
 
+import android.app.ActivityManager;
 import android.app.AlarmManager;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
@@ -1194,7 +1195,7 @@ public class WifiStateMachine extends StateMachine {
 
         setInitialState(mInitialState);
 
-        setLogRecSize(3000);
+        setLogRecSize(ActivityManager.isLowRamDeviceStatic() ? 100 : 3000);
         setLogOnlyTransitions(false);
         if (VDBG) setDbg(true);
 
