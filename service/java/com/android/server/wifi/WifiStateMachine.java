@@ -1903,6 +1903,10 @@ public class WifiStateMachine extends StateMachine {
 
     /** return true iff scan request is accepted */
     private boolean startScanNative(int type, String freqs) {
+        if ((!mWifiConfigStore.enableAutoJoinWhenAssociated) &&
+            (getCurrentState() == mDisconnectedState)) {
+           type = WifiNative.SCAN_WITH_CONNECTION_SETUP;
+        }
         if (mWifiNative.scan(type, freqs)) {
             mIsScanOngoing = true;
             mIsFullScanOngoing = (freqs == null);
