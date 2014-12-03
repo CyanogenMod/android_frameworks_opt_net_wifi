@@ -42,14 +42,16 @@ include $(BUILD_STATIC_LIBRARY)
 # ============================================================
 LIB_WIFI_HAL := libwifi-hal
 
-ifeq ($(BOARD_WLAN_DEVICE), bcmdhd)
-  LIB_WIFI_HAL := libwifi-hal-bcm
-else ifeq ($(BOARD_WLAN_DEVICE), qcwcn)
-  LIB_WIFI_HAL := libwifi-hal-qcom
-else ifeq ($(BOARD_WLAN_DEVICE), mrvl)
-  # this is commented because none of the nexus devices
-  # that sport Marvell's wifi have support for HAL
-  # LIB_WIFI_HAL := libwifi-hal-mrvl
+ifneq ($(BOARD_NO_WIFI_HAL), true)
+  ifeq ($(BOARD_WLAN_DEVICE), bcmdhd)
+    LIB_WIFI_HAL := libwifi-hal-bcm
+  else ifeq ($(BOARD_WLAN_DEVICE), qcwcn)
+    LIB_WIFI_HAL := libwifi-hal-qcom
+  else ifeq ($(BOARD_WLAN_DEVICE), mrvl)
+    # this is commented because none of the nexus devices
+    # that sport Marvell's wifi have support for HAL
+    # LIB_WIFI_HAL := libwifi-hal-mrvl
+  endif
 endif
 
 # Build the HalUtil
