@@ -1489,6 +1489,11 @@ public class WifiAutoJoinController {
                             !isOpenNetwork(result)) {
                         continue;
                     }
+                    if (mWifiConfigStore.mDeletedEphemeralSSIDs.contains
+                            ("\"" + result.SSID + "\"")) {
+                        // SSID had been Forgotten by user, then don't score it
+                        continue;
+                    }
                     if ((nowMs - result.seen) < mScanResultAutoJoinAge) {
                         // Increment usage count for the network
                         mWifiConnectionStatistics.incrementOrAddUntrusted(result.SSID, 0, 1);
