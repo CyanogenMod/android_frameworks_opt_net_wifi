@@ -2653,6 +2653,15 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
 
+            if (!mWifiNative.setNetworkVariable(
+                    netId,
+                    WifiConfiguration.SIMNumVarName,
+                    Integer.toString(config.SIMNum))) {
+                loge(config.SIMNum + ": failed to set sim no: "
+                        +config.SIMNum);
+                break setVariables;
+            }
+
             String allowedKeyManagementString =
                 makeString(config.allowedKeyManagement, WifiConfiguration.KeyMgmt.strings);
             if (config.allowedKeyManagement.cardinality() != 0 &&
@@ -3480,6 +3489,15 @@ public class WifiConfigStore extends IpConfigStore {
             try {
                 config.priority = Integer.parseInt(value);
             } catch (NumberFormatException ignore) {
+            }
+        }
+
+        value = mWifiNative.getNetworkVariable(netId, WifiConfiguration.SIMNumVarName);
+        if (!TextUtils.isEmpty(value)) {
+            try {
+                config.SIMNum = Integer.parseInt(value);
+            } catch (NumberFormatException ignore) {
+              Log.e(TAG,"error in parsing Selected Sim number " + config.SIMNum);
             }
         }
 

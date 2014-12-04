@@ -629,6 +629,8 @@ public class WifiStateMachine extends StateMachine {
     /* Supplicant is trying to associate to a given SSID */
     static final int CMD_TARGET_SSID                     = BASE + 148;
 
+    static final int CMD_GET_SIM_INFO                    = BASE + 149;
+
     /* Wifi state machine modes of operation */
     /* CONNECT_MODE - connect to any 'known' AP when it becomes available */
     public static final int CONNECT_MODE                   = 1;
@@ -2139,6 +2141,17 @@ public class WifiStateMachine extends StateMachine {
         int supportedFeatureSet = resultMsg.arg1;
         resultMsg.recycle();
         return supportedFeatureSet;
+    }
+
+    /**
+     * Get sim info  synchronously
+     */
+
+    public WifiEapSimInfo  syncGetSimInfo(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_SIM_INFO);
+        WifiEapSimInfo  mWifiEapSimInfo = (WifiEapSimInfo) resultMsg.obj;
+        resultMsg.recycle();
+        return mWifiEapSimInfo;
     }
 
     /**
@@ -4805,6 +4818,9 @@ public class WifiStateMachine extends StateMachine {
                         replyToMessage(message, message.what, 0);
                     }
                     break;
+                case CMD_GET_SIM_INFO:
+                    replyToMessage(message,message.what, (WifiEapSimInfo) null);
+                    break;
                 case CMD_GET_LINK_LAYER_STATS:
                     // Not supported hence reply with error message
                     replyToMessage(message, message.what, null);
@@ -5420,6 +5436,15 @@ public class WifiStateMachine extends StateMachine {
                         loge("Failed to set frequency band " + band);
                     }
                     break;
+                case CMD_GET_SIM_INFO:
+                     String mSimInfo =  mWifiNative.getSimInfoNative();
+                     WifiEapSimInfo mWifiEapSimInfo = new WifiEapSimInfo(mSimInfo);
+                     if (mWifiEapSimInfo != null) {
+                         replyToMessage(message, message.what ,(WifiEapSimInfo) mWifiEapSimInfo);
+                     } else {
+                         replyToMessage(message, message.what ,(WifiEapSimInfo) null);
+                     }
+                     break;
                 case CMD_BLUETOOTH_ADAPTER_STATE_CHANGE:
                     mBluetoothConnectionActive = (message.arg1 !=
                             BluetoothAdapter.STATE_DISCONNECTED);

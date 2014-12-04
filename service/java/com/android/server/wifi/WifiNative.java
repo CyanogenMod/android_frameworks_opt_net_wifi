@@ -631,6 +631,10 @@ public class WifiNative {
         return doStringCommand("PKTCNT_POLL");
     }
 
+    public String getSimInfoNative() {
+        return doStringCommand("GET_SIM_INFO");
+    }
+
     public void bssFlush() {
         doBooleanCommand("BSS_FLUSH 0");
     }

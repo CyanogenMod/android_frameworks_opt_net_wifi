@@ -798,6 +798,19 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
+     * see {@link android.net.wifi.WifiManager#getSimInfo}
+     */
+    public WifiEapSimInfo getSimInfo() {
+        enforceAccessPermission();
+        if (mWifiStateMachineChannel != null) {
+            return mWifiStateMachine.syncGetSimInfo(mWifiStateMachineChannel);
+        } else {
+            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
+            return null;
+        }
+    }
+
+    /**
      * see {@link android.net.wifi.WifiAdapter#reportActivityInfo}
      */
     public WifiActivityEnergyInfo reportActivityInfo() {
