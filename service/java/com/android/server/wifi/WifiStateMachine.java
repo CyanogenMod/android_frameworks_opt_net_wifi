@@ -3025,7 +3025,19 @@ public class WifiStateMachine extends StateMachine {
                 // Scan after 200ms
                 setScanAlarm(true, 200);
             } else if (getCurrentState() == mDisconnectedState) {
-                mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
+
+                // Configure the scan alarm time to mFrameworkScanIntervalMs
+                // (5 minutes) if there are no saved profiles as there is
+                // already a periodic scan getting issued for every
+                // mSupplicantScanIntervalMs seconds. However keep the
+                // scan frequency by setting it to mDisconnectedScanPeriodMs
+                // (10 seconds) when there are configured profiles.
+                if (mWifiConfigStore.getConfiguredNetworks().size() != 0) {
+                    mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
+                } else {
+                    mCurrentScanAlarmMs = mFrameworkScanIntervalMs;
+                }
+
                 // Scan after 200ms
                 setScanAlarm(true, 200);
             }
@@ -7689,9 +7701,19 @@ public class WifiStateMachine extends StateMachine {
                     Settings.Global.WIFI_FRAMEWORK_SCAN_INTERVAL_MS,
                     mDefaultFrameworkScanIntervalMs);
 
-            if (mScreenOn)
-                mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
-
+            // Configure the scan alarm time to mFrameworkScanIntervalMs
+            // (5 minutes) if there are no saved profiles as there is
+            // already a periodic scan getting issued for every
+            // mSupplicantScanIntervalMs seconds. However keep the
+            // scan frequency by setting it to mDisconnectedScanPeriodMs
+            // (10 seconds) when there are configured profiles.
+            if (mScreenOn) {
+                if (mWifiConfigStore.getConfiguredNetworks().size() != 0) {
+                    mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
+                } else {
+                    mCurrentScanAlarmMs = mFrameworkScanIntervalMs;
+                }
+            }
             if (PDBG) {
                 loge(" Enter disconnected State scan interval " + mFrameworkScanIntervalMs
                         + " mEnableBackgroundScan= " + mEnableBackgroundScan
