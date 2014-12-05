@@ -254,6 +254,10 @@ public class WifiNative {
         return doStringCommand("LIST_NETWORKS");
     }
 
+    public String listNetworks(int last_id) {
+        return doStringCommand("LIST_NETWORKS LAST_ID=" + last_id);
+    }
+
     public int addNetwork() {
         return doIntCommand("ADD_NETWORK");
     }

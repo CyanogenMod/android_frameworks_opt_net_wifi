@@ -1355,76 +1355,84 @@ public class WifiConfigStore extends IpConfigStore {
 
     void loadConfiguredNetworks() {
 
-        String listStr = mWifiNative.listNetworks();
         mLastPriority = 0;
 
         mConfiguredNetworks.clear();
         mNetworkIds.clear();
 
-        if (listStr == null)
-            return;
+        int last_id = -1;
+        boolean done = false;
+        while (!done) {
 
-        String[] lines = listStr.split("\n");
+            String listStr = mWifiNative.listNetworks(last_id);
+            if (listStr == null)
+                return;
 
-        if (showNetworks) {
-            localLog("WifiConfigStore: loadConfiguredNetworks:  ");
-            for (String net : lines) {
-                localLog(net);
-            }
-        }
+            String[] lines = listStr.split("\n");
 
-        // Skip the first line, which is a header
-        for (int i = 1; i < lines.length; i++) {
-            String[] result = lines[i].split("\t");
-            // network-id | ssid | bssid | flags
-            WifiConfiguration config = new WifiConfiguration();
-            try {
-                config.networkId = Integer.parseInt(result[0]);
-            } catch(NumberFormatException e) {
-                loge("Failed to read network-id '" + result[0] + "'");
-                continue;
-            }
-            if (result.length > 3) {
-                if (result[3].indexOf("[CURRENT]") != -1)
-                    config.status = WifiConfiguration.Status.CURRENT;
-                else if (result[3].indexOf("[DISABLED]") != -1)
-                    config.status = WifiConfiguration.Status.DISABLED;
-                else
-                    config.status = WifiConfiguration.Status.ENABLED;
-            } else {
-                config.status = WifiConfiguration.Status.ENABLED;
-            }
-
-            readNetworkVariables(config);
-
-            Checksum csum = new CRC32();
-            if (config.SSID != null) {
-                csum.update(config.SSID.getBytes(), 0, config.SSID.getBytes().length);
-                long d = csum.getValue();
-                loge(" got CRC SSID " + config.SSID + " -> " + d);
-                if (mDeletedSSIDs.contains(d)) {
-                    loge(" was deleted");
+            if (showNetworks) {
+                localLog("WifiConfigStore: loadConfiguredNetworks:  ");
+                for (String net : lines) {
+                    localLog(net);
                 }
             }
 
-            if (config.priority > mLastPriority) {
-                mLastPriority = config.priority;
+            // Skip the first line, which is a header
+            for (int i = 1; i < lines.length; i++) {
+                String[] result = lines[i].split("\t");
+                // network-id | ssid | bssid | flags
+                WifiConfiguration config = new WifiConfiguration();
+                try {
+                    config.networkId = Integer.parseInt(result[0]);
+                    last_id = config.networkId;
+                } catch(NumberFormatException e) {
+                    loge("Failed to read network-id '" + result[0] + "'");
+                    continue;
+                }
+                if (result.length > 3) {
+                    if (result[3].indexOf("[CURRENT]") != -1)
+                        config.status = WifiConfiguration.Status.CURRENT;
+                    else if (result[3].indexOf("[DISABLED]") != -1)
+                        config.status = WifiConfiguration.Status.DISABLED;
+                    else
+                        config.status = WifiConfiguration.Status.ENABLED;
+                } else {
+                    config.status = WifiConfiguration.Status.ENABLED;
+                }
+
+                readNetworkVariables(config);
+
+                Checksum csum = new CRC32();
+                if (config.SSID != null) {
+                    csum.update(config.SSID.getBytes(), 0, config.SSID.getBytes().length);
+                    long d = csum.getValue();
+                    loge(" got CRC SSID " + config.SSID + " -> " + d);
+                    if (mDeletedSSIDs.contains(d)) {
+                        loge(" was deleted");
+                    }
+                }
+
+                if (config.priority > mLastPriority) {
+                    mLastPriority = config.priority;
+                }
+
+                config.setIpAssignment(IpAssignment.DHCP);
+                config.setProxySettings(ProxySettings.NONE);
+
+                if (mNetworkIds.containsKey(configKey(config))) {
+                    // That SSID is already known, just ignore this duplicate entry
+                    if (showNetworks) localLog("discarded duplicate network ", config.networkId);
+                } else if(config.isValid()){
+                    mConfiguredNetworks.put(config.networkId, config);
+                    mNetworkIds.put(configKey(config), config.networkId);
+                    if (showNetworks) localLog("loaded configured network", config.networkId);
+                } else {
+                    if (showNetworks) log("Ignoring loaded configured for network " + config.networkId
+                        + " because config are not valid");
+                }
             }
 
-            config.setIpAssignment(IpAssignment.DHCP);
-            config.setProxySettings(ProxySettings.NONE);
-
-            if (mNetworkIds.containsKey(configKey(config))) {
-                // That SSID is already known, just ignore this duplicate entry
-                if (showNetworks) localLog("discarded duplicate network ", config.networkId);
-            } else if(config.isValid()){
-                mConfiguredNetworks.put(config.networkId, config);
-                mNetworkIds.put(configKey(config), config.networkId);
-                if (showNetworks) localLog("loaded configured network", config.networkId);
-            } else {
-                if (showNetworks) log("Ignoring loaded configured for network " + config.networkId
-                    + " because config are not valid");
-            }
+            done = (lines.length == 1);
         }
 
         readIpAndProxyConfigurations();
