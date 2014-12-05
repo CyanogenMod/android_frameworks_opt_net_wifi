@@ -346,6 +346,9 @@ public class WifiConfigStore extends IpConfigStore {
     public int maxConnectionErrorsToBlacklist = 4;
     public int wifiConfigBlacklistMinTimeMilli = 1000 * 60 * 5;
 
+    // How long a disconnected config remain considered as the last user selection
+    public int wifiConfigLastSelectionHysteresis = 1000 * 60 * 3;
+
     // Boost RSSI values of associated networks
     public int associatedHysteresisHigh = +14;
     public int associatedHysteresisLow = +8;

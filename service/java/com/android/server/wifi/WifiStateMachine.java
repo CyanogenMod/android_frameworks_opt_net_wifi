@@ -3389,8 +3389,8 @@ public class WifiStateMachine extends StateMachine {
         if (attemptAutoJoin) {
             messageHandlingStatus = MESSAGE_HANDLING_STATUS_PROCESSED;
         }
-        // Loose last selected configuration if we have been disconnected for 30 minutes
-        if (getDisconnectedTimeMilli() > 1000 * 60 * 30) {
+        // Loose last selected configuration if we have been disconnected for 5 minutes
+        if (getDisconnectedTimeMilli() > mWifiConfigStore.wifiConfigLastSelectionHysteresis) {
             mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
         }
 
@@ -5057,6 +5057,8 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_SET_OPERATIONAL_MODE:
                     mOperationalMode = message.arg1;
+                    mWifiConfigStore.
+                            setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
                     break;
                 case CMD_TARGET_BSSID:
                     // Trying to associate to this BSSID
@@ -5642,6 +5644,10 @@ public class WifiStateMachine extends StateMachine {
                         if (!mWifiAutoJoinController.attemptAutoJoin()) {
                             startScan(ENABLE_WIFI, 0, null, null);
                         }
+
+                        // Loose last selection choice since user toggled WiFi
+                        mWifiConfigStore.
+                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
 
                         mOperationalMode = CONNECT_MODE;
                         transitionTo(mDisconnectedState);

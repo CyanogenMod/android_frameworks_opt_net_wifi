@@ -1261,6 +1261,40 @@ public class WifiAutoJoinController {
 
             if (config.autoJoinStatus >=
                     WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
+                // Wait for 5 minutes before reenabling config that have known,
+                // repeated connection or DHCP failures
+                if (config.disableReason == WifiConfiguration.DISABLED_DHCP_FAILURE
+                        || config.disableReason
+                        == WifiConfiguration.DISABLED_ASSOCIATION_REJECT
+                        || config.disableReason
+                        == WifiConfiguration.DISABLED_AUTH_FAILURE) {
+                    if (config.blackListTimestamp == 0
+                            || (config.blackListTimestamp > now)) {
+                        // Sanitize the timestamp
+                        config.blackListTimestamp = now;
+                    }
+                    if ((now - config.blackListTimestamp) >
+                            mWifiConfigStore.wifiConfigBlacklistMinTimeMilli) {
+                        // Re-enable the WifiConfiguration
+                        config.status = WifiConfiguration.Status.ENABLED;
+
+                        // Reset the blacklist condition
+                        config.numConnectionFailures = 0;
+                        config.numIpConfigFailures = 0;
+                        config.numAuthFailures = 0;
+                        config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+
+                        config.dirty = true;
+                    } else {
+                        if (VDBG) {
+                            long delay = mWifiConfigStore.wifiConfigBlacklistMinTimeMilli
+                                    - (now - config.blackListTimestamp);
+                            logDbg("attemptautoJoin " + config.configKey()
+                                    + " dont unblacklist yet, waiting for "
+                                    + delay + " ms");
+                        }
+                    }
+                }
                 // Avoid networks disabled because of AUTH failure altogether
                 if (DBG) {
                     logDbg("attemptAutoJoin skip candidate due to auto join status "
