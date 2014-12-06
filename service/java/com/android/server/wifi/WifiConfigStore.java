@@ -356,6 +356,9 @@ public class WifiConfigStore extends IpConfigStore {
     public int maxConnectionErrorsToBlacklist = 4;
     public int wifiConfigBlacklistMinTimeMilli = 1000 * 60 * 5;
 
+    // How long a disconnected config remain considered as the last user selection
+    public int wifiConfigLastSelectionHysteresis = 1000 * 60 * 3;
+
     // Boost RSSI values of associated networks
     public int associatedHysteresisHigh = +14;
     public int associatedHysteresisLow = +8;
@@ -740,7 +743,7 @@ public class WifiConfigStore extends IpConfigStore {
                     && (config.autoJoinStatus
                     <= WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)) {
 
-                // Wait for 20 minutes before reenabling config that have known, repeated connection
+                // Wait for 5 minutes before reenabling config that have known, repeated connection
                 // or DHCP failures
                 if (config.disableReason == WifiConfiguration.DISABLED_DHCP_FAILURE
                         || config.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT
@@ -3135,8 +3138,9 @@ public class WifiConfigStore extends IpConfigStore {
                 // Try to make a non verified WifiConfiguration, but only if the original
                 // configuration was not self already added
                 if (VDBG) {
-                    loge("associateWithConfiguration: will create " +
-                            result.SSID + " and associate it with: " + link.SSID);
+                    loge("associateWithConfiguration: try to create " +
+                            result.SSID + " and associate it with: " + link.SSID
+                            + " key " + link.configKey());
                 }
                 config = wifiConfigurationFromScanResult(result);
                 if (config != null) {
@@ -3146,6 +3150,10 @@ public class WifiConfigStore extends IpConfigStore {
                     config.peerWifiConfiguration = link.configKey();
                     if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
                             config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
+                        if (VDBG && config != null) {
+                            loge("associateWithConfiguration: got a config from beacon"
+                                    + config.SSID + " key " + config.configKey());
+                        }
                         // Transfer the credentials from the configuration we are linking from
                         String psk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
                         if (psk != null) {
@@ -3176,6 +3184,10 @@ public class WifiConfigStore extends IpConfigStore {
                         config = null;
                     }
                     if (config != null) break;
+                }
+                if (VDBG && config != null) {
+                    loge("associateWithConfiguration: success, created: " + config.SSID
+                            + " key " + config.configKey());
                 }
             }
         }
