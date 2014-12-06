@@ -1302,6 +1302,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return new Messenger(mClientHandler);
     }
 
+    /**
+     * Disable an ephemeral network, i.e. network that is created thru a WiFi Scorer
+     */
+    public void disableEphemeralNetwork(String SSID) {
+        enforceAccessPermission();
+        enforceChangePermission();
+        mWifiStateMachine.disableEphemeralNetwork(SSID);
+    }
 
     /**
      * Get the IP and proxy configuration file

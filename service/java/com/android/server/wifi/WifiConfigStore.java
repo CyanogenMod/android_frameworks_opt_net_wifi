@@ -158,6 +158,15 @@ public class WifiConfigStore extends IpConfigStore {
      */
     private Set<Long> mDeletedSSIDs = new HashSet<Long>();
 
+    /**
+     * Framework keeps a list of ephemeral SSIDs that where deleted by user,
+     * so as, framework knows not to autojoin again those SSIDs based on scorer input.
+     * The list is never cleared up.
+     *
+     * The SSIDs are encoded in a String as per definition of WifiConfiguration.SSID field.
+     */
+    public Set<String> mDeletedEphemeralSSIDs = new HashSet<String>();
+
     /* Tracks the highest priority of configured networks */
     private int mLastPriority = -1;
 
@@ -209,6 +218,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String EPHEMERAL_KEY = "EPHEMERAL:   ";
     private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
     private static final String DELETED_CRC32_KEY = "DELETED_CRC32:  ";
+    private static final String DELETED_EPHEMERAL_KEY = "DELETED_EPHEMERAL:  ";
 
     private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST:  ";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
@@ -830,6 +840,15 @@ public class WifiConfigStore extends IpConfigStore {
                     + " Uid=" + Integer.toString(config.creatorUid)
                     + "/" + Integer.toString(config.lastUpdateUid));
         }
+
+        if (mDeletedEphemeralSSIDs.remove(config.SSID)) {
+            if (VDBG) {
+                loge("WifiConfigStore: removed from ephemeral blacklist: " + config.SSID);
+            }
+            // NOTE: This will be flushed to disk as part of the addOrUpdateNetworkNative call
+            // below, since we're creating/modifying a config.
+        }
+
         boolean newNetwork = (config.networkId == INVALID_NETWORK_ID);
         NetworkUpdateResult result = addOrUpdateNetworkNative(config, uid);
         int netId = result.getNetworkId();
@@ -945,6 +964,42 @@ public class WifiConfigStore extends IpConfigStore {
                     break;
             }
         }
+    }
+
+
+    /**
+     * Disable an ephemeral SSID for the purpose of auto-joining thru scored.
+     * This SSID will never be scored anymore.
+     * The only way to "un-disable it" is if the user create a network for that SSID and then
+     * forget it.
+     *
+     * @param SSID caller must ensure that the SSID passed thru this API match
+     *            the WifiConfiguration.SSID rules, and thus be surrounded by quotes.
+     * @return the {@link WifiConfiguration} corresponding to this SSID, if any, so that we can
+     *         disconnect if this is the current network.
+     */
+    WifiConfiguration disableEphemeralNetwork(String SSID) {
+        if (SSID == null) {
+            return null;
+        }
+
+        WifiConfiguration foundConfig = null;
+
+        mDeletedEphemeralSSIDs.add(SSID);
+        loge("Forget ephemeral SSID " + SSID + " num=" + mDeletedEphemeralSSIDs.size());
+
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            if (SSID.equals(config.SSID) && config.ephemeral) {
+                loge("Found ephemeral config in disableEphemeralNetwork: " + config.networkId);
+                foundConfig = config;
+            }
+        }
+
+        // Force a write, because the mDeletedEphemeralSSIDs list has changed even though the
+        // configurations may not have.
+        writeKnownNetworkHistory(true);
+
+        return foundConfig;
     }
 
     /**
@@ -1719,6 +1774,13 @@ public class WifiConfigStore extends IpConfigStore {
                         out.writeUTF(SEPARATOR_KEY);
                     }
                 }
+                if (mDeletedEphemeralSSIDs != null && mDeletedEphemeralSSIDs.size() > 0) {
+                    for (String ssid : mDeletedEphemeralSSIDs) {
+                        out.writeUTF(DELETED_EPHEMERAL_KEY);
+                        out.writeUTF(ssid);
+                        out.writeUTF(SEPARATOR_KEY);
+                    }
+                }
             }
         });
     }
@@ -2048,6 +2110,13 @@ public class WifiConfigStore extends IpConfigStore {
                             String crc = key.replace(DELETED_CRC32_KEY, "");
                             Long c = Long.parseLong(crc);
                             mDeletedSSIDs.add(c);
+                        }
+                        if (key.startsWith(DELETED_EPHEMERAL_KEY)) {
+                            String s = key.replace(DELETED_EPHEMERAL_KEY, "");
+                            if (!TextUtils.isEmpty(s)) {
+                                s = s.replace(SEPARATOR_KEY, "");
+                                mDeletedEphemeralSSIDs.add(s);
+                            }
                         }
                     }
                 }
