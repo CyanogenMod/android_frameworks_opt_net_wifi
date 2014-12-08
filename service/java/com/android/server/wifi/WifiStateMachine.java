@@ -865,6 +865,8 @@ public class WifiStateMachine extends StateMachine {
     // Used for debug and stats gathering
     private static int sScanAlarmIntentCount = 0;
 
+    final static int frameworkMinScanIntervalSaneValue = 10000;
+
     public WifiStateMachine(Context context, String wlanInterface,
             WifiTrafficPoller trafficPoller){
         super("WifiStateMachine");
@@ -913,9 +915,13 @@ public class WifiStateMachine extends StateMachine {
         mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
         mBatchedScanIntervalIntent = getPrivateBroadcast(ACTION_REFRESH_BATCHED_SCAN, 0);
 
-        mDefaultFrameworkScanIntervalMs = mContext.getResources().getInteger(
+        // Make sure the interval is not configured less than 10 seconds
+        int period = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_scan_interval);
-
+        if (period < frameworkMinScanIntervalSaneValue) {
+            period = frameworkMinScanIntervalSaneValue;
+        }
+        mDefaultFrameworkScanIntervalMs = period;
         mDriverStopDelayMs = mContext.getResources().getInteger(
                 R.integer.config_wifi_driver_stop_delay);
 
@@ -952,10 +958,10 @@ public class WifiStateMachine extends StateMachine {
                 new BroadcastReceiver() {
                     @Override
                     public void onReceive(Context context, Intent intent) {
-                        sScanAlarmIntentCount++;
-                        startScan(SCAN_ALARM_SOURCE, -2, null, null);
+                        sScanAlarmIntentCount++; // Used for debug only
+                        startScan(SCAN_ALARM_SOURCE, mDelayedScanCounter.incrementAndGet(), null, null);
                         if (VDBG)
-                            loge("WiFiStateMachine SCAN ALARM");
+                            loge("WiFiStateMachine SCAN ALARM -> " + mDelayedScanCounter.get());
                     }
                 },
                 new IntentFilter(ACTION_START_SCAN));
@@ -1126,40 +1132,79 @@ public class WifiStateMachine extends StateMachine {
      */
     private long mFrameworkScanIntervalMs = 10000;
 
-    private long mCurrentScanAlarmMs = 10000;
-    private void setScanAlarm(boolean enabled, int delayMilli) {
+    private AtomicInteger mDelayedScanCounter = new AtomicInteger();
+
+    private void setScanAlarm(boolean enabled) {
         if (PDBG) {
             loge("setScanAlarm " + enabled
-                    + " period " + mCurrentScanAlarmMs
-                    + " initial delay " + delayMilli);
+                    + " period " + mDefaultFrameworkScanIntervalMs
+                    + " mBackgroundScanSupported " + mBackgroundScanSupported);
         }
-        if (mCurrentScanAlarmMs <= 0) enabled = false;
+        if (mBackgroundScanSupported == false) {
+            // Scan alarm is only used for background scans if they are not
+            // offloaded to the wifi chipset, hence enable the scan alarm
+            // gicing us RTC_WAKEUP of backgroundScan is NOT supported
+            enabled = true;
+        }
+
         if (enabled == mAlarmEnabled) return;
         if (enabled) {
-            long initialDelayMilli;
-            if (delayMilli <= 0) {
-                // scan now
-                startScan(SCAN_ALARM_SOURCE, 0, null, null);
-                initialDelayMilli = mCurrentScanAlarmMs;
-            } else {
-                initialDelayMilli = delayMilli;
-            }
-
-            int type = AlarmManager.RTC;
-
             /* Set RTC_WAKEUP alarms if PNO is not supported - because no one is */
             /* going to wake up the host processor to look for access points */
-            if (mBackgroundScanSupported == false)
-                type = AlarmManager.RTC_WAKEUP;
-
-            mAlarmManager.setRepeating(type,
-                    System.currentTimeMillis() + initialDelayMilli,
-                    mCurrentScanAlarmMs,
+            mAlarmManager.set(AlarmManager.RTC_WAKEUP,
+                    System.currentTimeMillis() + mDefaultFrameworkScanIntervalMs,
                     mScanIntent);
             mAlarmEnabled = true;
         } else {
             mAlarmManager.cancel(mScanIntent);
             mAlarmEnabled = false;
+        }
+    }
+
+    private void cancelDelayedScan() {
+        mDelayedScanCounter.incrementAndGet();
+        loge("cancelDelayedScan -> " + mDelayedScanCounter);
+    }
+
+    private boolean checkAndRestartDelayedScan(int counter, boolean restart, int milli,
+                                   ScanSettings settings, WorkSource workSource) {
+        if (counter != mDelayedScanCounter.get()) {
+            return false;
+        }
+        if (restart)
+            startDelayedScan(milli, settings, workSource);
+        return true;
+    }
+
+    private void startDelayedScan(int milli, ScanSettings settings, WorkSource workSource) {
+        if (milli <= 0) return;
+        /**
+         * The cases where the scan alarm should be run are :
+         * - DisconnectedState && screenOn => used delayed timer
+         * - DisconnectedState && !screenOn && mBackgroundScanSupported => PNO
+         * - DisconnectedState && !screenOn && !mBackgroundScanSupported => used RTC_WAKEUP Alarm
+         * - ConnectedState && screenOn => used delayed timer
+         */
+
+        mDelayedScanCounter.incrementAndGet();
+        if (mScreenOn &&
+                (getCurrentState() == mDisconnectedState
+                || getCurrentState() == mConnectedState)) {
+            Bundle bundle = new Bundle();
+            bundle.putParcelable(CUSTOMIZED_SCAN_SETTING, settings);
+            bundle.putParcelable(CUSTOMIZED_SCAN_WORKSOURCE, workSource);
+            bundle.putLong(SCAN_REQUEST_TIME, System.currentTimeMillis());
+            sendMessageDelayed(CMD_START_SCAN, SCAN_ALARM_SOURCE,
+                    mDelayedScanCounter.get(), bundle, milli);
+            if (DBG) loge("startDelayedScan send -> " + mDelayedScanCounter + " milli " + milli);
+        } else if (mBackgroundScanSupported == false
+                && !mScreenOn && getCurrentState() == mDisconnectedState) {
+            setScanAlarm(true);
+            if (DBG) loge("startDelayedScan start scan alarm -> "
+                    + mDelayedScanCounter + " milli " + milli);
+        } else {
+            if (DBG) loge("startDelayedScan unhandled -> "
+                    + mDelayedScanCounter + " milli " + milli);
         }
     }
 
@@ -1595,7 +1640,7 @@ public class WifiStateMachine extends StateMachine {
     private static int MESSAGE_HANDLING_STATUS_UNKNOWN = 0;
     private static int MESSAGE_HANDLING_STATUS_REFUSED = -1;
     private static int MESSAGE_HANDLING_STATUS_FAIL = -2;
-    private static int MESSAGE_HANDLING_STATUS_BUFFERED = -3;
+    private static int MESSAGE_HANDLING_STATUS_OBSOLETE = -3;
     private static int MESSAGE_HANDLING_STATUS_DEFERRED = -4;
     private static int MESSAGE_HANDLING_STATUS_DISCARD = -5;
     private static int MESSAGE_HANDLING_STATUS_LOOPED = -6;
@@ -1605,9 +1650,11 @@ public class WifiStateMachine extends StateMachine {
 
     //TODO: this is used only to track connection attempts, however the link state and packet per
     //TODO: second logic should be folded into that
-    private boolean isScanAllowed() {
+    private boolean checkOrDeferScanAllowed(Message msg) {
         long now = System.currentTimeMillis();
         if (lastConnectAttempt != 0 && (now - lastConnectAttempt) < 10000) {
+            Message dmsg = Message.obtain(msg);
+            sendMessageDelayed(dmsg, 11000 - (now - lastConnectAttempt));
             return false;
         }
         return true;
@@ -1670,7 +1717,6 @@ public class WifiStateMachine extends StateMachine {
                 mRxTime = stats.rx_time;
                 mRunningBeaconCount = stats.beacon_rx;
                 if (dbg) {
-                    loge("WifiLinkLayerStats:");
                     loge(stats.toString());
                 }
             }
@@ -1720,7 +1766,8 @@ public class WifiStateMachine extends StateMachine {
                 loge(ts + " noteScanStart" + workSource.toString()
                         + " uid " + Integer.toString(callingUid));
             } else {
-                loge(ts + " noteScanstart no scan source");
+                loge(ts + " noteScanstart no scan source"
+                        + " uid " + Integer.toString(callingUid));
             }
         }
         startRadioScanStats();
@@ -1745,9 +1792,11 @@ public class WifiStateMachine extends StateMachine {
         if (DBG) {
             String ts = String.format("[%,d ms]", now);
             if (mScanWorkSource != null)
-                loge(ts + " noteScanEnd " + mScanWorkSource.toString());
+                loge(ts + " noteScanEnd " + mScanWorkSource.toString()
+                        + " onTime=" + mOnTimeThisScan);
             else
-                loge(ts + " noteScanEnd no scan source");
+                loge(ts + " noteScanEnd no scan source"
+                        + " onTime=" + mOnTimeThisScan);
         }
         if (mScanWorkSource != null) {
             try {
@@ -2421,6 +2470,7 @@ public class WifiStateMachine extends StateMachine {
         WifiConfiguration config;
         Long now;
         String report;
+        String key;
         StringBuilder sb = new StringBuilder();
         if (mScreenOn) {
             sb.append("!");
@@ -2457,6 +2507,7 @@ public class WifiStateMachine extends StateMachine {
                 if (lastScanDuration != 0) {
                     sb.append(" dur:").append(lastScanDuration);
                 }
+                sb.append(" cnt=").append(mDelayedScanCounter);
                 sb.append(" rssi=").append(mWifiInfo.getRssi());
                 sb.append(" f=").append(mWifiInfo.getFrequency());
                 sb.append(" sc=").append(mWifiInfo.score);
@@ -2577,6 +2628,11 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(",").append(mRxTime);
                 }
                 sb.append(String.format(" bcn=%d", mRunningBeaconCount));
+                sb.append(String.format(" con=%d", mConnectionRequests));
+                key = mWifiConfigStore.getLastSelectedConfiguration();
+                if (key != null) {
+                    sb.append(" last=").append(key);
+                }
                 break;
             case WifiMonitor.NETWORK_CONNECTION_EVENT:
                 sb.append(" ");
@@ -2590,6 +2646,10 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" ").append(config.configKey());
                 }
                 sb.append(printTime());
+                key = mWifiConfigStore.getLastSelectedConfiguration();
+                if (key != null) {
+                    sb.append(" last=").append(key);
+                }
                 break;
             case CMD_TARGET_BSSID:
             case CMD_ASSOCIATED_BSSID:
@@ -2773,7 +2833,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
-                String key = mWifiConfigStore.getLastSelectedConfiguration();
+                key = mWifiConfigStore.getLastSelectedConfiguration();
                 if (key != null) {
                     sb.append(" last=").append(key);
                 }
@@ -2943,7 +3003,6 @@ public class WifiStateMachine extends StateMachine {
         mScreenOn = screenOn;
         if (PDBG) {
             loge(" handleScreenStateChanged Enter: screenOn=" + screenOn
-                    + " mCurrentScanAlarmMs = " + Long.toString(mCurrentScanAlarmMs)
                     + " mUserWantsSuspendOpt=" + mUserWantsSuspendOpt
                     + " state " + getCurrentState().getName()
                     + " suppState:" + mSupplicantStateTracker.getSupplicantStateName());
@@ -2964,38 +3023,41 @@ public class WifiStateMachine extends StateMachine {
         getWifiLinkLayerStats(false);
         mOnTimeScreenStateChange = mOnTime;
         lastScreenStateChangeTimeStamp = lastLinkLayerStatsUpdate;
+        mEnableBackgroundScan = false;
+        cancelDelayedScan();
 
         if (screenOn) {
+            setScanAlarm(false);
             clearBlacklist();
 
             fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMilli;
-            // Start the scan alarm so as to enable autojoin
+            // In either Disconnectedstate or ConnectedState,
+            // start the scan alarm so as to enable autojoin
             if (getCurrentState() == mConnectedState
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated) {
-                mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMilli;
-                // Scan after 200ms
-                setScanAlarm(true, 200);
+                // Scan after 500ms
+                startDelayedScan(500, null, null);
             } else if (getCurrentState() == mDisconnectedState) {
-                mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
                 // Scan after 200ms
-                setScanAlarm(true, 200);
+                startDelayedScan(200, null, null);
             }
-        } else {
-            setScanAlarm(false, 0);
+        } else if (startBackgroundScanIfNeeded) {
+            // Screen Off and Disconnected and chipset doesn't support scan offload
+            //              => start scan alarm
+            // Screen Off and Disconnected and chipset does support scan offload
+            //              => will use scan offload (i.e. background scan)
+            if (!mBackgroundScanSupported) {
+                setScanAlarm(true);
+            } else {
+                mEnableBackgroundScan = true;
+            }
         }
-
-        if (mBackgroundScanSupported) {
-            mEnableBackgroundScan = (screenOn == false);
-        }
-
         if (DBG) logd("backgroundScan enabled=" + mEnableBackgroundScan
                 + " startBackgroundScanIfNeeded:" + startBackgroundScanIfNeeded);
-
         if (startBackgroundScanIfNeeded) {
             // to scan for them in background, we need all networks enabled
             enableBackgroundScan(mEnableBackgroundScan);
         }
-
         if (DBG) log("handleScreenStateChanged Exit: " + screenOn);
     }
 
@@ -3390,16 +3452,21 @@ public class WifiStateMachine extends StateMachine {
             attemptAutoJoin = false;
         }
         if (DBG) {
+            String selection = mWifiConfigStore.getLastSelectedConfiguration();
+            if (selection == null) {
+                selection = "<none>";
+            }
             loge("wifi setScanResults state" + getCurrentState()
                     + " sup_state=" + state
                     + " debouncing=" + linkDebouncing
-                    + " mConnectionRequests=" + mConnectionRequests);
+                    + " mConnectionRequests=" + mConnectionRequests
+                    + " selection=" + selection);
         }
         if (attemptAutoJoin) {
             messageHandlingStatus = MESSAGE_HANDLING_STATUS_PROCESSED;
         }
-        // Loose last selected configuration if we have been disconnected for 30 minutes
-        if (getDisconnectedTimeMilli() > 1000 * 60 * 30) {
+        // Loose last selected configuration if we have been disconnected for 5 minutes
+        if (getDisconnectedTimeMilli() > mWifiConfigStore.wifiConfigLastSelectionHysteresis) {
             mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
         }
 
@@ -4229,7 +4296,14 @@ public class WifiStateMachine extends StateMachine {
         linkDebouncing = false;
         /* Reset roaming parameters */
         mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
-        fullBandConnectedTimeIntervalMilli = 20 * 1000; // Start scans at 20 seconds interval
+
+        /**
+         *  fullBandConnectedTimeIntervalMilli:
+         *  - start scans at mWifiConfigStore.associatedPartialScanPeriodMilli seconds interval
+         *  - exponentially increase to mWifiConfigStore.associatedFullScanMaxIntervalMilli
+         *  Initialize to sane value = 20 seconds
+         */
+        fullBandConnectedTimeIntervalMilli = 20 * 1000;
 
         setNetworkDetailedState(DetailedState.DISCONNECTED);
         if (mNetworkAgent != null) {
@@ -5067,6 +5141,8 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_SET_OPERATIONAL_MODE:
                     mOperationalMode = message.arg1;
+                    mWifiConfigStore.
+                            setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
                     break;
                 case CMD_TARGET_BSSID:
                     // Trying to associate to this BSSID
@@ -5237,7 +5313,7 @@ public class WifiStateMachine extends StateMachine {
         public void enter() {
 
             if (PDBG) {
-                loge("Driverstarted State enter");
+                loge("DriverStartedState enter");
             }
             mIsRunning = true;
             mInDelayedStop = false;
@@ -5652,6 +5728,10 @@ public class WifiStateMachine extends StateMachine {
                         if (!mWifiAutoJoinController.attemptAutoJoin()) {
                             startScan(ENABLE_WIFI, 0, null, null);
                         }
+
+                        // Loose last selection choice since user toggled WiFi
+                        mWifiConfigStore.
+                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
 
                         mOperationalMode = CONNECT_MODE;
                         transitionTo(mDisconnectedState);
@@ -6903,6 +6983,8 @@ public class WifiStateMachine extends StateMachine {
                         if (message.arg1 == SCAN_ONLY_WITH_WIFI_OFF_MODE) {
                             noteWifiDisabledWhileAssociated();
                         }
+                        mWifiConfigStore.
+                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
                     }
                     break;
                 case CMD_SET_COUNTRY_CODE:
@@ -6918,6 +7000,20 @@ public class WifiStateMachine extends StateMachine {
                               + " RSSI=" + mWifiInfo.getRssi());
                     //}
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
+                        // Check if the CMD_START_SCAN message is obsolete (and thus if it should
+                        // not be processed) and restart the scan if needed
+                        boolean shouldScan =
+                                mScreenOn && mWifiConfigStore.enableAutoJoinScanWhenAssociated;
+                        if (!checkAndRestartDelayedScan(message.arg2,
+                                shouldScan,
+                                mWifiConfigStore.associatedPartialScanPeriodMilli, null, null)) {
+                            messageHandlingStatus = MESSAGE_HANDLING_STATUS_OBSOLETE;
+                            loge("WifiStateMachine L2Connected CMD_START_SCAN source "
+                                    + message.arg1
+                                    + " " + message.arg2 + ", " + mDelayedScanCounter
+                                    + " -> obsolete");
+                            return HANDLED;
+                        }
                         boolean tryFullBandScan = false;
                         boolean restrictChannelList = false;
                         long now_ms = System.currentTimeMillis();
@@ -7023,13 +7119,14 @@ public class WifiStateMachine extends StateMachine {
                                                 WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                                 }
                             }
+
                         } else {
                             loge("CMD_START_SCAN : connected mode and no configuration");
                             messageHandlingStatus = MESSAGE_HANDLING_STATUS_HANDLING_ERROR;
                         }
                     } else {
                         // Not scan alarm source
-                        handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                        return NOT_HANDLED;
                     }
                     break;
                     /* Ignore connection to same network */
@@ -7173,6 +7270,8 @@ public class WifiStateMachine extends StateMachine {
                 }
                 obtainingIpWatchdogCount++;
                 loge("Start Dhcp Watchdog " + obtainingIpWatchdogCount);
+                // Get Link layer stats so as we get fresh tx packet counters
+                getWifiLinkLayerStats(true);
                 sendMessageDelayed(obtainMessage(CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER,
                         obtainingIpWatchdogCount, 0), OBTAINING_IP_ADDRESS_GUARD_TIMER_MSEC);
             } else {
@@ -7309,7 +7408,7 @@ public class WifiStateMachine extends StateMachine {
                 log("RoamingState Enter"
                         + " mScreenOn=" + mScreenOn );
             }
-            setScanAlarm(false, 0);
+            setScanAlarm(false);
 
             // Make sure we disconnect if roaming fails
             roamWatchdogCount++;
@@ -7440,11 +7539,8 @@ public class WifiStateMachine extends StateMachine {
             }
             if (mScreenOn
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated) {
-                mCurrentScanAlarmMs = mWifiConfigStore.associatedPartialScanPeriodMilli;
-                // Scan after 200ms
-                setScanAlarm(true, 200);
-            } else {
-                mCurrentScanAlarmMs = 0;
+                // restart scan alarm
+                startDelayedScan(mWifiConfigStore.associatedPartialScanPeriodMilli, null, null);
             }
             registerConnected();
             lastConnectAttempt = 0;
@@ -7645,7 +7741,7 @@ public class WifiStateMachine extends StateMachine {
         @Override
         public void exit() {
             loge("WifiStateMachine: Leaving Connected state");
-            setScanAlarm(false, 0);
+            setScanAlarm(false);
             mLastDriverRoamAttempt = 0;
         }
     }
@@ -7654,7 +7750,6 @@ public class WifiStateMachine extends StateMachine {
 
         @Override
         public void enter() {
-            mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
 
             if (PDBG) {
                 loge(" Enter DisconnectingState State scan interval " + mFrameworkScanIntervalMs
@@ -7684,7 +7779,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_START_SCAN:
-                    // Ignore scans while disconnecting
+                    deferMessage(message);
                     return HANDLED;
                 case CMD_DISCONNECTING_WATCHDOG_TIMER:
                     if (disconnectingWatchdogCount == message.arg1) {
@@ -7708,11 +7803,6 @@ public class WifiStateMachine extends StateMachine {
             }
             return HANDLED;
         }
-
-        @Override
-        public void exit() {
-            mCurrentScanAlarmMs = 0;
-        }
     }
 
     class DisconnectedState extends State {
@@ -7725,16 +7815,9 @@ public class WifiStateMachine extends StateMachine {
                 return;
             }
 
-            // Loose the last selection choice
-            // mWifiAutoJoinController.setLastSelectedConfiguration
-            // (WifiConfiguration.INVALID_NETWORK_ID);
-
             mFrameworkScanIntervalMs = Settings.Global.getLong(mContext.getContentResolver(),
                     Settings.Global.WIFI_FRAMEWORK_SCAN_INTERVAL_MS,
                     mDefaultFrameworkScanIntervalMs);
-
-            if (mScreenOn)
-                mCurrentScanAlarmMs = mDisconnectedScanPeriodMs;
 
             if (PDBG) {
                 loge(" Enter disconnected State scan interval " + mFrameworkScanIntervalMs
@@ -7746,23 +7829,28 @@ public class WifiStateMachine extends StateMachine {
             /** clear the roaming state, if we were roaming, we failed */
             mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
 
-            /**
-             * - screen dark and PNO supported => scan alarm disabled
-             * - everything else => scan alarm enabled with mDefaultFrameworkScanIntervalMs period
-             */
-            if ((mScreenOn == false) && mEnableBackgroundScan) {
-
-                /* If a regular scan result is pending, do not initiate background
-                 * scan until the scan results are returned. This is needed because
-                 * initiating a background scan will cancel the regular scan and
-                 * scan results will not be returned until background scanning is
-                 * cleared
+            if (mScreenOn) {
+                /**
+                 * screen lit and => delayed timer
                  */
-                if (!mIsScanOngoing) {
-                    enableBackgroundScan(true);
-                }
+                startDelayedScan(mDisconnectedScanPeriodMs, null, null);
             } else {
-                setScanAlarm(true, 200);
+                /**
+                 * screen dark and PNO supported => scan alarm disabled
+                 */
+                if (mEnableBackgroundScan) {
+                    /* If a regular scan result is pending, do not initiate background
+                     * scan until the scan results are returned. This is needed because
+                     * initiating a background scan will cancel the regular scan and
+                     * scan results will not be returned until background scanning is
+                     * cleared
+                     */
+                    if (!mIsScanOngoing) {
+                        enableBackgroundScan(true);
+                    }
+                } else {
+                    setScanAlarm(true);
+                }
             }
 
             /**
@@ -7831,16 +7919,32 @@ public class WifiStateMachine extends StateMachine {
                     ret = NOT_HANDLED;
                     break;
                 case CMD_START_SCAN:
-                    if (!isScanAllowed()) {
-                        // Ignore the scan request
+                    if (!checkOrDeferScanAllowed(message)) {
+                        // The scan request was rescheduled
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_REFUSED;
                         return HANDLED;
                     }
                     /* Disable background scan temporarily during a regular scan */
                     if (mEnableBackgroundScan) {
                         enableBackgroundScan(false);
                     }
-                    /* Handled in parent state */
-                    ret = NOT_HANDLED;
+                    if (message.arg1 == SCAN_ALARM_SOURCE) {
+                        // Check if the CMD_START_SCAN message is obsolete (and thus if it should
+                        // not be processed) and restart the scan
+                        if (!checkAndRestartDelayedScan(message.arg2,
+                                true, mDisconnectedScanPeriodMs, null, null)) {
+                            messageHandlingStatus = MESSAGE_HANDLING_STATUS_OBSOLETE;
+                            loge("WifiStateMachine Disconnected CMD_START_SCAN source "
+                                    + message.arg1
+                                    + " " + message.arg2 + ", " + mDelayedScanCounter
+                                    + " -> obsolete");
+                            return HANDLED;
+                        }
+                        handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                        ret = HANDLED;
+                    } else {
+                        ret = NOT_HANDLED;
+                    }
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                     /* Re-enable background scan when a pending scan result is received */
@@ -7892,8 +7996,7 @@ public class WifiStateMachine extends StateMachine {
             if (mEnableBackgroundScan) {
                 enableBackgroundScan(false);
             }
-            mCurrentScanAlarmMs = 0;
-            setScanAlarm(false, 0);
+            setScanAlarm(false);
         }
     }
 
