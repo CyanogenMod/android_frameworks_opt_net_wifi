@@ -724,6 +724,9 @@ public class WifiStateMachine extends StateMachine {
     /* Disconnecting state watchdog */
     static final int CMD_DISCONNECTING_WATCHDOG_TIMER     = BASE + 96;
 
+    /* Disable an ephemeral network */
+    static final int CMD_DISABLE_EPHEMERAL_NETWORK = BASE + 98;
+
     /* P2p commands */
     /* We are ok with no response here since we wont do much with it anyway */
     public static final int CMD_ENABLE_P2P                = BASE + 131;
@@ -2166,6 +2169,12 @@ public class WifiStateMachine extends StateMachine {
                 scanList.add(new ScanResult(result));
             }
             return scanList;
+        }
+    }
+
+    public void disableEphemeralNetwork(String SSID) {
+        if (SSID != null) {
+            sendMessage(CMD_DISABLE_EPHEMERAL_NETWORK, SSID);
         }
     }
 
@@ -4869,6 +4878,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_UNWANTED_NETWORK:
                 case CMD_DISCONNECTING_WATCHDOG_TIMER:
                 case CMD_ROAM_WATCHDOG_TIMER:
+                case CMD_DISABLE_EPHEMERAL_NETWORK:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
@@ -5850,6 +5860,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
                 s = "CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER";
                 break;
+            case CMD_DISABLE_EPHEMERAL_NETWORK:
+                s = "CMD_DISABLE_EPHEMERAL_NETWORK";
+                break;
             case CMD_START_DRIVER:
                 s = "CMD_START_DRIVER";
                 break;
@@ -6187,6 +6200,10 @@ public class WifiStateMachine extends StateMachine {
             WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(mLastNetworkId);
             if (config != null) {
                 config.lastDisconnected = System.currentTimeMillis();
+                if (config.ephemeral) {
+                    // Remove ephemeral WifiConfigurations from file
+                    mWifiConfigStore.forgetNetwork(mLastNetworkId);
+                }
             }
         }
     }
@@ -6419,6 +6436,15 @@ public class WifiStateMachine extends StateMachine {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                         replyToMessage(message, WifiManager.DISABLE_NETWORK_FAILED,
                                 WifiManager.ERROR);
+                    }
+                    break;
+                case CMD_DISABLE_EPHEMERAL_NETWORK:
+                    config = mWifiConfigStore.disableEphemeralNetwork((String)message.obj);
+                    if (config != null) {
+                        if (config.networkId == mLastNetworkId) {
+                            // Disconnect and let autojoin reselect a new network
+                            sendMessage(CMD_DISCONNECT);
+                        }
                     }
                     break;
                 case CMD_BLACKLIST_NETWORK:
