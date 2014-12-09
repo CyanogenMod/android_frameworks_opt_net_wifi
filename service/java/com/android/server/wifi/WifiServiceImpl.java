@@ -500,13 +500,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         if (mBatchedScanSupported == false) return new ArrayList<BatchedScanResult>();
         int uid = Binder.getCallingUid();
         int userId = UserHandle.getCallingUserId();
+        boolean hasInteractUsersFull = checkInteractAcrossUsersFull();
         long ident = Binder.clearCallingIdentity();
         try {
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<BatchedScanResult>();
             }
-            if (!isCurrentProfile(userId)) {
+            if (!isCurrentProfile(userId) && !hasInteractUsersFull) {
                 return new ArrayList<BatchedScanResult>();
             }
             return mWifiStateMachine.syncGetBatchedScanResultsList();
@@ -960,19 +961,29 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceAccessPermission();
         int userId = UserHandle.getCallingUserId();
         int uid = Binder.getCallingUid();
+        boolean hasInteractUsersFull = checkInteractAcrossUsersFull();
         long ident = Binder.clearCallingIdentity();
         try {
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<ScanResult>();
             }
-            if (!isCurrentProfile(userId)) {
+            if (!isCurrentProfile(userId) && !hasInteractUsersFull) {
                 return new ArrayList<ScanResult>();
             }
             return mWifiStateMachine.syncGetScanResultsList();
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
+    }
+
+    /**
+     * Returns true if the caller holds INTERACT_ACROSS_USERS_FULL.
+     */
+    private boolean checkInteractAcrossUsersFull() {
+        return mContext.checkCallingOrSelfPermission(
+                android.Manifest.permission.INTERACT_ACROSS_USERS_FULL)
+                == PackageManager.PERMISSION_GRANTED;
     }
 
     /**
