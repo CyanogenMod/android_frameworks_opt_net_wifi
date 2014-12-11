@@ -628,12 +628,10 @@ public class WifiAutoJoinController {
         // Apply Hysteresis, boost RSSI of current configuration
         if (null != currentConfiguration) {
             if (a.configKey().equals(currentConfiguration)) {
-                aRssiBoost = +10;
+                aRssiBoost = mWifiConfigStore.currentNetworkBoost;
             } else if (b.configKey().equals(currentConfiguration)) {
-                bRssiBoost = +10;
+                bRssiBoost = mWifiConfigStore.currentNetworkBoost;
             }
-
-
         }
 
         if (VDBG)  {

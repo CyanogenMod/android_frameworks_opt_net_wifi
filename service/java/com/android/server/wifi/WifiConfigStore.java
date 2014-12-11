@@ -391,6 +391,8 @@ public class WifiConfigStore extends IpConfigStore {
     public boolean enable5GHzPreference = true;
     public boolean enableWifiCellularHandoverUserTriggeredAdjustment = true;
 
+    public int currentNetworkBoost = 25;
+
     /**
      * Regex pattern for extracting a connect choice.
      * Matches a strings like the following:
@@ -542,6 +544,8 @@ public class WifiConfigStore extends IpConfigStore {
 
         enableAutoJoinWhenAssociated = mContext.getResources().getBoolean(
                 R.bool.config_wifi_framework_enable_associated_network_selection);
+        currentNetworkBoost = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_current_network_boost);
     }
 
     void enableVerboseLogging(int verbose) {
