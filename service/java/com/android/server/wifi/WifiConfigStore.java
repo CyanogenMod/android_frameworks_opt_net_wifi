@@ -389,6 +389,8 @@ public class WifiConfigStore extends IpConfigStore {
     public int currentNetworkBoost = 25;
     public int scanResultRssiLevelPatchUp = -85;
 
+    public static final int maxNumScanCacheEntries = 128;
+
     /**
      * Regex pattern for extracting a connect choice.
      * Matches a strings like the following:
@@ -2103,7 +2105,6 @@ public class WifiConfigStore extends IpConfigStore {
                         }
 
                         if (key.startsWith(BSSID_KEY_END)) {
-
                             if ((bssid != null) && (ssid != null)) {
 
                                 if (config.scanResultCache == null) {
@@ -3356,6 +3357,13 @@ public class WifiConfigStore extends IpConfigStore {
                     // For an ephemeral Wi-Fi config, the ScanResult should be considered
                     // untrusted.
                     scanResult.untrusted = true;
+                }
+
+                if (config.scanResultCache.size() > (maxNumScanCacheEntries+64)) {
+                    // Trim the scan result cache to maxNumScanCacheEntries entries max
+                    // Since this operation is expensive, make sure it is not performed
+                    // until the cache has grown significantly above the trim treshold
+                    config.trimScanResultsCache(maxNumScanCacheEntries);
                 }
 
                 // Add the scan result to this WifiConfiguration
