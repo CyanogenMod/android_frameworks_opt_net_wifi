@@ -973,8 +973,6 @@ public class WifiMonitor {
         Matcher match = mTargetBSSIDPattern.matcher(eventStr);
         if (match.find()) {
             BSSID = match.group(1);
-        } else {
-            Log.d(TAG, "didn't find BSSID " + eventStr);
         }
         mStateMachine.sendMessage(WifiStateMachine.CMD_TARGET_BSSID, eventLogCounter, 0, BSSID);
     }
@@ -984,8 +982,6 @@ public class WifiMonitor {
         Matcher match = mAssociatedPattern.matcher(eventStr);
         if (match.find()) {
             BSSID = match.group(1);
-        } else {
-            Log.d(TAG, "handleAssociatedBSSIDEvent: didn't find BSSID " + eventStr);
         }
         mStateMachine.sendMessage(WifiStateMachine.CMD_ASSOCIATED_BSSID, eventLogCounter, 0, BSSID);
     }

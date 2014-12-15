@@ -24,6 +24,7 @@ import android.net.wifi.*;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.os.Process;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -612,7 +613,7 @@ public class WifiAutoJoinController {
         bRssiBoost5 = rssiBoostFrom5GHzRssi(b.visibility.rssi5, b.configKey() + "->");
 
         // Select which band to use for a
-        if (a.visibility.rssi5 + aRssiBoost5 > b.visibility.rssi24) {
+        if (a.visibility.rssi5 + aRssiBoost5 > a.visibility.rssi24) {
             // Prefer a's 5GHz
             aPrefers5GHz = true;
         }
@@ -652,8 +653,21 @@ public class WifiAutoJoinController {
         }
         if (VDBG) {
             logDbg("        " + a.configKey() + " is5=" + aPrefers5GHz + " score=" + aScore
-                    + b.configKey() + " is5=" + bPrefers5GHz + " score=" + bScore);
+                    + " " + b.configKey() + " is5=" + bPrefers5GHz + " score=" + bScore);
         }
+
+        // Debug only, record RSSI comparison parameters
+        if (a.visibility != null) {
+            a.visibility.score = aScore;
+            a.visibility.currentNetworkBoost = aRssiBoost;
+            a.visibility.bandPreferenceBoost = aRssiBoost5;
+        }
+        if (b.visibility != null) {
+            b.visibility.score = bScore;
+            b.visibility.currentNetworkBoost = bRssiBoost;
+            b.visibility.bandPreferenceBoost = bRssiBoost5;
+        }
+
         // Compare a and b
         // If a score is higher then a > b and the order is descending (negative)
         // If b score is higher then a < b and the order is ascending (positive)
@@ -698,10 +712,10 @@ public class WifiAutoJoinController {
 
         if (VDBG)  {
             logDbg("    compareWifiConfigurationsRSSI: " + a.configKey()
-                    + " " + Integer.toString(astatus.rssi24)
+                    + " rssi=" + Integer.toString(astatus.rssi24)
                     + "," + Integer.toString(astatus.rssi5)
                     + " boost=" + Integer.toString(aRssiBoost)
-                    + " " + b.configKey() + " "
+                    + " " + b.configKey() + " rssi="
                     + Integer.toString(bstatus.rssi24) + ","
                     + Integer.toString(bstatus.rssi5)
                     + " boost=" + Integer.toString(bRssiBoost)
@@ -844,6 +858,10 @@ public class WifiAutoJoinController {
                             + " due to user choice of " + choice
                             + " order -> " + Integer.toString(order));
                 }
+                if (a.visibility != null) {
+                    a.visibility.lastChoiceBoost = choice;
+                    a.visibility.lastChoiceConfig = b.configKey();
+                }
             }
 
             choice = getConnectChoice(b, a);
@@ -854,6 +872,10 @@ public class WifiAutoJoinController {
                     logDbg("    compareWifiConfigurations prefers " + b.configKey() + " over "
                             + a.configKey() + " due to user choice of " + choice
                             + " order ->" + Integer.toString(order));
+                }
+                if (b.visibility != null) {
+                    b.visibility.lastChoiceBoost = choice;
+                    b.visibility.lastChoiceConfig = a.configKey();
                 }
             }
         }
@@ -942,7 +964,7 @@ public class WifiAutoJoinController {
                 boost = 50;
             }
             if (VDBG && dbg != null) {
-                logDbg("        " + dbg + ":    rssi5 " + rssi + " boost " + boost);
+                logDbg("        " + dbg + ":    rssi5 " + rssi + " 5GHz-boost " + boost);
             }
             return boost;
         }
@@ -1335,7 +1357,8 @@ public class WifiAutoJoinController {
                 // since we connected, or the scored BSSID has gone out of range.
                 // Drop the current connection and perform the rest of autojoin.
                 logDbg("attemptAutoJoin() disconnecting from unwanted ephemeral network");
-                mWifiStateMachine.disconnectCommand();
+                mWifiStateMachine.disconnectCommand(Process.WIFI_UID,
+                        mAllowUntrustedConnections ? 1 : 0);
                 return false;
             } else {
                 mCurrentConfigurationKey = currentConfiguration.configKey();
