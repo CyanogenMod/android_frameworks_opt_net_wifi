@@ -7261,6 +7261,14 @@ public class WifiStateMachine extends StateMachine {
                                     + " -> obsolete");
                             return HANDLED;
                         }
+                        if (mP2pConnected.get()) {
+                            loge("WifiStateMachine L2Connected CMD_START_SCAN source "
+                                    + message.arg1
+                                    + " " + message.arg2 + ", " + mDelayedScanCounter
+                                    + " ignore because P2P is connected");
+                            messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                            return HANDLED;
+                        }
                         boolean tryFullBandScan = false;
                         boolean restrictChannelList = false;
                         long now_ms = System.currentTimeMillis();
@@ -8188,8 +8196,14 @@ public class WifiStateMachine extends StateMachine {
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
                         // Check if the CMD_START_SCAN message is obsolete (and thus if it should
                         // not be processed) and restart the scan
+                        int period =  mDisconnectedScanPeriodMs;
+                        if (mP2pConnected.get()) {
+                           period = (int)Settings.Global.getLong(mContext.getContentResolver(),
+                                    Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
+                                    mDisconnectedScanPeriodMs);
+                        }
                         if (!checkAndRestartDelayedScan(message.arg2,
-                                true, mDisconnectedScanPeriodMs, null, null)) {
+                                true, period, null, null)) {
                             messageHandlingStatus = MESSAGE_HANDLING_STATUS_OBSOLETE;
                             loge("WifiStateMachine Disconnected CMD_START_SCAN source "
                                     + message.arg1
@@ -8225,6 +8239,12 @@ public class WifiStateMachine extends StateMachine {
                         if (DBG) log("Turn on scanning after p2p disconnected");
                         sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
                                     ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
+                    } else {
+                        // If P2P is not connected and there are saved networks, then restart
+                        // scanning at the normal period. This is necessary because scanning might
+                        // have been disabled altogether if WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS
+                        // was set to zero.
+                        startDelayedScan(mDisconnectedScanPeriodMs, null, null);
                     }
                 case CMD_RECONNECT:
                 case CMD_REASSOCIATE:
