@@ -16,6 +16,7 @@
 
 package com.android.server.wifi;
 
+import android.app.AppGlobals;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -31,6 +32,7 @@ import android.net.StaticIpConfiguration;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
 import android.net.wifi.WifiConfiguration.Status;
+
 import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
 
 import android.net.wifi.WifiEnterpriseConfig;
@@ -40,10 +42,10 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiInfo;
-
 import android.os.Environment;
 import android.os.FileObserver;
 import android.os.Process;
+import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserHandle;
 import android.provider.Settings;
@@ -4081,15 +4083,13 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     boolean checkConfigOverridePermission(int uid) {
-        PackageManager pkgMgr = mContext.getPackageManager();
-        for (String packageName : pkgMgr.getPackagesForUid(uid)) {
-            int granted = pkgMgr.checkPermission(
-                                  android.Manifest.permission.OVERRIDE_WIFI_CONFIG, packageName );
-            if (granted == PackageManager.PERMISSION_GRANTED) {
-                return true;
-            }
+        try {
+            return (AppGlobals.getPackageManager().checkUidPermission(
+                    android.Manifest.permission.OVERRIDE_WIFI_CONFIG, uid)
+                    == PackageManager.PERMISSION_GRANTED);
+        } catch (RemoteException e) {
+            return false;
         }
-        return false;
     }
 
     /** called when CS ask WiFistateMachine to disconnect the current network
