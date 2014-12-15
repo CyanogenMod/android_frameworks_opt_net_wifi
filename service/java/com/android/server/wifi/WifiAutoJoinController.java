@@ -584,30 +584,75 @@ public class WifiAutoJoinController {
         }
     }
 
+    int compareWifiConfigurationsFromVisibility(WifiConfiguration a, int aRssiBoost,
+             WifiConfiguration b, int bRssiBoost) {
 
-    int getScoreFromVisibility(WifiConfiguration.Visibility visibility, int rssiBoost, String dbg) {
-        int rssiBoost5 = 0;
-        int score = 0;
+        int aRssiBoost5 = 0; // 5GHz RSSI boost to apply for purpose band selection (5GHz pref)
+        int bRssiBoost5 = 0; // 5GHz RSSI boost to apply for purpose band selection (5GHz pref)
+
+        int aScore = 0;
+        int bScore = 0;
+
+        boolean aPrefers5GHz = false;
+        boolean bPrefers5GHz = false;
 
         /**
-         * Boost RSSI value of 5GHz bands iff the base value is better than threshold
+         * Calculate a boost to apply to RSSI value of configuration we want to join on 5GHz:
+         * Boost RSSI value of 5GHz bands iff the base value is better than threshold,
+         * penalize the RSSI value of 5GHz band iff the base value is lower than threshold
          * This implements band preference where we prefer 5GHz if RSSI5 is good enough, whereas
          * we prefer 2.4GHz otherwise.
-         * Note that 2.4GHz doesn't need a boost since at equal power the RSSI is typically
-         * at least 6-10 dB higher
          */
-        rssiBoost5 = rssiBoostFrom5GHzRssi(visibility.rssi5, dbg+"->");
+        aRssiBoost5 = rssiBoostFrom5GHzRssi(a.visibility.rssi5, a.configKey() + "->");
+        bRssiBoost5 = rssiBoostFrom5GHzRssi(b.visibility.rssi5, b.configKey() + "->");
 
-        // Select which band to use so as to score a
-        if (visibility.rssi5 + rssiBoost5 > visibility.rssi24) {
+        // Select which band to use for a
+        if (a.visibility.rssi5 + aRssiBoost5 > b.visibility.rssi24) {
             // Prefer a's 5GHz
-            score = visibility.rssi5 + rssiBoost5 + rssiBoost;
-        } else {
-            // Prefer a's 2.4GHz
-            score = visibility.rssi24 + rssiBoost;
+            aPrefers5GHz = true;
         }
 
-        return score;
+        // Select which band to use for b
+        if (b.visibility.rssi5 + bRssiBoost5 > b.visibility.rssi24) {
+            // Prefer b's 5GHz
+            bPrefers5GHz = true;
+        }
+
+        if (aPrefers5GHz) {
+            if (bPrefers5GHz) {
+                // If both a and b are on 5GHz then we don't apply the 5GHz RSSI boost to either
+                // one, but directly compare the RSSI values, this improves stability,
+                // since the 5GHz RSSI boost can introduce large fluctuations
+                aScore = a.visibility.rssi5 + aRssiBoost;
+            } else {
+                // If only a is on 5GHz, then apply the 5GHz preference boost to a
+                aScore = a.visibility.rssi5 + aRssiBoost + aRssiBoost5;
+            }
+        } else {
+            aScore = a.visibility.rssi24 + aRssiBoost;
+        }
+
+        if (bPrefers5GHz) {
+            if (aPrefers5GHz) {
+                // If both a and b are on 5GHz then we don't apply the 5GHz RSSI boost to either
+                // one, but directly compare the RSSI values, this improves stability,
+                // since the 5GHz RSSI boost can introduce large fluctuations
+                bScore = b.visibility.rssi5 + bRssiBoost;
+            } else {
+                // If only b is on 5GHz, then apply the 5GHz preference boost to b
+                bScore = b.visibility.rssi5 + bRssiBoost + bRssiBoost5;
+            }
+        } else {
+            bScore = b.visibility.rssi24 + bRssiBoost;
+        }
+        if (VDBG) {
+            logDbg("        " + a.configKey() + " is5=" + aPrefers5GHz + " score=" + aScore
+                    + b.configKey() + " is5=" + bPrefers5GHz + " score=" + bScore);
+        }
+        // Compare a and b
+        // If a score is higher then a > b and the order is descending (negative)
+        // If b score is higher then a < b and the order is ascending (positive)
+        return bScore - aScore;
     }
 
     // Compare WifiConfiguration by RSSI, and return a comparison value in the range [-50, +50]
@@ -658,13 +703,7 @@ public class WifiAutoJoinController {
             );
         }
 
-        scoreA = getScoreFromVisibility(astatus, aRssiBoost, a.configKey());
-        scoreB = getScoreFromVisibility(bstatus, bRssiBoost, b.configKey());
-
-        // Compare a and b
-        // If a score is higher then a > b and the order is descending (negative)
-        // If b score is higher then a < b and the order is ascending (positive)
-        order = scoreB - scoreA;
+        order = compareWifiConfigurationsFromVisibility(a, aRssiBoost, b, bRssiBoost);
 
         // Normalize the order to [-50, +50]
         if (order > 50) order = 50;
@@ -682,13 +721,11 @@ public class WifiAutoJoinController {
                     + "," + a.visibility.rssi5
                     + ") num=(" + a.visibility.num24
                     + "," + a.visibility.num5 + ")"
-                    + " scorea=" + scoreA
                     + prefer + b.configKey()
                     + " rssi=(" + b.visibility.rssi24
                     + "," + b.visibility.rssi5
                     + ") num=(" + b.visibility.num24
                     + "," + b.visibility.num5 + ")"
-                    + " scoreb=" + scoreB
                     + " -> " + order);
         }
 
@@ -895,8 +932,7 @@ public class WifiAutoJoinController {
             int boost = mWifiConfigStore.bandPreferenceBoostFactor5
                     *(rssi - mWifiConfigStore.bandPreferenceBoostThreshold5);
             if (boost > 50) {
-                // 50 dB boost is set so as to overcome the hysteresis of +20 plus a difference of
-                // 25 dB between 2.4 and 5GHz band. This allows jumping from 2.4 to 5GHz
+                // 50 dB boost allows jumping from 2.4 to 5GHz
                 // consistently
                 boost = 50;
             }

@@ -1839,7 +1839,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     public void setLastSelectedConfiguration(int netId) {
-        if (DBG) {
+        if (VDBG) {
             loge("setLastSelectedConfiguration " + Integer.toString(netId));
         }
         if (netId == WifiConfiguration.INVALID_NETWORK_ID) {
@@ -3443,11 +3443,28 @@ public class WifiConfigStore extends IpConfigStore {
                     scanResult.untrusted = true;
                 }
 
-                if (config.scanResultCache.size() > (maxNumScanCacheEntries+64)) {
+                if (config.scanResultCache.size() > (maxNumScanCacheEntries + 64)) {
+                    long now_dbg = 0;
+                    if (VVDBG) {
+                        loge(" Will trim config " + config.configKey()
+                                + " size " + config.scanResultCache.size());
+
+                        for (ScanResult r : config.scanResultCache.values()) {
+                            loge("     " + result.BSSID + " " + result.seen);
+                        }
+                        now_dbg = SystemClock.elapsedRealtimeNanos();
+                    }
                     // Trim the scan result cache to maxNumScanCacheEntries entries max
                     // Since this operation is expensive, make sure it is not performed
                     // until the cache has grown significantly above the trim treshold
                     config.trimScanResultsCache(maxNumScanCacheEntries);
+                    if (VVDBG) {
+                        long diff = SystemClock.elapsedRealtimeNanos() - now_dbg;
+                        loge(" Finished trimming config, time(ns) " + diff);
+                        for (ScanResult r : config.scanResultCache.values()) {
+                            loge("     " + r.BSSID + " " + r.seen);
+                        }
+                    }
                 }
 
                 // Add the scan result to this WifiConfiguration
