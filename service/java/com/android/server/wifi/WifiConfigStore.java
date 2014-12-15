@@ -392,6 +392,7 @@ public class WifiConfigStore extends IpConfigStore {
     public boolean enableWifiCellularHandoverUserTriggeredAdjustment = true;
 
     public int currentNetworkBoost = 25;
+    public int scanResultRssiLevelPatchUp = -85;
 
     /**
      * Regex pattern for extracting a connect choice.
@@ -544,8 +545,12 @@ public class WifiConfigStore extends IpConfigStore {
 
         enableAutoJoinWhenAssociated = mContext.getResources().getBoolean(
                 R.bool.config_wifi_framework_enable_associated_network_selection);
+
         currentNetworkBoost = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_current_network_boost);
+
+        scanResultRssiLevelPatchUp = mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_scan_result_rssi_level_patchup_value);
     }
 
     void enableVerboseLogging(int verbose) {

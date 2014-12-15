@@ -171,11 +171,23 @@ public class WifiAutoJoinController {
             // Fetch the previous instance for this result
             ScanResult sr = scanResultCache.get(result.BSSID);
             if (sr != null) {
+                if (mWifiConfigStore.scanResultRssiLevelPatchUp != 0
+                        && result.level == 0
+                        && sr.level < -20) {
+                    // A 'zero' RSSI reading is most likely a chip problem which returns
+                    // an unknown RSSI, hence ignore it
+                    result.level = sr.level;
+                }
+
                 // If there was a previous cache result for this BSSID, average the RSSI values
                 result.averageRssi(sr.level, sr.seen, mScanResultMaximumAge);
 
                 // Remove the previous Scan Result - this is not necessary
                 scanResultCache.remove(result.BSSID);
+            } else if (mWifiConfigStore.scanResultRssiLevelPatchUp != 0 && result.level == 0) {
+                // A 'zero' RSSI reading is most likely a chip problem which returns
+                // an unknown RSSI, hence initialize it to a sane value
+                result.level = mWifiConfigStore.scanResultRssiLevelPatchUp;
             }
 
             if (!mNetworkScoreCache.isScoredNetwork(result)) {
