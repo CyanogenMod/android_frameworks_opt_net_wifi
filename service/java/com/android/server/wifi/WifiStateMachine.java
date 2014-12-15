@@ -4523,7 +4523,7 @@ public class WifiStateMachine extends StateMachine {
         setSuspendOptimizationsNative(SUSPEND_DUE_TO_DHCP, false);
         mWifiNative.setPowerSave(false);
 
-        stopBatchedScan();
+        // stopBatchedScan();
         WifiNative.pauseScan();
 
         // Update link layer stats
@@ -4580,7 +4580,7 @@ public class WifiStateMachine extends StateMachine {
 
         mDhcpActive = false;
 
-        startBatchedScan();
+        // startBatchedScan();
         WifiNative.restartScan();
     }
 
@@ -5241,6 +5241,13 @@ public class WifiStateMachine extends StateMachine {
 
             mWifiNative.setScanInterval((int)mSupplicantScanIntervalMs / 1000);
             mWifiNative.setExternalSim(true);
+
+            /* turn on use of DFS channels */
+            WifiNative.setDfsFlag(true);
+
+            String countryCode = Settings.Global.getString(mContext.getContentResolver(),
+                    Settings.Global.WIFI_COUNTRY_CODE);
+            mWifiNative.setCountryCode(countryCode);
 
             setRandomMacOui();
             mWifiNative.enableAutoConnect(false);

@@ -583,7 +583,10 @@ public class WifiNative {
     }
 
     public boolean setCountryCode(String countryCode) {
-        return doBooleanCommand("DRIVER COUNTRY " + countryCode.toUpperCase(Locale.ROOT));
+        if (countryCode != null)
+            return doBooleanCommand("DRIVER COUNTRY " + countryCode.toUpperCase(Locale.ROOT));
+        else
+            return doBooleanCommand("DRIVER COUNTRY");
     }
 
     public void enableBackgroundScan(boolean enable) {
@@ -1158,7 +1161,13 @@ public class WifiNative {
                 return true;
             if (sHalFailed)
                 return false;
-            if (startHalNative() && (getInterfaces() != 0) && (sWlan0Index != -1)) {
+            if (startHalNative()) {
+                int num = getInterfaces();
+                if ((num == 0) || (sWlan0Index != -1)) {
+                    Log.e(TAG, "Could not load wlan0 interface");
+                    sHalFailed = true;
+                    return false;
+                }
                 new MonitorThread().start();
                 sHalIsStarted = true;
                 return true;
@@ -1224,7 +1233,7 @@ public class WifiNative {
 
     private static native boolean startScanNative(int iface, int id, ScanSettings settings);
     private static native boolean stopScanNative(int iface, int id);
-    private static native ScanResult[] getScanResultsNative(int iface, boolean flush);
+    private static native WifiScanner.ScanData[] getScanResultsNative(int iface, boolean flush);
     private static native WifiLinkLayerStats getWifiLinkLayerStatsNative(int iface);
 
     public static class ChannelSettings {
@@ -1245,7 +1254,8 @@ public class WifiNative {
     public static class ScanSettings {
         int base_period_ms;
         int max_ap_per_scan;
-        int report_threshold;
+        int report_threshold_percent;
+        int report_threshold_num_scans;
         int num_buckets;
         BucketSettings buckets[];
     }
@@ -1253,8 +1263,8 @@ public class WifiNative {
     public static interface ScanEventHandler {
         void onScanResultsAvailable();
         void onFullScanResult(ScanResult fullScanResult);
-        void onSingleScanComplete();
-        void onScanPaused();
+        void onScanStatus();
+        void onScanPaused(WifiScanner.ScanData[] data);
         void onScanRestarted();
     }
 
@@ -1275,7 +1285,7 @@ public class WifiNative {
             /* we have a separate event to take care of this */
         } else if (status == WIFI_SCAN_COMPLETE) {
             if (sScanEventHandler  != null) {
-                sScanEventHandler.onSingleScanComplete();
+                sScanEventHandler.onScanStatus();
             }
         }
     }
@@ -1345,6 +1355,7 @@ public class WifiNative {
             if (startScanNative(sWlan0Index, sScanCmdId, settings) == false) {
                 sScanEventHandler = null;
                 sScanSettings = null;
+                sScanCmdId = 0;
                 return false;
             }
 
@@ -1365,9 +1376,10 @@ public class WifiNative {
         synchronized (mLock) {
             if (sScanCmdId != 0 && sScanSettings != null && sScanEventHandler != null) {
                 Log.d(TAG, "Pausing scan");
+                WifiScanner.ScanData scanData[] = getScanResultsNative(sWlan0Index, true);
                 stopScanNative(sWlan0Index, sScanCmdId);
                 sScanCmdId = 0;
-                sScanEventHandler.onScanPaused();
+                sScanEventHandler.onScanPaused(scanData);
             }
         }
     }
@@ -1376,20 +1388,28 @@ public class WifiNative {
         synchronized (mLock) {
             if (sScanCmdId == 0 && sScanSettings != null && sScanEventHandler != null) {
                 Log.d(TAG, "Restarting scan");
-                startScan(sScanSettings, sScanEventHandler);
-                sScanEventHandler.onScanRestarted();
+                ScanEventHandler handler = sScanEventHandler;
+                ScanSettings settings = sScanSettings;
+                if (startScan(sScanSettings, sScanEventHandler)) {
+                    sScanEventHandler.onScanRestarted();
+                } else {
+                    /* we are still paused; don't change state */
+                    sScanEventHandler = handler;
+                    sScanSettings = settings;
+                }
             }
         }
     }
 
-    synchronized public static ScanResult[] getScanResults() {
+    synchronized public static WifiScanner.ScanData[] getScanResults(boolean flush) {
         synchronized (mLock) {
-            return getScanResultsNative(sWlan0Index, /* flush = */ false);
+            return getScanResultsNative(sWlan0Index, flush);
         }
     }
 
     public static interface HotlistEventHandler {
-        void onHotlistApFound (ScanResult[]result);
+        void onHotlistApFound (ScanResult[] result);
+        void onHotlistApLost  (ScanResult[] result);
     }
 
     private static int sHotlistCmdId = 0;
@@ -1434,7 +1454,18 @@ public class WifiNative {
                 sHotlistEventHandler.onHotlistApFound(results);
             } else {
                 /* this can happen because of race conditions */
-                Log.d(TAG, "Ignoring hotlist AP found change");
+                Log.d(TAG, "Ignoring hotlist AP found event");
+            }
+        }
+    }
+
+    synchronized public static void onHotlistApLost(int id, ScanResult[] results) {
+        synchronized (mLock) {
+            if (sHotlistCmdId != 0) {
+                sHotlistEventHandler.onHotlistApLost(results);
+            } else {
+                /* this can happen because of race conditions */
+                Log.d(TAG, "Ignoring hotlist AP lost event");
             }
         }
     }
@@ -1602,6 +1633,18 @@ public class WifiNative {
                 return getChannelsForBandNative(sWlan0Index, band);
             } else {
                 return null;
+            }
+        }
+    }
+
+
+    private static native boolean setDfsFlagNative(int iface, boolean dfsOn);
+    synchronized public static boolean setDfsFlag(boolean dfsOn) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return setDfsFlagNative(sWlan0Index, dfsOn);
+            } else {
+                return false;
             }
         }
     }

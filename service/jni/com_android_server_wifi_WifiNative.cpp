@@ -349,10 +349,11 @@ static jboolean android_net_wifi_startScan(
 
     params.base_period = getIntField(env, settings, "base_period_ms");
     params.max_ap_per_scan = getIntField(env, settings, "max_ap_per_scan");
-    params.report_threshold = getIntField(env, settings, "report_threshold");
+    params.report_threshold_percent = getIntField(env, settings, "report_threshold_percent");
+    params.report_threshold_num_scans = getIntField(env, settings, "report_threshold_num_scans");
 
-    ALOGD("Initialized common fields %d, %d, %d", params.base_period,
-            params.max_ap_per_scan, params.report_threshold);
+    ALOGD("Initialized common fields %d, %d, %d, %d", params.base_period, params.max_ap_per_scan,
+            params.report_threshold_percent, params.report_threshold_num_scans);
 
     const char *bucket_array_type = "[Lcom/android/server/wifi/WifiNative$BucketSettings;";
     const char *channel_array_type = "[Lcom/android/server/wifi/WifiNative$ChannelSettings;";
@@ -414,55 +415,84 @@ static jboolean android_net_wifi_stopScan(JNIEnv *env, jclass cls, jint iface, j
     return wifi_stop_gscan(id, handle)  == WIFI_SUCCESS;
 }
 
+static int compare_scan_result_timestamp(const void *v1, const void *v2) {
+    const wifi_scan_result *result1 = static_cast<const wifi_scan_result *>(v1);
+    const wifi_scan_result *result2 = static_cast<const wifi_scan_result *>(v2);
+    return result1->ts - result2->ts;
+}
+
 static jobject android_net_wifi_getScanResults(
         JNIEnv *env, jclass cls, jint iface, jboolean flush)  {
     
-    wifi_scan_result results[256];
-    int num_results = 256;
+    wifi_cached_scan_results scan_data[64];
+    int num_scan_data = 64;
     
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("getting scan results on interface[%d] = %p", iface, handle);
-    
-    int result = wifi_get_cached_gscan_results(handle, 1, num_results, results, &num_results);
+
+    byte b = flush ? 0 : 0xFF;
+    int result = wifi_get_cached_gscan_results(handle, b, num_scan_data, scan_data, &num_scan_data);
     if (result == WIFI_SUCCESS) {
-        jclass clsScanResult = (env)->FindClass("android/net/wifi/ScanResult");
-        if (clsScanResult == NULL) {
-            ALOGE("Error in accessing class");
+        jobjectArray scanData = createObjectArray(env,
+                "android/net/wifi/WifiScanner$ScanData", num_scan_data);
+        if (scanData == NULL) {
+            ALOGE("Error in allocating array of scanData");
             return NULL;
         }
 
-        jobjectArray scanResults = env->NewObjectArray(num_results, clsScanResult, NULL);
-        if (scanResults == NULL) {
-            ALOGE("Error in allocating array");
-            return NULL;
-        }
+        for (int i = 0; i < num_scan_data; i++) {
 
-        for (int i = 0; i < num_results; i++) {
-
-            jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
-            if (scanResult == NULL) {
-                ALOGE("Error in creating scan result");
+            jobject data = createObject(env, "android/net/wifi/WifiScanner$ScanData");
+            if (data == NULL) {
+                ALOGE("Error in allocating scanData");
                 return NULL;
             }
 
-            setStringField(env, scanResult, "SSID", results[i].ssid);
+            setIntField(env, data, "mId", scan_data[i].scan_id);
+            setIntField(env, data, "mFlags", scan_data[i].flags);
 
-            char bssid[32];
-            sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[i].bssid[0],
-                    results[i].bssid[1], results[i].bssid[2], results[i].bssid[3],
-                    results[i].bssid[4], results[i].bssid[5]);
+            /* sort all scan results by timestamp */
+            qsort(scan_data[i].results, scan_data[i].num_results,
+                    sizeof(wifi_scan_result), compare_scan_result_timestamp);
 
-            setStringField(env, scanResult, "BSSID", bssid);
+            jobjectArray scanResults = createObjectArray(env,
+                    "android/net/wifi/ScanResult", scan_data[i].num_results);
+            if (scanResults == NULL) {
+                ALOGE("Error in allocating scanResult array");
+                return NULL;
+            }
 
-            setIntField(env, scanResult, "level", results[i].rssi);
-            setIntField(env, scanResult, "frequency", results[i].channel);
-            setLongField(env, scanResult, "timestamp", results[i].ts);
+            wifi_scan_result *results = scan_data[i].results;
+            for (int j = 0; j < scan_data[i].num_results; j++) {
 
-            env->SetObjectArrayElement(scanResults, i, scanResult);
-            env->DeleteLocalRef(scanResult);
+                jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
+                if (scanResult == NULL) {
+                    ALOGE("Error in creating scan result");
+                    return NULL;
+                }
+
+                setStringField(env, scanResult, "SSID", results[j].ssid);
+
+                char bssid[32];
+                sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[j].bssid[0],
+                        results[j].bssid[1], results[j].bssid[2], results[j].bssid[3],
+                        results[j].bssid[4], results[j].bssid[5]);
+
+                setStringField(env, scanResult, "BSSID", bssid);
+
+                setIntField(env, scanResult, "level", results[j].rssi);
+                setIntField(env, scanResult, "frequency", results[j].channel);
+                setLongField(env, scanResult, "timestamp", results[j].ts);
+
+                env->SetObjectArrayElement(scanResults, j, scanResult);
+                env->DeleteLocalRef(scanResult);
+            }
+
+            setObjectField(env, data, "mResults", "[Landroid/net/wifi/ScanResult;", scanResults);
+            env->SetObjectArrayElement(scanData, i, data);
         }
 
-        return scanResults;
+        return scanData;
     } else {
         return NULL;
     }
@@ -599,6 +629,57 @@ static void onHotlistApFound(wifi_request_id id,
         id, scanResults);
 }
 
+static void onHotlistApLost(wifi_request_id id,
+        unsigned num_results, wifi_scan_result *results) {
+
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onHotlistApLost called, vm = %p, obj = %p, env = %p, num_results = %d",
+            mVM, mCls, env, num_results);
+
+    jclass clsScanResult = (env)->FindClass("android/net/wifi/ScanResult");
+    if (clsScanResult == NULL) {
+        ALOGE("Error in accessing class");
+        return;
+    }
+
+    jobjectArray scanResults = env->NewObjectArray(num_results, clsScanResult, NULL);
+    if (scanResults == NULL) {
+        ALOGE("Error in allocating array");
+        return;
+    }
+
+    for (unsigned i = 0; i < num_results; i++) {
+
+        jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
+        if (scanResult == NULL) {
+            ALOGE("Error in creating scan result");
+            return;
+        }
+
+        setStringField(env, scanResult, "SSID", results[i].ssid);
+
+        char bssid[32];
+        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[i].bssid[0], results[i].bssid[1],
+            results[i].bssid[2], results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
+
+        setStringField(env, scanResult, "BSSID", bssid);
+
+        setIntField(env, scanResult, "level", results[i].rssi);
+        setIntField(env, scanResult, "frequency", results[i].channel);
+        setLongField(env, scanResult, "timestamp", results[i].ts);
+
+        env->SetObjectArrayElement(scanResults, i, scanResult);
+
+        ALOGD("Lost AP %32s %s", results[i].ssid, bssid);
+    }
+
+    reportEvent(env, mCls, "onHotlistApLost", "(I[Landroid/net/wifi/ScanResult;)V",
+        id, scanResults);
+}
+
+
 static jboolean android_net_wifi_setHotlist(
         JNIEnv *env, jclass cls, jint iface, jint id, jobject ap)  {
 
@@ -607,6 +688,8 @@ static jboolean android_net_wifi_setHotlist(
 
     wifi_bssid_hotlist_params params;
     memset(&params, 0, sizeof(params));
+
+    params.lost_ap_sample_size = getIntField(env, ap, "apLostThreshold");
 
     jobjectArray array = (jobjectArray) getObjectField(env, ap,
             "bssidInfos", "[Landroid/net/wifi/WifiScanner$BssidInfo;");
@@ -651,6 +734,7 @@ static jboolean android_net_wifi_setHotlist(
     memset(&handler, 0, sizeof(handler));
 
     handler.on_hotlist_ap_found = &onHotlistApFound;
+    handler.on_hotlist_ap_lost  = &onHotlistApLost;
     return wifi_set_bssid_hotlist(id, handle, params, handler) == WIFI_SUCCESS;
 }
 
@@ -1051,6 +1135,15 @@ static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
     }
 }
 
+static jboolean android_net_wifi_setDfsFlag(JNIEnv *env, jclass cls, jint iface, jboolean dfs) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("setting dfs flag to %s, %p", dfs ? "true" : "false", handle);
+
+    u32 nodfs = dfs ? 0 : 1;
+    wifi_error result = wifi_set_nodfs_flag(handle, nodfs);
+    return result == WIFI_SUCCESS;
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -1082,7 +1175,7 @@ static JNINativeMethod gWifiMethods[] = {
     { "startScanNative", "(IILcom/android/server/wifi/WifiNative$ScanSettings;)Z",
             (void*) android_net_wifi_startScan},
     { "stopScanNative", "(II)Z", (void*) android_net_wifi_stopScan},
-    { "getScanResultsNative", "(IZ)[Landroid/net/wifi/ScanResult;",
+    { "getScanResultsNative", "(IZ)[Landroid/net/wifi/WifiScanner$ScanData;",
             (void *) android_net_wifi_getScanResults},
     { "setHotlistNative", "(IILandroid/net/wifi/WifiScanner$HotlistSettings;)Z",
             (void*) android_net_wifi_setHotlist},
@@ -1099,8 +1192,9 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_requestRange},
     { "cancelRangeRequestNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
             (void*) android_net_wifi_cancelRange},
-    { "setScanningMacOuiNative", "(I[B)Z", (void*) android_net_wifi_setScanningMacOui},
-    { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels}
+    { "setScanningMacOuiNative", "(I[B)Z",  (void*) android_net_wifi_setScanningMacOui},
+    { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels},
+    { "setDfsFlagNative",         "(IZ)Z",  (void*) android_net_wifi_setDfsFlag }
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
