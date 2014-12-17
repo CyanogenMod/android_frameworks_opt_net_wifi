@@ -22,6 +22,8 @@ import android.net.NetworkScoreManager;
 import android.net.WifiKey;
 import android.net.wifi.*;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
+import android.os.SystemClock;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -74,6 +76,9 @@ public class WifiAutoJoinController {
     private final static long loseBlackListHardMilli = 1000 * 60 * 60 * 8;
     // Lose some temporary blacklisting after 30 minutes
     private final static long loseBlackListSoftMilli = 1000 * 60 * 30;
+
+    /** @see android.provider.Settings.Global#WIFI_EPHEMERAL_OUT_OF_RANGE_TIMEOUT_MS */
+    private static final long DEFAULT_EPHEMERAL_OUT_OF_RANGE_TIMEOUT_MS = 1000 * 60; // 1 minute
 
     public static final int AUTO_JOIN_IDLE = 0;
     public static final int AUTO_JOIN_ROAMING = 1;
@@ -1169,6 +1174,53 @@ public class WifiAutoJoinController {
                 !result.capabilities.contains("EAP");
     }
 
+    private boolean haveRecentlySeenScoredBssid(WifiConfiguration config) {
+        long ephemeralOutOfRangeTimeoutMs = Settings.Global.getLong(
+                mContext.getContentResolver(),
+                Settings.Global.WIFI_EPHEMERAL_OUT_OF_RANGE_TIMEOUT_MS,
+                DEFAULT_EPHEMERAL_OUT_OF_RANGE_TIMEOUT_MS);
+
+        // Check whether the currently selected network has a score curve. If
+        // ephemeralOutOfRangeTimeoutMs is <= 0, then this is all we check, and we stop here.
+        // Otherwise, we stop here if the currently selected network has a score. If it doesn't, we
+        // keep going - it could be that another BSSID is in range (has been seen recently) which
+        // has a score, even if the one we're immediately connected to doesn't.
+        ScanResult currentScanResult =  mWifiStateMachine.getCurrentScanResult();
+        boolean currentNetworkHasScoreCurve = mNetworkScoreCache.hasScoreCurve(currentScanResult);
+        if (ephemeralOutOfRangeTimeoutMs <= 0 || currentNetworkHasScoreCurve) {
+            if (DBG) {
+                if (currentNetworkHasScoreCurve) {
+                    logDbg("Current network has a score curve, keeping network: "
+                            + currentScanResult);
+                } else {
+                    logDbg("Current network has no score curve, giving up: " + config.SSID);
+                }
+            }
+            return currentNetworkHasScoreCurve;
+        }
+
+        if (config.scanResultCache == null || config.scanResultCache.isEmpty()) {
+            return false;
+        }
+
+        long currentTimeMs = System.currentTimeMillis();
+        for (ScanResult result : config.scanResultCache.values()) {
+            if (currentTimeMs > result.seen
+                    && currentTimeMs - result.seen < ephemeralOutOfRangeTimeoutMs
+                    && mNetworkScoreCache.hasScoreCurve(result)) {
+                if (DBG) {
+                    logDbg("Found scored BSSID, keeping network: " + result.BSSID);
+                }
+                return true;
+            }
+        }
+
+        if (DBG) {
+            logDbg("No recently scored BSSID found, giving up connection: " + config.SSID);
+        }
+        return false;
+    }
+
     /**
      * attemptAutoJoin() function implements the core of the a network switching algorithm
      * Return false if no acceptable networks were found.
@@ -1277,10 +1329,11 @@ public class WifiAutoJoinController {
                 mWifiStateMachine.disconnectCommand();
                 return false;
             } else if (currentConfiguration.ephemeral && (!mAllowUntrustedConnections ||
-                    !mNetworkScoreCache.isScoredNetwork(currentConfiguration.lastSeen()))) {
+                    !haveRecentlySeenScoredBssid(currentConfiguration))) {
                 // The current connection is untrusted (the framework added it), but we're either
-                // no longer allowed to connect to such networks, or the score has been nullified
-                // since we connected. Drop the current connection and perform the rest of autojoin.
+                // no longer allowed to connect to such networks, the score has been nullified
+                // since we connected, or the scored BSSID has gone out of range.
+                // Drop the current connection and perform the rest of autojoin.
                 logDbg("attemptAutoJoin() disconnecting from unwanted ephemeral network");
                 mWifiStateMachine.disconnectCommand();
                 return false;
