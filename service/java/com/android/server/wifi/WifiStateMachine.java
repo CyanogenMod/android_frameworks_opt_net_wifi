@@ -2092,6 +2092,10 @@ public class WifiStateMachine extends StateMachine {
         sendMessage(CMD_DISCONNECT);
     }
 
+    public void disconnectCommand(int uid, int reason) {
+        sendMessage(CMD_DISCONNECT, uid, reason);
+    }
+
     /**
      * Initiate a reconnection to AP
      */
@@ -2755,10 +2759,7 @@ public class WifiStateMachine extends StateMachine {
                 if (config != null) {
                     sb.append(" ").append(config.configKey());
                     if (config.visibility != null) {
-                        sb.append(" [").append(config.visibility.num24);
-                        sb.append(" ,").append(config.visibility.rssi24);
-                        sb.append(" ;").append(config.visibility.num5);
-                        sb.append(" ,").append(config.visibility.rssi5).append("]");
+                        sb.append(" ").append(config.visibility.toString());
                     }
                 }
                 if (mTargetRoamBSSID != null) {
@@ -2768,12 +2769,9 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(printTime());
                 config = getCurrentWifiConfiguration();
                 if (config != null) {
-                    sb.append(" ").append(config.configKey());
+                    sb.append(config.configKey());
                     if (config.visibility != null) {
-                        sb.append(" [").append(config.visibility.num24);
-                        sb.append(" ,").append(config.visibility.rssi24);
-                        sb.append(" ;").append(config.visibility.num5);
-                        sb.append(" ,").append(config.visibility.rssi5).append("]");
+                        sb.append(" ").append(config.visibility.toString());
                     }
                 }
                 break;

@@ -1440,9 +1440,8 @@ public class WifiConfigStore extends IpConfigStore {
                 if (config.SSID != null) {
                     csum.update(config.SSID.getBytes(), 0, config.SSID.getBytes().length);
                     long d = csum.getValue();
-                    loge(" got CRC SSID " + config.SSID + " -> " + d);
                     if (mDeletedSSIDs.contains(d)) {
-                        loge(" was deleted");
+                        loge(" got CRC for SSID " + config.SSID + " -> " + d + ", was deleted");
                     }
                 }
 
