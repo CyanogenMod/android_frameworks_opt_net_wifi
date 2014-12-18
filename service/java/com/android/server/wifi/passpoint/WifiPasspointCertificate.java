@@ -18,7 +18,6 @@ package com.android.server.wifi.passpoint;
 
 import android.util.Log;
 import android.util.Base64;
-import android.os.Environment;
 import android.os.SystemProperties;
 import android.os.Process;
 import android.os.Binder;
@@ -65,11 +64,6 @@ import com.android.org.bouncycastle.asn1.util.ASN1Dump;
 import com.android.org.bouncycastle.jce.provider.BouncyCastleProvider;
 import com.android.org.bouncycastle.asn1.x509.ExtendedKeyUsage;
 import com.android.org.bouncycastle.util.io.pem.*;
-
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.HttpResponse;
-import org.apache.http.message.BasicHeader;
-import org.apache.http.Header;
 
 public class WifiPasspointCertificate {
     private static final String TAG = "PasspointCertificate";
@@ -704,33 +698,24 @@ public class WifiPasspointCertificate {
 
                 if (bPKCS7) {
                     in = urlConnection.getInputStream();
-                    if (bGzipContent) {
-                        in = getUnZipInputStream(in);
+                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+
+                    while (true) {
+                        int rd = in.read(buf, 0, 8192);
+                        if (rd == -1) {
+                            break;
+                        }
+                        bos.write(buf, 0, rd);
                     }
 
-                    if (in != null)
-                    {
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        byte[] buf = new byte[8192];
-
-                        while (true) {
-                            int rd = in.read(buf, 0, 8192);
-                            if (rd == -1) {
-                                break;
-                            }
-                            bos.write(buf, 0, rd);
-                        }
-
-                        bos.flush();
-                        byte[] byteArray = bos.toByteArray();
-                        if (bBase64) {
-                            String s = new String(byteArray);
-                            Log.d(TAG2, "Content : " + s);
-                            return Base64.decode(s, Base64.DEFAULT);
-                        }
-
-                        return byteArray;
+                    byte[] byteArray = bos.toByteArray();
+                    if (bBase64) {
+                        String s = new String(byteArray);
+                        return Base64.decode(s, Base64.DEFAULT);
                     }
+
+                    return byteArray;
                 }
 
             } else {
@@ -790,33 +775,25 @@ public class WifiPasspointCertificate {
 
                 if (bPKCS7) {
                     in = urlConnection.getInputStream();
-                    if (bGzipContent) {
-                        in = getUnZipInputStream(in);
+                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+
+                    while (true) {
+                        int rd = in.read(buf, 0, 8192);
+                        if (rd == -1) {
+                            break;
+                        }
+                        bos.write(buf, 0, rd);
                     }
 
-                    if (in != null)
-                    {
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        byte[] buf = new byte[8192];
-
-                        while (true) {
-                            int rd = in.read(buf, 0, 8192);
-                            if (rd == -1) {
-                                break;
-                            }
-                            bos.write(buf, 0, rd);
-                        }
-
-                        bos.flush();
-                        byte[] byteArray = bos.toByteArray();
-                        if (bBase64) {
-                            String s = new String(byteArray);
-                            Log.d(TAG2, "Content : " + s);
-                            return Base64.decode(s, Base64.DEFAULT);
-                        }
-
-                        return byteArray;
+                    bos.flush();
+                    byte[] byteArray = bos.toByteArray();
+                    if (bBase64) {
+                        String s = new String(byteArray);
+                        return Base64.decode(s, Base64.DEFAULT);
                     }
+
+                    return byteArray;
                 }
             }
         } catch (Exception e) {
@@ -1090,201 +1067,116 @@ public class WifiPasspointCertificate {
 
     public byte[] estHttpClient(String serverUrl, String method, String suffix, String operation,
             byte[] csr, final String digestUsername, final String digestPassword) {
+        HttpURLConnection connection = null;
+        InputStream in = null;
         try {
-            boolean bGzipContent = false;
-            URI url = new URI(serverUrl + suffix);
-            WifiPasspointHttpClient hc = null;
-            //get response content
-            InputStream in = null;
+            final URL url = new URL(serverUrl + suffix);
+            connection = (HttpURLConnection) url.openConnection();
 
+            final WifiPasspointHttpClient hc;
             if (serverUrl.startsWith("HTTPS://") || serverUrl.startsWith("https://")) {
                 if (operation.equals(REENROLL)) {
-                    Log.d(TAG, "[estHttpClient]: re-enroll");
                     if (mHs20PKCS12KeyStore.aliases().hasMoreElements()) {
                         hc = new WifiPasspointHttpClient(mHs20PKCS12KeyStore, passWord.toCharArray());
                     } else {
-                        Log.d(TAG, "client cert is not installed in passpoint PKCS12 keystore");
                         return null;
                     }
-                } else if (digestUsername != null && digestPassword != null) {
-                    Log.d(TAG, "[estHttpClient]: enroll");
-                    hc = new WifiPasspointHttpClient(new UsernamePasswordCredentials(digestUsername,
-                            digestPassword));
                 } else {
-                    hc = new WifiPasspointHttpClient();
-                }
-
-                HttpResponse httpResp = null;
-                Header[] requestHeaders;
-                List<BasicHeader> basicHeaders = new ArrayList<BasicHeader>();
-
-                basicHeaders.add(new BasicHeader(hc.ACCEPT_ENCODING_HEADER, "gzip"));
-
-                if (method.equals("POST") && csr != null) {
-                    byte[] base64csr = Base64.encode(csr, Base64.DEFAULT);
-                    String base64String = new String(base64csr);
-                    String pemCsr = "-----BEGIN CERTIFICATE REQUEST-----\n" +
-                            base64String.replaceAll("(.{64})", "$1\n") +
-                            "\n-----END CERTIFICATE REQUEST-----";
-                    pemCsr = base64String.replaceAll("(.{64})", "$1\n");
-                    Log.d(TAG, "CSR: " + pemCsr);
-                    //basicHeaders.add(new BasicHeader(hc.CONTENT_LENGTH_HEADER,
-                            //"" + pemCsr.getBytes().length));
-                    basicHeaders.add(new BasicHeader(hc.CONTENT_TRANSFER_ENCODING, "base64"));
-                    requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
-                    httpResp = hc
-                            .post(url, "application/pkcs10", pemCsr.getBytes(), requestHeaders);
-                } else {
-                    requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
-                    httpResp = hc
-                            .get(url, requestHeaders);
-                }
-
-                //get response header
-                boolean bPKCS7 = false;
-                boolean bCSRAttrs = false;
-                int statusCode = httpResp.getStatusLine().getStatusCode();
-                Log.d(TAG2, "Response code :" + String.valueOf(statusCode));
-                if (statusCode == 200) {
-                    String contentType = httpResp.getEntity().getContentType().getValue();
-                    if ("application/pkcs7-mime".equals(contentType)) { //cacert and client cert
-                        bPKCS7 = true;
-                    } else if ("application/csrattrs".equals(contentType)) { // csr attributes
-                        bCSRAttrs = true;
-                    }
-
-                    if (httpResp.getEntity().getContentEncoding() != null &&
-                            "gzip".equalsIgnoreCase(httpResp.getEntity().getContentEncoding()
-                            .getValue())) {
-                        bGzipContent = true;
-                    }
-                }
-
-                if (bPKCS7 || bCSRAttrs) {
-                    in = httpResp.getEntity().getContent();
-                    if (bGzipContent) {
-                        in = getUnZipInputStream(in);
-                    }
-
-                    if (in != null)
-                    {
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        byte[] buf = new byte[8192];
-
-                        while (true) {
-                            int rd = in.read(buf, 0, 8192);
-                            if (rd == -1) {
-                                break;
-                            }
-                            bos.write(buf, 0, rd);
-                        }
-
-                        bos.flush();
-                        byte[] byteArray = bos.toByteArray();
-                        if (org.apache.commons.codec.binary.Base64.isArrayByteBase64(byteArray)) {
-                            String s = new String(byteArray);
-                            Log.d(TAG2, "Content : " + s);
-                            return Base64.decode(new String(byteArray), Base64.DEFAULT);
-                        }
-
-                        return byteArray;
-                    }
+                    hc = new WifiPasspointHttpClient(null, null);
                 }
             } else {
-                hc = new WifiPasspointHttpClient(new UsernamePasswordCredentials(digestUsername,
-                            digestPassword));
+                hc = new WifiPasspointHttpClient(null, null);
+            }
 
-                HttpResponse httpResp = null;
-                Header[] requestHeaders;
-                List<BasicHeader> basicHeaders = new ArrayList<BasicHeader>();
+            if (digestUsername != null && digestPassword != null) {
+                // TODO: Send credentials securely to the server if it responds with an
+                // authorization challenge. It's not clear whether this is necessary.
+                Log.e(TAG, "Unsupported digestUsername != null");
+            }
 
-                basicHeaders.add(new BasicHeader(hc.ACCEPT_ENCODING_HEADER, "gzip"));
-                if (method.equals("POST") && csr != null) {
-                    byte[] base64csr = Base64.encode(csr, Base64.DEFAULT);
-                    String base64String = new String(base64csr);
-                    String pemCsr = "-----BEGIN CERTIFICATE REQUEST-----\n" +
-                            base64String.replaceAll("(.{64})", "$1\n") +
-                            "\n-----END CERTIFICATE REQUEST-----";
+            hc.configureURLConnection(connection);
+            connection.setRequestMethod(method);
+            int statusCode;
 
-                    pemCsr = base64String.replaceAll("(.{64})", "$1\n");
-                    Log.d(TAG, "CSR: " + pemCsr);
-                    basicHeaders.add(new BasicHeader(hc.CONTENT_LENGTH_HEADER,
-                            "" + pemCsr.getBytes().length));
-                    basicHeaders.add(new BasicHeader(hc.CONTENT_TRANSFER_ENCODING, "base64"));
-                    requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
-                    httpResp = hc
-                            .post(url, "application/pkcs10", pemCsr.getBytes(), requestHeaders);
+            if (method.equals("POST") && csr != null) {
+                byte[] base64csr = Base64.encode(csr, Base64.DEFAULT);
+                final String base64String = new String(base64csr);
+                final String pemCsr = base64String.replaceAll("(.{64})", "$1\n");
 
-                }
+                connection.addRequestProperty("Content-Length", String.valueOf(pemCsr.getBytes().length));
+                connection.addRequestProperty("Content-Transfer-Encoding", "base64");
+                connection.addRequestProperty("Content-Type", "application/pkcs10");
 
-                //get response header
-                boolean bPKCS7 = false;
-                boolean bCSRAttrs = false;
-                int statusCode = httpResp.getStatusLine().getStatusCode();
-                Log.d(TAG2, "Response code :" + String.valueOf(statusCode));
-                if (statusCode == 200) {
-                    String contentType = httpResp.getEntity().getContentType().getValue();
-                    if ("application/pkcs7-mime".equals(contentType)) { //cacert and client cert
-                        bPKCS7 = true;
-                    } else if ("application/csrattrs".equals(contentType)) { // csr attributes
-                        bCSRAttrs = true;
-                    }
-
-                    if ("gzip".equalsIgnoreCase(httpResp.getEntity().getContentEncoding()
-                            .getValue())) {
-                        bGzipContent = true;
+                OutputStream os = null;
+                try {
+                    os = connection.getOutputStream();
+                    os.write(pemCsr.getBytes());
+                    os.close();
+                } finally {
+                    if (os != null) {
+                        os.close();
                     }
                 }
 
-                if (bPKCS7 || bCSRAttrs) {
-                    in = httpResp.getEntity().getContent();
-                    if (bGzipContent) {
-                        in = getUnZipInputStream(in);
-                    }
+                statusCode = connection.getResponseCode();
+            } else {
+                statusCode = connection.getResponseCode();
+            }
 
-                    if (in != null)
-                    {
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        byte[] buf = new byte[8192];
-
-                        while (true) {
-                            int rd = in.read(buf, 0, 8192);
-                            if (rd == -1) {
-                                break;
-                            }
-                            bos.write(buf, 0, rd);
-                        }
-
-                        bos.flush();
-                        byte[] byteArray = bos.toByteArray();
-                        if (org.apache.commons.codec.binary.Base64.isArrayByteBase64(byteArray)) {
-                            String s = new String(byteArray);
-                            Log.d(TAG2, "Content : " + s);
-                            return Base64.decode(new String(byteArray), Base64.DEFAULT);
-                        }
-                        return byteArray;
-                    }
+            //get response header
+            boolean bPKCS7 = false;
+            boolean bCSRAttrs = false;
+            Log.d(TAG2, "Response code :" + String.valueOf(statusCode));
+            if (statusCode == 200) {
+                final String contentType = connection.getContentType();
+                if ("application/pkcs7-mime".equals(contentType)) { //cacert and client cert
+                    bPKCS7 = true;
+                } else if ("application/csrattrs".equals(contentType)) { // csr attributes
+                    bCSRAttrs = true;
                 }
+            }
+
+            if (bPKCS7 || bCSRAttrs) {
+                in = connection.getInputStream();
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+
+                while (true) {
+                    int rd = in.read(buf, 0, 8192);
+                    if (rd == -1) {
+                        break;
+                    }
+                    bos.write(buf, 0, rd);
+                }
+
+                bos.flush();
+                byte[] byteArray = bos.toByteArray();
+                try {
+                    byteArray = android.util.Base64.decode(byteArray, 0);
+                } catch (IllegalArgumentException iae) {
+                    // do nothing and return the original byte array.
+                }
+
+                return byteArray;
             }
         } catch (Exception e) {
             Log.e(TAG, "estHttpClient err:" + e);
-            e.printStackTrace();
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+
+            if (in != null) {
+                try {
+                    in.close();
+                } catch (IOException ignored) {
+                }
+            }
         }
         return null;
     }
 
-    private InputStream getUnZipInputStream(InputStream inputStream) throws IOException {
-        /* workaround for Android 2.3
-           (see http://stackoverflow.com/questions/5131016/)
-        */
-        try {
-            return (GZIPInputStream) inputStream;
-        } catch (ClassCastException e) {
-            return new GZIPInputStream(inputStream);
-        }
-    }
-
-    private class CertTrustManager implements X509TrustManager {
+    private static class CertTrustManager implements X509TrustManager {
         public void checkClientTrusted(X509Certificate[] arg0, String arg1) {
             Log.d(TAG, "[checkClientTrusted] " + arg0 + arg1);
         }

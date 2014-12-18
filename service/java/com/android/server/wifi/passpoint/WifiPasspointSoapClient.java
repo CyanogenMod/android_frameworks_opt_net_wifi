@@ -69,11 +69,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
 
+import java.net.HttpURLConnection;
 import java.net.UnknownHostException;
-import java.net.URI;
+import java.net.URL;
 
 import java.security.cert.X509Certificate;
 import java.security.cert.CertificateException;
@@ -94,11 +96,6 @@ import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
-
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.Header;
-import org.apache.http.HttpResponse;
-import org.apache.http.message.BasicHeader;
 
 import org.ksoap2.SoapEnvelope;
 import org.ksoap2.serialization.AttributeInfo;
@@ -847,11 +844,8 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                 boolean isConnected = false;
 
                 WifiPasspointHttpClient hc = null;
-                UsernamePasswordCredentials credentials = null;
-
                 if (digestUsername != null && digestPassword != null) {
-                    credentials = new UsernamePasswordCredentials(digestUsername, digestPassword);
-                    hc = new WifiPasspointHttpClient(credentials);
+                    Log.e(TAG, "Unsupported digestUsername != null");
                 } else if (clientCertType == CLIENT_CERT) {
                     if (sHs20Pkcs12KeyStore.aliases().hasMoreElements()) {
                         hc = new WifiPasspointHttpClient(sHs20Pkcs12KeyStore,
@@ -861,37 +855,45 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         return null;
                     }
                 } else {
-                    hc = new WifiPasspointHttpClient();
+                    hc = new WifiPasspointHttpClient(null, null);
                 }
 
                 while (retryCount > 0 && !isConnected) {
+                    HttpURLConnection connection = null;
+                    InputStream is = null;
                     try {
-                        URI requestUri = new URI(serverUrl);
-                        HttpResponse httpResp = null;
-                        byte[] requestData =
-                                (new HttpTransportSE(serverUrl))
-                                        .getRequestData(envelope, "UTF-8");
-                        Header[] requestHeaders;
-                        List<BasicHeader> basicHeaders = new ArrayList<BasicHeader>();
-
+                        URL requestUri = new URL(serverUrl);
+                        byte[] requestData = (new HttpTransportSE(serverUrl))
+                                .getRequestData(envelope, "UTF-8");
                         if (requestData == null) {
                             break;
                         }
 
-                        basicHeaders.add(new BasicHeader(hc.CONNECTION, "close"));
-                        basicHeaders.add(new BasicHeader(hc.ACCEPT_ENCODING_HEADER, "gzip"));
+                        connection = (HttpURLConnection) requestUri.openConnection();
+                        hc.configureURLConnection(connection);
+                        connection.setRequestProperty("Connection", "close");
+                        connection.addRequestProperty("Content-Length", String.valueOf(requestData.length));
 
-                        requestHeaders = basicHeaders.toArray(new Header[basicHeaders.size()]);
-
+                        final String contentType;
                         if (envelope.version == SoapSerializationEnvelope.VER12) {
-                            httpResp = hc.post(requestUri, CONTENT_TYPE_SOAP_XML_CHARSET_UTF_8,
-                                    requestData, requestHeaders);
+                            contentType = CONTENT_TYPE_SOAP_XML_CHARSET_UTF_8;
                         } else {
-                            httpResp = hc.post(requestUri, CONTENT_TYPE_XML_CHARSET_UTF_8,
-                                    requestData, requestHeaders);
+                            contentType = CONTENT_TYPE_XML_CHARSET_UTF_8;
                         }
 
-                        InputStream is = httpResp.getEntity().getContent();
+                        connection.addRequestProperty("Content-Type", contentType);
+                        OutputStream os = null;
+                        try {
+                            os = connection.getOutputStream();
+                            os.write(requestData);
+                            os.close();
+                        } finally {
+                            if (os != null) {
+                                os.close();
+                            }
+                        }
+
+                        is = connection.getInputStream();
 
                         ByteArrayOutputStream bos = new ByteArrayOutputStream();
                         byte[] buf = new byte[8192];
@@ -908,10 +910,21 @@ public class WifiPasspointSoapClient implements WifiPasspointClient.SoapClient {
                         response = bos.toString();
                         isConnected = true;
                         Log.d(TAG, "soap connect by TLS");
-                    } catch (UnknownHostException ee) {
+                    } catch (IOException e) {
                         retryCount--;
                         Log.d(TAG, "Wait for retry:" + retryCount);
                         Thread.sleep(3 * 1000);
+                    } finally {
+                        if (connection != null) {
+                            connection.disconnect();
+                        }
+
+                        if (is != null) {
+                            try {
+                                is.close();
+                            } catch (IOException ignored) {
+                            }
+                        }
                     }
                 }
 
