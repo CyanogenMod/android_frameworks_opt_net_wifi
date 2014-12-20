@@ -138,6 +138,7 @@ import java.util.regex.Pattern;
 public class WifiStateMachine extends StateMachine {
 
     private static final String NETWORKTYPE = "WIFI";
+    private static final String NETWORKTYPE_UNTRUSTED = "WIFI_UT";
     private static boolean DBG = false;
     private static boolean VDBG = false;
     private static boolean VVDBG = false;
@@ -407,6 +408,7 @@ public class WifiStateMachine extends StateMachine {
 
     private int mConnectionRequests = 0;
     private WifiNetworkFactory mNetworkFactory;
+    private UntrustedWifiNetworkFactory mUntrustedNetworkFactory;
     private WifiNetworkAgent mNetworkAgent;
 
     // Keep track of various statistics, for retrieval by System Apps, i.e. under @SystemApi
@@ -2432,6 +2434,7 @@ public class WifiStateMachine extends StateMachine {
         pw.println("mLastSetCountryCode " + mLastSetCountryCode);
         pw.println("mPersistedCountryCode " + mPersistedCountryCode);
         mNetworkFactory.dump(fd, pw, args);
+        mUntrustedNetworkFactory.dump(fd, pw, args);
         pw.println();
         mWifiConfigStore.dump(fd, pw, args);
     }
@@ -4595,9 +4598,6 @@ public class WifiStateMachine extends StateMachine {
     }
 
     private class WifiNetworkFactory extends NetworkFactory {
-        /** Number of outstanding NetworkRequests for untrusted networks. */
-        private int mUntrustedReqCount = 0;
-
         public WifiNetworkFactory(Looper l, Context c, String TAG, NetworkCapabilities f) {
             super(l, c, TAG, f);
         }
@@ -4605,6 +4605,28 @@ public class WifiStateMachine extends StateMachine {
         @Override
         protected void needNetworkFor(NetworkRequest networkRequest, int score) {
             ++mConnectionRequests;
+        }
+
+        @Override
+        protected void releaseNetworkFor(NetworkRequest networkRequest) {
+            --mConnectionRequests;
+        }
+
+        public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+            pw.println("mConnectionRequests " + mConnectionRequests);
+        }
+
+    }
+
+    private class UntrustedWifiNetworkFactory extends NetworkFactory {
+        private int mUntrustedReqCount;
+
+        public UntrustedWifiNetworkFactory(Looper l, Context c, String tag, NetworkCapabilities f) {
+            super(l, c, tag, f);
+        }
+
+        @Override
+        protected void needNetworkFor(NetworkRequest networkRequest, int score) {
             if (!networkRequest.networkCapabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
                 if (++mUntrustedReqCount == 1) {
@@ -4615,7 +4637,6 @@ public class WifiStateMachine extends StateMachine {
 
         @Override
         protected void releaseNetworkFor(NetworkRequest networkRequest) {
-            --mConnectionRequests;
             if (!networkRequest.networkCapabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
                 if (--mUntrustedReqCount == 0) {
@@ -4625,10 +4646,8 @@ public class WifiStateMachine extends StateMachine {
         }
 
         public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-            pw.println("mConnectionRequests " + mConnectionRequests);
             pw.println("mUntrustedReqCount " + mUntrustedReqCount);
         }
-
     }
 
     void maybeRegisterNetworkFactory() {
@@ -4639,6 +4658,13 @@ public class WifiStateMachine extends StateMachine {
                         NETWORKTYPE, mNetworkCapabilitiesFilter);
                 mNetworkFactory.setScoreFilter(60);
                 mNetworkFactory.register();
+
+                // We can't filter untrusted network in the capabilities filter because a trusted
+                // network would still satisfy a request that accepts untrusted ones.
+                mUntrustedNetworkFactory = new UntrustedWifiNetworkFactory(getHandler().getLooper(),
+                        mContext, NETWORKTYPE_UNTRUSTED, mNetworkCapabilitiesFilter);
+                mUntrustedNetworkFactory.setScoreFilter(Integer.MAX_VALUE);
+                mUntrustedNetworkFactory.register();
             }
         }
     }
