@@ -3590,6 +3590,7 @@ public class WifiStateMachine extends StateMachine {
         }
         boolean attemptAutoJoin = true;
         SupplicantState state = mWifiInfo.getSupplicantState();
+        String selection = mWifiConfigStore.getLastSelectedConfiguration();
         if (getCurrentState() == mRoamingState
                 || getCurrentState() == mObtainingIpState
                 || getCurrentState() == mScanModeState
@@ -3601,13 +3602,14 @@ public class WifiStateMachine extends StateMachine {
                 || state == SupplicantState.AUTHENTICATING
                 || state == SupplicantState.FOUR_WAY_HANDSHAKE
                 || state == SupplicantState.GROUP_HANDSHAKE
-                || mConnectionRequests == 0) {
+                || (/* keep autojoin enabled if user has manually selected a wifi network,
+                        so as to make sure we reliably remain connected to this network */
+                        mConnectionRequests == 0 && selection == null)) {
             // Dont attempt auto-joining again while we are already attempting to join
             // and/or obtaining Ip address
             attemptAutoJoin = false;
         }
         if (DBG) {
-            String selection = mWifiConfigStore.getLastSelectedConfiguration();
             if (selection == null) {
                 selection = "<none>";
             }
@@ -7235,9 +7237,9 @@ public class WifiStateMachine extends StateMachine {
                         if (message.arg1 == SCAN_ONLY_WITH_WIFI_OFF_MODE) {
                             noteWifiDisabledWhileAssociated();
                         }
-                        mWifiConfigStore.
-                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
                     }
+                    mWifiConfigStore.
+                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
                     break;
                 case CMD_SET_COUNTRY_CODE:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
@@ -8170,9 +8172,10 @@ public class WifiStateMachine extends StateMachine {
                             mWifiP2pChannel.sendMessage(CMD_DISABLE_P2P_REQ);
                             setWifiState(WIFI_STATE_DISABLED);
                         }
-
                         transitionTo(mScanModeState);
                     }
+                    mWifiConfigStore.
+                            setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
                     break;
                     /* Ignore network disconnect */
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
