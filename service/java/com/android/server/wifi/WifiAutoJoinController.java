@@ -67,9 +67,6 @@ public class WifiAutoJoinController {
     /** Whether to allow connections to untrusted networks. */
     private boolean mAllowUntrustedConnections = false;
 
-    /* for debug purpose only : the untrusted SSID we would be connected to if we had VPN */
-    String lastUntrustedBSSID = null;
-
     /* For debug purpose only: if the scored override a score */
     boolean didOverride = false;
 
@@ -1650,17 +1647,17 @@ public class WifiAutoJoinController {
                             !isOpenNetwork(result)) {
                         continue;
                     }
-                    if (mWifiConfigStore.mDeletedEphemeralSSIDs.contains
-                            ("\"" + result.SSID + "\"")) {
+                    String quotedSSID = "\"" + result.SSID + "\"";
+                    if (mWifiConfigStore.mDeletedEphemeralSSIDs.contains(quotedSSID)) {
                         // SSID had been Forgotten by user, then don't score it
                         continue;
                     }
                     if ((nowMs - result.seen) < mScanResultAutoJoinAge) {
                         // Increment usage count for the network
-                        mWifiConnectionStatistics.incrementOrAddUntrusted(result.SSID, 0, 1);
+                        mWifiConnectionStatistics.incrementOrAddUntrusted(quotedSSID, 0, 1);
 
-                        boolean isActiveNetwork = lastUntrustedBSSID != null
-                                && result.BSSID.equals(lastUntrustedBSSID);
+                        boolean isActiveNetwork = currentConfiguration != null
+                                && currentConfiguration.SSID.equals(quotedSSID);
                         int score = mNetworkScoreCache.getNetworkScore(result, isActiveNetwork);
                         if (score != WifiNetworkScoreCache.INVALID_NETWORK_SCORE
                                 && score > currentScore) {
@@ -1679,16 +1676,6 @@ public class WifiAutoJoinController {
                 }
             }
             if (untrustedCandidate != null) {
-                if (lastUntrustedBSSID == null
-                        || !untrustedCandidate.SSID.equals(lastUntrustedBSSID)) {
-                    // We found a new candidate that we are going to connect to, then
-                    // increase its connection count
-                    mWifiConnectionStatistics.
-                            incrementOrAddUntrusted(untrustedCandidate.SSID, 1, 0);
-                    // Remember which SSID we are connecting to
-                    lastUntrustedBSSID = untrustedCandidate.SSID;
-                }
-
                 // At this point, we have an untrusted network candidate.
                 // Create the new ephemeral configuration and see if we should switch over
                 candidate =
@@ -1771,6 +1758,13 @@ public class WifiAutoJoinController {
                 }
                 candidate.numAssociation++;
                 mWifiConnectionStatistics.numAutoJoinAttempt++;
+
+                if (candidate.ephemeral) {
+                    // We found a new candidate that we are going to connect to, then
+                    // increase its connection count
+                    mWifiConnectionStatistics.
+                            incrementOrAddUntrusted(candidate.SSID, 1, 0);
+                }
 
                 if (candidate.BSSID == null || candidate.BSSID.equals("any")) {
                     // First step we selected the configuration we want to connect to
