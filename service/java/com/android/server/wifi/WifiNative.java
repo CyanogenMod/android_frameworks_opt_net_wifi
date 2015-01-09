@@ -20,13 +20,14 @@ import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.RttManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiLinkLayerStats;
+import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
+import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
 import android.os.SystemClock;
 import android.text.TextUtils;
-import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
 import android.util.LocalLog;
 import android.util.Log;
 
@@ -507,22 +508,24 @@ public class WifiNative {
             && doBooleanCommand("DRIVER RXFILTER-START");
     }
 
-    public int getBand() {
-       String ret = doStringCommand("DRIVER GETBAND");
-        if (!TextUtils.isEmpty(ret)) {
-            //reply is "BAND X" where X is the band
-            String[] tokens = ret.split(" ");
-            try {
-                if (tokens.length == 2) return Integer.parseInt(tokens[1]);
-            } catch (NumberFormatException e) {
-                return -1;
-            }
-        }
-        return -1;
-    }
-
+    /**
+     * Set the operational frequency band
+     * @param band One of
+     *     {@link WifiManager#WIFI_FREQUENCY_BAND_AUTO},
+     *     {@link WifiManager#WIFI_FREQUENCY_BAND_5GHZ},
+     *     {@link WifiManager#WIFI_FREQUENCY_BAND_2GHZ},
+     * @return {@code true} if the operation succeeded, {@code false} otherwise
+     */
     public boolean setBand(int band) {
-        return doBooleanCommand("DRIVER SETBAND " + band);
+        String bandstr;
+
+        if (band == WifiManager.WIFI_FREQUENCY_BAND_5GHZ)
+            bandstr = "5G";
+        else if (band == WifiManager.WIFI_FREQUENCY_BAND_2GHZ)
+            bandstr = "2G";
+        else
+            bandstr = "AUTO";
+        return doBooleanCommand("SET SETBAND " + bandstr);
     }
 
     /**
