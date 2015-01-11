@@ -342,6 +342,10 @@ public class WifiConfigStore extends IpConfigStore {
 
     public int associatedPartialScanPeriodMilli;
 
+    // Sane value for roam blacklisting (not switching to a network if already associated)
+    // 2 days
+    public int networkSwitchingBlackListPeriodMilli = 2 * 24 * 60 * 60 * 1000;
+
     public int bandPreferenceBoostFactor5 = 5; // Boost by 5 dB per dB above threshold
     public int bandPreferencePenaltyFactor5 = 2; // Penalize by 2 dB per dB below threshold
     public int bandPreferencePenaltyThreshold5 = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
@@ -548,6 +552,9 @@ public class WifiConfigStore extends IpConfigStore {
 
         scanResultRssiLevelPatchUp = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_scan_result_rssi_level_patchup_value);
+
+        networkSwitchingBlackListPeriodMilli = mContext.getResources().getInteger(
+                R.integer.config_wifi_network_switching_blacklist_time);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -926,6 +933,19 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
         }
+    }
+
+    void noteRoamingFailure(WifiConfiguration config, int reason) {
+        if (config == null) return;
+        config.lastRoamingFailure = System.currentTimeMillis();
+        config.roamingFailureBlackListTimeMilli
+                = 2 * (config.roamingFailureBlackListTimeMilli + 1000);
+        if (config.roamingFailureBlackListTimeMilli
+                > networkSwitchingBlackListPeriodMilli) {
+            config.roamingFailureBlackListTimeMilli =
+                    networkSwitchingBlackListPeriodMilli;
+        }
+        config.lastRoamingFailureReason = reason;
     }
 
     void saveWifiConfigBSSID(WifiConfiguration config) {
