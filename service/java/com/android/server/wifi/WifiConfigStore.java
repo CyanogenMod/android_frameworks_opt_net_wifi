@@ -2653,13 +2653,15 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
 
-            if (!mWifiNative.setNetworkVariable(
-                    netId,
-                    WifiConfiguration.SIMNumVarName,
-                    Integer.toString(config.SIMNum))) {
-                loge(config.SIMNum + ": failed to set sim no: "
-                        +config.SIMNum);
-                break setVariables;
+            if (config.SIMNum != 0) {
+               if (!mWifiNative.setNetworkVariable(
+                        netId,
+                        WifiConfiguration.SIMNumVarName,
+                        Integer.toString(config.SIMNum))) {
+                   loge(config.SIMNum + ": failed to set sim no: "
+                           +config.SIMNum);
+                   break setVariables;
+               }
             }
 
             String allowedKeyManagementString =
