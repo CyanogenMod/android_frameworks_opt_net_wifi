@@ -326,9 +326,9 @@ void parseScanResults(String16& str, const char *reply)
     unsigned int lineBeg = 0, lineEnd = 0;
     size_t  replyLen = strlen(reply);
     char    *pos = NULL;
-    char    *ssid = NULL;
-    char    *ssid_utf8 = NULL;
-    char    *ssid_txt = NULL;
+    char    ssid[BUF_SIZE] = {0};
+    char    ssid_utf8[BUF_SIZE] = {0};
+    char    ssid_txt[BUF_SIZE] = {0};
     bool    isUTF8 = false, isCh = false;
     char    buf[BUF_SIZE] = {0};
     String8 line;
@@ -341,10 +341,6 @@ void parseScanResults(String16& str, const char *reply)
         ALOGE("ucnv_open error");
         return;
     }
-    ssid_utf8 = (char*)malloc(sizeof(CONVERT_LINE_LEN));
-    ssid = (char*)malloc(sizeof(BUF_SIZE));
-    ssid_txt = (char*)malloc(sizeof(BUF_SIZE));
-
     /* Parse every line of the reply to construct accessPointObjectItem list */
     for (lineBeg = 0, lineEnd = 0; lineEnd <= replyLen; ++lineEnd) {
         if (lineEnd == replyLen || '\n' == reply[lineEnd]) {
@@ -378,7 +374,8 @@ void parseScanResults(String16& str, const char *reply)
                     str += String16("ssid=");
                     str += String16(ssid_txt);
                     str += String16("\n");
-                    strncpy(ssid_utf8, dest, strlen(dest));
+                    strncpy(ssid_utf8, dest, BUF_SIZE);
+                    ssid_utf8[BUF_SIZE] = '\0';
                     memset(dest, 0, CONVERT_LINE_LEN);
                     memset(ssid_txt, 0, BUF_SIZE);
                 } else {
@@ -401,9 +398,6 @@ void parseScanResults(String16& str, const char *reply)
     }
 
 EXIT:
-    free(ssid_utf8);
-    free(ssid);
-    free(ssid_txt);
     ucnv_close(pConverter);
 }
 
