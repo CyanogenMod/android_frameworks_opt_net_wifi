@@ -4126,6 +4126,8 @@ public class WifiStateMachine extends StateMachine {
         final boolean linkChanged = !newLp.equals(mLinkProperties);
         final boolean wasProvisioned = isProvisioned(mLinkProperties);
         final boolean isProvisioned = isProvisioned(newLp);
+        final boolean lostIPv4Provisioning =
+            mLinkProperties.hasIPv4Address() && !newLp.hasIPv4Address();
         final DetailedState detailedState = getNetworkDetailedState();
 
         if (linkChanged) {
@@ -4193,9 +4195,10 @@ public class WifiStateMachine extends StateMachine {
                 break;
 
             case DhcpStateMachine.DHCP_FAILURE:
-                // DHCP failed. If we're not already provisioned, give up and disconnect.
+                // DHCP failed. If we're not already provisioned, or we had IPv4 and now lost it,
+                // give up and disconnect.
                 // If we're already provisioned (e.g., IPv6-only network), stay connected.
-                if (!isProvisioned) {
+                if (!isProvisioned || lostIPv4Provisioning) {
                     sendMessage(CMD_IP_CONFIGURATION_LOST);
                 } else {
                     // DHCP failed, but we're provisioned (e.g., if we're on an IPv6-only network).
