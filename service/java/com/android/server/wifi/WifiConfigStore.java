@@ -2781,6 +2781,23 @@ public class WifiConfigStore extends IpConfigStore {
                }
             }
 
+            if (config.isIBSS) {
+                if(!mWifiNative.setNetworkVariable(
+                        netId,
+                        WifiConfiguration.modeVarName,
+                        "1")) {
+                    loge("failed to set adhoc mode");
+                    break setVariables;
+                }
+                if(!mWifiNative.setNetworkVariable(
+                        netId,
+                        WifiConfiguration.frequencyVarName,
+                        Integer.toString(config.frequency))) {
+                    loge("failed to set frequency");
+                    break setVariables;
+                }
+            }
+
             String allowedKeyManagementString =
                 makeString(config.allowedKeyManagement, WifiConfiguration.KeyMgmt.strings);
             if (config.allowedKeyManagement.cardinality() != 0 &&
@@ -3685,6 +3702,24 @@ public class WifiConfigStore extends IpConfigStore {
         if (!TextUtils.isEmpty(value)) {
             try {
                 config.hiddenSSID = Integer.parseInt(value) != 0;
+            } catch (NumberFormatException ignore) {
+            }
+        }
+
+        value = mWifiNative.getNetworkVariable(netId, WifiConfiguration.modeVarName);
+        config.isIBSS = false;
+        if (!TextUtils.isEmpty(value)) {
+            try {
+                config.isIBSS = Integer.parseInt(value) != 0;
+            } catch (NumberFormatException ignore) {
+            }
+        }
+
+        value = mWifiNative.getNetworkVariable(netId, WifiConfiguration.frequencyVarName);
+        config.frequency = 0;
+        if (!TextUtils.isEmpty(value)) {
+            try {
+                config.frequency = Integer.parseInt(value);
             } catch (NumberFormatException ignore) {
             }
         }
