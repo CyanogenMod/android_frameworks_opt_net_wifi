@@ -1256,17 +1256,19 @@ public class WifiConfigStore extends IpConfigStore {
         /* Only change the reason if the network was not previously disabled
         /* and the reason is not DISABLED_BY_WIFI_MANAGER, that is, if a 3rd party
          * set its configuration as disabled, then leave it disabled */
-        if (config != null && config.status != Status.DISABLED
+        if (config != null) {
+            if (config.status != Status.DISABLED
                 && config.disableReason != WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
-            config.status = Status.DISABLED;
-            config.disableReason = reason;
-            network = config;
-        }
-        if (reason == WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
-            // Make sure autojoin wont reenable this configuration without further user
-            // intervention
-            config.status = Status.DISABLED;
-            config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_USER_ACTION;
+                config.status = Status.DISABLED;
+                config.disableReason = reason;
+                network = config;
+            }
+            if (reason == WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
+                // Make sure autojoin wont reenable this configuration without further user
+                // intervention
+                config.status = Status.DISABLED;
+                config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_USER_ACTION;
+            }
         }
         if (network != null) {
             sendConfiguredNetworksChangedBroadcast(network,
