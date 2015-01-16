@@ -129,6 +129,7 @@ import java.util.Locale;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -3443,6 +3444,9 @@ public class WifiStateMachine extends StateMachine {
 
     int emptyScanResultCount = 0;
 
+    // Used for matching BSSID strings, at least one characteer must be a non-zero number
+    private static Pattern mNotZero = Pattern.compile("[1-9a-fA-F]");
+
     /**
      * Format:
      *
@@ -3556,7 +3560,11 @@ public class WifiStateMachine extends StateMachine {
                     wifiSsid = WifiSsid.createFromAsciiEncoded(
                             line.substring(SSID_STR.length()));
                 } else if (line.startsWith(DELIMITER_STR) || line.startsWith(END_STR)) {
-                    if (bssid != null) {
+                    Matcher match = null;
+                    if (bssid!= null) {
+                        match = mNotZero.matcher(bssid);
+                    }
+                    if (match != null && !bssid.isEmpty() && match.find()) {
                         String ssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
                         String key = bssid + ssid;
                         ScanResult scanResult = mScanResultCache.get(key);
@@ -3581,6 +3589,11 @@ public class WifiStateMachine extends StateMachine {
                         mNumScanResultsReturned ++; // Keep track of how many scan results we got
                                                     // as part of this scan's processing
                         mScanResults.add(scanResult);
+                    } else {
+                        if (bssid != null)  {
+                            loge("setScanResults obtaining null BSSID results <"
+                                + bssid + ">, discard it");
+                        }
                     }
                     bssid = null;
                     level = 0;
