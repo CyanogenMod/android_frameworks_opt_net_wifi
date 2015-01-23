@@ -16,7 +16,7 @@ public class VenueNameElement extends ANQPElement {
     private final VenueType mType;
     private final List<I18Name> mNames;
 
-    private static final Map<VenueGroup, Integer> s_groupBases =
+    private static final Map<VenueGroup, Integer> sGroupBases =
             new EnumMap<VenueGroup, Integer>(VenueGroup.class);
 
     public VenueNameElement(Constants.ANQPElementType infoID, ByteBuffer payload)
@@ -34,7 +34,7 @@ public class VenueNameElement extends ANQPElement {
             mType = VenueType.Reserved;
         } else {
             mGroup = VenueGroup.values()[group];
-            type += s_groupBases.get(mGroup);
+            type += sGroupBases.get(mGroup);
             if (type >= VenueType.values().length) {
                 mType = VenueType.Reserved;
             } else {
@@ -179,14 +179,13 @@ public class VenueNameElement extends ANQPElement {
                     VenueType.UnspecifiedStorage,
                     VenueType.UnspecifiedUtilityMiscellaneous,
                     VenueType.AutomobileOrTruck,
-                    VenueType.UnspecifiedOutdoor,
-                    null
+                    VenueType.UnspecifiedOutdoor
             };
 
     static {
         int index = 0;
         for (VenueType venue : PerGroup) {
-            s_groupBases.put(VenueGroup.values()[index++], venue.ordinal());
+            sGroupBases.put(VenueGroup.values()[index++], venue.ordinal());
         }
     }
 }

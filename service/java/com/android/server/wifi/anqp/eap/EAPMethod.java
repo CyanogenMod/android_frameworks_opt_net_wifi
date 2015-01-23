@@ -33,8 +33,8 @@ public class EAPMethod {
         int realCount = 0;
 
         ByteBuffer paramPayload = payload.duplicate();
-        paramPayload.limit(paramPayload.position() + length);
-        payload.position(payload.position() + length);
+        paramPayload.limit(paramPayload.position() + length - 2);
+        payload.position(payload.position() + length - 2);
         while (paramPayload.hasRemaining()) {
             int id = paramPayload.get() & Constants.BYTE_MASK;
 
