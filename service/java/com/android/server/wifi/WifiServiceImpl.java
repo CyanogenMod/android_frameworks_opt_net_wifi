@@ -341,7 +341,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         // can result in race conditions when apps toggle wifi in the background
         // without active user involvement. Always receive broadcasts.
         registerForBroadcasts();
-        registerForPackageRemoval();
+        registerForPackageOrUserRemoval();
 
         mWifiController.start();
 
@@ -1369,25 +1369,35 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         mContext.registerReceiver(mReceiver, intentFilter);
     }
 
-    private void registerForPackageRemoval() {
+    private void registerForPackageOrUserRemoval() {
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
-        intentFilter.addDataScheme("package");
-        mContext.registerReceiver(new BroadcastReceiver() {
+        intentFilter.addAction(Intent.ACTION_USER_REMOVED);
+        mContext.registerReceiverAsUser(new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
-                    Uri uri = intent.getData();
-                    if (uri == null) {
-                        return;
+                switch (intent.getAction()) {
+                    case Intent.ACTION_PACKAGE_REMOVED: {
+                        if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+                            return;
+                        }
+                        int uid = intent.getIntExtra(Intent.EXTRA_UID, -1);
+                        Uri uri = intent.getData();
+                        if (uid == -1 || uri == null) {
+                            return;
+                        }
+                        String pkgName = uri.getSchemeSpecificPart();
+                        mWifiStateMachine.removeAppConfigs(pkgName, uid);
+                        break;
                     }
-                    String pkgName = uri.getSchemeSpecificPart();
-                    // TODO: we should be checking against getNameForUid()
-                    // check b/17630513 and b/17630093 for more information
-                    mWifiStateMachine.removeAppConfigs(pkgName);
+                    case Intent.ACTION_USER_REMOVED: {
+                        int userHandle = intent.getIntExtra(Intent.EXTRA_USER_HANDLE, 0);
+                        mWifiStateMachine.removeUserConfigs(userHandle);
+                        break;
+                    }
                 }
             }
-        }, intentFilter);
+        }, UserHandle.ALL, intentFilter, null, null);
     }
 
     @Override

@@ -694,6 +694,8 @@ public class WifiStateMachine extends StateMachine {
     static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER    = BASE + 93;
     /* Remove a packages associated configrations */
     static final int CMD_REMOVE_APP_CONFIGURATIONS        = BASE + 97;
+    /* Remove a packages associated configrations */
+    static final int CMD_REMOVE_USER_CONFIGURATIONS       = BASE + 149;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
@@ -2524,8 +2526,19 @@ public class WifiStateMachine extends StateMachine {
     /**
      * Send a message indicating a package has been uninstalled.
      */
-    public void removeAppConfigs(String packageName) {
-        sendMessage(CMD_REMOVE_APP_CONFIGURATIONS, packageName);
+    public void removeAppConfigs(String packageName, int uid) {
+        // Build partial AppInfo manually - package may not exist in database any more
+        ApplicationInfo ai = new ApplicationInfo();
+        ai.packageName = packageName;
+        ai.uid = uid;
+        sendMessage(CMD_REMOVE_APP_CONFIGURATIONS, ai);
+    }
+
+    /**
+     * Send a message indicating a user has been removed.
+     */
+    public void removeUserConfigs(int userId) {
+        sendMessage(CMD_REMOVE_USER_CONFIGURATIONS, userId);
     }
 
     /**
@@ -5075,6 +5088,9 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_REMOVE_APP_CONFIGURATIONS:
                     deferMessage(message);
                     break;
+                case CMD_REMOVE_USER_CONFIGURATIONS:
+                    deferMessage(message);
+                    break;
                 default:
                     loge("Error! unhandled message" + message);
                     break;
@@ -6286,6 +6302,9 @@ public class WifiStateMachine extends StateMachine {
             case CMD_REMOVE_APP_CONFIGURATIONS:
                 s = "CMD_REMOVE_APP_CONFIGURATIONS";
                 break;
+            case CMD_REMOVE_USER_CONFIGURATIONS:
+                s = "CMD_REMOVE_USER_CONFIGURATIONS";
+                break;
             case CMD_ROAM_WATCHDOG_TIMER:
                 s = "CMD_ROAM_WATCHDOG_TIMER";
                 break;
@@ -6752,7 +6771,10 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_REMOVE_APP_CONFIGURATIONS:
-                    mWifiConfigStore.removeNetworksForApp((String) message.obj);
+                    mWifiConfigStore.removeNetworksForApp((ApplicationInfo) message.obj);
+                    break;
+                case CMD_REMOVE_USER_CONFIGURATIONS:
+                    mWifiConfigStore.removeNetworksForUser(message.arg1);
                     break;
                 case WifiManager.CONNECT_NETWORK:
                     /**
@@ -8210,6 +8232,7 @@ public class WifiStateMachine extends StateMachine {
                 case WifiManager.FORGET_NETWORK:
                 case CMD_REMOVE_NETWORK:
                 case CMD_REMOVE_APP_CONFIGURATIONS:
+                case CMD_REMOVE_USER_CONFIGURATIONS:
                     // Set up a delayed message here. After the forget/remove is handled
                     // the handled delayed message will determine if there is a need to
                     // scan and continue

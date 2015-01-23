@@ -19,6 +19,7 @@ package com.android.server.wifi;
 import android.app.AppGlobals;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.net.IpConfiguration;
@@ -1161,8 +1162,8 @@ public class WifiConfigStore extends IpConfigStore {
      * @param packageName name of the package of networks to remove
      * @return {@code true} if all networks removed successfully, {@code false} otherwise
      */
-    boolean removeNetworksForApp(String packageName) {
-        if (packageName == null) {
+    boolean removeNetworksForApp(ApplicationInfo app) {
+        if (app == null || app.packageName == null) {
             return false;
         }
 
@@ -1171,16 +1172,37 @@ public class WifiConfigStore extends IpConfigStore {
         WifiConfiguration [] copiedConfigs =
                 mConfiguredNetworks.values().toArray(new WifiConfiguration[0]);
         for (WifiConfiguration config : copiedConfigs) {
-            if (packageName.equals(config.creatorName)) {
-                success &= removeNetwork(config.networkId);
-                if (showNetworks) {
-                    localLog("Removing network " + config.SSID
-                             + ", application uninstalled");
-                }
+            if (app.uid != config.creatorUid || !app.packageName.equals(config.creatorName)) {
+                continue;
             }
+            if (showNetworks) {
+                localLog("Removing network " + config.SSID
+                         + ", application \"" + app.packageName + "\" uninstalled"
+                         + " from user " + UserHandle.getUserId(app.uid));
+            }
+            success &= removeNetwork(config.networkId);
         }
 
         mWifiNative.saveConfig();
+
+        return success;
+    }
+
+    boolean removeNetworksForUser(int userId) {
+        boolean success = true;
+
+        WifiConfiguration[] copiedConfigs =
+                mConfiguredNetworks.values().toArray(new WifiConfiguration[0]);
+        for (WifiConfiguration config : copiedConfigs) {
+            if (userId != UserHandle.getUserId(config.creatorUid)) {
+                continue;
+            }
+            success &= removeNetwork(config.networkId);
+            if (showNetworks) {
+                localLog("Removing network " + config.SSID
+                        + ", user " + userId + " removed");
+            }
+        }
 
         return success;
     }
