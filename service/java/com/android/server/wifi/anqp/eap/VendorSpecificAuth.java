@@ -1,7 +1,5 @@
 package com.android.server.wifi.anqp.eap;
 
-import com.android.server.wifi.anqp.Constants;
-
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -44,8 +42,6 @@ public class VendorSpecificAuth implements AuthParam {
 
     @Override
     public String toString() {
-        return "VendorSpecificAuth{" +
-                "mData=" + Constants.toHexString(mData) +
-                '}';
+        return "Auth method VendorSpecificAuth, data = " + Arrays.toString(mData) + '\n';
     }
 }

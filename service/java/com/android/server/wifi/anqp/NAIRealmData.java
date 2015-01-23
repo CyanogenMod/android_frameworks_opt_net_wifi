@@ -56,9 +56,17 @@ public class NAIRealmData {
 
     @Override
     public String toString() {
-        return "NAIRealmData{" +
-                "mRealms='" + mRealms + '\'' +
-                ", mEAPMethods=" + mEAPMethods +
-                '}';
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("  NAI Realm(s)");
+        for (String realm : mRealms) {
+            sb.append(' ').append(realm);
+        }
+        sb.append('\n');
+
+        for (EAPMethod eapMethod : mEAPMethods) {
+            sb.append( "    " ).append(eapMethod.toString());
+        }
+        return sb.toString();
     }
 }

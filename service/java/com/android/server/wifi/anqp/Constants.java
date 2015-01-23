@@ -143,7 +143,7 @@ public class Constants {
         return sRevHs20map.get(elementType);
     }
 
-    public static long getInteger(ByteBuffer payload, int size) {
+    public static long getLEInteger(ByteBuffer payload, int size) {
         byte[] octets = new byte[size];
         payload.get(octets);
         long value = 0;
@@ -163,7 +163,7 @@ public class Constants {
         if (payload.remaining() < lengthLength) {
             throw new ProtocolException("Runt string: " + payload.remaining());
         }
-        return getString(payload, (int) getInteger(payload, lengthLength), charset, useNull);
+        return getString(payload, (int) getLEInteger(payload, lengthLength), charset, useNull);
     }
 
     public static String getString(ByteBuffer payload, int length, Charset charset)

@@ -124,15 +124,15 @@ public class ANQPFactory {
         int length = payload.getShort() & Constants.SHORT_MASK;
 
         if (payload.remaining() < length) {
-            throw new ProtocolException("Truncated payload");
+            throw new ProtocolException("Truncated payload: " +
+                    payload.remaining() + " vs " + length);
         }
 
-        System.out.printf("%s:%d bytes @ %d\n", infoID, length, payload.position());
+        //System.out.printf("%s:%d bytes @ %d\n", infoID, length, payload.position());
 
-        ByteBuffer elementPayload = payload.duplicate();
+        ByteBuffer elementPayload = payload.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         payload.position(payload.position() + length);
         elementPayload.limit(elementPayload.position() + length);
-        elementPayload.order(ByteOrder.LITTLE_ENDIAN);
 
         switch (infoID) {
             case ANQPCapabilityList:

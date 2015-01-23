@@ -78,15 +78,12 @@ public class HSWanMetricsElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "HSWanMetricsElement{" +
-                "mStatus=" + mStatus +
-                ", mSymmetric=" + mSymmetric +
-                ", mCapped=" + mCapped +
-                ", mDlSpeed=" + mDlSpeed +
-                ", mUlSpeed=" + mUlSpeed +
-                ", mDlLoad=" + mDlLoad +
-                ", mUlLoad=" + mUlLoad +
-                ", mLMD=" + mLMD +
-                '}';
+        return String.format("HSWanMetricsElement{mStatus=%s, mSymmetric=%s, mCapped=%s, " +
+                "mDlSpeed=%d, mUlSpeed=%d, mDlLoad=%f, mUlLoad=%f, mLMD=%d}",
+                mStatus, mSymmetric, mCapped,
+                mDlSpeed, mUlSpeed,
+                (double)mDlLoad * 100.0 / 256.0,
+                (double)mUlLoad * 100.0 / 256.0,
+                mLMD);
     }
 }
