@@ -6,8 +6,6 @@ import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
-import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
-
 /**
  * An EAP authentication parameter, IEEE802.11-2012, table 8-188
  */
@@ -15,15 +13,7 @@ public class VendorSpecificAuth implements AuthParam {
 
     private final byte[] mData;
 
-    public VendorSpecificAuth(ByteBuffer payload) throws ProtocolException {
-        if (payload.remaining() < 1 || payload.remaining() > 256) {
-            throw new ProtocolException("Bad length: " + payload.remaining());
-        }
-
-        int length = payload.get() & BYTE_MASK;
-        if (length > payload.remaining()) {
-            throw new ProtocolException("Excessive length: " + length);
-        }
+    public VendorSpecificAuth(int length, ByteBuffer payload) throws ProtocolException {
         mData = new byte[length];
         payload.get(mData);
     }

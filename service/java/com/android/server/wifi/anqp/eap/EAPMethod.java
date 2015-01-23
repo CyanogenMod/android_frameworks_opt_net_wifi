@@ -38,37 +38,37 @@ public class EAPMethod {
         while (paramPayload.hasRemaining()) {
             int id = paramPayload.get() & Constants.BYTE_MASK;
 
-            EAP.AuthInfoID authInfoID;
-
-            if (id == EAP.VendorSpecific) {
-                authInfoID = EAP.AuthInfoID.VendorSpecific;
-            } else if (id <= EAP.AuthInfoID.TunneledEAPMethodCredType.ordinal() && id > 0) {
-                authInfoID = EAP.AuthInfoID.values()[id];
-            } else {
+            EAP.AuthInfoID authInfoID = EAP.mapAuthMethod(id);
+            if (authInfoID == null) {
                 throw new ProtocolException("Unknown auth parameter ID: " + id);
+            }
+
+            int len = paramPayload.get() & Constants.BYTE_MASK;
+            if (len == 0 || len > paramPayload.remaining()) {
+                throw new ProtocolException("Bad auth method length: " + len);
             }
 
             switch (authInfoID) {
                 case ExpandedEAPMethod:
-                    addAuthParam(new ExpandedEAPMethod(authInfoID, paramPayload));
+                    addAuthParam(new ExpandedEAPMethod(authInfoID, len, paramPayload));
                     break;
                 case NonEAPInnerAuthType:
-                    addAuthParam(new NonEAPInnerAuth(paramPayload));
+                    addAuthParam(new NonEAPInnerAuth(len, paramPayload));
                     break;
                 case InnerAuthEAPMethodType:
-                    addAuthParam(new InnerAuthEAP(paramPayload));
+                    addAuthParam(new InnerAuthEAP(len, paramPayload));
                     break;
                 case ExpandedInnerEAPMethod:
-                    addAuthParam(new ExpandedEAPMethod(authInfoID, paramPayload));
+                    addAuthParam(new ExpandedEAPMethod(authInfoID, len, paramPayload));
                     break;
                 case CredentialType:
-                    addAuthParam(new Credential(authInfoID, paramPayload));
+                    addAuthParam(new Credential(authInfoID, len, paramPayload));
                     break;
                 case TunneledEAPMethodCredType:
-                    addAuthParam(new Credential(authInfoID, paramPayload));
+                    addAuthParam(new Credential(authInfoID, len, paramPayload));
                     break;
                 case VendorSpecific:
-                    addAuthParam(new VendorSpecificAuth(paramPayload));
+                    addAuthParam(new VendorSpecificAuth(len, paramPayload));
                     break;
             }
 
