@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "wifi_hal.h"
 
@@ -1055,7 +1056,7 @@ void printFeatureListBitMask(void)
     printMsg("WIFI_FEATURE_AP_STA             0x8000      - Support for AP STA Concurrency\n");
 }
 
-char *rates[] = {
+const char *rates[] = {
     "1Mbps",
     "2Mbps",
 	"5.5Mbps",
