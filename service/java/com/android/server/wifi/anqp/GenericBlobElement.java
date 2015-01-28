@@ -1,5 +1,7 @@
 package com.android.server.wifi.anqp;
 
+import com.android.server.wifi.hotspot2.Utils;
+
 import java.nio.ByteBuffer;
 
 /**
@@ -20,6 +22,6 @@ public class GenericBlobElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "Element ID " + getID() + ": " + Constants.toHexString(mData);
+        return "Element ID " + getID() + ": " + Utils.toHexString(mData);
     }
 }

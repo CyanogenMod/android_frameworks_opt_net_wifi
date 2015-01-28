@@ -1,6 +1,7 @@
 package com.android.server.wifi.hotspot2.pps;
 
 import com.android.server.wifi.anqp.ANQPElement;
+import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.DomainNameElement;
 import com.android.server.wifi.anqp.HSConnectionCapabilityElement;
 import com.android.server.wifi.anqp.HSWanMetricsElement;
@@ -9,31 +10,28 @@ import com.android.server.wifi.anqp.NAIRealmData;
 import com.android.server.wifi.anqp.NAIRealmElement;
 import com.android.server.wifi.anqp.RoamingConsortiumElement;
 import com.android.server.wifi.anqp.ThreeGPPNetworkElement;
-import com.android.server.wifi.anqp.eap.EAP;
-import com.android.server.wifi.anqp.eap.EAPMethod;
+import com.android.server.wifi.hotspot2.AuthMatch;
 import com.android.server.wifi.hotspot2.NetworkInfo;
 import com.android.server.wifi.hotspot2.PasspointMatch;
+import com.android.server.wifi.hotspot2.Utils;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static com.android.server.wifi.anqp.Constants.ANQPElementType;
 
-/**
- * Created by jannq on 1/20/15.
- */
 public class HomeSP {
     private final Map<String, String> mSSIDs;        // SSID, HESSID, [0,N]
+    private final String mFQDN;
     private final DomainMatcher mDomainMatcher;
     private final Set<Long> mRoamingConsortiums;    // [0,N]
     private final Set<Long> mMatchAnyOIs;           // [0,N]
     private final List<Long> mMatchAllOIs;          // [0,N]
 
-    private final Map<EAP.EAPMethodID, EAPMethod> mCredentials;
+    private final Credential mCredential;
 
     // Informational:
     private final String mFriendlyName;             // [1]
@@ -47,20 +45,21 @@ public class HomeSP {
                    /*@NotNull*/ List<Long> matchAllOIs,
                    String friendlyName,
                    String iconURL,
-                   Map<EAP.EAPMethodID, EAPMethod> credentials) {
+                   Credential credential) {
 
         mSSIDs = ssidMap;
         List<List<String>> otherPartners = new ArrayList<List<String>>(otherHomePartners.size());
         for (String otherPartner : otherHomePartners) {
-            otherPartners.add(splitDomain(otherPartner));
+            otherPartners.add(Utils.splitDomain(otherPartner));
         }
-        mDomainMatcher = new DomainMatcher(splitDomain(fqdn), otherPartners);
+        mFQDN = fqdn;
+        mDomainMatcher = new DomainMatcher(Utils.splitDomain(fqdn), otherPartners);
         mRoamingConsortiums = roamingConsortiums;
         mMatchAnyOIs = matchAnyOIs;
         mMatchAllOIs = matchAllOIs;
         mFriendlyName = friendlyName;
         mIconURL = iconURL;
-        mCredentials = credentials;
+        mCredential = credential;
     }
 
     public PasspointMatch match(NetworkInfo networkInfo, List<ANQPElement> anqpElements) {
@@ -68,6 +67,7 @@ public class HomeSP {
         if (mSSIDs.containsKey(networkInfo.getSSID())) {
             String hessid = mSSIDs.get(networkInfo.getSSID());
             if (hessid == null || networkInfo.getHESSID().equals(hessid)) {
+                System.out.println("-- SSID");
                 return PasspointMatch.HomeProvider;
             }
         }
@@ -100,10 +100,13 @@ public class HomeSP {
             }
         }
 
+        // !!! wlan.mnc<MNC>.mcc<MCC>.3gppnetwork.org
+
         if (allOIs != null) {
             if (!mRoamingConsortiums.isEmpty()) {
                 for (long oi : allOIs) {
                     if (mRoamingConsortiums.contains(oi)) {
+                        System.out.println("-- RC");
                         return PasspointMatch.HomeProvider;
                     }
                 }
@@ -111,7 +114,7 @@ public class HomeSP {
             if (!mMatchAnyOIs.isEmpty() || !mMatchAllOIs.isEmpty()) {
                 for (long anOI : allOIs) {
 
-                    boolean oneMatchesAll = true;
+                    boolean oneMatchesAll = !mMatchAllOIs.isEmpty();
 
                     for (long spOI : mMatchAllOIs) {
                         if (spOI != anOI) {
@@ -121,10 +124,12 @@ public class HomeSP {
                     }
 
                     if (oneMatchesAll) {
+                        System.out.println("-- 1inAll");
                         return PasspointMatch.HomeProvider;
                     }
 
                     if (mMatchAnyOIs.contains(anOI)) {
+                        System.out.println("-- 1ofAll");
                         return PasspointMatch.HomeProvider;
                     }
                 }
@@ -154,61 +159,106 @@ public class HomeSP {
 
         if (domainNameElement != null) {
             for (String domain : domainNameElement.getDomains()) {
-                DomainMatcher.Match match = mDomainMatcher.isSubDomain(splitDomain(domain));
+                DomainMatcher.Match match = mDomainMatcher.isSubDomain(Utils.splitDomain(domain));
                 if (match != DomainMatcher.Match.None) {
                     return PasspointMatch.HomeProvider;
                 }
             }
         }
 
-        /*
-        if ( threeGPPNetworkElement != null ) {
-            !!! Insert matching based on 3GPP credentials here
-        }
-        */
-
         if (naiRealmElement != null) {
-
-            for (NAIRealmData naiRealmData : naiRealmElement.getRealmData()) {
-
-                DomainMatcher.Match match = DomainMatcher.Match.None;
-                for (String anRealm : naiRealmData.getRealms()) {
-                    match = mDomainMatcher.isSubDomain(splitDomain(anRealm));
-                    if (match != DomainMatcher.Match.None) {
-                        break;
-                    }
-                }
-                if (match != DomainMatcher.Match.None) {
-                    if (mCredentials == null) {
-                        return PasspointMatch.RoamingProvider;
-                    } else {
-                        for (EAPMethod anMethod : naiRealmData.getEAPMethods()) {
-                            EAPMethod spMethod = mCredentials.get(anMethod.getEAPMethodID());
-                            if (spMethod.matchesAuthParams(anMethod)) {
-                                return PasspointMatch.RoamingProvider;
-                            }
-                        }
-                    }
-                }
+            AuthMatch authMatch = matchRealms(naiRealmElement, threeGPPNetworkElement);
+            if (authMatch != AuthMatch.None) {
+                return PasspointMatch.RoamingProvider;
             }
         }
         return PasspointMatch.None;
     }
 
-    private static List<String> splitDomain(String domain) {
+    private AuthMatch matchRealms(NAIRealmElement naiRealmElement,
+                                  ThreeGPPNetworkElement threeGPPNetworkElement) {
+        List<String> credRealm = Utils.splitDomain(mCredential.getRealm());
 
-        if (domain.endsWith("."))
-            domain = domain.substring(0, domain.length() - 1);
-        int at = domain.indexOf('@');
-        if (at >= 0)
-            domain = domain.substring(at + 1);
+        for (NAIRealmData naiRealmData : naiRealmElement.getRealmData()) {
 
-        String[] labels = domain.split("\\.");
-        LinkedList<String> labelList = new LinkedList<String>();
-        for (String label : labels) {
-            labelList.addFirst(label);
+            DomainMatcher.Match match = DomainMatcher.Match.None;
+            for (String anRealm : naiRealmData.getRealms()) {
+                List<String> anRealmLabels = Utils.splitDomain(anRealm);
+                match = mDomainMatcher.isSubDomain(anRealmLabels);
+                if (match != DomainMatcher.Match.None) {
+                    break;
+                }
+                if (anRealmLabels.equals(credRealm)) {
+                    match = DomainMatcher.Match.Secondary;
+                    break;
+                }
+            }
+
+            if (match != DomainMatcher.Match.None) {
+                if (mCredential.getImsi() != null) {
+                    // All the device has is one of EAP-SIM, AKA or AKA',
+                    // so a 3GPP element must appear and contain a matching MNC/MCC
+                    if (threeGPPNetworkElement == null) {
+                        return AuthMatch.None;
+                    }
+                    for (CellularNetwork network : threeGPPNetworkElement.getPlmns()) {
+                        if (network.matchIMSI(mCredential.getImsi())) {
+                            AuthMatch authMatch =
+                                    naiRealmData.matchEAPMethods(mCredential.getEAPMethod());
+                            if (authMatch != AuthMatch.None) {
+                                return authMatch;
+                            }
+                        }
+                    }
+                } else {
+                    AuthMatch authMatch = naiRealmData.matchEAPMethods(mCredential.getEAPMethod());
+                    if (authMatch != AuthMatch.None) {
+                        // Note: Something more intelligent could be done here based on the
+                        // authMatch value. It may be useful to have a secondary score to
+                        // distinguish more predictable EAP method/parameter matching.
+                        return authMatch;
+                    }
+                }
+            }
+        }
+        return AuthMatch.None;
+    }
+
+    public String getFQDN() {
+        return mFQDN;
+    }
+
+    @Override
+    public boolean equals(Object thatObject) {
+        if (this == thatObject) {
+            return true;
+        } else if (thatObject == null || getClass() != thatObject.getClass()) {
+            return false;
         }
 
-        return labelList;
+        HomeSP that = (HomeSP) thatObject;
+        return mFQDN.equals(that.mFQDN);
+
+    }
+
+    @Override
+    public int hashCode() {
+        return mFQDN.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "HomeSP{" +
+                "mSSIDs=" + mSSIDs +
+                ", mFQDN='" + mFQDN + '\'' +
+                ", mDomainMatcher=" + mDomainMatcher +
+                ", mRoamingConsortiums={" + Utils.roamingConsortiumsToString(mRoamingConsortiums) +
+                '}' +
+                ", mMatchAnyOIs={" + Utils.roamingConsortiumsToString(mMatchAnyOIs) + '}' +
+                ", mMatchAllOIs={" + Utils.roamingConsortiumsToString(mMatchAllOIs) + '}' +
+                ", mCredential=" + mCredential +
+                ", mFriendlyName='" + mFriendlyName + '\'' +
+                ", mIconURL='" + mIconURL + '\'' +
+                '}';
     }
 }
