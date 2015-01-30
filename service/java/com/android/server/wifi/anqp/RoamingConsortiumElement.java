@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
-import static com.android.server.wifi.anqp.Constants.getInteger;
+import static com.android.server.wifi.anqp.Constants.getLEInteger;
 
 /**
  * The Roaming Consortium ANQP Element, IEEE802.11-2012 section 8.4.4.7
@@ -27,7 +27,7 @@ public class RoamingConsortiumElement extends ANQPElement {
             if (length > payload.remaining()) {
                 throw new ProtocolException("Bad OI length: " + length);
             }
-            mOis.add(getInteger(payload, length));
+            mOis.add(getLEInteger(payload, length));
         }
     }
 
@@ -37,8 +37,23 @@ public class RoamingConsortiumElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "RoamingConsortiumElement{" +
-                "mOis=" + mOis +
-                '}';
+        StringBuilder sb = new StringBuilder("RoamingConsortiumElement{mOis=[");
+        boolean first = true;
+        for ( long oi : mOis ) {
+            if (first) {
+                first = false;
+            }
+            else {
+                sb.append(", ");
+            }
+            if (Long.numberOfLeadingZeros(oi)>40) {
+                sb.append(String.format("%09x", oi));
+            }
+            else {
+                sb.append(String.format("%06x", oi));
+            }
+        }
+        sb.append("]}");
+        return sb.toString();
     }
 }

@@ -67,9 +67,6 @@ public class Credential implements AuthParam {
 
     @Override
     public String toString() {
-        return "Credential{" +
-                "mAuthInfoID=" + mAuthInfoID +
-                ", mCredType=" + mCredType +
-                '}';
+        return "Auth method " + mAuthInfoID + " = " + mCredType + "\n";
     }
 }

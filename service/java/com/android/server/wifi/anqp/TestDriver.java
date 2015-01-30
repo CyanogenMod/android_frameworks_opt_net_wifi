@@ -57,28 +57,96 @@ public class TestDriver {
         int lenPos = request.position();
         request.putShort((short) 0);
         ANQPFactory.buildQueryRequest(elements, request);
-        request.putShort(lenPos, (short)( request.limit() - lenPos - Constants.BYTES_IN_SHORT ));
 
-        byte[] requestBytes = new byte[request.remaining()];
-        request.get(requestBytes);
+        byte[] requestBytes = prepRequest(lenPos, request);
 
         System.out.println( "Connecting...");
         Socket sock = new Socket(InetAddress.getLoopbackAddress(), 6104);
         BufferedOutputStream out = new BufferedOutputStream(sock.getOutputStream());
+        System.out.println(" ### Querying for " + Arrays.toString(QueryElements));
         out.write(requestBytes);
         out.flush();
 
         BufferedInputStream in = new BufferedInputStream(sock.getInputStream());
-        ByteBuffer lengthBuffer = read( in, 2 );
-        int length = lengthBuffer.getShort() & Constants.SHORT_MASK;
+        ByteBuffer payload = getResponse(in);
 
-        System.out.println( "Expecting another " + length);
-        ByteBuffer payload = read(in, length);
-
+        HSOsuProvidersElement osuProvidersElement = null;
         List<ANQPElement> anqpResult = ANQPFactory.parsePayload(payload);
         for ( ANQPElement element : anqpResult ) {
             System.out.println( element );
+            if (element.getID() == Constants.ANQPElementType.HSOSUProviders) {
+                osuProvidersElement = (HSOsuProvidersElement)element;
+            }
         }
+
+        if ( osuProvidersElement != null ) {
+            for (OSUProvider provider : osuProvidersElement.getProviders()) {
+                for (IconInfo iconInfo : provider.getIcons()) {
+                    sendIconRequest(iconInfo.getFileName());
+                }
+            }
+        }
+        sendIconRequest("doesNotExist.noimg");
+
+        sendHomeRealmQuery("nxdomain.abc", "jan.com");
+    }
+
+    private static void sendIconRequest(String fileName) throws IOException {
+        ByteBuffer iconRequest = ByteBuffer.allocate(fileName.length()*2)
+                .order(ByteOrder.LITTLE_ENDIAN);
+        int iconPos = iconRequest.position();
+        iconRequest.putShort((short) 0);
+        ANQPFactory.buildIconRequest(fileName, iconRequest);
+        byte[] iconBytes = prepRequest(iconPos, iconRequest);
+
+        System.out.println( "Connecting...");
+        Socket sock = new Socket(InetAddress.getLoopbackAddress(), 6104);
+        BufferedOutputStream out = new BufferedOutputStream(sock.getOutputStream());
+
+        System.out.println(" ### Requesting icon '" + fileName + "'");
+        out.write(iconBytes);
+        out.flush();
+
+        BufferedInputStream in = new BufferedInputStream(sock.getInputStream());
+        ByteBuffer payload = getResponse(in);
+        List<ANQPElement> anqpResult = ANQPFactory.parsePayload(payload);
+        System.out.println("Icon: " + anqpResult );
+    }
+
+    private static void sendHomeRealmQuery(String ... realms) throws IOException{
+        ByteBuffer request = ByteBuffer.allocate(1024).order(ByteOrder.LITTLE_ENDIAN);
+        int iconPos = request.position();
+        request.putShort((short) 0);
+        ANQPFactory.buildHomeRealmRequest(Arrays.asList(realms), request);
+        byte[] iconBytes = prepRequest(iconPos, request);
+
+        System.out.println( "Connecting...");
+        Socket sock = new Socket(InetAddress.getLoopbackAddress(), 6104);
+        BufferedOutputStream out = new BufferedOutputStream(sock.getOutputStream());
+
+        System.out.println(" ### Home realm query for " + Arrays.toString(realms));
+        out.write(iconBytes);
+        out.flush();
+
+        BufferedInputStream in = new BufferedInputStream(sock.getInputStream());
+        ByteBuffer payload = getResponse(in);
+        List<ANQPElement> anqpResult = ANQPFactory.parsePayload(payload);
+        System.out.println("Home realm query: " + anqpResult );
+    }
+
+    private static ByteBuffer getResponse(InputStream in) throws IOException {
+        ByteBuffer lengthBuffer = read( in, 2 );
+        int length = lengthBuffer.getShort() & Constants.SHORT_MASK;
+        System.out.println("Length " + length);
+
+        return read(in, length);
+    }
+
+    private static byte[] prepRequest(int pos0, ByteBuffer request) {
+        request.putShort(pos0, (short)( request.limit() - pos0 - Constants.BYTES_IN_SHORT ));
+        byte[] octets = new byte[request.remaining()];
+        request.get(octets);
+        return octets;
     }
 
     private static ByteBuffer read(InputStream in, int length) throws IOException {

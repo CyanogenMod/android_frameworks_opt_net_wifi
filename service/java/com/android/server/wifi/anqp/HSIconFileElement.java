@@ -30,7 +30,7 @@ public class HSIconFileElement extends ANQPElement {
 
         int statusID = payload.get() & BYTE_MASK;
         mStatusCode = statusID < StatusCode.values().length ? StatusCode.values()[statusID] : null;
-        mType = Constants.getString(payload, 1, StandardCharsets.US_ASCII);
+        mType = Constants.getPrefixedString(payload, 1, StandardCharsets.US_ASCII);
 
         int dataLength = payload.getShort() & SHORT_MASK;
         mIconData = new byte[dataLength];
