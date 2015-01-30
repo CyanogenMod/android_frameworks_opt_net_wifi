@@ -20,6 +20,10 @@ public class InnerAuthEAP implements AuthParam {
         mEapMethodID = EAP.mapEAPMethod(typeID);
     }
 
+    public InnerAuthEAP(EAP.EAPMethodID eapMethodID) {
+        mEapMethodID = eapMethodID;
+    }
+
     @Override
     public EAP.AuthInfoID getAuthInfoID() {
         return EAP.AuthInfoID.InnerAuthEAPMethodType;
