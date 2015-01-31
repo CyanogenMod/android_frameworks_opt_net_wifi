@@ -23,6 +23,8 @@
 #include <utils/Log.h>
 #include <utils/String16.h>
 #include <ctype.h>
+#include <sys/socket.h>
+#include <linux/if.h>
 
 #include "wifi.h"
 #include "wifi_hal.h"
@@ -192,10 +194,67 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result *result) {
     return scanResult;
 }
 
+int set_iface_flags(const char *ifname, int dev_up) {
+    struct ifreq ifr;
+    int ret;
+
+    int sock = socket(PF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        ALOGD("Bad socket: %d\n", sock);
+        return -errno;
+    }
+
+    ALOGD("setting interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
+
+    memset(&ifr, 0, sizeof(ifr));
+    strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+    ALOGD("reading old value\n");
+
+    if (ioctl(sock, SIOCGIFFLAGS, &ifr) != 0) {
+      ret = errno ? -errno : -999;
+      ALOGD("Could not read interface %s flags: %d\n", ifname, errno);
+      close(sock);
+      return ret;
+    } else {
+      ALOGD("writing new value\n");
+    }
+
+    if (dev_up) {
+      if (ifr.ifr_flags & IFF_UP) {
+        ALOGD("interface %s is already up\n", ifname);
+        close(sock);
+        return 0;
+      }
+      ifr.ifr_flags |= IFF_UP;
+    } else {
+      if (!(ifr.ifr_flags & IFF_UP)) {
+        ALOGD("interface %s is already down\n", ifname);
+        close(sock);
+        return 0;
+      }
+      ifr.ifr_flags &= ~IFF_UP;
+    }
+
+    if (ioctl(sock, SIOCSIFFLAGS, &ifr) != 0) {
+      ALOGD("Could not set interface %s flags \n", ifname);
+      close(sock);
+      return ret;
+    } else {
+      ALOGD("set interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
+    }
+    close(sock);
+    return 0;
+}
+
 static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
     wifi_handle halHandle = getWifiHandle(env, cls);
 
     if (halHandle == NULL) {
+        int ret = set_iface_flags("wlan0", 1);
+        if(ret != 0) {
+            return false;
+        }
         wifi_error res = wifi_initialize(&halHandle);
         if (res == WIFI_SUCCESS) {
             setStaticLongField(env, cls, WifiHandleVarName, (jlong)halHandle);
@@ -224,6 +283,7 @@ static void android_net_wifi_stopHal(JNIEnv* env, jclass cls) {
     ALOGD("In wifi stop Hal");
     wifi_handle halHandle = getWifiHandle(env, cls);
     wifi_cleanup(halHandle, android_net_wifi_hal_cleaned_up_handler);
+    set_iface_flags("wlan0", 0);
 }
 
 static void android_net_wifi_waitForHalEvents(JNIEnv* env, jclass cls) {
