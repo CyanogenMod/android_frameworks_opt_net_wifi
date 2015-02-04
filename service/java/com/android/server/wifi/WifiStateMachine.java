@@ -8177,6 +8177,7 @@ public class WifiStateMachine extends StateMachine {
                     if (message.arg1 == mTetherToken) {
                         loge("Failed to get tether update, shutdown soft access point");
                         transitionTo(mSoftApStartedState);
+                        setWifiApState(WIFI_AP_STATE_FAILED);
                         // Needs to be first thing handled
                         sendMessageAtFrontOfQueue(CMD_STOP_AP);
                     }

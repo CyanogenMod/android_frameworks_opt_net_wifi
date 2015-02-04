@@ -1332,6 +1332,22 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             } else if (action.equals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED)) {
                 boolean emergencyMode = intent.getBooleanExtra("phoneinECMState", false);
                 mWifiController.sendMessage(CMD_EMERGENCY_MODE_CHANGED, emergencyMode ? 1 : 0, 0);
+            } else if (action.equals(WifiManager.WIFI_AP_STATE_CHANGED_ACTION)) {
+                int wifiApState = intent.getIntExtra(WifiManager.EXTRA_WIFI_AP_STATE,
+                        WifiManager.WIFI_AP_STATE_FAILED);
+                Slog.d(TAG, "wifiApState=" + wifiApState);
+                /*
+                 * If start SoftAp fails, WifiStateMachine would transition to InitialState,
+                 * but WifiController is left stuck in ApEnabledState, which in turn
+                 * fails to turn on WLAN again.
+                 *
+                 * Register WifiService to receive WIFI_AP_STATE_CHANGED_ACTION intent
+                 * from WifiStateMachine, and if wifiApState is failed, inform WifiController
+                 * to transtion to ApStaDisabledState.
+                 */
+                if (wifiApState == WifiManager.WIFI_AP_STATE_FAILED) {
+                    setWifiApEnabled(null, false);
+                }
             }
         }
     };
@@ -1360,6 +1376,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         intentFilter.addAction(Intent.ACTION_SCREEN_OFF);
         intentFilter.addAction(Intent.ACTION_BATTERY_CHANGED);
         intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
+        intentFilter.addAction(WifiManager.WIFI_AP_STATE_CHANGED_ACTION);
         intentFilter.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
         intentFilter.addAction(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
         mContext.registerReceiver(mReceiver, intentFilter);
