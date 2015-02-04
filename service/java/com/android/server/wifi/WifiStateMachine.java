@@ -9569,6 +9569,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (message.arg1 == mTetherToken) {
                         loge("Failed to get tether update, shutdown soft access point");
                         transitionTo(mSoftApStartedState);
+                        setWifiApState(WIFI_AP_STATE_FAILED,WifiManager.SAP_START_FAILURE_GENERAL);
                         // Needs to be first thing handled
                         sendMessageAtFrontOfQueue(CMD_STOP_AP);
                     }
