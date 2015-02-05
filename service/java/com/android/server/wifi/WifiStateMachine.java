@@ -542,13 +542,13 @@ public class WifiStateMachine extends StateMachine {
 
    /* Set the frequency band */
     static final int CMD_SET_FREQUENCY_BAND               = BASE + 90;
+    /* When there are saved networks and PNO fails, we do a periodic scan to notify
+       a saved/open network in suspend mode */
+    static final int CMD_PNO_PERIODIC_SCAN                = BASE + 91;
     /* Enable TDLS on a specific MAC address */
     static final int CMD_ENABLE_TDLS                      = BASE + 92;
     /* DHCP/IP configuration watchdog */
     static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER    = BASE + 93;
-    /* When there are saved networks and PNO fails, we do a periodic scan to notify
-       a saved/open network in suspend mode */
-    static final int CMD_PNO_PERIODIC_SCAN                = BASE + 94;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
