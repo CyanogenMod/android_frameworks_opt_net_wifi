@@ -470,7 +470,7 @@ jboolean setNetworkVariable(char *buf)
     char dummy[BUF_SIZE] = {0};
     char ssid[BUF_SIZE] = {0};
     size_t utf8_len = 0;
-    if (strnlen(buf, BUF_SIZE) > BUF_SIZE) {
+    if (strnlen(buf, BUF_SIZE) == BUF_SIZE) {
         ALOGE("setNetworkVariable failed due to invalid length");
         return JNI_FALSE;
     }
