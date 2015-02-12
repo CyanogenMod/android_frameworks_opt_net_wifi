@@ -4581,6 +4581,11 @@ public class WifiStateMachine extends StateMachine {
                 return;
             }
         }
+        //turn off interface
+        if (!mWifiNative.toggleInterface(0)) {
+            sendMessage(CMD_START_AP_FAILURE);
+            return;
+        }
         // Start hostapd on a separate thread
         new Thread(new Runnable() {
             public void run() {
