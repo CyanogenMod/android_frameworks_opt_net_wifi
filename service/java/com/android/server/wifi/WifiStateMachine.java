@@ -6166,6 +6166,17 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
                     mSupplicantStateTracker.sendMessage(WifiMonitor.AUTHENTICATION_FAILURE_EVENT);
+                    if ((mScreenOn == false) && mEnableBackgroundScan) {
+                         // Background SCAN should trigger to initiate
+                         // connection attempt on authentication failure.
+                         // Hence issue PNO SCAN if authentication fails
+                         // and LCD is off.
+                        if (!mIsScanOngoing) {
+                            if (!mWifiNative.enableBackgroundScan(true)) {
+                                handlePnoFailError();
+                            }
+                        }
+                    }
                     break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
                 case WifiMonitor.SSID_REENABLED:
