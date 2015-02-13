@@ -1,14 +1,20 @@
 package com.android.server.wifi.hotspot2;
 
-import com.android.server.wifi.anqp.Constants;
-
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.TimeZone;
 
+import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
+import static com.android.server.wifi.anqp.Constants.NIBBLE_MASK;
+
 public abstract class Utils {
+
+    private static final String[] PLMNText = { "wlan", "mnc*", "mcc*", "3gppnetwork", "org" };
+
     public static List<String> splitDomain(String domain) {
 
         if (domain.endsWith("."))
@@ -26,6 +32,57 @@ public abstract class Utils {
         return labelList;
     }
 
+    public static long parseMac(String s) {
+
+        long mac = 0;
+        int count = 0;
+        for (int n = 0; n < s.length(); n++) {
+            int nibble = Utils.fromHex(s.charAt(n), true);
+            if (nibble >= 0) {
+                mac = (mac << 4) | nibble;
+                count++;
+            }
+        }
+        if (count < 12 || (count&1) == 1) {
+            throw new IllegalArgumentException("Bad MAC address: '" + s + "'");
+        }
+        return mac;
+    }
+
+    public static int[] getMccMnc(List<String> domain) {
+        if (domain.size() != 5) {
+            return null;
+        }
+
+        for (int n = 4; n >= 0; n-- ) {
+            String expect = PLMNText[n];
+            int len = expect.endsWith("*") ? expect.length() - 1 : expect.length();
+            if (!domain.get(n).regionMatches(0, expect, 0, len)) {
+                return null;
+            }
+        }
+        try {
+            int[] mccMnc = new int[2];
+            mccMnc[0] = Integer.parseInt(domain.get(1).substring(3));
+            mccMnc[1] = Integer.parseInt(domain.get(2).substring(3));
+            return mccMnc;
+        }
+        catch (NumberFormatException nfe) {
+            return null;
+        }
+    }
+
+    public static String roamingConsortiumsToString(long[] ois) {
+        if (ois == null) {
+            return "null";
+        }
+        List<Long> list = new ArrayList<Long>(ois.length);
+        for (long oi : ois) {
+            list.add(oi);
+        }
+        return roamingConsortiumsToString(list);
+    }
+
     public static String roamingConsortiumsToString(Collection<Long> ois) {
         StringBuilder sb = new StringBuilder();
         boolean first = true;
@@ -36,9 +93,9 @@ public abstract class Utils {
                 sb.append(", ");
             }
             if (Long.numberOfLeadingZeros(oi) > 40) {
-                sb.append(String.format("%09x", oi));
-            } else {
                 sb.append(String.format("%06x", oi));
+            } else {
+                sb.append(String.format("%010x", oi));
             }
         }
         return sb.toString();
@@ -57,9 +114,84 @@ public abstract class Utils {
             } else {
                 sb.append(' ');
             }
-            sb.append(String.format("%02x", b & Constants.BYTE_MASK));
+            sb.append(String.format("%02x", b & BYTE_MASK));
         }
         return sb.toString();
+    }
+
+    public static byte[] hexToBytes(String text) {
+        if ((text.length() & 1) == 1) {
+            throw new NumberFormatException("Odd length hex string: " + text.length());
+        }
+        byte[] data = new byte[text.length() >> 1];
+        int position = 0;
+        for (int n = 0; n < text.length(); n += 2) {
+            data[position] =
+                    (byte) (((fromHex(text.charAt(n), false) & NIBBLE_MASK) << 4) |
+                            (fromHex(text.charAt(n + 1), false) & NIBBLE_MASK));
+            position++;
+        }
+        return data;
+    }
+
+    public static int fromHex(char ch, boolean lenient) throws NumberFormatException {
+        if (ch <= '9' && ch >= '0') {
+            return ch - '0';
+        } else if (ch >= 'a' && ch <= 'f') {
+            return ch + 10 - 'a';
+        } else if (ch <= 'F' && ch >= 'A') {
+            return ch + 10 - 'A';
+        } else if (lenient) {
+            return -1;
+        } else {
+            throw new NumberFormatException("Bad hex-character: " + ch);
+        }
+    }
+
+    private static char toAscii(int b) {
+        return b >= ' ' && b < 0x7f ? (char) b : '.';
+    }
+
+    static boolean isDecimal(String s) {
+        for (int n = 0; n < s.length(); n++) {
+            char ch = s.charAt(n);
+            if (ch < '0' || ch > '9') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static <T extends Comparable> int compare(Comparable<T> c1, T c2) {
+        if (c1 == null) {
+            return c2 == null ? 0 : -1;
+        }
+        else if (c2 == null) {
+            return 1;
+        }
+        else {
+            return c1.compareTo(c2);
+        }
+    }
+
+    public static String bytesToBingoCard(ByteBuffer data, int len) {
+        ByteBuffer dup = data.duplicate();
+        dup.limit(dup.position() + len);
+        return bytesToBingoCard(dup);
+    }
+
+    public static String bytesToBingoCard(ByteBuffer data) {
+        ByteBuffer dup = data.duplicate();
+        StringBuilder sbx = new StringBuilder();
+        while (dup.hasRemaining()) {
+            sbx.append(String.format("%02x ", dup.get() & BYTE_MASK));
+        }
+        dup = data.duplicate();
+        sbx.append(' ');
+        while (dup.hasRemaining()) {
+            sbx.append(String.format("%c", toAscii(dup.get() & BYTE_MASK)));
+        }
+        return sbx.toString();
     }
 
     public static String toUTCString(long ms) {

@@ -1,22 +1,22 @@
 package com.android.server.wifi.hotspot2.pps;
 
+import android.util.Log;
+
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.DomainNameElement;
-import com.android.server.wifi.anqp.HSConnectionCapabilityElement;
-import com.android.server.wifi.anqp.HSWanMetricsElement;
-import com.android.server.wifi.anqp.IPAddressTypeAvailabilityElement;
 import com.android.server.wifi.anqp.NAIRealmData;
 import com.android.server.wifi.anqp.NAIRealmElement;
 import com.android.server.wifi.anqp.RoamingConsortiumElement;
 import com.android.server.wifi.anqp.ThreeGPPNetworkElement;
 import com.android.server.wifi.hotspot2.AuthMatch;
-import com.android.server.wifi.hotspot2.NetworkInfo;
+import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.Utils;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,7 +24,7 @@ import java.util.Set;
 import static com.android.server.wifi.anqp.Constants.ANQPElementType;
 
 public class HomeSP {
-    private final Map<String, String> mSSIDs;        // SSID, HESSID, [0,N]
+    private final Map<String, Long> mSSIDs;        // SSID, HESSID, [0,N]
     private final String mFQDN;
     private final DomainMatcher mDomainMatcher;
     private final Set<Long> mRoamingConsortiums;    // [0,N]
@@ -37,7 +37,7 @@ public class HomeSP {
     private final String mFriendlyName;             // [1]
     private final String mIconURL;                  // [0,1]
 
-    public HomeSP(Map<String, String> ssidMap,
+    public HomeSP(Map<String, Long> ssidMap,
                    /*@NotNull*/ String fqdn,
                    /*@NotNull*/ Set<Long> roamingConsortiums,
                    /*@NotNull*/ Set<String> otherHomePartners,
@@ -62,78 +62,59 @@ public class HomeSP {
         mCredential = credential;
     }
 
-    public PasspointMatch match(NetworkInfo networkInfo, List<ANQPElement> anqpElements) {
+    public PasspointMatch match(NetworkDetail networkDetail,
+                                Map<ANQPElementType, ANQPElement> anqpElementMap) {
 
-        if (mSSIDs.containsKey(networkInfo.getSSID())) {
-            String hessid = mSSIDs.get(networkInfo.getSSID());
-            if (hessid == null || networkInfo.getHESSID().equals(hessid)) {
-                System.out.println("-- SSID");
+        if (mSSIDs.containsKey(networkDetail.getSSID())) {
+            Long hessid = mSSIDs.get(networkDetail.getSSID());
+            if (hessid == null || networkDetail.getHESSID() == hessid) {
+                Log.d("HS2J", "match SSID");
                 return PasspointMatch.HomeProvider;
             }
         }
 
-        List<Long> allOIs = null;
+        Set<Long> anOIs = new HashSet<Long>();
 
-        if (networkInfo.getRoamingConsortiums() != null) {
-            allOIs = new ArrayList<Long>();
-            for (long oi : networkInfo.getRoamingConsortiums()) {
-                allOIs.add(oi);
+        if (networkDetail.getRoamingConsortiums() != null) {
+            for (long oi : networkDetail.getRoamingConsortiums()) {
+                anOIs.add(oi);
+            }
+        }
+        RoamingConsortiumElement rcElement = anqpElementMap != null ?
+                (RoamingConsortiumElement) anqpElementMap.get(ANQPElementType.ANQPRoamingConsortium)
+                : null;
+        if (rcElement != null) {
+            anOIs.addAll(rcElement.getOIs());
+        }
+
+        boolean authPossible = false;
+
+        if (!mMatchAllOIs.isEmpty()) {
+            boolean matchesAll = true;
+
+            for (long spOI : mMatchAllOIs) {
+                if (!anOIs.contains(spOI)) {
+                    matchesAll = false;
+                    break;
+                }
+            }
+            if (matchesAll) {
+                authPossible = true;
+            }
+            else {
+                if (anqpElementMap != null || networkDetail.getAnqpOICount() == 0) {
+                    return PasspointMatch.Declined;
+                }
+                else {
+                    return PasspointMatch.Incomplete;
+                }
             }
         }
 
-        Map<ANQPElementType, ANQPElement> anqpElementMap = null;
-
-        if (anqpElements != null) {
-            anqpElementMap = new EnumMap<ANQPElementType, ANQPElement>(ANQPElementType.class);
-            for (ANQPElement element : anqpElements) {
-                anqpElementMap.put(element.getID(), element);
-                if (element.getID() == ANQPElementType.ANQPRoamingConsortium) {
-                    RoamingConsortiumElement rcElement = (RoamingConsortiumElement) element;
-                    if (!rcElement.getOIs().isEmpty()) {
-                        if (allOIs == null) {
-                            allOIs = new ArrayList<Long>(rcElement.getOIs());
-                        } else {
-                            allOIs.addAll(rcElement.getOIs());
-                        }
-                    }
-                }
-            }
-        }
-
-        // !!! wlan.mnc<MNC>.mcc<MCC>.3gppnetwork.org
-
-        if (allOIs != null) {
-            if (!mRoamingConsortiums.isEmpty()) {
-                for (long oi : allOIs) {
-                    if (mRoamingConsortiums.contains(oi)) {
-                        System.out.println("-- RC");
-                        return PasspointMatch.HomeProvider;
-                    }
-                }
-            }
-            if (!mMatchAnyOIs.isEmpty() || !mMatchAllOIs.isEmpty()) {
-                for (long anOI : allOIs) {
-
-                    boolean oneMatchesAll = !mMatchAllOIs.isEmpty();
-
-                    for (long spOI : mMatchAllOIs) {
-                        if (spOI != anOI) {
-                            oneMatchesAll = false;
-                            break;
-                        }
-                    }
-
-                    if (oneMatchesAll) {
-                        System.out.println("-- 1inAll");
-                        return PasspointMatch.HomeProvider;
-                    }
-
-                    if (mMatchAnyOIs.contains(anOI)) {
-                        System.out.println("-- 1ofAll");
-                        return PasspointMatch.HomeProvider;
-                    }
-                }
-            }
+        if (!authPossible &&
+                (!Collections.disjoint(mMatchAnyOIs, anOIs) ||
+                        !Collections.disjoint(mRoamingConsortiums, anOIs))) {
+            authPossible = true;
         }
 
         if (anqpElementMap == null) {
@@ -147,7 +128,31 @@ public class HomeSP {
         ThreeGPPNetworkElement threeGPPNetworkElement =
                 (ThreeGPPNetworkElement) anqpElementMap.get(ANQPElementType.ANQP3GPPNetwork);
 
+        if (domainNameElement != null) {
+            for (String domain : domainNameElement.getDomains()) {
+                List<String> anLabels = Utils.splitDomain(domain);
+                DomainMatcher.Match match = mDomainMatcher.isSubDomain(anLabels);
+                if (match != DomainMatcher.Match.None) {
+                    return PasspointMatch.HomeProvider;
+                }
+                /* !!! Compare with MCC and MNC from SIM card.
+                int[] mccMnc = Utils.getMccMnc(anLabels);
+                if (mccMnc != null) {
+                    --- check with SIM
+                }
+                */
+            }
+        }
+
+        if (!authPossible && naiRealmElement != null) {
+            AuthMatch authMatch = matchRealms(naiRealmElement, threeGPPNetworkElement);
+            if (authMatch != AuthMatch.None) {
+                return PasspointMatch.RoamingProvider;
+            }
+        }
+
         // For future policy decisions:
+        /*
         IPAddressTypeAvailabilityElement ipAddressAvailabilityElement =
                 (IPAddressTypeAvailabilityElement) anqpElementMap.get(
                         ANQPElementType.ANQPIPAddrAvailability);
@@ -156,22 +161,8 @@ public class HomeSP {
                         ANQPElementType.HSConnCapability);
         HSWanMetricsElement hsWanMetricsElement =
                 (HSWanMetricsElement) anqpElementMap.get(ANQPElementType.HSWANMetrics);
+        */
 
-        if (domainNameElement != null) {
-            for (String domain : domainNameElement.getDomains()) {
-                DomainMatcher.Match match = mDomainMatcher.isSubDomain(Utils.splitDomain(domain));
-                if (match != DomainMatcher.Match.None) {
-                    return PasspointMatch.HomeProvider;
-                }
-            }
-        }
-
-        if (naiRealmElement != null) {
-            AuthMatch authMatch = matchRealms(naiRealmElement, threeGPPNetworkElement);
-            if (authMatch != AuthMatch.None) {
-                return PasspointMatch.RoamingProvider;
-            }
-        }
         return PasspointMatch.None;
     }
 
@@ -188,7 +179,7 @@ public class HomeSP {
                 if (match != DomainMatcher.Match.None) {
                     break;
                 }
-                if (anRealmLabels.equals(credRealm)) {
+                if (DomainMatcher.arg2SubdomainOfArg1(credRealm, anRealmLabels)) {
                     match = DomainMatcher.Match.Secondary;
                     break;
                 }

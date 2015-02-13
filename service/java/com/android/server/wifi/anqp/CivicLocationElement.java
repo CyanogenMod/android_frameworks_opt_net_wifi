@@ -82,7 +82,7 @@ public class CivicLocationElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "CivicLocationElement{" +
+        return "CivicLocation{" +
                 "mLocationType=" + mLocationType +
                 ", mLocale=" + mLocale +
                 ", mValues=" + mValues +

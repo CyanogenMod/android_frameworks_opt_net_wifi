@@ -104,9 +104,15 @@ import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 import com.android.server.net.NetlinkTracker;
+import com.android.server.wifi.hotspot2.NetworkDetail;
+import com.android.server.wifi.hotspot2.PasspointMatch;
+import com.android.server.wifi.hotspot2.SelectionManager;
+import com.android.server.wifi.hotspot2.SupplicantBridge;
+import com.android.server.wifi.hotspot2.pps.HomeSP;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -120,6 +126,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -183,10 +190,10 @@ public class WifiStateMachine extends StateMachine {
     private final String mPrimaryDeviceType;
 
     /* Scan results handling */
-    private List<ScanResult> mScanResults = new ArrayList<ScanResult>();
+    private List<ScanDetail> mScanResults = new ArrayList<>();
     private static final Pattern scanResultPattern = Pattern.compile("\t+");
     private static final int SCAN_RESULT_CACHE_SIZE = 160;
-    private final LruCache<String, ScanResult> mScanResultCache;
+    private final LruCache<NetworkDetail, ScanDetail> mScanResultCache;
     // For debug, number of known scan results that were found as part of last scan result event,
     // as well the number of scans results returned by the supplicant with that message
     private int mNumScanResultsKnown;
@@ -856,6 +863,8 @@ public class WifiStateMachine extends StateMachine {
 
     private BatchedScanSettings mBatchedScanSettings = null;
 
+    private final SelectionManager mSelectionManager;
+
     /**
      * Track the worksource/cost of the current settings and track what's been noted
      * to the battery stats, so we can mark the end of the previous when changing.
@@ -1020,7 +1029,7 @@ public class WifiStateMachine extends StateMachine {
                 },
                 new IntentFilter(Intent.ACTION_BOOT_COMPLETED));
 
-        mScanResultCache = new LruCache<String, ScanResult>(SCAN_RESULT_CACHE_SIZE);
+        mScanResultCache = new LruCache<>(SCAN_RESULT_CACHE_SIZE);
 
         PowerManager powerManager = (PowerManager)mContext.getSystemService(Context.POWER_SERVICE);
         mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getName());
@@ -1062,6 +1071,21 @@ public class WifiStateMachine extends StateMachine {
         setLogRecSize(ActivityManager.isLowRamDeviceStatic() ? 100 : 3000);
         setLogOnlyTransitions(false);
         if (VDBG) setDbg(true);
+
+        File f = new File("/data/misc/wifi/pps.data");
+        logd("Jan: WFSM constructed on " + Thread.currentThread() +
+                ", file: " + (f.exists() ? f.length() : "-"));
+
+        SelectionManager selectionManager;
+        try {
+            selectionManager = new SelectionManager(new File("/data/misc/wifi/pps.data"),
+                    new File("/data/misc/wifi/lastssid"),
+                    mWifiNative, this);
+        }
+        catch (IOException ioe) {
+            selectionManager = null;
+        }
+        mSelectionManager = selectionManager;
 
         //start the state machine
         start();
@@ -1119,11 +1143,11 @@ public class WifiStateMachine extends StateMachine {
     }
 
     public void setAllowScansWithTraffic(int enabled) {
-        mWifiConfigStore.alwaysEnableScansWhileAssociated = enabled;
+        mWifiConfigStore.alwaysEnableScansWhileAssociated.set(enabled);
     }
 
     public int getAllowScansWithTraffic() {
-        return mWifiConfigStore.alwaysEnableScansWhileAssociated;
+        return mWifiConfigStore.alwaysEnableScansWhileAssociated.get();
     }
 
     /*
@@ -1534,7 +1558,8 @@ public class WifiStateMachine extends StateMachine {
                     if ((splitData[n].equals(END_STR)) || splitData[n].equals(DELIMITER_STR)) {
                         if (bssid != null) {
                             batchedScanResult.scanResults.add(new ScanResult(
-                                    wifiSsid, bssid, "", level, freq, tsf, dist, distSd));
+                                    wifiSsid, bssid, null,
+                                    level, freq, tsf, dist, distSd));
                             wifiSsid = null;
                             bssid = null;
                             level = 0;
@@ -2069,8 +2094,8 @@ public class WifiStateMachine extends StateMachine {
     public List<ScanResult> syncGetScanResultsList() {
         synchronized (mScanResultCache) {
             List<ScanResult> scanList = new ArrayList<ScanResult>();
-            for(ScanResult result: mScanResults) {
-                scanList.add(new ScanResult(result));
+            for(ScanDetail result: mScanResults) {
+                scanList.add(new ScanResult(result.getScanResult()));
             }
             return scanList;
         }
@@ -2086,7 +2111,7 @@ public class WifiStateMachine extends StateMachine {
      * Get unsynchronized pointer to scan result list
      * Can be called only from AutoJoinController which runs in the WifiStateMachine context
      */
-    public List<ScanResult> getScanResultsListNoCopyUnsync() {
+    public List<ScanDetail> getScanResultsListNoCopyUnsync() {
         return mScanResults;
     }
 
@@ -3033,11 +3058,11 @@ public class WifiStateMachine extends StateMachine {
             setScanAlarm(false);
             clearBlacklist();
 
-            fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMilli;
+            fullBandConnectedTimeIntervalMilli = mWifiConfigStore.associatedPartialScanPeriodMilli.get();
             // In either Disconnectedstate or ConnectedState,
             // start the scan alarm so as to enable autojoin
             if (getCurrentState() == mConnectedState
-                    && mWifiConfigStore.enableAutoJoinScanWhenAssociated) {
+                    && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
                 // Scan after 500ms
                 startDelayedScan(500, null, null);
             } else if (getCurrentState() == mDisconnectedState) {
@@ -3276,6 +3301,7 @@ public class WifiStateMachine extends StateMachine {
         }
     }*/
 
+    private static final String IE_STR = "ie=";
     private static final String ID_STR = "id=";
     private static final String BSSID_STR = "bssid=";
     private static final String FREQ_STR = "freq=";
@@ -3354,7 +3380,7 @@ public class WifiStateMachine extends StateMachine {
             if (emptyScanResultCount > 10) {
                 // If we got too many empty scan results, the current scan cache is stale,
                 // hence clear it.
-                mScanResults = new ArrayList<ScanResult>();
+                mScanResults = new ArrayList<>();
             }
            return;
         }
@@ -3365,10 +3391,12 @@ public class WifiStateMachine extends StateMachine {
         // huge string buffer while the amount we really want is generally pretty small
         // so make copies instead (one example b/11087956 wasted 400k of heap here).
         synchronized(mScanResultCache) {
-            mScanResults = new ArrayList<ScanResult>();
+            mScanResults = new ArrayList<>();
             String[] lines = scanResults.split("\n");
             final int bssidStrLen = BSSID_STR.length();
             final int flagLen = FLAGS_STR.length();
+            String infoElements = null;
+            List<String> anqpLines = null;
 
             for (String line : lines) {
                 if (line.startsWith(BSSID_STR)) {
@@ -3400,32 +3428,48 @@ public class WifiStateMachine extends StateMachine {
                 } else if (line.startsWith(SSID_STR)) {
                     wifiSsid = WifiSsid.createFromAsciiEncoded(
                             line.substring(SSID_STR.length()));
+                } else if (line.startsWith(IE_STR)) {
+                    infoElements = line;
+                } else if (SupplicantBridge.isAnqpAttribute(line)) {
+                    if (anqpLines == null) {
+                        anqpLines = new ArrayList<>();
+                    }
+                    anqpLines.add(line);
                 } else if (line.startsWith(DELIMITER_STR) || line.startsWith(END_STR)) {
                     if (bssid != null) {
-                        String ssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
-                        String key = bssid + ssid;
-                        ScanResult scanResult = mScanResultCache.get(key);
-                        if (scanResult != null) {
-                            // TODO: average the RSSI, instead of overwriting it
-                            scanResult.level = level;
-                            scanResult.wifiSsid = wifiSsid;
-                            // Keep existing API
-                            scanResult.SSID = (wifiSsid != null) ? wifiSsid.toString() :
-                                    WifiSsid.NONE;
-                            scanResult.capabilities = flags;
-                            scanResult.frequency = freq;
-                            scanResult.timestamp = tsf;
-                            scanResult.seen = System.currentTimeMillis();
-                        } else {
-                            scanResult =
-                                new ScanResult(
-                                        wifiSsid, bssid, flags, level, freq, tsf);
-                            scanResult.seen = System.currentTimeMillis();
-                            mScanResultCache.put(key, scanResult);
+                        NetworkDetail networkDetail =
+                                new NetworkDetail(bssid, infoElements, anqpLines);
+
+                        String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
+                        if (!xssid.equals(networkDetail.getSSID())) {
+                            Log.d("HS2J", "Inconsistency: SSID: '" + xssid +
+                                    "' vs '" + networkDetail.getSSID() + "'");
                         }
+
+                        ScanDetail scanDetail = mScanResultCache.get(networkDetail);
+                        if (scanDetail != null) {
+                            scanDetail.updateResults(level, wifiSsid, xssid, flags, freq, tsf);
+                            ScanDetail update =
+                                    mSelectionManager.scoreNetwork(scanDetail);
+                            if (update != null) {
+                                mScanResultCache.put(networkDetail, update);
+                            }
+                        }
+                        else {
+                            scanDetail = new ScanDetail(networkDetail, wifiSsid, bssid,
+                                    flags, level, freq, tsf);
+                            ScanDetail update =
+                                    mSelectionManager.scoreNetwork(scanDetail);
+                            if (update != null) {
+                                scanDetail = update;
+                            }
+                            mScanResultCache.put(networkDetail, scanDetail);
+                        }
+
                         mNumScanResultsReturned ++; // Keep track of how many scan results we got
                                                     // as part of this scan's processing
-                        mScanResults.add(scanResult);
+
+                        mScanResults.add(scanDetail);
                     }
                     bssid = null;
                     level = 0;
@@ -3433,9 +3477,12 @@ public class WifiStateMachine extends StateMachine {
                     tsf = 0;
                     flags = "";
                     wifiSsid = null;
+                    infoElements = null;
+                    anqpLines = null;
                 }
             }
         }
+
         boolean attemptAutoJoin = true;
         SupplicantState state = mWifiInfo.getSupplicantState();
         if (getCurrentState() == mRoamingState
@@ -3443,7 +3490,7 @@ public class WifiStateMachine extends StateMachine {
                 || getCurrentState() == mScanModeState
                 || getCurrentState() == mDisconnectingState
                 || (getCurrentState() == mConnectedState
-                && !mWifiConfigStore.enableAutoJoinWhenAssociated)
+                && !mWifiConfigStore.enableAutoJoinWhenAssociated.get())
                 || linkDebouncing
                 || state == SupplicantState.ASSOCIATING
                 || state == SupplicantState.AUTHENTICATING
@@ -3473,7 +3520,7 @@ public class WifiStateMachine extends StateMachine {
             mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
         }
 
-        if (mWifiConfigStore.enableAutoJoinWhenAssociated) {
+        if (mWifiConfigStore.enableAutoJoinWhenAssociated.get()) {
             synchronized(mScanResultCache) {
                 // AutoJoincontroller will directly acces the scan result list and update it with
                 // ScanResult status
@@ -3486,6 +3533,12 @@ public class WifiStateMachine extends StateMachine {
             // in WifiAutoJoinController, instead,
             // just try to reconnect to the same SSID by triggering a roam
             sendMessage(CMD_AUTO_ROAM, mLastNetworkId, 1, null);
+        }
+    }
+
+    public void updateScanResults(ScanDetail network, Map<HomeSP, PasspointMatch> matches) {
+        synchronized (mScanResultCache) {
+            mScanResultCache.put(network.getNetworkDetail(), network.score(matches));
         }
     }
 
@@ -3577,7 +3630,7 @@ public class WifiStateMachine extends StateMachine {
         }
         delta = networkDelta;
         if (mWifiInfo != null) {
-            if (!mWifiConfigStore.enableAutoJoinWhenAssociated
+            if (!mWifiConfigStore.enableAutoJoinWhenAssociated.get()
                     && mWifiInfo.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                 // If AutoJoin while associated is not enabled,
                 // we should never switch network when already associated
@@ -3682,12 +3735,12 @@ public class WifiStateMachine extends StateMachine {
 
         boolean is24GHz = use24Thresholds || mWifiInfo.is24GHz();
 
-        boolean isBadRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdBadRssi24)
-                || (!is24GHz && rssi < mWifiConfigStore.thresholdBadRssi5);
-        boolean isLowRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdLowRssi24)
-                || (!is24GHz && mWifiInfo.getRssi() < mWifiConfigStore.thresholdLowRssi5);
-        boolean isHighRSSI = (is24GHz && rssi >= mWifiConfigStore.thresholdGoodRssi24)
-                || (!is24GHz && mWifiInfo.getRssi() >= mWifiConfigStore.thresholdGoodRssi5);
+        boolean isBadRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdBadRssi24.get())
+                || (!is24GHz && rssi < mWifiConfigStore.thresholdBadRssi5.get());
+        boolean isLowRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdLowRssi24.get())
+                || (!is24GHz && mWifiInfo.getRssi() < mWifiConfigStore.thresholdLowRssi5.get());
+        boolean isHighRSSI = (is24GHz && rssi >= mWifiConfigStore.thresholdGoodRssi24.get())
+                || (!is24GHz && mWifiInfo.getRssi() >= mWifiConfigStore.thresholdGoodRssi5.get());
 
         if (isBadRSSI) sb.append(" br");
         if (isLowRSSI) sb.append(" lr");
@@ -5086,11 +5139,11 @@ public class WifiStateMachine extends StateMachine {
                     mWifiInfo.setMacAddress(mWifiNative.getMacAddress());
                     mWifiNative.enableSaveConfig();
                     mWifiConfigStore.loadAndEnableAllNetworks();
-                    if (mWifiConfigStore.enableVerboseLogging > 0) {
-                        enableVerboseLogging(mWifiConfigStore.enableVerboseLogging);
+                    if (mWifiConfigStore.enableVerboseLogging.get() > 0) {
+                        enableVerboseLogging(mWifiConfigStore.enableVerboseLogging.get());
                     }
-                    if (mWifiConfigStore.associatedPartialScanPeriodMilli < 0) {
-                        mWifiConfigStore.associatedPartialScanPeriodMilli = 0;
+                    if (mWifiConfigStore.associatedPartialScanPeriodMilli.get() < 0) {
+                        mWifiConfigStore.associatedPartialScanPeriodMilli.set(0);
                     }
                     initializeWpsDetails();
 
@@ -5641,7 +5694,7 @@ public class WifiStateMachine extends StateMachine {
         public void exit() {
             mIsRunning = false;
             updateBatteryWorkSource(null);
-            mScanResults = new ArrayList<ScanResult>();
+            mScanResults = new ArrayList<>();
 
             stopBatchedScan();
 
@@ -6207,12 +6260,12 @@ public class WifiStateMachine extends StateMachine {
                 && rssi != WifiInfo.INVALID_RSSI
                 && config != null) {
             boolean is24GHz = mWifiInfo.is24GHz();
-            boolean isBadRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdBadRssi24)
-                    || (!is24GHz && rssi < mWifiConfigStore.thresholdBadRssi5);
-            boolean isLowRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdLowRssi24)
-                    || (!is24GHz && mWifiInfo.getRssi() < mWifiConfigStore.thresholdLowRssi5);
-            boolean isHighRSSI = (is24GHz && rssi >= mWifiConfigStore.thresholdGoodRssi24)
-                    || (!is24GHz && mWifiInfo.getRssi() >= mWifiConfigStore.thresholdGoodRssi5);
+            boolean isBadRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdBadRssi24.get())
+                    || (!is24GHz && rssi < mWifiConfigStore.thresholdBadRssi5.get());
+            boolean isLowRSSI = (is24GHz && rssi < mWifiConfigStore.thresholdLowRssi24.get())
+                    || (!is24GHz && mWifiInfo.getRssi() < mWifiConfigStore.thresholdLowRssi5.get());
+            boolean isHighRSSI = (is24GHz && rssi >= mWifiConfigStore.thresholdGoodRssi24.get())
+                    || (!is24GHz && mWifiInfo.getRssi() >= mWifiConfigStore.thresholdGoodRssi5.get());
             if (isBadRSSI) {
                 // Take note that we got disabled while RSSI was Bad
                 config.numUserTriggeredWifiDisableLowRSSI++;
@@ -7076,10 +7129,10 @@ public class WifiStateMachine extends StateMachine {
                         // Check if the CMD_START_SCAN message is obsolete (and thus if it should
                         // not be processed) and restart the scan if needed
                         boolean shouldScan =
-                                mScreenOn && mWifiConfigStore.enableAutoJoinScanWhenAssociated;
+                                mScreenOn && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get();
                         if (!checkAndRestartDelayedScan(message.arg2,
                                 shouldScan,
-                                mWifiConfigStore.associatedPartialScanPeriodMilli, null, null)) {
+                                mWifiConfigStore.associatedPartialScanPeriodMilli.get(), null, null)) {
                             messageHandlingStatus = MESSAGE_HANDLING_STATUS_OBSOLETE;
                             loge("WifiStateMachine L2Connected CMD_START_SCAN source "
                                     + message.arg1
@@ -7105,7 +7158,7 @@ public class WifiStateMachine extends StateMachine {
                                     + " maxinterval=" + maxFullBandConnectedTimeIntervalMilli);
                         }
                         if (mWifiInfo != null) {
-                            if (mWifiConfigStore.enableFullBandScanWhenAssociated &&
+                            if (mWifiConfigStore.enableFullBandScanWhenAssociated.get() &&
                                     (now_ms - lastFullBandConnectedTimeMilli)
                                     > fullBandConnectedTimeIntervalMilli) {
                                 if (DBG) {
@@ -7135,7 +7188,7 @@ public class WifiStateMachine extends StateMachine {
                                     mWifiConfigStore.maxRxPacketForPartialScans) {
                                 // Don't scan if lots of packets are being sent
                                 restrictChannelList = true;
-                                if (mWifiConfigStore.alwaysEnableScansWhileAssociated == 0) {
+                                if (mWifiConfigStore.alwaysEnableScansWhileAssociated.get() == 0) {
                                     if (DBG) {
                                      loge("WifiStateMachine CMD_START_SCAN source " + message.arg1
                                         + " ...and ignore scans"
@@ -7155,10 +7208,10 @@ public class WifiStateMachine extends StateMachine {
                         }
                         if (currentConfiguration != null) {
                             if (fullBandConnectedTimeIntervalMilli
-                                    < mWifiConfigStore.associatedPartialScanPeriodMilli) {
+                                    < mWifiConfigStore.associatedPartialScanPeriodMilli.get()) {
                                 // Sanity
                                 fullBandConnectedTimeIntervalMilli
-                                        = mWifiConfigStore.associatedPartialScanPeriodMilli;
+                                        = mWifiConfigStore.associatedPartialScanPeriodMilli.get();
                             }
                             if (tryFullBandScan) {
                                 lastFullBandConnectedTimeMilli = now_ms;
@@ -7167,7 +7220,7 @@ public class WifiStateMachine extends StateMachine {
                                     // Increase the interval
                                     fullBandConnectedTimeIntervalMilli
                                             = fullBandConnectedTimeIntervalMilli
-                                            * mWifiConfigStore.associatedFullScanBackoff / 8;
+                                            * mWifiConfigStore.associatedFullScanBackoff.get() / 8;
 
                                     if (DBG) {
                                         loge("WifiStateMachine CMD_START_SCAN bump interval ="
@@ -7189,7 +7242,7 @@ public class WifiStateMachine extends StateMachine {
                                         // Increase the interval
                                         fullBandConnectedTimeIntervalMilli
                                                 = fullBandConnectedTimeIntervalMilli
-                                                * mWifiConfigStore.associatedFullScanBackoff / 8;
+                                                * mWifiConfigStore.associatedFullScanBackoff.get() / 8;
 
                                         if (DBG) {
                                             loge("WifiStateMachine CMD_START_SCAN bump interval ="
@@ -7222,7 +7275,7 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
-                        if (mWifiConfigStore.enableChipWakeUpWhenAssociated) {
+                        if (mWifiConfigStore.enableChipWakeUpWhenAssociated.get()) {
                             if (VVDBG) log(" get link layer stats " + mWifiLinkLayerStatsSupported);
                             WifiLinkLayerStats stats = getWifiLinkLayerStats(VDBG);
                             if (stats != null) {
@@ -7246,7 +7299,7 @@ public class WifiStateMachine extends StateMachine {
                     }
                     break;
                 case CMD_ENABLE_RSSI_POLL:
-                    if (mWifiConfigStore.enableRssiPollWhenAssociated) {
+                    if (mWifiConfigStore.enableRssiPollWhenAssociated.get()) {
                         mEnableRssiPolling = (message.arg1 == 1);
                     } else {
                         mEnableRssiPolling = false;
@@ -7622,12 +7675,12 @@ public class WifiStateMachine extends StateMachine {
                 log("ConnectedState Enter "
                         + " mScreenOn=" + mScreenOn
                         + " scanperiod="
-                        + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMilli) );
+                        + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMilli.get()) );
             }
             if (mScreenOn
-                    && mWifiConfigStore.enableAutoJoinScanWhenAssociated) {
+                    && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
                 // restart scan alarm
-                startDelayedScan(mWifiConfigStore.associatedPartialScanPeriodMilli, null, null);
+                startDelayedScan(mWifiConfigStore.associatedPartialScanPeriodMilli.get(), null, null);
             }
             registerConnected();
             lastConnectAttempt = 0;

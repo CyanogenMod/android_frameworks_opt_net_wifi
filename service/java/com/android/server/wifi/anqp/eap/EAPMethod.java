@@ -119,25 +119,22 @@ public class EAPMethod {
             if (myParams == null)
                 continue;
 
-            Set<AuthParam> otherParams = entry.getValue();
-
-            Set<AuthParam> iterationSet;
-            Set<AuthParam> seekSet;
-            if (myParams.size() >= otherParams.size()) {
-                seekSet = myParams;
-                iterationSet = otherParams;
-            } else {
-                seekSet = otherParams;
-                iterationSet = myParams;
-            }
-
-            for (AuthParam param : iterationSet) {
-                if (seekSet.contains(param)) {
-                    return AuthMatch.Qualified;
-                }
+            if (!Collections.disjoint(myParams, entry.getValue())) {
+                return AuthMatch.Qualified;
             }
         }
         return AuthMatch.None;
+    }
+
+    public AuthParam getAuthParam() {
+        if (mAuthParams.isEmpty()) {
+            return null;
+        }
+        Set<AuthParam> params = mAuthParams.values().iterator().next();
+        if (params.isEmpty()) {
+            return null;
+        }
+        return params.iterator().next();
     }
 
     @Override

@@ -33,7 +33,7 @@ public class CapabilityListElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "CapabilityListElement{" +
+        return "CapabilityList{" +
                 "mCapabilities=" + Arrays.toString(mCapabilities) +
                 '}';
     }

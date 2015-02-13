@@ -77,6 +77,10 @@ import java.nio.charset.Charset;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.text.SimpleDateFormat;
+import java.text.DateFormat;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.*;
@@ -318,43 +322,16 @@ public class WifiConfigStore extends IpConfigStore {
     // those deleted WifiConfiguration is set to this random unused PSK
     private static final String DELETED_CONFIG_PSK = "Mjkd86jEMGn79KhKll298Uu7-deleted";
 
-    public boolean enableAutoJoinScanWhenAssociated = true;
-    public boolean enableAutoJoinWhenAssociated = true;
-    public boolean enableChipWakeUpWhenAssociated = true;
-    public boolean enableRssiPollWhenAssociated = true;
-
-    public int maxTxPacketForNetworkSwitching = 40;
-    public int maxRxPacketForNetworkSwitching = 80;
-
     public int maxTxPacketForFullScans = 8;
     public int maxRxPacketForFullScans = 16;
 
     public int maxTxPacketForPartialScans = 40;
     public int maxRxPacketForPartialScans = 80;
 
-    public boolean enableFullBandScanWhenAssociated = true;
-
-    public int thresholdInitialAutoJoinAttemptMin5RSSI
-            = WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5;
-    public int thresholdInitialAutoJoinAttemptMin24RSSI
-            = WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24;
-
-    public int thresholdBadRssi5 = WifiConfiguration.BAD_RSSI_5;
-    public int thresholdLowRssi5 = WifiConfiguration.LOW_RSSI_5;
-    public int thresholdGoodRssi5 = WifiConfiguration.GOOD_RSSI_5;
-    public int thresholdBadRssi24 = WifiConfiguration.BAD_RSSI_24;
-    public int thresholdLowRssi24 = WifiConfiguration.LOW_RSSI_24;
-    public int thresholdGoodRssi24 = WifiConfiguration.GOOD_RSSI_24;
-
-    public int associatedFullScanBackoff = 12; // Will be divided by 8 by WifiStateMachine
     public int associatedFullScanMaxIntervalMilli = 300000;
-
-    public int associatedPartialScanPeriodMilli;
 
     public int bandPreferenceBoostFactor5 = 5; // Boost by 5 dB per dB above threshold
     public int bandPreferencePenaltyFactor5 = 2; // Penalize by 2 dB per dB below threshold
-    public int bandPreferencePenaltyThreshold5 = WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD;
-    public int bandPreferenceBoostThreshold5 = WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD;
 
     public int badLinkSpeed24 = 6;
     public int badLinkSpeed5 = 12;
@@ -372,21 +349,7 @@ public class WifiConfigStore extends IpConfigStore {
     public int associatedHysteresisHigh = +14;
     public int associatedHysteresisLow = +8;
 
-    public int thresholdUnblacklistThreshold5Hard
-            = WifiConfiguration.UNBLACKLIST_THRESHOLD_5_HARD;
-    public int thresholdUnblacklistThreshold5Soft
-            = WifiConfiguration.UNBLACKLIST_THRESHOLD_5_SOFT;
-    public int thresholdUnblacklistThreshold24Hard
-            = WifiConfiguration.UNBLACKLIST_THRESHOLD_24_HARD;
-    public int thresholdUnblacklistThreshold24Soft
-            = WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT;
-    public int enableVerboseLogging = 0;
     boolean showNetworks = true; // TODO set this back to false, used for debugging 17516271
-
-    public int alwaysEnableScansWhileAssociated = 0;
-
-    public int maxNumActiveChannelsForPartialScans = 6;
-    public int maxNumPassiveChannelsForPartialScans = 2;
 
     public boolean roamOnAny = false;
     public boolean onlyLinkSameCredentialConfigurations = true;
@@ -399,6 +362,37 @@ public class WifiConfigStore extends IpConfigStore {
     public int scanResultRssiLevelPatchUp = -85;
 
     public static final int maxNumScanCacheEntries = 128;
+
+
+    public final AtomicBoolean enableAutoJoinWhenAssociated = new AtomicBoolean(true);
+    public final AtomicBoolean enableFullBandScanWhenAssociated = new AtomicBoolean(true);
+    public final AtomicBoolean enableAutoJoinScanWhenAssociated = new AtomicBoolean(true);
+    public final AtomicBoolean enableChipWakeUpWhenAssociated = new AtomicBoolean(true);
+    public final AtomicBoolean enableRssiPollWhenAssociated = new AtomicBoolean(true);
+    public final AtomicInteger thresholdInitialAutoJoinAttemptMin5RSSI = new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5);
+    public final AtomicInteger thresholdInitialAutoJoinAttemptMin24RSSI = new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24);
+    public final AtomicInteger thresholdUnblacklistThreshold5Hard = new AtomicInteger();
+    public final AtomicInteger thresholdUnblacklistThreshold5Soft = new AtomicInteger();
+    public final AtomicInteger thresholdUnblacklistThreshold24Hard = new AtomicInteger();
+    public final AtomicInteger thresholdUnblacklistThreshold24Soft = new AtomicInteger();
+    public final AtomicInteger thresholdGoodRssi5 = new AtomicInteger(WifiConfiguration.GOOD_RSSI_5);
+    public final AtomicInteger thresholdLowRssi5 = new AtomicInteger(WifiConfiguration.LOW_RSSI_5);
+    public final AtomicInteger thresholdBadRssi5 = new AtomicInteger(WifiConfiguration.BAD_RSSI_5);
+    public final AtomicInteger thresholdGoodRssi24 = new AtomicInteger(WifiConfiguration.GOOD_RSSI_24);
+    public final AtomicInteger thresholdLowRssi24 = new AtomicInteger(WifiConfiguration.LOW_RSSI_24);
+    public final AtomicInteger thresholdBadRssi24 = new AtomicInteger(WifiConfiguration.BAD_RSSI_24);
+    public final AtomicInteger maxTxPacketForNetworkSwitching = new AtomicInteger(40);
+    public final AtomicInteger maxRxPacketForNetworkSwitching = new AtomicInteger(80);
+    public final AtomicInteger enableVerboseLogging = new AtomicInteger(0);
+    public final AtomicInteger bandPreferenceBoostThreshold5 = new AtomicInteger(WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD);
+    public final AtomicInteger associatedPartialScanPeriodMilli = new AtomicInteger();
+    public final AtomicInteger associatedFullScanBackoff = new AtomicInteger(12); // Will be divided by 8 by WifiStateMachine
+    public final AtomicInteger bandPreferencePenaltyThreshold5 = new AtomicInteger(WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD);
+    public final AtomicInteger alwaysEnableScansWhileAssociated = new AtomicInteger(0);
+    public final AtomicInteger maxNumPassiveChannelsForPartialScans = new AtomicInteger(2);
+    public final AtomicInteger maxNumActiveChannelsForPartialScans = new AtomicInteger(6);
+
+    private static final Map<String, Object> sKeyMap = new HashMap<>();
 
     /**
      * Regex pattern for extracting a connect choice.
@@ -469,6 +463,39 @@ public class WifiConfigStore extends IpConfigStore {
         mContext = c;
         mWifiNative = wn;
 
+        // A map for value setting in readAutoJoinConfig() - replacing the replicated code.
+        sKeyMap.put(ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY, enableAutoJoinWhenAssociated);
+        sKeyMap.put(ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY, enableFullBandScanWhenAssociated);
+        sKeyMap.put(ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY, enableAutoJoinScanWhenAssociated);
+        sKeyMap.put(ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY, enableChipWakeUpWhenAssociated);
+        sKeyMap.put(ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY, enableRssiPollWhenAssociated);
+        sKeyMap.put(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY, thresholdInitialAutoJoinAttemptMin5RSSI);
+        sKeyMap.put(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY, thresholdInitialAutoJoinAttemptMin24RSSI);
+        sKeyMap.put(THRESHOLD_UNBLACKLIST_HARD_5G_KEY, thresholdUnblacklistThreshold5Hard);
+        sKeyMap.put(THRESHOLD_UNBLACKLIST_SOFT_5G_KEY, thresholdUnblacklistThreshold5Soft);
+        sKeyMap.put(THRESHOLD_UNBLACKLIST_HARD_24G_KEY, thresholdUnblacklistThreshold24Hard);
+        sKeyMap.put(THRESHOLD_UNBLACKLIST_SOFT_24G_KEY, thresholdUnblacklistThreshold24Soft);
+        sKeyMap.put(THRESHOLD_GOOD_RSSI_5_KEY, thresholdGoodRssi5);
+        sKeyMap.put(THRESHOLD_LOW_RSSI_5_KEY, thresholdLowRssi5);
+        sKeyMap.put(THRESHOLD_BAD_RSSI_5_KEY, thresholdBadRssi5);
+        sKeyMap.put(THRESHOLD_GOOD_RSSI_24_KEY, thresholdGoodRssi24);
+        sKeyMap.put(THRESHOLD_LOW_RSSI_24_KEY, thresholdLowRssi24);
+        sKeyMap.put(THRESHOLD_BAD_RSSI_24_KEY, thresholdBadRssi24);
+        sKeyMap.put(THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY, maxTxPacketForNetworkSwitching);
+        sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY, maxRxPacketForNetworkSwitching);
+        sKeyMap.put(THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY, maxTxPacketForNetworkSwitching);
+        sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY, maxRxPacketForNetworkSwitching);
+        sKeyMap.put(THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY, maxTxPacketForNetworkSwitching);
+        sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY, maxRxPacketForNetworkSwitching);
+        sKeyMap.put(WIFI_VERBOSE_LOGS_KEY, enableVerboseLogging);
+        sKeyMap.put(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferenceBoostThreshold5);
+        sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, associatedPartialScanPeriodMilli);
+        sKeyMap.put(ASSOCIATED_FULL_SCAN_BACKOFF_KEY, associatedFullScanBackoff);
+        sKeyMap.put(G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferencePenaltyThreshold5);
+        sKeyMap.put(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY, alwaysEnableScansWhileAssociated);
+        sKeyMap.put(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumPassiveChannelsForPartialScans);
+        sKeyMap.put(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumActiveChannelsForPartialScans);
+
         if (showNetworks) {
             mLocalLog = mWifiNative.getLocalLog();
             mFileObserver = new WpaConfigFileObserver();
@@ -478,20 +505,20 @@ public class WifiConfigStore extends IpConfigStore {
             mFileObserver = null;
         }
 
-        associatedPartialScanPeriodMilli = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_associated_scan_interval);
+        associatedPartialScanPeriodMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_scan_interval));
         loge("associatedPartialScanPeriodMilli set to " + associatedPartialScanPeriodMilli);
 
         onlyLinkSameCredentialConfigurations = mContext.getResources().getBoolean(
                 R.bool.config_wifi_only_link_same_credential_configurations);
-        maxNumActiveChannelsForPartialScans = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_associated_partial_scan_max_num_active_channels);
-        maxNumPassiveChannelsForPartialScans = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_associated_partial_scan_max_num_passive_channels);
+        maxNumActiveChannelsForPartialScans.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_partial_scan_max_num_active_channels));
+        maxNumPassiveChannelsForPartialScans.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_partial_scan_max_num_passive_channels));
         associatedFullScanMaxIntervalMilli = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_associated_full_scan_max_interval);
-        associatedFullScanBackoff = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_associated_full_scan_backoff);
+        associatedFullScanBackoff.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_associated_full_scan_backoff));
         enableLinkDebouncing = mContext.getResources().getBoolean(
                 R.bool.config_wifi_enable_disconnection_debounce);
 
@@ -503,28 +530,28 @@ public class WifiConfigStore extends IpConfigStore {
         bandPreferencePenaltyFactor5 = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_5GHz_preference_penalty_factor);
 
-        bandPreferencePenaltyThreshold5 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_5GHz_preference_penalty_threshold);
-        bandPreferenceBoostThreshold5 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_5GHz_preference_boost_threshold);
+        bandPreferencePenaltyThreshold5.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_5GHz_preference_penalty_threshold));
+        bandPreferenceBoostThreshold5.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_5GHz_preference_boost_threshold));
 
         associatedHysteresisHigh = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_current_association_hysteresis_high);
         associatedHysteresisLow = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_current_association_hysteresis_low);
 
-        thresholdBadRssi5 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_5GHz);
-        thresholdLowRssi5 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_5GHz);
-        thresholdGoodRssi5 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz);
-        thresholdBadRssi24 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_24GHz);
-        thresholdLowRssi24 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_24GHz);
-        thresholdGoodRssi24 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_24GHz);
+        thresholdBadRssi5.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_5GHz));
+        thresholdLowRssi5.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_5GHz));
+        thresholdGoodRssi5.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz));
+        thresholdBadRssi24.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_24GHz));
+        thresholdLowRssi24.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_24GHz));
+        thresholdGoodRssi24.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_24GHz));
 
         enableWifiCellularHandoverUserTriggeredAdjustment = mContext.getResources().getBoolean(
                 R.bool.config_wifi_framework_cellular_handover_enable_user_triggered_adjustment);
@@ -546,11 +573,11 @@ public class WifiConfigStore extends IpConfigStore {
                 R.integer.config_wifi_framework_network_black_list_min_time_milli);
 
 
-        enableAutoJoinScanWhenAssociated = mContext.getResources().getBoolean(
-                R.bool.config_wifi_framework_enable_associated_autojoin_scan);
+        enableAutoJoinScanWhenAssociated.set(mContext.getResources().getBoolean(
+                R.bool.config_wifi_framework_enable_associated_autojoin_scan));
 
-        enableAutoJoinWhenAssociated = mContext.getResources().getBoolean(
-                R.bool.config_wifi_framework_enable_associated_network_selection);
+        enableAutoJoinWhenAssociated.set(mContext.getResources().getBoolean(
+                R.bool.config_wifi_framework_enable_associated_network_selection));
 
         currentNetworkBoost = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_current_network_boost);
@@ -560,7 +587,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void enableVerboseLogging(int verbose) {
-        enableVerboseLogging = verbose;
+        enableVerboseLogging.set(verbose);
         if (verbose > 0) {
             VDBG = true;
             showNetworks = true;
@@ -924,7 +951,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (info != null
             && info.getBSSID() != null
             && ScanResult.is5GHz(info.getFrequency())
-            && info.getRssi() > (bandPreferenceBoostThreshold5 + 3)) {
+            && info.getRssi() > (bandPreferenceBoostThreshold5.get() + 3)) {
             WifiConfiguration config = getWifiConfiguration(info.getNetworkId());
             if (config != null) {
                 if (config.scanResultCache != null) {
@@ -2236,399 +2263,37 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private void readAutoJoinConfig() {
-        BufferedReader reader = null;
-        try {
-
-            reader = new BufferedReader(new FileReader(autoJoinConfigFile));
-
+        try (BufferedReader reader = new BufferedReader(new FileReader(autoJoinConfigFile))) {
             for (String key = reader.readLine(); key != null; key = reader.readLine()) {
-                if (key != null) {
-                    Log.d(TAG, "readAutoJoinConfig line: " + key);
-                }
-                if (key.startsWith(ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY)) {
-                    String st = key.replace(ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        enableAutoJoinWhenAssociated = Integer.parseInt(st) != 0;
-                        Log.d(TAG,"readAutoJoinConfig: enabled = " + enableAutoJoinWhenAssociated);
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
+                Log.d(TAG, "readAutoJoinConfig line: " + key);
+
+                int split = key.indexOf(':');
+                if (split < 0) {
+                    continue;
                 }
 
-                if (key.startsWith(ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY)) {
-                    String st = key.replace(ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        enableFullBandScanWhenAssociated = Integer.parseInt(st) != 0;
-                        Log.d(TAG,"readAutoJoinConfig: enableFullBandScanWhenAssociated = "
-                                + enableFullBandScanWhenAssociated);
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
+                String name = key.substring(0, split);
+                Object reference = sKeyMap.get(name);
+                if (reference == null) {
+                    continue;
                 }
 
-                if (key.startsWith(ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY)) {
-                    String st = key.replace(ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        enableAutoJoinScanWhenAssociated = Integer.parseInt(st) != 0;
-                        Log.d(TAG,"readAutoJoinConfig: enabled = "
-                                + enableAutoJoinScanWhenAssociated);
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY)) {
-                    String st = key.replace(ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        enableChipWakeUpWhenAssociated = Integer.parseInt(st) != 0;
-                        Log.d(TAG,"readAutoJoinConfig: enabled = "
-                                + enableChipWakeUpWhenAssociated);
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY)) {
-                    String st = key.replace(ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        enableRssiPollWhenAssociated = Integer.parseInt(st) != 0;
-                        Log.d(TAG,"readAutoJoinConfig: enabled = "
-                                + enableRssiPollWhenAssociated);
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY)) {
-                    String st =
-                            key.replace(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdInitialAutoJoinAttemptMin5RSSI = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdInitialAutoJoinAttemptMin5RSSI = "
-                                + Integer.toString(thresholdInitialAutoJoinAttemptMin5RSSI));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY)) {
-                    String st =
-                            key.replace(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdInitialAutoJoinAttemptMin24RSSI = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdInitialAutoJoinAttemptMin24RSSI = "
-                                + Integer.toString(thresholdInitialAutoJoinAttemptMin24RSSI));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_UNBLACKLIST_HARD_5G_KEY)) {
-                    String st = key.replace(THRESHOLD_UNBLACKLIST_HARD_5G_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdUnblacklistThreshold5Hard = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdUnblacklistThreshold5Hard = "
-                            + Integer.toString(thresholdUnblacklistThreshold5Hard));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_UNBLACKLIST_SOFT_5G_KEY)) {
-                    String st = key.replace(THRESHOLD_UNBLACKLIST_SOFT_5G_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdUnblacklistThreshold5Soft = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdUnblacklistThreshold5Soft = "
-                            + Integer.toString(thresholdUnblacklistThreshold5Soft));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_UNBLACKLIST_HARD_24G_KEY)) {
-                    String st = key.replace(THRESHOLD_UNBLACKLIST_HARD_24G_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdUnblacklistThreshold24Hard = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdUnblacklistThreshold24Hard = "
-                            + Integer.toString(thresholdUnblacklistThreshold24Hard));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_UNBLACKLIST_SOFT_24G_KEY)) {
-                    String st = key.replace(THRESHOLD_UNBLACKLIST_SOFT_24G_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdUnblacklistThreshold24Soft = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdUnblacklistThreshold24Soft = "
-                            + Integer.toString(thresholdUnblacklistThreshold24Soft));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_GOOD_RSSI_5_KEY)) {
-                    String st = key.replace(THRESHOLD_GOOD_RSSI_5_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdGoodRssi5 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdGoodRssi5 = "
-                            + Integer.toString(thresholdGoodRssi5));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_LOW_RSSI_5_KEY)) {
-                    String st = key.replace(THRESHOLD_LOW_RSSI_5_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdLowRssi5 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdLowRssi5 = "
-                            + Integer.toString(thresholdLowRssi5));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_BAD_RSSI_5_KEY)) {
-                    String st = key.replace(THRESHOLD_BAD_RSSI_5_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdBadRssi5 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdBadRssi5 = "
-                            + Integer.toString(thresholdBadRssi5));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_GOOD_RSSI_24_KEY)) {
-                    String st = key.replace(THRESHOLD_GOOD_RSSI_24_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdGoodRssi24 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdGoodRssi24 = "
-                            + Integer.toString(thresholdGoodRssi24));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_LOW_RSSI_24_KEY)) {
-                    String st = key.replace(THRESHOLD_LOW_RSSI_24_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdLowRssi24 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdLowRssi24 = "
-                            + Integer.toString(thresholdLowRssi24));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_BAD_RSSI_24_KEY)) {
-                    String st = key.replace(THRESHOLD_BAD_RSSI_24_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        thresholdBadRssi24 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: thresholdBadRssi24 = "
-                            + Integer.toString(thresholdBadRssi24));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY)) {
-                    String st = key.replace(THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxTxPacketForNetworkSwitching = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxTxPacketForNetworkSwitching = "
-                            + Integer.toString(maxTxPacketForNetworkSwitching));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY)) {
-                    String st = key.replace(THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxRxPacketForNetworkSwitching = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxRxPacketForNetworkSwitching = "
-                            + Integer.toString(maxRxPacketForNetworkSwitching));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY)) {
-                    String st = key.replace(THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxTxPacketForNetworkSwitching = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxTxPacketForFullScans = "
-                                + Integer.toString(maxTxPacketForFullScans));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY)) {
-                    String st = key.replace(THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxRxPacketForNetworkSwitching = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxRxPacketForFullScans = "
-                                + Integer.toString(maxRxPacketForFullScans));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY)) {
-                    String st = key.replace(THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxTxPacketForNetworkSwitching = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxTxPacketForPartialScans = "
-                                + Integer.toString(maxTxPacketForPartialScans));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY)) {
-                    String st = key.replace(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxRxPacketForNetworkSwitching = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxRxPacketForPartialScans = "
-                                + Integer.toString(maxRxPacketForPartialScans));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-
-                if (key.startsWith(WIFI_VERBOSE_LOGS_KEY)) {
-                    String st = key.replace(WIFI_VERBOSE_LOGS_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        enableVerboseLogging = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: enable verbose logs = "
-                                + Integer.toString(enableVerboseLogging));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY)) {
-                    String st = key.replace(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        bandPreferenceBoostThreshold5 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: bandPreferenceBoostThreshold5 = "
-                            + Integer.toString(bandPreferenceBoostThreshold5));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY)) {
-                    String st = key.replace(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        associatedPartialScanPeriodMilli = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: associatedScanPeriod = "
-                                + Integer.toString(associatedPartialScanPeriodMilli));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(ASSOCIATED_FULL_SCAN_BACKOFF_KEY)) {
-                    String st = key.replace(ASSOCIATED_FULL_SCAN_BACKOFF_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        associatedFullScanBackoff = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: associatedFullScanBackoff = "
-                                + Integer.toString(associatedFullScanBackoff));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY)) {
-                    String st = key.replace(G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        bandPreferencePenaltyThreshold5 = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: bandPreferencePenaltyThreshold5 = "
-                            + Integer.toString(bandPreferencePenaltyThreshold5));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY)) {
-                    String st = key.replace(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        alwaysEnableScansWhileAssociated = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: alwaysEnableScansWhileAssociated = "
-                                + Integer.toString(alwaysEnableScansWhileAssociated));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY)) {
-                    String st = key.replace(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxNumPassiveChannelsForPartialScans = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxNumPassiveChannelsForPartialScans = "
-                                + Integer.toString(maxNumPassiveChannelsForPartialScans));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-                if (key.startsWith(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY)) {
-                    String st = key.replace(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, "");
-                    st = st.replace(SEPARATOR_KEY, "");
-                    try {
-                        maxNumActiveChannelsForPartialScans = Integer.parseInt(st);
-                        Log.d(TAG,"readAutoJoinConfig: maxNumActiveChannelsForPartialScans = "
-                                + Integer.toString(maxNumActiveChannelsForPartialScans));
-                    } catch (NumberFormatException e) {
-                        Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
-                    }
-                }
-            }
-        } catch (EOFException ignore) {
-            if (reader != null) {
                 try {
-                    reader.close();
-                    reader = null;
-                } catch (Exception e) {
-                    loge("readAutoJoinStatus: Error closing file" + e);
+                    int value = Integer.parseInt(key.substring(split+1).trim());
+                    if (reference.getClass() == AtomicBoolean.class) {
+                        ((AtomicBoolean)reference).set(value != 0);
+                    }
+                    else {
+                        ((AtomicInteger)reference).set(value);
+                    }
+                    Log.d(TAG,"readAutoJoinConfig: " + name + " = " + value);
                 }
-            }
-        } catch (FileNotFoundException ignore) {
-            if (reader != null) {
-                try {
-                    reader.close();
-                    reader = null;
-                } catch (Exception e) {
-                    loge("readAutoJoinStatus: Error closing file" + e);
+                catch (NumberFormatException nfe) {
+                    Log.d(TAG,"readAutoJoinConfig: incorrect format :" + key);
                 }
             }
         } catch (IOException e) {
             loge("readAutoJoinStatus: Error parsing configuration" + e);
-        }
-
-        if (reader!=null) {
-           try {
-               reader.close();
-           } catch (Exception e) {
-               loge("readAutoJoinStatus: Error closing file" + e);
-           }
         }
     }
 
@@ -2981,7 +2646,7 @@ public class WifiConfigStore extends IpConfigStore {
         /* save HomeSP object for passpoint networks */
         if (config.FQDN != null) {
             Credential credential = new Credential(config.enterpriseConfig);
-            HomeSP homeSP = new HomeSP(Collections.<String, String>emptyMap(), config.FQDN,
+            HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
                     config.roamingConsortiumIds, Collections.<String>emptySet(),
                     Collections.<Long>emptySet(), Collections.<Long>emptyList(),
                     config.providerFriendlyName, null, credential);
@@ -3329,7 +2994,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (config.scanResultCache != null && config.scanResultCache.size() > 0) {
             for (ScanResult result : config.scanResultCache.values()) {
                 //TODO : cout active and passive channels separately
-                if (numChannels > maxNumActiveChannelsForPartialScans) {
+                if (numChannels > maxNumActiveChannelsForPartialScans.get()) {
                     break;
                 }
                 if (VDBG) {
@@ -3359,7 +3024,7 @@ public class WifiConfigStore extends IpConfigStore {
                                 + " freq=" + Integer.toString(result.frequency)
                                 + " age=" + Long.toString(now_ms - result.seen));
                     }
-                    if (numChannels > maxNumActiveChannelsForPartialScans) {
+                    if (numChannels > maxNumActiveChannelsForPartialScans.get()) {
                         break;
                     }
                     if (((now_ms - result.seen) < age)/*||(!restrict || result.is24GHz())*/) {

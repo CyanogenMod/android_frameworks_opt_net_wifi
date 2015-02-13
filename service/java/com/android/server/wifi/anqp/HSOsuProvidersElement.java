@@ -41,7 +41,7 @@ public class HSOsuProvidersElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "HSOsuProvidersElement{" +
+        return "HSOsuProviders{" +
                 "mSSID='" + mSSID + '\'' +
                 ", mProviders=" + mProviders +
                 '}';

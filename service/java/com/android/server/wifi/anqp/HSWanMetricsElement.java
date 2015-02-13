@@ -78,7 +78,7 @@ public class HSWanMetricsElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return String.format("HSWanMetricsElement{mStatus=%s, mSymmetric=%s, mCapped=%s, " +
+        return String.format("HSWanMetrics{mStatus=%s, mSymmetric=%s, mCapped=%s, " +
                 "mDlSpeed=%d, mUlSpeed=%d, mDlLoad=%f, mUlLoad=%f, mLMD=%d}",
                 mStatus, mSymmetric, mCapped,
                 mDlSpeed, mUlSpeed,
