@@ -67,6 +67,7 @@ import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiChannel;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConnectionStatistics;
+import android.net.wifi.WifiEapSimInfo;
 import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiLinkLayerStats;
@@ -1722,6 +1723,7 @@ public class WifiStateMachine extends StateMachine {
             return false;
         }
         if (mP2pConnected.get()) {
+            int scanSource = msg.arg1;
             if (scanSource == SCAN_ALARM_SOURCE) {
                 if (VDBG) {
                     logd("P2P connected: lastScanDuringP2p=" +
@@ -2273,7 +2275,7 @@ public class WifiStateMachine extends StateMachine {
      * Get sim info  synchronously
      */
 
-    public WifiEapSimInfo  syncGetSimInfo(AsyncChannel channel) {
+    public WifiEapSimInfo syncGetSimInfo(AsyncChannel channel) {
         Message resultMsg = channel.sendMessageSynchronously(CMD_GET_SIM_INFO);
         WifiEapSimInfo  mWifiEapSimInfo = (WifiEapSimInfo) resultMsg.obj;
         resultMsg.recycle();
@@ -8092,7 +8094,9 @@ public class WifiStateMachine extends StateMachine {
                      * cleared
                      */
                     if (!mIsScanOngoing) {
-                        enableBackgroundScan(true);
+                        if (!mWifiNative.enableBackgroundScan(true)) {
+                            handlePnoFailError();
+                        }
                     }
                 } else {
                     setScanAlarm(true);
