@@ -1,8 +1,12 @@
 package com.android.server.wifi.hotspot2.pps;
 
+import android.net.wifi.WifiEnterpriseConfig;
 import android.util.Base64;
 
+import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
+import com.android.server.wifi.anqp.eap.InnerAuthEAP;
+import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.OMAException;
 
@@ -87,6 +91,23 @@ public class Credential {
         mShare = false;
     }
 
+    public Credential(WifiEnterpriseConfig enterpriseConfig) {
+        mCtime = 0;
+        mExpTime = 0;
+        mRealm = enterpriseConfig.getRealm();
+        mCheckAAACert = true;
+        mEAPMethod = mapEapMethod(enterpriseConfig.getEapMethod(),
+                enterpriseConfig.getPhase2Method());
+        mCertType = mapCertType(enterpriseConfig.getEapMethod());
+        mFingerPrint = null;
+        mImsi = enterpriseConfig.getPlmn();
+        mUserName = null;
+        mPassword = null;
+        mMachineManaged = false;
+        mSTokenApp = null;
+        mShare = false;
+    }
+
     public static CertType mapCertType(String certType) throws OMAException {
         if (certType.equalsIgnoreCase("x509v3")) {
             return CertType.x509v3;
@@ -94,6 +115,44 @@ public class Credential {
             return CertType.IEEE;
         } else {
             throw new OMAException("Invalid cert type: '" + certType + "'");
+        }
+    }
+
+    private static EAPMethod mapEapMethod(int eapMethod, int phase2Method) {
+        if (eapMethod == WifiEnterpriseConfig.Eap.TLS) {
+            return new EAPMethod(EAP.EAPMethodID.EAP_TLS, null);
+        } else if (eapMethod == WifiEnterpriseConfig.Eap.TTLS) {
+            /* keep this table in sync with WifiEnterpriseConfig.Phase2 enum */
+            final String innnerMethods[] = { null, "PAP", "MS-CHAP", "MS-CHAP-V2", null };
+            return new EAPMethod(EAP.EAPMethodID.EAP_TLS,
+                    new NonEAPInnerAuth(innnerMethods[phase2Method]));
+        } else if (eapMethod == WifiEnterpriseConfig.Eap.PEAP) {
+            /* restricting passpoint implementation from using PEAP */
+            return null;
+        } else if (eapMethod == WifiEnterpriseConfig.Eap.PWD) {
+            /* restricting passpoint implementation from using EAP_PWD */
+            return null;
+        } else if (eapMethod == WifiEnterpriseConfig.Eap.SIM) {
+            return new EAPMethod(EAP.EAPMethodID.EAP_SIM, null);
+        } else if (eapMethod == WifiEnterpriseConfig.Eap.AKA) {
+            return new EAPMethod(EAP.EAPMethodID.EAP_AKA, null);
+        }
+        /*
+            TODO: Uncomment this when AKA_PRIME is defined in WifiEnterpriseConfig
+        else if (eapMethod == WifiEnterpriseConfig.Eap.AKA_PRIME) {
+            return new EAPMethod(EAP.EAPMethodID.EAP_AKAPrim, null);
+        }
+        */
+
+        return null;
+    }
+
+    private static CertType mapCertType(int eapMethod) {
+        if (eapMethod == WifiEnterpriseConfig.Eap.TLS
+                || eapMethod == WifiEnterpriseConfig.Eap.TTLS) {
+            return CertType.x509v3;
+        } else {
+            return null;
         }
     }
 

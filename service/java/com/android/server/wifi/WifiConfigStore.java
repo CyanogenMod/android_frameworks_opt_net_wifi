@@ -56,6 +56,9 @@ import android.util.SparseArray;
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.net.IpConfigStore;
 import com.android.internal.R;
+import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.pps.Credential;
+import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import java.io.BufferedReader;
 import java.io.BufferedInputStream;
@@ -70,18 +73,16 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.math.BigInteger;
-import java.net.InetAddress;
 import java.nio.charset.Charset;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
-import java.text.SimpleDateFormat;
-import java.text.DateFormat;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.*;
 import java.util.zip.Checksum;
 import java.util.zip.CRC32;
+
 
 /**
  * This class provides the API to manage configured
@@ -137,6 +138,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static boolean VVDBG = false;
 
     private static final String SUPPLICANT_CONFIG_FILE = "/data/misc/wifi/wpa_supplicant.conf";
+    private static final String PPS_FILE = "/data/misc/wifi/PerProviderSubscription.xml";
 
     /* configured networks with network id as the key */
     private HashMap<Integer, WifiConfiguration> mConfiguredNetworks =
@@ -151,6 +153,13 @@ public class WifiConfigStore extends IpConfigStore {
      * map supplicant config to IP configuration. */
     private HashMap<Integer, Integer> mNetworkIds =
             new HashMap<Integer, Integer>();
+
+
+    /* Stores a map from NetworkId to HomeSP - homeSP being a specification of
+     * passpoint network. This helps tie the triplet { WifiConfiguration, NetworkId, HomeSP }
+     * which should be used in conjunction with each other
+     */
+    private HashMap<Integer, HomeSP> mConfiguredHomeSPs = new HashMap<Integer, HomeSP>();
 
     /**
      * Framework keeps a list of (the CRC32 hashes of) all SSIDs that where deleted by user,
@@ -422,7 +431,7 @@ public class WifiConfigStore extends IpConfigStore {
             WifiEnterpriseConfig.PASSWORD_KEY, WifiEnterpriseConfig.CLIENT_CERT_KEY,
             WifiEnterpriseConfig.CA_CERT_KEY, WifiEnterpriseConfig.SUBJECT_MATCH_KEY,
             WifiEnterpriseConfig.ENGINE_KEY, WifiEnterpriseConfig.ENGINE_ID_KEY,
-            WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY };
+            WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY, WifiEnterpriseConfig.ALTSUBJECT_MATCH_KEY };
 
 
     /**
@@ -1054,6 +1063,13 @@ public class WifiConfigStore extends IpConfigStore {
         Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId)
                 + " uid=" + Integer.toString(config.creatorUid)
                 + "/" + Integer.toString(config.lastUpdateUid));
+
+        if (config.providerFriendlyName != null) {
+            /* create a temporary SSID with providerFriendlyName */
+            Long csum = getChecksum(config.FQDN);
+            config.SSID = csum.toString();
+        }
+
         NetworkUpdateResult result = addOrUpdateNetworkNative(config, uid);
         if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
             WifiConfiguration conf = mConfiguredNetworks.get(result.getNetworkId());
@@ -1063,6 +1079,7 @@ public class WifiConfigStore extends IpConfigStore {
                             WifiManager.CHANGE_REASON_CONFIG_CHANGE);
             }
         }
+
         return result.getNetworkId();
     }
 
@@ -1082,6 +1099,13 @@ public class WifiConfigStore extends IpConfigStore {
             removeConfigAndSendBroadcastIfNeeded(netId);
         }
         return ret;
+    }
+
+
+    static private Long getChecksum(String source) {
+        Checksum csum = new CRC32();
+        csum.update(source.getBytes(), 0, source.getBytes().length);
+        return csum.getValue();
     }
 
     private boolean removeConfigAndSendBroadcastIfNeeded(int netId) {
@@ -1106,15 +1130,18 @@ public class WifiConfigStore extends IpConfigStore {
                     || config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
                 if (!TextUtils.isEmpty(config.SSID)) {
                     /* Remember that we deleted this PSK SSID */
-                    Checksum csum = new CRC32();
                     if (config.SSID != null) {
-                        csum.update(config.SSID.getBytes(), 0, config.SSID.getBytes().length);
-                        mDeletedSSIDs.add(csum.getValue());
+                        Long csum = getChecksum(config.SSID);
+                        mDeletedSSIDs.add(csum);
+                        loge("removeNetwork " + Integer.toString(netId)
+                                + " key=" + config.configKey()
+                                + " config.id=" + Integer.toString(config.networkId)
+                                + "  crc=" + csum);
+                    } else {
+                        loge("removeNetwork " + Integer.toString(netId)
+                                + " key=" + config.configKey()
+                                + " config.id=" + Integer.toString(config.networkId));
                     }
-                    loge("removeNetwork " + Integer.toString(netId)
-                            + " key=" + config.configKey()
-                            + " config.id=" + Integer.toString(config.networkId)
-                            + "  crc=" + csum.getValue());
                 }
             }
 
@@ -1468,6 +1495,7 @@ public class WifiConfigStore extends IpConfigStore {
             done = (lines.length == 1);
         }
 
+        readPasspointConfig();
         readIpAndProxyConfigurations();
         readNetworkHistory();
         readAutoJoinConfig();
@@ -1603,6 +1631,59 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         return false;
+    }
+
+    void readPasspointConfig() {
+        File file = new File(PPS_FILE);
+
+        MOManager moManager;
+        try {
+            moManager = new MOManager(file);
+            moManager.loadAllSPs();
+        } catch (IOException e) {
+            loge("Could not read " + PPS_FILE + " : " + e);
+            return;
+        }
+
+        mConfiguredHomeSPs.clear();
+
+        Map<String, HomeSP> homeSPs = moManager.getLoadedSPs();
+
+        for (HomeSP homeSp : homeSPs.values()) {
+            String fqdn = homeSp.getFQDN();
+            String ssid = Long.toString(getChecksum(fqdn));
+            for (WifiConfiguration config : mConfiguredNetworks.values()) {
+                if (config.SSID.equals(ssid) && config.enterpriseConfig != null) {
+                    config.FQDN = fqdn;
+                    config.providerFriendlyName = homeSp.getFriendlyName();
+                    config.roamingConsortiumIds = new HashSet<Long>();
+                    for (Long roamingConsortium : homeSp.getRoamingConsortiums()) {
+                        config.roamingConsortiumIds.add(roamingConsortium);
+                    }
+                    config.enterpriseConfig.setPlmn(homeSp.getCredential().getImsi());
+                    config.enterpriseConfig.setRealm(homeSp.getCredential().getRealm());
+                    mConfiguredHomeSPs.put(config.networkId, homeSp);
+                }
+            }
+        }
+    }
+
+    public void writePasspointConfigs() {
+        mWriter.write(PPS_FILE, new DelayedDiskWrite.Writer() {
+            @Override
+            public void onWriteCalled(DataOutputStream out) throws IOException {
+
+                File file = new File(PPS_FILE);
+
+                MOManager moManager;
+                try {
+                    moManager = new MOManager(file);
+                    moManager.saveAllSps(mConfiguredHomeSPs.values());
+                } catch (IOException e) {
+                    loge("Could not write " + PPS_FILE + " : " + e);
+                }
+            }
+        });
     }
 
     public void writeKnownNetworkHistory(boolean force) {
@@ -2627,6 +2708,10 @@ public class WifiConfigStore extends IpConfigStore {
             if (savedNetId != null) {
                 netId = savedNetId;
             } else {
+                if (mConfiguredHomeSPs.containsValue(config.FQDN)) {
+                    loge("addOrUpdateNetworkNative passpoint " + config.FQDN
+                            + " was found, but no network Id");
+                }
                 newNetwork = true;
                 netId = mWifiNative.addNetwork();
                 if (netId < 0) {
@@ -2893,6 +2978,16 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
+        /* save HomeSP object for passpoint networks */
+        if (config.FQDN != null) {
+            Credential credential = new Credential(config.enterpriseConfig);
+            HomeSP homeSP = new HomeSP(Collections.<String, String>emptyMap(), config.FQDN,
+                    config.roamingConsortiumIds, Collections.<String>emptySet(),
+                    Collections.<Long>emptySet(), Collections.<Long>emptyList(),
+                    config.providerFriendlyName, null, credential);
+            mConfiguredHomeSPs.put(config.networkId, homeSP);
+        }
+
         if (uid >= 0) {
             if (newNetwork) {
                 currentConfig.creatorUid = uid;
@@ -2941,6 +3036,7 @@ public class WifiConfigStore extends IpConfigStore {
         result.setIsNewNetwork(newNetwork);
         result.setNetworkId(netId);
 
+        writePasspointConfigs();
         writeKnownNetworkHistory(false);
 
         return result;
