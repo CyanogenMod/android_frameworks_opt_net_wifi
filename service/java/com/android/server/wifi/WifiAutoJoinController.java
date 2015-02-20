@@ -950,6 +950,10 @@ public class WifiAutoJoinController {
         if (!mWifiConfigStore.enable5GHzPreference) {
             return 0;
         }
+        if (mWifiStateMachine.getFrequencyBand()
+                == WifiManager.WIFI_FREQUENCY_BAND_2GHZ) {
+            return 0;
+        }
         if (rssi
                 > mWifiConfigStore.bandPreferenceBoostThreshold5) {
             // Boost by 2 dB for each point
@@ -1019,12 +1023,21 @@ public class WifiAutoJoinController {
         // Determine which BSSID we want to associate to, taking account
         // relative strength of 5 and 2.4 GHz BSSIDs
         long nowMs = System.currentTimeMillis();
+        int currentBand = mWifiStateMachine.getFrequencyBand();
 
         for (ScanResult b : current.scanResultCache.values()) {
             int bRssiBoost5 = 0;
             int aRssiBoost5 = 0;
             int bRssiBoost = 0;
             int aRssiBoost = 0;
+            if (b.is5GHz()
+                    && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_2GHZ)) {
+                continue;
+            }
+            if (b.is24GHz()
+                    && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_5GHZ)) {
+                continue;
+            }
             if ((b.seen == 0) || (b.BSSID == null)
                     || ((nowMs - b.seen) > age)
                     || b.autoJoinStatus != ScanResult.ENABLED
@@ -1151,9 +1164,18 @@ public class WifiAutoJoinController {
         long nowMs = System.currentTimeMillis();
 
         int startScore = -10000;
+        int currentBand = mWifiStateMachine.getFrequencyBand();
 
         // Run thru all cached scan results
         for (ScanResult result : config.scanResultCache.values()) {
+             if (result.is5GHz()
+                    && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_2GHZ)) {
+                 continue;
+             }
+             if (result.is24GHz()
+                    && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_5GHZ)) {
+                 continue;
+             }
             if ((nowMs - result.seen) < age) {
                 int sc = mNetworkScoreCache.getNetworkScore(result, isActive);
                 if (sc > startScore) {
