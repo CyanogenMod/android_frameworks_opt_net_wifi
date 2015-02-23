@@ -23,9 +23,7 @@ include $(CLEAR_VARS)
 
 LOCAL_REQUIRED_MODULES :=
 
-LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
-LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
-LOCAL_CPPFLAGS += -Wno-conversion-null
+LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_C_INCLUDES += \
 	external/libnl-headers \
@@ -64,9 +62,7 @@ include $(CLEAR_VARS)
 
 LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
 
-LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
-LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
-LOCAL_CPPFLAGS += -Wno-conversion-null
+LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_C_INCLUDES += \
 	$(call include-path-for, libhardware)/hardware \
@@ -94,9 +90,7 @@ include $(CLEAR_VARS)
 
 LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
 
-LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
-LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
-LOCAL_CPPFLAGS += -Wno-conversion-null
+LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_C_INCLUDES += \
 	$(JNI_H_INCLUDE) \

@@ -684,7 +684,7 @@ void onSignificantWifiChange(wifi_request_id id,
 
     for (unsigned i = 0; i < num_results; i++) {
 
-        wifi_significant_change_result result = *(results[i]);
+        wifi_significant_change_result &result = *(results[i]);
 
         jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
         if (scanResult == NULL) {
