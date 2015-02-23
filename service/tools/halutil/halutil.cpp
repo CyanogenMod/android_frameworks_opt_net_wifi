@@ -109,6 +109,7 @@ int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
     }
 
     if (ioctl(sock, SIOCSIFFLAGS, &ifr) != 0) {
+      ret = -errno;
       printMsg("Could not set interface %s flags \n", ifname);
       return ret;
     }else {
