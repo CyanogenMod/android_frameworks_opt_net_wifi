@@ -5678,7 +5678,14 @@ public class WifiStateMachine extends StateMachine {
                     break;
                 case CMD_GET_SIM_INFO:
                      String mSimInfo =  mWifiNative.getSimInfoNative();
-                     WifiEapSimInfo mWifiEapSimInfo = new WifiEapSimInfo(mSimInfo);
+                     WifiEapSimInfo mWifiEapSimInfo = null;
+                     try {
+                         if (mSimInfo != null) {
+                             mWifiEapSimInfo = new WifiEapSimInfo(mSimInfo);
+                         }
+                     } catch (IllegalArgumentException e) {
+                         loge("Exception: EAP-SIM not supported");
+                     }
                      if (mWifiEapSimInfo != null) {
                          replyToMessage(message, message.what ,(WifiEapSimInfo) mWifiEapSimInfo);
                      } else {
