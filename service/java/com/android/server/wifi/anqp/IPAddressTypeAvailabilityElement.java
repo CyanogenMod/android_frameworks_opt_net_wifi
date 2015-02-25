@@ -8,7 +8,7 @@ import java.nio.ByteBuffer;
  */
 public class IPAddressTypeAvailabilityElement extends ANQPElement {
     public enum IPv4Availability {
-        NotAvailable, Public, PortRestricted, SingleNATA, DoubleNAT,
+        NotAvailable, Public, PortRestricted, SingleNAT, DoubleNAT,
         PortRestrictedAndSingleNAT, PortRestrictedAndDoubleNAT, Unknown
     }
 

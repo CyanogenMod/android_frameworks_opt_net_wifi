@@ -29,14 +29,27 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.android.server.wifi.anqp.ANQPElement;
+import com.android.server.wifi.anqp.Constants;
+import com.android.server.wifi.hotspot2.ANQPData;
+import com.android.server.wifi.hotspot2.AnqpCache;
+import com.android.server.wifi.hotspot2.Chronograph;
+import com.android.server.wifi.hotspot2.NetworkDetail;
+import com.android.server.wifi.hotspot2.PasspointMatch;
+import com.android.server.wifi.hotspot2.PasspointMatchInfo;
+import com.android.server.wifi.hotspot2.SupplicantBridge;
+import com.android.server.wifi.hotspot2.pps.HomeSP;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * AutoJoin controller is responsible for WiFi Connect decision
@@ -105,6 +118,10 @@ public class WifiAutoJoinController {
      */
     int weakRssiBailCount = 0;
 
+    private final AnqpCache mAnqpCache;
+    private final SupplicantBridge mSupplicantBridge;
+    private final List<PasspointMatchInfo> mMatchInfoList;
+
     WifiAutoJoinController(Context c, WifiStateMachine w, WifiConfigStore s,
                            WifiConnectionStatistics st, WifiNative n) {
         mContext = c;
@@ -127,6 +144,11 @@ public class WifiAutoJoinController {
                     + " service " + Context.NETWORK_SCORE_SERVICE);
             mNetworkScoreCache = null;
         }
+
+        mMatchInfoList = new ArrayList<>();
+        Chronograph chronograph = new Chronograph();
+        mAnqpCache = new AnqpCache(chronograph);
+        mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -163,6 +185,104 @@ public class WifiAutoJoinController {
             }
         }
     }
+
+    // !!! JNo >>
+
+    // !!! Call from addToScanCache
+    private ScanDetail scoreHSNetwork(ScanDetail scanDetail) {
+        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
+        if (!networkDetail.has80211uInfo()) {
+            return null;
+        }
+        updateCache(scanDetail, networkDetail.getANQPElements());
+
+        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail,
+                networkDetail.getANQPElements() == null);
+        if (!matches.isEmpty()) {
+            return scanDetail.score(matches);
+        } else {
+            return null;
+        }
+    }
+
+    private Map<HomeSP, PasspointMatch> matchNetwork(ScanDetail scanDetail, boolean query) {
+        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
+
+        ANQPData anqpData = mAnqpCache.getEntry(networkDetail);
+
+        Map<Constants.ANQPElementType, ANQPElement> anqpElements =
+                anqpData != null ? anqpData.getANQPElements() : null;
+
+        boolean queried = !query;
+        Collection<HomeSP> homeSPs = mWifiConfigStore.getHomeSPs();
+        Map<HomeSP, PasspointMatch> matches = new HashMap<>(homeSPs.size());
+        for (HomeSP homeSP : homeSPs) {
+            PasspointMatch match = homeSP.match(networkDetail, anqpElements);
+
+            if (match == PasspointMatch.Incomplete && networkDetail.isInterworking() && !queried) {
+                if (mAnqpCache.initiate(networkDetail)) {
+                    mSupplicantBridge.startANQP(scanDetail);
+                }
+                queried = true;
+            }
+            matches.put(homeSP, match);
+        }
+        return matches;
+    }
+
+    public void notifyANQPDone(Long bssid, boolean success) {
+        mSupplicantBridge.notifyANQPDone(bssid, success);
+    }
+
+    public void notifyANQPResponse(ScanDetail scanDetail,
+                                   Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
+
+        updateCache(scanDetail, anqpElements);
+        if (anqpElements == null) {
+            return;
+        }
+
+        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, false);
+        Log.d("HS2J", scanDetail.getSSID() + " 2nd Matches: " + toMatchString(matches));
+
+        for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
+            mMatchInfoList.add(
+                    new PasspointMatchInfo(entry.getValue(), scanDetail.getNetworkDetail(),
+                            entry.getKey()));
+        }
+
+        //mWifiStateMachine.updateScanResults(scanDetail, matches);
+    }
+
+    private void updateCache(ScanDetail scanDetail, Map<Constants.ANQPElementType,
+            ANQPElement> anqpElements)
+    {
+        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
+
+        if (anqpElements == null) {
+            ANQPData data = mAnqpCache.getEntry(networkDetail);
+            if (data != null) {
+                scanDetail.propagateANQPInfo(data.getANQPElements());
+            }
+            return;
+        }
+
+        mAnqpCache.update(networkDetail, anqpElements);
+
+        Log.d("HS2J", "Cached " + networkDetail.getBSSIDString() +
+                "/" + networkDetail.getAnqpDomainID());
+        scanDetail.propagateANQPInfo(anqpElements);
+    }
+
+    private static String toMatchString(Map<HomeSP, PasspointMatch> matches) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
+            sb.append(' ').append(entry.getKey().getFQDN()).append("->").append(entry.getValue());
+        }
+        return sb.toString();
+    }
+
+    // !!! << JNo
 
     int addToScanCache(List<ScanDetail> scanList) {
         int numScanResultsKnown = 0; // Record number of scan results we knew about

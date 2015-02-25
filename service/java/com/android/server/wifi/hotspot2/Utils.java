@@ -101,6 +101,20 @@ public abstract class Utils {
         return sb.toString();
     }
 
+    public static String toUnicodeEscapedString(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int n = 0; n < s.length(); n++) {
+            char ch = s.charAt(n);
+            if (ch>= ' ' && ch < 127) {
+                sb.append(ch);
+            }
+            else {
+                sb.append("\\u").append(String.format("%04x", (int)ch));
+            }
+        }
+        return sb.toString();
+    }
+
     public static String toHexString(byte[] data) {
         if (data == null) {
             return "null";

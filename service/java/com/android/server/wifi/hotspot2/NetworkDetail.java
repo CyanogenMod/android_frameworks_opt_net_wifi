@@ -127,7 +127,7 @@ public class NetworkDetail {
         long[] roamingConsortiums = null;
 
         HSRelease hsRelease = null;
-        int anqpDomainID = -1;
+        int anqpDomainID = 0;       // No domain ID treated the same as a 0; unique info per AP.
 
         Long extendedCapabilities = null;
 
@@ -426,7 +426,7 @@ public class NetworkDetail {
         return toMACString(mBSSID);
     }
 
-    private static String toMACString(long mac) {
+    public static String toMACString(long mac) {
         StringBuilder sb = new StringBuilder();
         boolean first = true;
         for (int n = BYTES_IN_EUI48 - 1; n >= 0; n--) {
