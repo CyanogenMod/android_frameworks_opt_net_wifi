@@ -3183,7 +3183,11 @@ public class WifiStateMachine extends StateMachine {
                 startDelayedScan(500, null, null);
             } else if (getCurrentState() == mDisconnectedState) {
                 // Scan after 200ms
-                startDelayedScan(200, null, null);
+                if (mWifiConfigStore.getConfiguredNetworks().size() != 0) {
+                    startDelayedScan(200, null, null);
+                } else {
+                    startDelayedScan((int)mFrameworkScanIntervalMs, null, null);
+                }
             }
         } else if (startBackgroundScanIfNeeded) {
             // Screen Off and Disconnected and chipset doesn't support scan offload
@@ -8106,7 +8110,11 @@ public class WifiStateMachine extends StateMachine {
                 /**
                  * screen lit and => delayed timer
                  */
-                startDelayedScan(mDisconnectedScanPeriodMs, null, null);
+                if (mWifiConfigStore.getConfiguredNetworks().size() != 0) {
+                    startDelayedScan(mDisconnectedScanPeriodMs, null, null);
+                } else {
+                    startDelayedScan((int)mFrameworkScanIntervalMs, null, null);
+                }
             } else {
                 /**
                  * screen dark and PNO supported => scan alarm disabled
@@ -8223,6 +8231,9 @@ public class WifiStateMachine extends StateMachine {
                            period = (int)Settings.Global.getLong(mContext.getContentResolver(),
                                     Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
                                     mDisconnectedScanPeriodMs);
+                        }
+                        if (mWifiConfigStore.getConfiguredNetworks().size() == 0) {
+                            period = (int)mFrameworkScanIntervalMs;
                         }
                         if (!checkAndRestartDelayedScan(message.arg2,
                                 true, period, null, null)) {
