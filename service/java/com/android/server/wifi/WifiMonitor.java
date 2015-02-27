@@ -198,6 +198,10 @@ public class WifiMonitor {
      */
     private static final String EAP_AUTH_FAILURE_STR = "EAP authentication failed";
 
+    /* EAP authentication timeout events */
+    private static final String AUTH_EVENT_PREFIX_STR = "Authentication with";
+    private static final String AUTH_TIMEOUT_STR = "timed out.";
+
     /**
      * This indicates an assoc reject event
      */
@@ -815,6 +819,9 @@ public class WifiMonitor {
                 handleTargetBSSIDEvent(eventStr);
             } else if (eventStr.startsWith(ASSOCIATED_WITH_STR)) {
                 handleAssociatedBSSIDEvent(eventStr);
+            } else if (eventStr.startsWith(AUTH_EVENT_PREFIX_STR) &&
+                    eventStr.endsWith(AUTH_TIMEOUT_STR)) {
+                mStateMachine.sendMessage(AUTHENTICATION_FAILURE_EVENT);
             } else {
                 if (DBG) Log.w(TAG, "couldn't identify event type - " + eventStr);
             }
