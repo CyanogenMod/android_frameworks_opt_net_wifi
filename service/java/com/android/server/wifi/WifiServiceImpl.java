@@ -45,6 +45,7 @@ import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -818,7 +819,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             stats = mWifiStateMachine.syncGetLinkLayerStats(mWifiStateMachineChannel);
             if (stats != null) {
                 // Convert the LinkLayerStats into EnergyActivity
-                energyInfo = new WifiActivityEnergyInfo(
+                energyInfo = new WifiActivityEnergyInfo(SystemClock.elapsedRealtime(),
                         WifiActivityEnergyInfo.STACK_STATE_STATE_IDLE, stats.tx_time,
                         stats.rx_time, stats.on_time - stats.tx_time - stats.rx_time,
                         0 /* TBD */);
