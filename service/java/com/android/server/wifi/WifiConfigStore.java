@@ -1698,13 +1698,15 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
         }
+
+        log("read " + mConfiguredHomeSPs.size() + " from " + PPS_FILE);
     }
 
     public void writePasspointConfigs() {
         mWriter.write(PPS_FILE, new DelayedDiskWrite.Writer() {
             @Override
             public void onWriteCalled(DataOutputStream out) throws IOException {
-
+                log("saving " + PPS_FILE + " ...");
                 File file = new File(PPS_FILE);
 
                 MOManager moManager;
@@ -2649,13 +2651,15 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         /* save HomeSP object for passpoint networks */
-        if (config.FQDN != null) {
+        if (config.FQDN != null && config.FQDN.isEmpty() == false
+                && config.enterpriseConfig != null) {
             Credential credential = new Credential(config.enterpriseConfig);
             HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
                     config.roamingConsortiumIds, Collections.<String>emptySet(),
                     Collections.<Long>emptySet(), Collections.<Long>emptyList(),
                     config.providerFriendlyName, null, credential);
             mConfiguredHomeSPs.put(config.networkId, homeSP);
+            log("created a homeSP object for " + config.networkId + ":" + config.SSID);
         }
 
         if (uid >= 0) {
