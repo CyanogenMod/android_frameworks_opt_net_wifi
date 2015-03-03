@@ -250,6 +250,10 @@ public class MOManager {
 
         List<HomeSP> homeSPs = new ArrayList<HomeSP>();
 
+        if (spList == null) {
+            return homeSPs;
+        }
+
         for (OMANode spRoot : spList.getChildren()) {
             homeSPs.add(buildHomeSP(spRoot));
         }
