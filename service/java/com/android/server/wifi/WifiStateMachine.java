@@ -44,7 +44,9 @@ import android.content.pm.PackageManager;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
+import android.net.BaseDhcpStateMachine;
 import android.net.DhcpStateMachine;
+import android.net.dhcp.DhcpClient;
 import android.net.InterfaceConfiguration;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
@@ -116,6 +118,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
@@ -322,7 +325,7 @@ public class WifiStateMachine extends StateMachine {
     private NetworkInfo mNetworkInfo;
     private NetworkCapabilities mNetworkCapabilities;
     private SupplicantStateTracker mSupplicantStateTracker;
-    private DhcpStateMachine mDhcpStateMachine;
+    private BaseDhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
 
     private int mWifiLinkLayerStatsSupported = 4; // Temporary disable
@@ -4441,22 +4444,32 @@ public class WifiStateMachine extends StateMachine {
     }
 
 
-    void startDhcp() {
-        if (mDhcpStateMachine == null) {
-            mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(
-                    mContext, WifiStateMachine.this, mInterfaceName);
+    private boolean useLegacyDhcpClient() {
+        return Settings.Global.getInt(
+                mContext.getContentResolver(),
+                Settings.Global.LEGACY_DHCP_CLIENT, 0) == 1;
+    }
 
+    private void maybeInitDhcpStateMachine() {
+        if (mDhcpStateMachine == null) {
+            if (useLegacyDhcpClient()) {
+                mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(
+                        mContext, WifiStateMachine.this, mInterfaceName);
+            } else {
+                mDhcpStateMachine = DhcpClient.makeDhcpStateMachine(
+                        mContext, WifiStateMachine.this, mInterfaceName);
+            }
         }
+    }
+
+    void startDhcp() {
+        maybeInitDhcpStateMachine();
         mDhcpStateMachine.registerForPreDhcpNotification();
         mDhcpStateMachine.sendMessage(DhcpStateMachine.CMD_START_DHCP);
     }
 
     void renewDhcp() {
-        if (mDhcpStateMachine == null) {
-            mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(
-                    mContext, WifiStateMachine.this, mInterfaceName);
-
-        }
+        maybeInitDhcpStateMachine();
         mDhcpStateMachine.registerForPreDhcpNotification();
         mDhcpStateMachine.sendMessage(DhcpStateMachine.CMD_RENEW_DHCP);
     }
