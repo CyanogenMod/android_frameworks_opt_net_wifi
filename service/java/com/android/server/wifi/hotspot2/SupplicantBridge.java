@@ -3,6 +3,7 @@ package com.android.server.wifi.hotspot2;
 import android.util.Log;
 
 import com.android.server.wifi.ScanDetail;
+import com.android.server.wifi.WifiAutoJoinController;
 import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.ANQPFactory;
@@ -11,16 +12,9 @@ import com.android.server.wifi.anqp.eap.AuthParam;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.hotspot2.pps.Credential;
-import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
 import java.io.StringReader;
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
@@ -33,18 +27,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class SupplicantBridge implements AlarmHandler {
-    private static final int ANQP_RETRY_COUNT = 3;
-    private static final long ANQP_POLL_TIME = 1000L;
-
-    private final Chronograph mChronograph;
+public class SupplicantBridge {
     private final WifiNative mSupplicantHook;
-    private final File mLastSSIDFile;
-    private final SelectionManager mSelectionManager;
-    private String mLastSSID;
+    private final WifiAutoJoinController mAutoJoinController;
+    private final Map<Long, ScanDetail> mRequestMap = new HashMap<>();
 
-    private static final Map<String, Constants.ANQPElementType> sWpsNames =
-            new HashMap<String, Constants.ANQPElementType>();
+    private static final Map<String, Constants.ANQPElementType> sWpsNames = new HashMap<>();
 
     static {
         sWpsNames.put("anqp_venue_name", Constants.ANQPElementType.ANQPVenueName);
@@ -67,35 +55,9 @@ public class SupplicantBridge implements AlarmHandler {
         return split >= 0 && sWpsNames.containsKey(line.substring(0, split));
     }
 
-    public SupplicantBridge(WifiNative supplicantHook, File lastSSIDFile,
-                            SelectionManager selectionManager, Chronograph chronograph) {
-        mChronograph = chronograph;
+    public SupplicantBridge(WifiNative supplicantHook, WifiAutoJoinController autoJoinController) {
         mSupplicantHook = supplicantHook;
-        mLastSSIDFile = lastSSIDFile;
-        mSelectionManager = selectionManager;
-        if (!mLastSSIDFile.exists()) {
-            return;
-        }
-
-        BufferedReader in = null;
-        try {
-            in = new BufferedReader(new InputStreamReader(
-                    new FileInputStream(mLastSSIDFile), StandardCharsets.UTF_8));
-            mLastSSID = in.readLine();
-        }
-        catch (IOException ioe) {
-            /**/
-        }
-        finally {
-            if (in != null) {
-                try {
-                    in.close();
-                }
-                catch (IOException ioe) {
-                    /**/
-                }
-            }
-        }
+        mAutoJoinController = autoJoinController;
     }
 
     public static Map<Constants.ANQPElementType, ANQPElement> parseANQPLines(List<String> lines) {
@@ -120,45 +82,40 @@ public class SupplicantBridge implements AlarmHandler {
 
     public void startANQP(ScanDetail scanDetail) {
         String anqpGet = buildWPSQueryRequest(scanDetail.getNetworkDetail());
-        String result = mSupplicantHook.doCustomCommand(anqpGet);
-        if (result.startsWith("OK")) {
-            mChronograph.addAlarm(ANQP_POLL_TIME, this, scanDetail);
+        synchronized (mRequestMap) {
+            mRequestMap.put(scanDetail.getNetworkDetail().getBSSID(), scanDetail);
         }
-        else {
+        String result = mSupplicantHook.doCustomCommand(anqpGet);
+        if (!result.startsWith("OK")) {
             Log.d("HS2J", scanDetail.getSSID() + " ANQP result: " + result);
         }
     }
 
-    @Override
-    public void wake(Object token) {
+    public void notifyANQPDone(Long bssid, boolean success) {
+        ScanDetail scanDetail;
+        synchronized (mRequestMap) {
+            scanDetail = mRequestMap.remove(bssid);
+        }
+        if (scanDetail == null) {
+            return;
+        }
 
-        ScanDetail scanDetail = (ScanDetail)token;
-
-        String bssData =
-                mSupplicantHook.scanResult(scanDetail.getBSSIDString());
+        String bssData = mSupplicantHook.scanResult(scanDetail.getBSSIDString());
         //Log.d("HS2J", "BSS data for " + networkInfo + ": " + bssData);
         try {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
             if (!elements.isEmpty()) {
                 Log.d("HS2J", "Parsed ANQP: " + elements);
-                mSelectionManager.notifyANQPResponse(scanDetail, elements);
-            }
-            else {
-                int retry =
-                        mSelectionManager.getRetry(scanDetail.getNetworkDetail(), ANQP_RETRY_COUNT);
-                if (retry > 0) {
-                    mChronograph.addAlarm(ANQP_POLL_TIME * (1<<retry), this, scanDetail);
-                }
-                else {
-                    Log.d("HS2J", "Giving up ANQP on " + scanDetail.getSSID());
-                }
+                mAutoJoinController.notifyANQPResponse(scanDetail, elements);
             }
         }
         catch (IOException ioe) {
             Log.e("HS2J", ioe.toString());
         }
+        mAutoJoinController.notifyANQPResponse(scanDetail, null);
     }
 
+    /*
     public boolean addCredential(HomeSP homeSP, NetworkDetail networkDetail) {
         Credential credential = homeSP.getCredential();
         if (credential == null)
@@ -185,7 +142,7 @@ public class SupplicantBridge implements AlarmHandler {
                 }
             }
             catch (IOException ioe) {
-                /**/
+                //
             }
         }
 
@@ -211,7 +168,7 @@ public class SupplicantBridge implements AlarmHandler {
                         new FileOutputStream(mLastSSIDFile, false), StandardCharsets.UTF_8));
                 out.println(mLastSSID);
             } catch (IOException ioe) {
-            /**/
+            //
             } finally {
                 if (out != null) {
                     out.close();
@@ -221,6 +178,7 @@ public class SupplicantBridge implements AlarmHandler {
 
         return true;
     }
+    */
 
     private static String escapeSSID(NetworkDetail networkDetail) {
         return escapeString(networkDetail.getSSID(), networkDetail.isSSID_UTF8());
@@ -237,7 +195,7 @@ public class SupplicantBridge implements AlarmHandler {
         }
 
         if (asciiOnly) {
-            return '\"' + s + '"';
+            return '"' + s + '"';
         }
         else {
             byte[] octets = s.getBytes(utf8 ? StandardCharsets.UTF_8 : StandardCharsets.ISO_8859_1);
@@ -314,8 +272,7 @@ public class SupplicantBridge implements AlarmHandler {
 
     private static Map<Constants.ANQPElementType, ANQPElement> parseWPSData(String bssInfo)
             throws IOException {
-        Map<Constants.ANQPElementType, ANQPElement> elements =
-                new HashMap<Constants.ANQPElementType, ANQPElement>();
+        Map<Constants.ANQPElementType, ANQPElement> elements = new HashMap<>();
         if (bssInfo == null) {
             return elements;
         }

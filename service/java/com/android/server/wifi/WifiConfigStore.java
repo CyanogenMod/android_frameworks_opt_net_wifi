@@ -56,6 +56,11 @@ import android.util.SparseArray;
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.net.IpConfigStore;
 import com.android.internal.R;
+import com.android.server.wifi.anqp.ANQPElement;
+import com.android.server.wifi.anqp.Constants;
+import com.android.server.wifi.hotspot2.ANQPData;
+import com.android.server.wifi.hotspot2.NetworkDetail;
+import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
@@ -2729,6 +2734,9 @@ public class WifiConfigStore extends IpConfigStore {
         return result;
     }
 
+    public Collection<HomeSP> getHomeSPs() {
+        return mConfiguredHomeSPs.values();
+    }
 
     /**
      * This function run thru the Saved WifiConfigurations and check if some should be linked.
