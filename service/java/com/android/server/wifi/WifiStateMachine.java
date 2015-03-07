@@ -115,11 +115,13 @@ import java.io.PrintWriter;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -144,6 +146,7 @@ public class WifiStateMachine extends StateMachine {
     private static boolean VDBG = false;
     private static boolean VVDBG = false;
     private static boolean mLogMessages = false;
+    private static final String TAG = "WifiStateMachine";
 
     private static final int ONE_HOUR_MILLI = 1000 * 60 * 60;
 
@@ -346,6 +349,8 @@ public class WifiStateMachine extends StateMachine {
     // Used as debug to indicate which configuration last was removed
     private WifiConfiguration lastForgetConfigurationAttempt = null;
 
+    //Random used by softAP channel Selection
+    private static Random mRandom = new Random(Calendar.getInstance().getTimeInMillis());
     boolean isRoaming() {
         return mAutoRoaming == WifiAutoJoinController.AUTO_JOIN_ROAMING
                 || mAutoRoaming == WifiAutoJoinController.AUTO_JOIN_EXTENDED_ROAMING;
@@ -4532,13 +4537,71 @@ public class WifiStateMachine extends StateMachine {
         mWifiNative.disconnect();
     }
 
+    private int convertFrequencyToChannelNumber(int frequency) {
+        if (frequency >= 2412 && frequency <= 2484) {
+            return (frequency -2412) / 5 + 1;
+        } else if (frequency >= 5170  &&  frequency <=5825) {
+            //DFS is included
+            return (frequency -5170) / 5 + 34;
+        } else {
+            return 0;
+        }
+    }
+
+    private int chooseApChannel(int apBand) {
+        int apChannel;
+        int band;
+        int[] channel;
+        if(apBand == 0) {
+            band = 1;
+        } else {
+            //5G without DFS
+            band = 2;
+        }
+
+        if(DBG) {
+            Log.d(TAG, "SoftAP get channels from Band: " + band);
+        }
+
+        channel = mWifiNative.getChannelsForBand(band);
+        if (channel != null && channel.length > 0) {
+            apChannel = channel[mRandom.nextInt(channel.length)];
+            apChannel = convertFrequencyToChannelNumber(apChannel);
+        } else {
+            Log.e(TAG, "SoftAp do not get available channel list");
+            apChannel = 0;
+        }
+
+        if(DBG) {
+            Log.d(TAG, "SoftAp set on channel " + apChannel);
+        }
+
+        return apChannel;
+    }
+
+
     /* Current design is to not set the config on a running hostapd but instead
      * stop and start tethering when user changes config on a running access point
      *
      * TODO: Add control channel setup through hostapd that allows changing config
      * on a running daemon
      */
-    private void startSoftApWithConfig(final WifiConfiguration config) {
+    private void startSoftApWithConfig(final WifiConfiguration configuration) {
+        // set channel
+        final WifiConfiguration config = new WifiConfiguration(configuration);
+
+        if (DBG) {
+            Log.d(TAG, "SoftAp config channel is: " + config.apChannel);
+        }
+        //fix me -- set country code through HAL Here
+        if (config.apChannel == 0) {
+            config.apChannel = chooseApChannel(config.apBand);
+            if (config.apChannel == 0) {
+                //fail to get available channel
+                sendMessage(CMD_START_AP_FAILURE);
+                return;
+            }
+        }
         // Start hostapd on a separate thread
         new Thread(new Runnable() {
             public void run() {

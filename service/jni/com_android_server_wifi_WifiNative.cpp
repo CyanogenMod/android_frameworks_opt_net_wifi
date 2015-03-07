@@ -249,7 +249,6 @@ int set_iface_flags(const char *ifname, int dev_up) {
 
 static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
     wifi_handle halHandle = getWifiHandle(env, cls);
-
     if (halHandle == NULL) {
         int ret = set_iface_flags("wlan0", 1);
         if(ret != 0) {
@@ -265,7 +264,7 @@ static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
         ALOGD("halHandle = %p, mVM = %p, mCls = %p", halHandle, mVM, mCls);
         return res == WIFI_SUCCESS;
     } else {
-        return true;
+        return (set_iface_flags("wlan0", 1) == 0);
     }
 }
 

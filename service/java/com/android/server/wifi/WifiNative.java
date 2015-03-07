@@ -1160,8 +1160,6 @@ public class WifiNative {
     synchronized public static boolean startHal() {
         Log.i(TAG, "startHal");
         synchronized (mLock) {
-            if (sHalIsStarted)
-                return true;
             if (sHalFailed)
                 return false;
             if (startHalNative() && (getInterfaces() != 0) && (sWlan0Index != -1)) {
