@@ -641,10 +641,10 @@ static void testRTT() {
         params[i].channel.center_freq = results[i].channel;
         params[i].channel.width = WIFI_CHAN_WIDTH_20;
         params[i].peer  = WIFI_PEER_INVALID;
-        params[i].continuous = 1;
+        params[i].multi_burst = 1;
         params[i].interval = 1000;
-        params[i].num_samples_per_measurement = rtt_samples;
-        params[i].num_retries_per_measurement = 10;
+        params[i].num_frames_per_burst = rtt_samples;
+        params[i].num_retries_per_measurement_frame = 10;
     }
 
     wifi_rtt_event_handler handler;
