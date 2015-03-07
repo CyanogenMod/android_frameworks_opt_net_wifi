@@ -13,6 +13,10 @@ import java.util.*;
 
 import static com.android.server.wifi.hotspot2.omadm.RequestDetail.RequestFields.*;
 
+/**
+ * This is an incomplete SOAP-XML parser for OSU data needing enhancements for r2.
+ */
+
 public class SOAPParser extends DefaultHandler {
     private XMLNode mRoot;
     private XMLNode mCurrent;
@@ -37,7 +41,7 @@ public class SOAPParser extends DefaultHandler {
             sRevMappings.put(entry.getValue(), entry.getKey());
         }
 
-        // Really: The first element inside the body
+        // !!! Really: The first element inside the body
         sSoapAttributes.put("spp:sppPostDevDataResponse", new String[]{
                 sSoapMappings.get(SPPVersion),
                 sSoapMappings.get(RedirectURI),
