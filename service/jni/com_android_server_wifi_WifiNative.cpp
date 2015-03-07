@@ -692,6 +692,57 @@ static void onHotlistApFound(wifi_request_id id,
         id, scanResults);
 }
 
+static void onHotlistApLost(wifi_request_id id,
+        unsigned num_results, wifi_scan_result *results) {
+
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onHotlistApLost called, vm = %p, obj = %p, env = %p, num_results = %d",
+            mVM, mCls, env, num_results);
+
+    jclass clsScanResult = (env)->FindClass("android/net/wifi/ScanResult");
+    if (clsScanResult == NULL) {
+        ALOGE("Error in accessing class");
+        return;
+    }
+
+    jobjectArray scanResults = env->NewObjectArray(num_results, clsScanResult, NULL);
+    if (scanResults == NULL) {
+        ALOGE("Error in allocating array");
+        return;
+    }
+
+    for (unsigned i = 0; i < num_results; i++) {
+
+        jobject scanResult = createObject(env, "android/net/wifi/ScanResult");
+        if (scanResult == NULL) {
+            ALOGE("Error in creating scan result");
+            return;
+        }
+
+        setStringField(env, scanResult, "SSID", results[i].ssid);
+
+        char bssid[32];
+        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[i].bssid[0], results[i].bssid[1],
+            results[i].bssid[2], results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
+
+        setStringField(env, scanResult, "BSSID", bssid);
+
+        setIntField(env, scanResult, "level", results[i].rssi);
+        setIntField(env, scanResult, "frequency", results[i].channel);
+        setLongField(env, scanResult, "timestamp", results[i].ts);
+
+        env->SetObjectArrayElement(scanResults, i, scanResult);
+
+        ALOGD("Lost AP %32s %s", results[i].ssid, bssid);
+    }
+
+    reportEvent(env, mCls, "onHotlistApLost", "(I[Landroid/net/wifi/ScanResult;)V",
+        id, scanResults);
+}
+
+
 static jboolean android_net_wifi_setHotlist(
         JNIEnv *env, jclass cls, jint iface, jint id, jobject ap)  {
 
@@ -700,6 +751,8 @@ static jboolean android_net_wifi_setHotlist(
 
     wifi_bssid_hotlist_params params;
     memset(&params, 0, sizeof(params));
+
+    params.lost_ap_sample_size = getIntField(env, ap, "apLostThreshold");
 
     jobjectArray array = (jobjectArray) getObjectField(env, ap,
             "bssidInfos", "[Landroid/net/wifi/WifiScanner$BssidInfo;");
@@ -744,6 +797,7 @@ static jboolean android_net_wifi_setHotlist(
     memset(&handler, 0, sizeof(handler));
 
     handler.on_hotlist_ap_found = &onHotlistApFound;
+    handler.on_hotlist_ap_lost  = &onHotlistApLost;
     return wifi_set_bssid_hotlist(id, handle, params, handler) == WIFI_SUCCESS;
 }
 
