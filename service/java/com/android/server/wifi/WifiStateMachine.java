@@ -8170,6 +8170,7 @@ public class WifiStateMachine extends StateMachine {
                         // was set to zero.
                         startDelayedScan(mDisconnectedScanPeriodMs, null, null);
                     }
+                    break;
                 case CMD_RECONNECT:
                 case CMD_REASSOCIATE:
                     if (mTemporarilyDisconnectWifi) {
