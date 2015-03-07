@@ -4,6 +4,7 @@ import com.android.server.wifi.anqp.Constants;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
@@ -32,7 +33,7 @@ public class EAPMethod {
 
         int realCount = 0;
 
-        ByteBuffer paramPayload = payload.duplicate();
+        ByteBuffer paramPayload = payload.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         paramPayload.limit(paramPayload.position() + length - 2);
         payload.position(payload.position() + length - 2);
         while (paramPayload.hasRemaining()) {
@@ -47,6 +48,8 @@ public class EAPMethod {
             if (len == 0 || len > paramPayload.remaining()) {
                 throw new ProtocolException("Bad auth method length: " + len);
             }
+
+            System.out.println(authInfoID);
 
             switch (authInfoID) {
                 case ExpandedEAPMethod:
@@ -126,9 +129,13 @@ public class EAPMethod {
 
     @Override
     public String toString() {
-        return "EAPMethod{" +
-                "mEAPMethodID=" + mEAPMethodID +
-                ", mAuthParams=" + mAuthParams +
-                '}';
+        StringBuilder sb = new StringBuilder();
+        sb.append("EAP Method ").append(mEAPMethodID).append('\n');
+        for (Set<AuthParam> paramSet : mAuthParams.values()) {
+            for (AuthParam param : paramSet) {
+                sb.append("      ").append(param.toString());
+            }
+        }
+        return sb.toString();
     }
 }

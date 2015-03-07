@@ -52,8 +52,6 @@ public class NonEAPInnerAuth implements AuthParam {
 
     @Override
     public String toString() {
-        return "NonEAPInnerAuth{" +
-                "mType=" + mType +
-                '}';
+        return "Auth method NonEAPInnerAuthEAP, inner = " + mType + '\n';
     }
 }

@@ -2,6 +2,7 @@ package com.android.server.wifi.anqp;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +34,7 @@ public class OSUProvider {
         int length = payload.getShort() & SHORT_MASK;
         int namesLength = payload.getShort() & SHORT_MASK;
 
-        ByteBuffer namesBuffer = payload.duplicate();
+        ByteBuffer namesBuffer = payload.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         namesBuffer.limit(namesBuffer.position() + namesLength);
         payload.position(payload.position() + namesLength);
 
@@ -55,7 +56,7 @@ public class OSUProvider {
         }
 
         int iconsLength = payload.getShort() & SHORT_MASK;
-        ByteBuffer iconsBuffer = payload.duplicate();
+        ByteBuffer iconsBuffer = payload.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         iconsBuffer.limit(iconsBuffer.position() + iconsLength);
         payload.position(payload.position() + iconsLength);
 
@@ -64,13 +65,11 @@ public class OSUProvider {
         while (iconsBuffer.hasRemaining()) {
             mIcons.add(new IconInfo(iconsBuffer));
         }
-        System.out.println( "OSU Names: " + mNames + ", server '" + mOSUServer + ", methods " + mOSUMethods + ", icons " + mIcons + " (" + iconsLength + ")");
 
         mOsuNai = Constants.getPrefixedString(payload, 1, StandardCharsets.UTF_8, true);
-        System.out.println( "OSU NAI '" + mOsuNai + "'");
 
         int descriptionsLength = payload.getShort() & SHORT_MASK;
-        ByteBuffer descriptionsBuffer = payload.duplicate();
+        ByteBuffer descriptionsBuffer = payload.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         descriptionsBuffer.limit(descriptionsBuffer.position() + descriptionsLength);
         payload.position(payload.position() + descriptionsLength);
 

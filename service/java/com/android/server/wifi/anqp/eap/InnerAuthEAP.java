@@ -47,8 +47,6 @@ public class InnerAuthEAP implements AuthParam {
 
     @Override
     public String toString() {
-        return "InnerAuthEAP{" +
-                "EapMethodID=" + mEapMethodID +
-                '}';
+        return "Auth method InnerAuthEAP, inner = " + mEapMethodID + '\n';
     }
 }

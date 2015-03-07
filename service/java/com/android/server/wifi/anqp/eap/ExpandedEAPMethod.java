@@ -2,18 +2,20 @@ package com.android.server.wifi.anqp.eap;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
+import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 import static com.android.server.wifi.anqp.Constants.INT_MASK;
-import static com.android.server.wifi.anqp.Constants.getInteger;
+import static com.android.server.wifi.anqp.Constants.SHORT_MASK;
 
 /**
  * An EAP authentication parameter, IEEE802.11-2012, table 8-188
  */
 public class ExpandedEAPMethod implements AuthParam {
 
-    private final EAP.AuthInfoID m_authInfoID;
-    private final int m_vendorID;
-    private final long m_vendorType;
+    private final EAP.AuthInfoID mAuthInfoID;
+    private final int mVendorID;
+    private final long mVendorType;
 
     public ExpandedEAPMethod(EAP.AuthInfoID authInfoID, int length, ByteBuffer payload)
             throws ProtocolException {
@@ -21,19 +23,26 @@ public class ExpandedEAPMethod implements AuthParam {
             throw new ProtocolException("Bad length: " + payload.remaining());
         }
 
-        m_authInfoID = authInfoID;
-        m_vendorID = (int) getInteger(payload, 3);
-        m_vendorType = payload.getInt() & INT_MASK;
+        mAuthInfoID = authInfoID;
+
+        ByteBuffer vndBuffer = payload.duplicate().order(ByteOrder.BIG_ENDIAN);
+
+        int id = vndBuffer.getShort() & SHORT_MASK;
+        id = (id << Byte.SIZE) | (vndBuffer.get() & BYTE_MASK);
+        mVendorID = id;
+        mVendorType = vndBuffer.getInt() & INT_MASK;
+
+        payload.position(payload.position()+7);
     }
 
     @Override
     public EAP.AuthInfoID getAuthInfoID() {
-        return m_authInfoID;
+        return mAuthInfoID;
     }
 
     @Override
     public int hashCode() {
-        return (m_authInfoID.hashCode() * 31 + m_vendorID) * 31 + (int) m_vendorType;
+        return (mAuthInfoID.hashCode() * 31 + mVendorID) * 31 + (int) mVendorType;
     }
 
     @Override
@@ -49,19 +58,15 @@ public class ExpandedEAPMethod implements AuthParam {
     }
 
     public int getVendorID() {
-        return m_vendorID;
+        return mVendorID;
     }
 
     public long getVendorType() {
-        return m_vendorType;
+        return mVendorType;
     }
 
     @Override
     public String toString() {
-        return "ExpandedEAPMethod{" +
-                "m_authInfoID=" + m_authInfoID +
-                ", m_vendorID=" + m_vendorID +
-                ", m_vendorType=" + m_vendorType +
-                '}';
+        return "Auth method " + mAuthInfoID + ", id " + mVendorID + ", type " + mVendorType + "\n";
     }
 }
