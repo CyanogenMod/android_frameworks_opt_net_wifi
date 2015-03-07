@@ -15,8 +15,9 @@ public class ExpandedEAPMethod implements AuthParam {
     private final int m_vendorID;
     private final long m_vendorType;
 
-    public ExpandedEAPMethod(EAP.AuthInfoID authInfoID, ByteBuffer payload) throws ProtocolException {
-        if (payload.remaining() != 7) {
+    public ExpandedEAPMethod(EAP.AuthInfoID authInfoID, int length, ByteBuffer payload)
+            throws ProtocolException {
+        if (length != 7) {
             throw new ProtocolException("Bad length: " + payload.remaining());
         }
 

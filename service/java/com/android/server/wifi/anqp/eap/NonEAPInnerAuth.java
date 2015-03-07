@@ -14,15 +14,11 @@ public class NonEAPInnerAuth implements AuthParam {
 
     private final NonEAPType mType;
 
-    public NonEAPInnerAuth(ByteBuffer payload) throws ProtocolException {
-        if (payload.remaining() < 2) {
-            throw new ProtocolException("Runt payload: " + payload.remaining());
+    public NonEAPInnerAuth(int length, ByteBuffer payload) throws ProtocolException {
+        if (length != 1) {
+            throw new ProtocolException("Bad length: " + payload.remaining());
         }
 
-        int length = payload.get() & BYTE_MASK;
-        if (length != 1) {
-            throw new ProtocolException("Bad length: " + length);
-        }
         int typeID = payload.get() & BYTE_MASK;
         mType = typeID < NonEAPType.values().length ?
                 NonEAPType.values()[typeID] :
