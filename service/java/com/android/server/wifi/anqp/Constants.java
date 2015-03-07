@@ -2,6 +2,7 @@ package com.android.server.wifi.anqp;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
@@ -11,16 +12,17 @@ import java.util.Map;
  */
 public class Constants {
 
+    public static final int NIBBLE_MASK = 0x0f;
     public static final int BYTE_MASK = 0xff;
     public static final int SHORT_MASK = 0xffff;
     public static final long INT_MASK = 0xffffffffL;
     public static final int BYTES_IN_SHORT = 2;
     public static final int BYTES_IN_INT = 4;
+    public static final int BYTES_IN_EUI48 = 6;
 
-    public static final int HS20_PREFIX = 0x119a6f50;   // Note that is represented as a LE int
+    public static final int HS20_PREFIX = 0x119a6f50;   // Note that this is represented as a LE int
+    public static final int HS20_FRAME_PREFIX = 0x109a6f50;
     public static final int UTF8_INDICATOR = 1;
-
-    public enum IconStatus {Success, FileNotFound, Unspecified}
 
     public static final int ANQP_QUERY_LIST = 256;
     public static final int ANQP_CAPABILITY_LIST = 257;
@@ -143,12 +145,19 @@ public class Constants {
         return sRevHs20map.get(elementType);
     }
 
-    public static long getLEInteger(ByteBuffer payload, int size) {
+    public static long getInteger(ByteBuffer payload, ByteOrder bo, int size) {
         byte[] octets = new byte[size];
         payload.get(octets);
         long value = 0;
-        for (int n = octets.length - 1; n >= 0; n--) {
-            value = (value << Byte.SIZE) | (octets[n] & BYTE_MASK);
+        if (bo == ByteOrder.LITTLE_ENDIAN) {
+            for (int n = octets.length - 1; n >= 0; n--) {
+                value = (value << Byte.SIZE) | (octets[n] & BYTE_MASK);
+            }
+        }
+        else {
+            for (byte octet : octets) {
+                value = (value << Byte.SIZE) | (octet & BYTE_MASK);
+            }
         }
         return value;
     }
@@ -163,7 +172,8 @@ public class Constants {
         if (payload.remaining() < lengthLength) {
             throw new ProtocolException("Runt string: " + payload.remaining());
         }
-        return getString(payload, (int) getLEInteger(payload, lengthLength), charset, useNull);
+        return getString(payload, (int) getInteger(payload, ByteOrder.LITTLE_ENDIAN,
+                lengthLength), charset, useNull);
     }
 
     public static String getString(ByteBuffer payload, int length, Charset charset)

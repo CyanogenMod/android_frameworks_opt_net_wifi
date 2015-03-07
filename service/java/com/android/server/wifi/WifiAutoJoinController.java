@@ -20,17 +20,22 @@ import android.content.Context;
 import android.net.NetworkKey;
 import android.net.NetworkScoreManager;
 import android.net.WifiKey;
-import android.net.wifi.*;
+import android.net.wifi.ScanResult;
+import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
-import android.os.SystemClock;
-import android.provider.Settings;
+import android.net.wifi.WifiConnectionStatistics;
 import android.os.Process;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.StringReader;
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -59,8 +64,7 @@ public class WifiAutoJoinController {
 
     private String mCurrentConfigurationKey = null; //used by autojoin
 
-    private HashMap<String, ScanResult> scanResultCache =
-            new HashMap<String, ScanResult>();
+    private final HashMap<String, ScanResult> scanResultCache = new HashMap<>();
 
     private WifiConnectionStatistics mWifiConnectionStatistics;
 
@@ -157,7 +161,7 @@ public class WifiAutoJoinController {
         }
     }
 
-    int addToScanCache(List<ScanResult> scanList) {
+    int addToScanCache(List<ScanDetail> scanList) {
         int numScanResultsKnown = 0; // Record number of scan results we knew about
         WifiConfiguration associatedConfig = null;
         boolean didAssociate = false;
@@ -165,7 +169,8 @@ public class WifiAutoJoinController {
 
         ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
-        for(ScanResult result: scanList) {
+        for(ScanDetail scanDetail: scanList) {
+            ScanResult result = scanDetail.getScanResult();
             if (result.SSID == null) continue;
 
             // Make sure we record the last time we saw this result
@@ -292,7 +297,7 @@ public class WifiAutoJoinController {
     // Called directly from WifiStateMachine
     int newSupplicantResults(boolean doAutoJoin) {
         int numScanResultsKnown;
-        List<ScanResult> scanList = mWifiStateMachine.getScanResultsListNoCopyUnsync();
+        List<ScanDetail> scanList = mWifiStateMachine.getScanResultsListNoCopyUnsync();
         numScanResultsKnown = addToScanCache(scanList);
         ageScanResultsOut(mScanResultMaximumAge);
         if (DBG) {
@@ -316,7 +321,7 @@ public class WifiAutoJoinController {
      * results as normal.
      */
     void newHalScanResults() {
-        List<ScanResult> scanList = null;//mWifiScanner.syncGetScanResultsList();
+        List<ScanDetail> scanList = null;//mWifiScanner.syncGetScanResultsList();
         String akm = WifiParser.parse_akm(null, null);
         logDbg(akm);
         addToScanCache(scanList);
@@ -948,13 +953,13 @@ public class WifiAutoJoinController {
             return 0;
         }
         if (rssi
-                > mWifiConfigStore.bandPreferenceBoostThreshold5) {
+                > mWifiConfigStore.bandPreferenceBoostThreshold5.get()) {
             // Boost by 2 dB for each point
             //    Start boosting at -65
             //    Boost by 20 if above -55
             //    Boost by 40 if abore -45
             int boost = mWifiConfigStore.bandPreferenceBoostFactor5
-                    *(rssi - mWifiConfigStore.bandPreferenceBoostThreshold5);
+                    *(rssi - mWifiConfigStore.bandPreferenceBoostThreshold5.get());
             if (boost > 50) {
                 // 50 dB boost allows jumping from 2.4 to 5GHz
                 // consistently
@@ -967,10 +972,10 @@ public class WifiAutoJoinController {
         }
 
         if (rssi
-                < mWifiConfigStore.bandPreferencePenaltyThreshold5) {
+                < mWifiConfigStore.bandPreferencePenaltyThreshold5.get()) {
             // penalize if < -75
             int boost = mWifiConfigStore.bandPreferencePenaltyFactor5
-                    *(rssi - mWifiConfigStore.bandPreferencePenaltyThreshold5);
+                    *(rssi - mWifiConfigStore.bandPreferencePenaltyThreshold5.get());
             return boost;
         }
         return 0;
@@ -1050,14 +1055,14 @@ public class WifiAutoJoinController {
             // Apply hysteresis: we favor the currentBSSID by giving it a boost
             if (currentBSSID != null && currentBSSID.equals(b.BSSID)) {
                 // Reduce the benefit of hysteresis if RSSI <= -75
-                if (b.level <= mWifiConfigStore.bandPreferencePenaltyThreshold5) {
+                if (b.level <= mWifiConfigStore.bandPreferencePenaltyThreshold5.get()) {
                     bRssiBoost = mWifiConfigStore.associatedHysteresisLow;
                 } else {
                     bRssiBoost = mWifiConfigStore.associatedHysteresisHigh;
                 }
             }
             if (currentBSSID != null && currentBSSID.equals(a.BSSID)) {
-                if (a.level <= mWifiConfigStore.bandPreferencePenaltyThreshold5) {
+                if (a.level <= mWifiConfigStore.bandPreferencePenaltyThreshold5.get()) {
                     // Reduce the benefit of hysteresis if RSSI <= -75
                     aRssiBoost = mWifiConfigStore.associatedHysteresisLow;
                 } else {
@@ -1240,6 +1245,169 @@ public class WifiAutoJoinController {
         return false;
     }
 
+    // After WifiStateMachine ask the supplicant to associate or reconnect
+    // we might still obtain scan results from supplicant
+    // however the supplicant state in the mWifiInfo and supplicant state tracker
+    // are updated when we get the supplicant state change message which can be
+    // processed after the SCAN_RESULT message, so at this point the framework doesn't
+    // know that supplicant is ASSOCIATING.
+    // A good fix for this race condition would be for the WifiStateMachine to add
+    // a new transient state where it expects to get the supplicant message indicating
+    // that it started the association process and within which critical operations
+    // like autojoin should be deleted.
+
+    // This transient state would remove the need for the roam Wathchdog which
+    // basically does that.
+
+    // At the moment, we just query the supplicant state synchronously with the
+    // mWifiNative.status() command, which allow us to know that
+    // supplicant has started association process, even though we didnt yet get the
+    // SUPPLICANT_STATE_CHANGE message.
+
+    private static final List<String> ASSOC_STATES = Arrays.asList(
+            "ASSOCIATING",
+            "ASSOCIATED",
+            "FOUR_WAY_HANDSHAKE",
+            "GROUP_KEY_HANDSHAKE");
+
+    private int getNetID(String wpaStatus) {
+        if (VDBG) {
+            logDbg("attemptAutoJoin() status=" + wpaStatus);
+        }
+
+        try {
+            int id = WifiConfiguration.INVALID_NETWORK_ID;
+            String state = null;
+            BufferedReader br = new BufferedReader(new StringReader(wpaStatus));
+            String line;
+            while((line = br.readLine()) != null) {
+                int split = line.indexOf('=');
+                if (split < 0) {
+                    continue;
+                }
+
+                String name = line.substring(0, split);
+                if (name.equals("id")) {
+                    try {
+                        id = Integer.parseInt(line.substring(split+1));
+                        if (state != null) {
+                            break;
+                        }
+                    }
+                    catch (NumberFormatException nfe) {
+                        Log.d("HS2J", "NFE on '" + line + "'");
+                        return WifiConfiguration.INVALID_NETWORK_ID;
+                    }
+                }
+                else if (name.equals("wpa_state")) {
+                    state = line.substring(split+1);
+                    Log.d("HS2J", "State: '" + line + "'");
+                    if (ASSOC_STATES.contains(state)) {
+                        return WifiConfiguration.INVALID_NETWORK_ID;
+                    }
+                    else if (id >= 0) {
+                        break;
+                    }
+                }
+            }
+            return id;
+        }
+        catch (IOException ioe) {
+            return WifiConfiguration.INVALID_NETWORK_ID;    // Won't happen
+        }
+    }
+
+    private boolean setCurrentConfigurationKey(WifiConfiguration currentConfig,
+                                               int supplicantNetId) {
+        if (currentConfig != null) {
+            if (supplicantNetId != currentConfig.networkId
+                    // https://b.corp.google.com/issue?id=16484607
+                    // mark this condition as an error only if the mismatched networkId are valid
+                    && supplicantNetId != WifiConfiguration.INVALID_NETWORK_ID
+                    && currentConfig.networkId != WifiConfiguration.INVALID_NETWORK_ID) {
+                logDbg("attemptAutoJoin() ERROR wpa_supplicant out of sync nid="
+                        + Integer.toString(supplicantNetId) + " WifiStateMachine="
+                        + Integer.toString(currentConfig.networkId));
+                mWifiStateMachine.disconnectCommand();
+                return false;
+            } else if (currentConfig.ephemeral && (!mAllowUntrustedConnections ||
+                    !haveRecentlySeenScoredBssid(currentConfig))) {
+                // The current connection is untrusted (the framework added it), but we're either
+                // no longer allowed to connect to such networks, the score has been nullified
+                // since we connected, or the scored BSSID has gone out of range.
+                // Drop the current connection and perform the rest of autojoin.
+                logDbg("attemptAutoJoin() disconnecting from unwanted ephemeral network");
+                mWifiStateMachine.disconnectCommand(Process.WIFI_UID,
+                        mAllowUntrustedConnections ? 1 : 0);
+                return false;
+            } else {
+                mCurrentConfigurationKey = currentConfig.configKey();
+                return true;
+            }
+        } else {
+            // If not invalid, then maybe in the process of associating, skip this attempt
+            return supplicantNetId == WifiConfiguration.INVALID_NETWORK_ID;
+        }
+    }
+
+    private void updateBlackListStatus(WifiConfiguration config, long now) {
+        // Wait for 5 minutes before reenabling config that have known,
+        // repeated connection or DHCP failures
+        if (config.disableReason == WifiConfiguration.DISABLED_DHCP_FAILURE
+                || config.disableReason
+                == WifiConfiguration.DISABLED_ASSOCIATION_REJECT
+                || config.disableReason
+                == WifiConfiguration.DISABLED_AUTH_FAILURE) {
+            if (config.blackListTimestamp == 0
+                    || (config.blackListTimestamp > now)) {
+                // Sanitize the timestamp
+                config.blackListTimestamp = now;
+            }
+            if ((now - config.blackListTimestamp) >
+                    mWifiConfigStore.wifiConfigBlacklistMinTimeMilli) {
+                // Re-enable the WifiConfiguration
+                config.status = WifiConfiguration.Status.ENABLED;
+
+                // Reset the blacklist condition
+                config.numConnectionFailures = 0;
+                config.numIpConfigFailures = 0;
+                config.numAuthFailures = 0;
+                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+
+                config.dirty = true;
+            } else {
+                if (VDBG) {
+                    long delay = mWifiConfigStore.wifiConfigBlacklistMinTimeMilli
+                            - (now - config.blackListTimestamp);
+                    logDbg("attemptautoJoin " + config.configKey()
+                            + " dont unblacklist yet, waiting for "
+                            + delay + " ms");
+                }
+            }
+        }
+        // Avoid networks disabled because of AUTH failure altogether
+        if (DBG) {
+            logDbg("attemptAutoJoin skip candidate due to auto join status "
+                    + Integer.toString(config.autoJoinStatus) + " key "
+                    + config.configKey(true)
+                    + " reason " + config.disableReason);
+        }
+    }
+    
+    boolean underSoftThreshold(WifiConfiguration config) {
+        return config.visibility.rssi24 < mWifiConfigStore.thresholdUnblacklistThreshold24Soft.get()
+            && config.visibility.rssi5 < mWifiConfigStore.thresholdUnblacklistThreshold5Soft.get();
+    }
+
+    boolean underHardThreshold(WifiConfiguration config) {
+        return config.visibility.rssi24 < mWifiConfigStore.thresholdUnblacklistThreshold24Hard.get()
+            && config.visibility.rssi5 < mWifiConfigStore.thresholdUnblacklistThreshold5Hard.get();
+    }
+
+    boolean underThreshold(WifiConfiguration config, int rssi24, int rssi5) {
+        return config.visibility.rssi24 < rssi24 && config.visibility.rssi5 < rssi5;
+    }
+
     /**
      * attemptAutoJoin() function implements the core of the a network switching algorithm
      * Return false if no acceptable networks were found.
@@ -1271,57 +1439,9 @@ public class WifiAutoJoinController {
         }
 
         // Find the currently connected network: ask the supplicant directly
-        String val = mWifiNative.status(true);
-        String status[] = val.split("\\r?\\n");
-        if (VDBG) {
-            logDbg("attemptAutoJoin() status=" + val + " split="
-                    + Integer.toString(status.length));
-        }
 
-        int supplicantNetId = -1;
-        for (String key : status) {
-            if (key.regionMatches(0, "id=", 0, 3)) {
-                int idx = 3;
-                supplicantNetId = 0;
-                while (idx < key.length()) {
-                    char c = key.charAt(idx);
+        int supplicantNetId = getNetID(mWifiNative.status(true));
 
-                    if ((c >= 0x30) && (c <= 0x39)) {
-                        supplicantNetId *= 10;
-                        supplicantNetId += c - 0x30;
-                        idx++;
-                    } else {
-                        break;
-                    }
-                }
-            } else if (key.contains("wpa_state=ASSOCIATING")
-                    || key.contains("wpa_state=ASSOCIATED")
-                    || key.contains("wpa_state=FOUR_WAY_HANDSHAKE")
-                    || key.contains("wpa_state=GROUP_KEY_HANDSHAKE")) {
-                if (DBG) {
-                    logDbg("attemptAutoJoin: bail out due to sup state " + key);
-                }
-                // After WifiStateMachine ask the supplicant to associate or reconnect
-                // we might still obtain scan results from supplicant
-                // however the supplicant state in the mWifiInfo and supplicant state tracker
-                // are updated when we get the supplicant state change message which can be
-                // processed after the SCAN_RESULT message, so at this point the framework doesn't
-                // know that supplicant is ASSOCIATING.
-                // A good fix for this race condition would be for the WifiStateMachine to add
-                // a new transient state where it expects to get the supplicant message indicating
-                // that it started the association process and within which critical operations
-                // like autojoin should be deleted.
-
-                // This transient state would remove the need for the roam Wathchdog which
-                // basically does that.
-
-                // At the moment, we just query the supplicant state synchronously with the
-                // mWifiNative.status() command, which allow us to know that
-                // supplicant has started association process, even though we didnt yet get the
-                // SUPPLICANT_STATE_CHANGE message.
-                return false;
-            }
-        }
         if (DBG) {
             String conf = "";
             String last = "";
@@ -1336,35 +1456,8 @@ public class WifiAutoJoinController {
                     + " ---> suppNetId=" + Integer.toString(supplicantNetId));
         }
 
-        if (currentConfiguration != null) {
-            if (supplicantNetId != currentConfiguration.networkId
-                    // https://b.corp.google.com/issue?id=16484607
-                    // mark this condition as an error only if the mismatched networkId are valid
-                    && supplicantNetId != WifiConfiguration.INVALID_NETWORK_ID
-                    && currentConfiguration.networkId != WifiConfiguration.INVALID_NETWORK_ID) {
-                logDbg("attemptAutoJoin() ERROR wpa_supplicant out of sync nid="
-                        + Integer.toString(supplicantNetId) + " WifiStateMachine="
-                        + Integer.toString(currentConfiguration.networkId));
-                mWifiStateMachine.disconnectCommand();
-                return false;
-            } else if (currentConfiguration.ephemeral && (!mAllowUntrustedConnections ||
-                    !haveRecentlySeenScoredBssid(currentConfiguration))) {
-                // The current connection is untrusted (the framework added it), but we're either
-                // no longer allowed to connect to such networks, the score has been nullified
-                // since we connected, or the scored BSSID has gone out of range.
-                // Drop the current connection and perform the rest of autojoin.
-                logDbg("attemptAutoJoin() disconnecting from unwanted ephemeral network");
-                mWifiStateMachine.disconnectCommand(Process.WIFI_UID,
-                        mAllowUntrustedConnections ? 1 : 0);
-                return false;
-            } else {
-                mCurrentConfigurationKey = currentConfiguration.configKey();
-            }
-        } else {
-            if (supplicantNetId != WifiConfiguration.INVALID_NETWORK_ID) {
-                // Maybe in the process of associating, skip this attempt
-                return false;
-            }
+        if (!setCurrentConfigurationKey(currentConfiguration, supplicantNetId)) {
+            return false;
         }
 
         int currentNetId = -1;
@@ -1384,49 +1477,8 @@ public class WifiAutoJoinController {
                 continue;
             }
 
-            if (config.autoJoinStatus >=
-                    WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
-                // Wait for 5 minutes before reenabling config that have known,
-                // repeated connection or DHCP failures
-                if (config.disableReason == WifiConfiguration.DISABLED_DHCP_FAILURE
-                        || config.disableReason
-                        == WifiConfiguration.DISABLED_ASSOCIATION_REJECT
-                        || config.disableReason
-                        == WifiConfiguration.DISABLED_AUTH_FAILURE) {
-                    if (config.blackListTimestamp == 0
-                            || (config.blackListTimestamp > now)) {
-                        // Sanitize the timestamp
-                        config.blackListTimestamp = now;
-                    }
-                    if ((now - config.blackListTimestamp) >
-                            mWifiConfigStore.wifiConfigBlacklistMinTimeMilli) {
-                        // Re-enable the WifiConfiguration
-                        config.status = WifiConfiguration.Status.ENABLED;
-
-                        // Reset the blacklist condition
-                        config.numConnectionFailures = 0;
-                        config.numIpConfigFailures = 0;
-                        config.numAuthFailures = 0;
-                        config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
-
-                        config.dirty = true;
-                    } else {
-                        if (VDBG) {
-                            long delay = mWifiConfigStore.wifiConfigBlacklistMinTimeMilli
-                                    - (now - config.blackListTimestamp);
-                            logDbg("attemptautoJoin " + config.configKey()
-                                    + " dont unblacklist yet, waiting for "
-                                    + delay + " ms");
-                        }
-                    }
-                }
-                // Avoid networks disabled because of AUTH failure altogether
-                if (DBG) {
-                    logDbg("attemptAutoJoin skip candidate due to auto join status "
-                            + Integer.toString(config.autoJoinStatus) + " key "
-                            + config.configKey(true)
-                            + " reason " + config.disableReason);
-                }
+            if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
+                updateBlackListStatus(config, now);
                 continue;
             }
 
@@ -1450,56 +1502,28 @@ public class WifiAutoJoinController {
                 }
             }
 
+            // !!! JNo: This ought to be checked here rather than below...
+            if (config.visibility == null) {
+                continue;
+            }
+
             // Try to unblacklist based on good visibility
-            if (config.visibility.rssi5 < mWifiConfigStore.thresholdUnblacklistThreshold5Soft
-                    && config.visibility.rssi24
-                    < mWifiConfigStore.thresholdUnblacklistThreshold24Soft) {
-                if (DBG) {
-                    logDbg("attemptAutoJoin do not unblacklist due to low visibility "
-                            + config.autoJoinStatus
-                            + " key " + config.configKey(true)
-                            + " rssi=(" + config.visibility.rssi24
-                            + "," + config.visibility.rssi5
-                            + ") num=(" + config.visibility.num24
-                            + "," + config.visibility.num5 + ")");
-                }
-            } else if (config.visibility.rssi5 < mWifiConfigStore.thresholdUnblacklistThreshold5Hard
-                    && config.visibility.rssi24
-                    < mWifiConfigStore.thresholdUnblacklistThreshold24Hard) {
+            if (underSoftThreshold(config)) {
+                logDenial("attemptAutoJoin do not unblacklist due to low visibility ", config);
+            } else if (underHardThreshold(config)) {
                 // If the network is simply temporary disabled, don't allow reconnect until
                 // RSSI becomes good enough
                 config.setAutoJoinStatus(config.autoJoinStatus - 1);
-                if (DBG) {
-                    logDbg("attemptAutoJoin good candidate seen, bumped soft -> status="
-                            + config.autoJoinStatus
-                            + " " + config.configKey(true) + " rssi=("
-                            + config.visibility.rssi24 + "," + config.visibility.rssi5
-                            + ") num=(" + config.visibility.num24
-                            + "," + config.visibility.num5 + ")");
-                }
+                logDenial("attemptAutoJoin good candidate seen, bumped soft -> status=", config);
             } else {
                 config.setAutoJoinStatus(config.autoJoinStatus - 3);
-                if (DBG) {
-                    logDbg("attemptAutoJoin good candidate seen, bumped hard -> status="
-                            + config.autoJoinStatus
-                            + " " + config.configKey(true) + " rssi=("
-                            + config.visibility.rssi24 + "," + config.visibility.rssi5
-                            + ") num=(" + config.visibility.num24
-                            + "," + config.visibility.num5 + ")");
-                }
+                logDenial("attemptAutoJoin good candidate seen, bumped hard -> status=", config);
             }
 
             if (config.autoJoinStatus >=
                     WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED) {
                 // Network is blacklisted, skip
-                if (DBG) {
-                    logDbg("attemptAutoJoin skip blacklisted -> status="
-                            + config.autoJoinStatus
-                            + " " + config.configKey(true) + " rssi=("
-                            + config.visibility.rssi24 + "," + config.visibility.rssi5
-                            + ") num=(" + config.visibility.num24
-                            + "," + config.visibility.num5 + ")");
-                }
+                logDenial("attemptAutoJoin skip blacklisted -> status=", config);
                 continue;
             }
             if (config.networkId == currentNetId) {
@@ -1544,18 +1568,11 @@ public class WifiAutoJoinController {
             }
 
             int boost = config.autoJoinUseAggressiveJoinAttemptThreshold + weakRssiBailCount;
-            if ((config.visibility.rssi5 + boost)
-                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI
-                        && (config.visibility.rssi24 + boost)
-                        < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin24RSSI) {
-                if (DBG) {
-                    logDbg("attemptAutoJoin skip due to low visibility -> status="
-                            + config.autoJoinStatus
-                            + " key " + config.configKey(true) + " rssi="
-                            + config.visibility.rssi24 + ", " + config.visibility.rssi5
-                            + " num=" + config.visibility.num24
-                            + ", " + config.visibility.num5);
-                }
+            if (underThreshold(config,
+                    mWifiConfigStore.thresholdInitialAutoJoinAttemptMin24RSSI.get() - boost,
+                    mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI.get() - boost)) {
+
+                logDenial("attemptAutoJoin skip due to low visibility -> status=", config);
 
                 // Don't try to autojoin a network that is too far but
                 // If that configuration is a user's choice however, try anyway
@@ -1762,7 +1779,7 @@ public class WifiAutoJoinController {
          * if user is currently streaming voice traffic,
          * then we should not be allowed to switch regardless of the delta
          */
-        if (mWifiStateMachine.shouldSwitchNetwork(networkDelta)) {
+        if (mWifiStateMachine.shouldSwitchNetwork(networkDelta)) {      // !!! JNo: Here!
             if (mStaStaSupported) {
                 logDbg("mStaStaSupported --> error do nothing now ");
             } else {
@@ -1873,6 +1890,13 @@ public class WifiAutoJoinController {
         }
         if (VDBG) logDbg("Done attemptAutoJoin status=" + Integer.toString(networkSwitchType));
         return found;
+    }
+
+    private void logDenial(String reason, WifiConfiguration config) {
+        if (!DBG) {
+            return;
+        }
+        logDbg(reason + config.toString());
     }
 }
 

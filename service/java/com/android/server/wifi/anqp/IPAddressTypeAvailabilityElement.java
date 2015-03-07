@@ -44,7 +44,7 @@ public class IPAddressTypeAvailabilityElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "IPAddressTypeAvailabilityElement{" +
+        return "IPAddressTypeAvailability{" +
                 "mV4Availability=" + mV4Availability +
                 ", mV6Availability=" + mV6Availability +
                 '}';

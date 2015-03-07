@@ -1,210 +1,268 @@
 package com.android.server.wifi.hotspot2;
 
+import android.util.Log;
+
+import com.android.server.wifi.ScanDetail;
+import com.android.server.wifi.WifiNative;
+import com.android.server.wifi.WifiStateMachine;
 import com.android.server.wifi.anqp.ANQPElement;
-import com.android.server.wifi.anqp.ANQPFactory;
-import com.android.server.wifi.anqp.Constants;
+import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static com.android.server.wifi.anqp.Constants.ANQPElementType;
 
 public class SelectionManager {
     private final List<HomeSP> mHomeSPs;
-    private final Map<NetworkKey, ANQPData> mANQPCache;
-    private final Map<NetworkKey, NetworkInfo> mPendingANQP;
-    private final List<ScoredNetwork> mScoredNetworks;
+    private final AnqpCache mAnqpCache;
+    private final List<PasspointMatchInfo> mMatchInfoList;
+    private final SupplicantBridge mSupplicantBridge;
+    private final WifiStateMachine mWifiStateMachine;
 
-    private static class NetworkKey {
-        private final String mSSID;
-        private final long mBSSID;
-        private final int mANQPDomainID;
+    public SelectionManager(File ppsFile, File lastSSIDFile, WifiNative supplicantHook,
+                            WifiStateMachine wfsm) throws IOException {
+        preLoad(ppsFile);
+        MOManager moManager = new MOManager(ppsFile);
+        mHomeSPs = moManager.loadAllSPs();
+        mMatchInfoList = new ArrayList<>();
+        Chronograph chronograph = new Chronograph();
+        chronograph.start();
+        mSupplicantBridge = new SupplicantBridge(supplicantHook, lastSSIDFile, this, chronograph);
+        mWifiStateMachine = wfsm;
+        mAnqpCache = new AnqpCache(chronograph);
+    }
 
-        public NetworkKey(String SSID, long BSSID, int ANQPDomainID) {
-            mSSID = SSID;
-            mBSSID = BSSID;
-            mANQPDomainID = ANQPDomainID;
-        }
+    private static final String PrepCreds =
+            "tree 3:1.2(urn:wfa:mo:hotspot2dot0-perprovidersubscription:1.0)" +
+                    "1:.+" +
+                    " 17:PerProviderSubscription(urn:wfa:mo:hotspot2dot0-perprovidersubscription:1.0)+" +
+                    "  2:x1+" +
+                    "   6:HomeSP+" +
+                    "    c:FriendlyName=e:Wi-Fi Alliance" +
+                    "    a:HomeOIList+" +
+                    "     2:x2+" +
+                    "      e:HomeOIRequired=5:FALSE" +
+                    "      6:HomeOI=6:004096" +
+                    "     ." +
+                    "     2:x1+" +
+                    "      e:HomeOIRequired=5:FALSE" +
+                    "      6:HomeOI=6:506f9a" +
+                    "     ." +
+                    "    ." +
+                    "    4:FQDN=9:wi-fi.org" +
+                    "   ." +
+                    "   a:Credential+" +
+                    "    10:UsernamePassword+" +
+                    "     9:EAPMethod+" +
+                    "      b:InnerMethod=a:MS-CHAP-V2" +
+                    "      7:EAPType=2:21" +
+                    "     ." +
+                    "     8:Password=c:Q2hhbmdlTWU=" +
+                    "     8:Username=6:test01" +
+                    "     e:MachineManaged=4:TRUE" +
+                    "    ." +
+                    "    5:Realm=9:wi-fi.org" +
+                    "    c:CreationDate=14:2012-12-01T12:00:00Z" +
+                    "   ." +
+                    "   12:SubscriptionUpdate+" +
+                    "    e:UpdateInterval=a:4294967295" +
+                    "    c:UpdateMethod=f:ClientInitiated" +
+                    "    3:URI=28:subscription-server.R2-testbed.wi-fi.org" +
+                    "    b:Restriction=6:HomeSP" +
+                    "   ." +
+                    "   17:SubscriptionRemediation+" +
+                    "    15:certSHA256Fingerprint=40:abcdef01234567899876543210fedcbaabcdef01234567899876543210fedcba" +
+                    "    7:certURL=39:http://remediation-server.R2-testbed.wi-fi.org/server.cer" +
+                    "    3:URI=27:remediation-server.R2-testbed.wi-fi.org" +
+                    "   ." +
+                    "   16:SubscriptionParameters+" +
+                    "   ." +
+                    "   24:CredentialPriorityCredentialPriority=1:1" +
+                    "  ." +
+                    " ." +
+                    "." +
+                    "tree 3:1.2(urn:wfa:mo:hotspot2dot0-perprovidersubscription:1.0)" +
+                    "1:.+" +
+                    " 17:PerProviderSubscription(urn:wfa:mo:hotspot2dot0-perprovidersubscription:1.0)+" +
+                    "  2:x1+" +
+                    "   6:HomeSP+" +
+                    "    c:FriendlyName=e:Wi-Fi Alliance" +
+                    "    a:HomeOIList+" +
+                    "     2:x2+" +
+                    "      e:HomeOIRequired=5:FALSE" +
+                    "      6:HomeOI=6:004096" +
+                    "     ." +
+                    "     2:x1+" +
+                    "      e:HomeOIRequired=5:FALSE" +
+                    "      6:HomeOI=6:506f9a" +
+                    "     ." +
+                    "    ." +
+                    "    4:FQDN=a:access.net" +
+                    "   ." +
+                    "   a:Credential+" +
+                    "    10:UsernamePassword+" +
+                    "     9:EAPMethod+" +
+                    "      b:InnerMethod=a:MS-CHAP-V2" +
+                    "      7:EAPType=2:21" +
+                    "     ." +
+                    "     8:Password=c:Q2hhbmdlTWU=" +
+                    "     8:Username=6:test01" +
+                    "     e:MachineManaged=4:TRUE" +
+                    "    ." +
+                    "    5:Realm=9:wi-fi.org" +
+                    "    c:CreationDate=14:2012-12-01T12:00:00Z" +
+                    "   ." +
+                    "   12:SubscriptionUpdate+" +
+                    "    e:UpdateInterval=a:4294967295" +
+                    "    c:UpdateMethod=f:ClientInitiated" +
+                    "    3:URI=28:subscription-server.R2-testbed.wi-fi.org" +
+                    "    b:Restriction=6:HomeSP" +
+                    "   ." +
+                    "   17:SubscriptionRemediation+" +
+                    "    15:certSHA256Fingerprint=40:abcdef01234567899876543210fedcbaabcdef01234567899876543210fedcba" +
+                    "    7:certURL=39:http://remediation-server.R2-testbed.wi-fi.org/server.cer" +
+                    "    3:URI=27:remediation-server.R2-testbed.wi-fi.org" +
+                    "   ." +
+                    "   16:SubscriptionParameters+" +
+                    "   ." +
+                    "   24:CredentialPriorityCredentialPriority=1:1" +
+                    "  ." +
+                    " ." +
+                    ".";
 
-        public String getSSID() {
-            return mSSID;
-        }
-
-        public long getBSSID() {
-            return mBSSID;
-        }
-
-        public int getANQPDomainID() {
-            return mANQPDomainID;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-
-            NetworkKey that = (NetworkKey) o;
-
-            if (mANQPDomainID != that.mANQPDomainID) return false;
-            if (mBSSID != that.mBSSID) return false;
-            if (!mSSID.equals(that.mSSID)) return false;
-
-            return true;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = mSSID.hashCode();
-            result = 31 * result + (int) (mBSSID ^ (mBSSID >>> 32));
-            result = 31 * result + mANQPDomainID;
-            return result;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("<%s>:0x%012x id %d", mSSID, mBSSID, mANQPDomainID);
+    private static void preLoad(File ppsFile) throws IOException {
+        if (!ppsFile.exists() || ppsFile.length() == 0) {
+            BufferedWriter out =
+                    new BufferedWriter(new OutputStreamWriter(new FileOutputStream(ppsFile),
+                            StandardCharsets.US_ASCII));
+            out.write(PrepCreds);
+            out.close();
         }
     }
 
-    private static class ScoredNetwork implements Comparable<ScoredNetwork> {
-        private final PasspointMatch mMatch;
-        private final NetworkInfo mNetworkInfo;
-
-        private ScoredNetwork(PasspointMatch match, NetworkInfo networkInfo) {
-            mMatch = match;
-            mNetworkInfo = networkInfo;
-            // !!! Further score on BSS Load, ANT, "Internet" and HSRelease
+    public ScanDetail scoreNetwork(ScanDetail scanDetail) {
+        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
+        if (!networkDetail.has80211uInfo()) {
+            return null;
         }
+        updateCache(scanDetail, networkDetail.getANQPElements());
 
-        public PasspointMatch getMatch() {
-            return mMatch;
-        }
-
-        public NetworkInfo getNetworkInfo() {
-            return mNetworkInfo;
-        }
-
-        @Override
-        public int compareTo(ScoredNetwork other) {
-            if (getMatch() == other.getMatch()) {
-                return 0;
-            } else {
-                return getMatch().ordinal() > other.getMatch().ordinal() ? 1 : -1;
-            }
+        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail,
+                networkDetail.getANQPElements() == null);
+        if (!matches.isEmpty()) {
+            return scanDetail.score(matches);
+        } else {
+            return null;
         }
     }
 
-    public SelectionManager(List<HomeSP> homeSPs) {
-        mHomeSPs = homeSPs;
-        mANQPCache = new HashMap<NetworkKey, ANQPData>();
-        mPendingANQP = new HashMap<NetworkKey, NetworkInfo>();
-        mScoredNetworks = new ArrayList<ScoredNetwork>();
+    public void notifyANQPResponse(ScanDetail scanDetail,
+                                   Map<ANQPElementType, ANQPElement> anqpElements) {
+
+        updateCache(scanDetail, anqpElements);
+
+        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, false);
+        Log.d("HS2J", scanDetail.getSSID() + " 2nd Matches: " + toMatchString(matches));
+
+        for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
+            mMatchInfoList.add(
+                    new PasspointMatchInfo(entry.getValue(), scanDetail.getNetworkDetail(),
+                            entry.getKey()));
+        }
+
+        mWifiStateMachine.updateScanResults(scanDetail, matches);
+        selectNetwork(mMatchInfoList);  // !!! Remove!
     }
 
-    public Map<HomeSP, PasspointMatch> matchNetwork(NetworkInfo networkInfo) {
-        NetworkKey networkKey = new NetworkKey(networkInfo.getSSID(), networkInfo.getBSSID(),
-                networkInfo.getAnqpDomainID());
-        ANQPData anqpData = mANQPCache.get(networkKey);
-        List<ANQPElement> anqpElements = anqpData != null ? anqpData.getANQPElements() : null;
+    private volatile boolean xSelected;
 
-        Map<HomeSP, PasspointMatch> matches = new HashMap<HomeSP, PasspointMatch>(mHomeSPs.size());
+    public boolean selectNetwork(List<PasspointMatchInfo> networks) {
+        if (networks.isEmpty()) {
+            return false;
+        }
+
+        if (xSelected) {
+            return false;
+        }
+
+        Collections.sort(networks);
+        PasspointMatchInfo top = networks.iterator().next();
+        if (top.getPasspointMatch() != PasspointMatch.HomeProvider &&
+                top.getPasspointMatch() != PasspointMatch.RoamingProvider) {
+            return false;
+        }
+
+        boolean status = mSupplicantBridge.addCredential(top.getHomeSP(), top.getNetworkDetail());
+        Log.d("HS2J", "add credential: " + status);
+        xSelected = status;
+        return status;
+    }
+
+    int getRetry(NetworkDetail networkDetail, int limit) {
+        int retry = mAnqpCache.getRetry(networkDetail);
+        Log.d("HS2J", "Retry count for " + networkDetail.getSSID() + ": " + retry);
+        return retry >= 0 && retry < limit ? retry : -1;
+    }
+
+    private Map<HomeSP, PasspointMatch> matchNetwork(ScanDetail scanDetail, boolean query) {
+        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
+
+        ANQPData anqpData = mAnqpCache.getEntry(networkDetail);
+
+        Map<ANQPElementType, ANQPElement> anqpElements =
+                anqpData != null ? anqpData.getANQPElements() : null;
+
+        boolean queried = !query;
+        Map<HomeSP, PasspointMatch> matches = new HashMap<>(mHomeSPs.size());
         for (HomeSP homeSP : mHomeSPs) {
-            PasspointMatch match = homeSP.match(networkInfo, anqpElements);
+            PasspointMatch match = homeSP.match(networkDetail, anqpElements);
 
-            if (match == PasspointMatch.Incomplete && networkInfo.isInterworking()) {
-                mPendingANQP.put(networkKey, networkInfo);
+            if (match == PasspointMatch.Incomplete && networkDetail.isInterworking() && !queried) {
+                if (mAnqpCache.initiate(networkDetail)) {
+                    mSupplicantBridge.startANQP(scanDetail);
+                }
+                queried = true;
             }
             matches.put(homeSP, match);
         }
         return matches;
     }
 
-    public NetworkInfo findNetwork(NetworkInfo networkInfo) {
+    private void updateCache(ScanDetail scanDetail, Map<ANQPElementType, ANQPElement> anqpElements)
+    {
+        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
 
-        NetworkKey networkKey = new NetworkKey(networkInfo.getSSID(), networkInfo.getBSSID(),
-                networkInfo.getAnqpDomainID());
-        ANQPData anqpData = mANQPCache.get(networkKey);
-        List<ANQPElement> anqpElements = anqpData != null ? anqpData.getANQPElements() : null;
-        for (HomeSP homeSP : mHomeSPs) {
-            PasspointMatch match = homeSP.match(networkInfo, anqpElements);
-            if (match == PasspointMatch.HomeProvider || match == PasspointMatch.RoamingProvider) {
-                mScoredNetworks.add(new ScoredNetwork(match, networkInfo));
-            } else if (match == PasspointMatch.Incomplete && networkInfo.getAnt() != null) {
-                mPendingANQP.put(networkKey, networkInfo);
+        if (anqpElements == null) {
+            ANQPData data = mAnqpCache.getEntry(networkDetail);
+            if (data != null) {
+                scanDetail.propagateANQPInfo(data.getANQPElements());
             }
+            return;
         }
 
-        // !!! Should really return a score-sorted list.
-        Collections.sort(mScoredNetworks);
-        if (!mScoredNetworks.isEmpty() &&
-                mScoredNetworks.get(0).getMatch() == PasspointMatch.HomeProvider) {
-            return mScoredNetworks.get(0).getNetworkInfo();
-        } else {
-            return null;
+        mAnqpCache.update(networkDetail, anqpElements);
+
+        Log.d("HS2J", "Cached " + networkDetail.getBSSIDString() +
+                "/" + networkDetail.getAnqpDomainID());
+        scanDetail.propagateANQPInfo(anqpElements);
+    }
+
+    private static String toMatchString(Map<HomeSP, PasspointMatch> matches) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
+            sb.append(' ').append(entry.getKey().getFQDN()).append("->").append(entry.getValue());
         }
-    }
-
-    public Map<HomeSP, PasspointMatch> notifyANQPResponse(NetworkInfo networkInfo,
-                                                          List<ANQPElement> anqpElements) {
-        NetworkKey networkKey = new NetworkKey(networkInfo.getSSID(), networkInfo.getBSSID(),
-                networkInfo.getAnqpDomainID());
-        mPendingANQP.remove(networkKey);
-        mANQPCache.put(networkKey, new ANQPData(anqpElements));
-        System.out.println("Caching " + networkKey);
-
-        return matchNetwork(networkInfo);
-    }
-
-    private static final ANQPElementType[] BaseANQPSet = new ANQPElementType[]{
-            ANQPElementType.ANQPVenueName,
-            ANQPElementType.ANQPNwkAuthType,
-            ANQPElementType.ANQPRoamingConsortium,
-            ANQPElementType.ANQPIPAddrAvailability,
-            ANQPElementType.ANQPNAIRealm,
-            ANQPElementType.ANQP3GPPNetwork,
-            ANQPElementType.ANQPDomName
-    };
-
-    private static final ANQPElementType[] HS20ANQPSet = new ANQPElementType[]{
-            ANQPElementType.HSFriendlyName,
-            ANQPElementType.HSWANMetrics,
-            ANQPElementType.HSConnCapability
-    };
-
-    private static final Set<ANQPElementType> IWElements = new HashSet<ANQPElementType>();
-    private static final Set<ANQPElementType> HS20Elements = new HashSet<ANQPElementType>();
-
-    static {
-        Collections.addAll(IWElements, BaseANQPSet);
-        HS20Elements.addAll(IWElements);
-        Collections.addAll(HS20Elements, HS20ANQPSet);
-    }
-
-    public ByteBuffer generateANQPQuery(NetworkInfo network, int dialogToken) {
-        ByteBuffer request = ByteBuffer.allocate(1024);
-
-        request.order(ByteOrder.LITTLE_ENDIAN);
-        int lenPos = request.position();
-        request.putShort((short) 0);
-
-        if (network.getHSRelease() != null) {
-            return prepRequest(lenPos, ANQPFactory.buildQueryRequest(HS20Elements, request));
-        } else if (network.isInterworking()) {
-            return prepRequest(lenPos, ANQPFactory.buildQueryRequest(IWElements, request));
-        } else {
-            return null;
-        }
-    }
-
-    private static ByteBuffer prepRequest(int pos0, ByteBuffer request) {
-        return request.putShort(pos0, (short) (request.limit() - pos0 - Constants.BYTES_IN_SHORT));
+        return sb.toString();
     }
 }

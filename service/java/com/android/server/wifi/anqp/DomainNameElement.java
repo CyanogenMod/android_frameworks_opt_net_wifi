@@ -30,7 +30,7 @@ public class DomainNameElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "DomainNameElement{" +
+        return "DomainName{" +
                 "mDomains=" + mDomains +
                 '}';
     }

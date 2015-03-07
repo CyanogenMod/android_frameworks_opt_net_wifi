@@ -69,11 +69,17 @@ public class DomainMatcher {
         for (List<String> secondaryLabel : secondary) {
             mRoot.addDomain(secondaryLabel.iterator(), Match.Secondary);
         }
-        System.out.println("Primary: " + primary);
         // Primary overwrites secondary.
         mRoot.addDomain(primary.iterator(), Match.Primary);
     }
 
+    /**
+     * Check if domain is either a the same or a sub-domain of any of the domains in the domain tree
+     * in this matcher, i.e. all or or a sub-set of the labels in domain matches a path in the tree.
+     * @param domain Domain to be checked.
+     * @return None if domain is not a sub-domain, Primary if it matched one of the primary domains
+     * or Secondary if it matched on of the secondary domains.
+     */
     public Match isSubDomain(List<String> domain) {
 
         Label label = mRoot;
@@ -86,6 +92,22 @@ public class DomainMatcher {
             }
         }
         return Match.None;  // Domain is a super domain
+    }
+
+    public static boolean arg2SubdomainOfArg1(List<String> arg1, List<String> arg2) {
+        if (arg2.size() < arg1.size()) {
+            return false;
+        }
+
+        Iterator<String> l1 = arg1.listIterator(arg1.size());
+        Iterator<String> l2 = arg2.listIterator(arg2.size());
+
+        while(l1.hasNext()) {
+            if (!l1.next().equals(l2.next())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override

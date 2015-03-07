@@ -62,7 +62,7 @@ public class VenueNameElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "VenueNameElement{" +
+        return "VenueName{" +
                 "m_group=" + mGroup +
                 ", m_type=" + mType +
                 ", m_names=" + mNames +
@@ -147,6 +147,7 @@ public class VenueNameElement extends ANQPElement {
 
         UnspecifiedUtilityMiscellaneous,
 
+        UnspecifiedVehicular,
         AutomobileOrTruck,
         Airplane,
         Bus,
@@ -178,7 +179,7 @@ public class VenueNameElement extends ANQPElement {
                     VenueType.UnspecifiedResidential,
                     VenueType.UnspecifiedStorage,
                     VenueType.UnspecifiedUtilityMiscellaneous,
-                    VenueType.AutomobileOrTruck,
+                    VenueType.UnspecifiedVehicular,
                     VenueType.UnspecifiedOutdoor
             };
 

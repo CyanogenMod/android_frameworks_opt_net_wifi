@@ -31,7 +31,7 @@ public class HSFriendlyNameElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "HSFriendlyNameElement{" +
+        return "HSFriendlyName{" +
                 "mNames=" + mNames +
                 '}';
     }

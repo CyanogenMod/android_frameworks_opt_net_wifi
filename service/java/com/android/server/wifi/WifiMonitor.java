@@ -824,6 +824,9 @@ public class WifiMonitor {
             event = BSS_ADDED;
         } else if (eventName.equals(BSS_REMOVED_STR)) {
             event = BSS_REMOVED;
+        } else if (eventName.equals("ANQP-QUERY-DONE")) {   // !!!
+            Log.d("HS2J", "ANQP done: '" + eventStr + "'" );
+            event = UNKNOWN;
         }
         else
             event = UNKNOWN;

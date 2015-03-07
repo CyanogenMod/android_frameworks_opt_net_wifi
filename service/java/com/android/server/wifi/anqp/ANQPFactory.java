@@ -15,7 +15,32 @@ import java.util.Set;
  */
 public class ANQPFactory {
 
-    public static ByteBuffer buildQueryRequest(Set<Constants.ANQPElementType> elements, ByteBuffer target) {
+    private static final Constants.ANQPElementType[] BaseANQPSet = new Constants.ANQPElementType[]{
+            Constants.ANQPElementType.ANQPVenueName,
+            Constants.ANQPElementType.ANQPNwkAuthType,
+            Constants.ANQPElementType.ANQPRoamingConsortium,
+            Constants.ANQPElementType.ANQPIPAddrAvailability,
+            Constants.ANQPElementType.ANQPNAIRealm,
+            Constants.ANQPElementType.ANQP3GPPNetwork,
+            Constants.ANQPElementType.ANQPDomName
+    };
+
+    private static final Constants.ANQPElementType[] HS20ANQPSet = new Constants.ANQPElementType[]{
+            Constants.ANQPElementType.HSFriendlyName,
+            Constants.ANQPElementType.HSWANMetrics,
+            Constants.ANQPElementType.HSConnCapability
+    };
+
+    public static Constants.ANQPElementType[] getBaseANQPSet() {
+        return BaseANQPSet;
+    }
+
+    public static Constants.ANQPElementType[] getHS20ANQPSet() {
+        return HS20ANQPSet;
+    }
+
+    public static ByteBuffer buildQueryRequest(Set<Constants.ANQPElementType> elements,
+                                               ByteBuffer target) {
         List<Constants.ANQPElementType> list = new ArrayList<Constants.ANQPElementType>(elements);
         Collections.sort(list);
 
@@ -56,7 +81,8 @@ public class ANQPFactory {
                     target.put(id.byteValue());
                 }
             }
-            target.putShort(vsLenPos, (short) (target.position() - vsLenPos - Constants.BYTES_IN_SHORT));
+            target.putShort(vsLenPos,
+                    (short) (target.position() - vsLenPos - Constants.BYTES_IN_SHORT));
         }
 
         target.flip();
@@ -127,9 +153,11 @@ public class ANQPFactory {
             throw new ProtocolException("Truncated payload: " +
                     payload.remaining() + " vs " + length);
         }
+        return buildElement(payload, infoID, length);
+    }
 
-        //System.out.printf("%s:%d bytes @ %d\n", infoID, length, payload.position());
-
+    public static ANQPElement buildElement(ByteBuffer payload, Constants.ANQPElementType infoID,
+                                            int length) throws ProtocolException {
         ByteBuffer elementPayload = payload.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         payload.position(payload.position() + length);
         elementPayload.limit(elementPayload.position() + length);
@@ -174,8 +202,12 @@ public class ANQPFactory {
                         return null;
                     }
                     int subType = elementPayload.get() & Constants.BYTE_MASK;
-                    elementPayload.get();
-                    return buildHS20Element(subType, elementPayload);
+                    Constants.ANQPElementType hs20ID = Constants.mapHS20Element(subType);
+                    if (hs20ID == null) {
+                        throw new ProtocolException("Bad HS20 info ID: " + subType);
+                    }
+                    elementPayload.get();   // Skip the reserved octet
+                    return buildHS20Element(hs20ID, elementPayload);
                 } else {
                     return new GenericBlobElement(infoID, elementPayload);
                 }
@@ -184,15 +216,8 @@ public class ANQPFactory {
         }
     }
 
-    private static ANQPElement buildHS20Element(int subType, ByteBuffer payload)
-            throws ProtocolException {
-
-        Constants.ANQPElementType infoID = Constants.mapHS20Element(subType);
-
-        if (infoID == null) {
-            throw new ProtocolException("Bad HS20 info ID: " + subType);
-        }
-
+    public static ANQPElement buildHS20Element(Constants.ANQPElementType infoID,
+                                                ByteBuffer payload) throws ProtocolException {
         switch (infoID) {
             case HSCapabilityList:
                 return new HSCapabilityListElement(infoID, payload);
@@ -209,7 +234,7 @@ public class ANQPFactory {
             case HSIconFile:
                 return new HSIconFileElement(infoID, payload);
             default:
-                throw new ProtocolException("Unknown HS20 sub type: " + subType);
+                return null;
         }
     }
 }
