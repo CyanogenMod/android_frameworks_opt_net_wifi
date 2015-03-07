@@ -1,12 +1,14 @@
 package com.android.server.wifi.anqp.eap;
 
 import com.android.server.wifi.anqp.Constants;
+import com.android.server.wifi.hotspot2.AuthMatch;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -49,8 +51,6 @@ public class EAPMethod {
                 throw new ProtocolException("Bad auth method length: " + len);
             }
 
-            System.out.println(authInfoID);
-
             switch (authInfoID) {
                 case ExpandedEAPMethod:
                     addAuthParam(new ExpandedEAPMethod(authInfoID, len, paramPayload));
@@ -82,6 +82,16 @@ public class EAPMethod {
                     ", expected " + count);
     }
 
+    public EAPMethod(EAP.EAPMethodID eapMethodID, AuthParam authParam) {
+        mEAPMethodID = eapMethodID;
+        mAuthParams = new HashMap<EAP.AuthInfoID, Set<AuthParam>>(1);
+        if (authParam != null) {
+            Set<AuthParam> authParams = new HashSet<AuthParam>();
+            authParams.add(authParam);
+            mAuthParams.put(authParam.getAuthInfoID(), authParams);
+        }
+    }
+
     private void addAuthParam(AuthParam param) {
         Set<AuthParam> authParams = mAuthParams.get(param.getAuthInfoID());
         if (authParams == null) {
@@ -99,7 +109,10 @@ public class EAPMethod {
         return mEAPMethodID;
     }
 
-    public boolean matchesAuthParams(EAPMethod other) {
+    public AuthMatch matchAuthParams(EAPMethod other) {
+        if (other.getAuthParams().isEmpty() || mAuthParams.isEmpty()) {
+            return AuthMatch.Unqualified;
+        }
         for (Map.Entry<EAP.AuthInfoID, Set<AuthParam>> entry : other.getAuthParams().entrySet()) {
 
             Set<AuthParam> myParams = mAuthParams.get(entry.getKey());
@@ -120,11 +133,11 @@ public class EAPMethod {
 
             for (AuthParam param : iterationSet) {
                 if (seekSet.contains(param)) {
-                    return true;
+                    return AuthMatch.Qualified;
                 }
             }
         }
-        return false;
+        return AuthMatch.None;
     }
 
     @Override

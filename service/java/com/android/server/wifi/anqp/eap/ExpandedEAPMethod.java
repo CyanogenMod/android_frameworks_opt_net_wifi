@@ -35,6 +35,12 @@ public class ExpandedEAPMethod implements AuthParam {
         payload.position(payload.position()+7);
     }
 
+    public ExpandedEAPMethod(EAP.AuthInfoID authInfoID, int vendorID, long vendorType) {
+        mAuthInfoID = authInfoID;
+        mVendorID = vendorID;
+        mVendorType = vendorType;
+    }
+
     @Override
     public EAP.AuthInfoID getAuthInfoID() {
         return mAuthInfoID;

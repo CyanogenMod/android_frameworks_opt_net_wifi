@@ -183,19 +183,4 @@ public class Constants {
         payload.get(octets);
         return new String(octets, charset);
     }
-
-    public static String toHexString(byte[] data) {
-        StringBuilder sb = new StringBuilder(data.length * 3);
-
-        boolean first = true;
-        for (byte b : data) {
-            if (first) {
-                first = false;
-            } else {
-                sb.append(' ');
-            }
-            sb.append(String.format("%02x", b & BYTE_MASK));
-        }
-        return sb.toString();
-    }
 }

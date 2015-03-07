@@ -1,5 +1,7 @@
 package com.android.server.wifi.anqp;
 
+import com.android.server.wifi.hotspot2.Utils;
+
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -37,23 +39,6 @@ public class RoamingConsortiumElement extends ANQPElement {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("RoamingConsortiumElement{mOis=[");
-        boolean first = true;
-        for ( long oi : mOis ) {
-            if (first) {
-                first = false;
-            }
-            else {
-                sb.append(", ");
-            }
-            if (Long.numberOfLeadingZeros(oi)>40) {
-                sb.append(String.format("%09x", oi));
-            }
-            else {
-                sb.append(String.format("%06x", oi));
-            }
-        }
-        sb.append("]}");
-        return sb.toString();
+        return "RoamingConsortiumElement{mOis=[" + Utils.roamingConsortiumsToString(mOis) + "]}";
     }
 }
