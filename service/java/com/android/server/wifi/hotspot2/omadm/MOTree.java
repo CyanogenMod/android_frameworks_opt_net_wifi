@@ -45,7 +45,7 @@ public class MOTree {
         }
     }
 
-    private MOTree(String urn, String rev, OMAConstructed root) {
+    public MOTree(String urn, String rev, OMAConstructed root) {
         mUrn = urn;
         mDtdRev = rev;
         mRoot = root;
