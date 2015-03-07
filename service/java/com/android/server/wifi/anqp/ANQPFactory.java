@@ -32,6 +32,7 @@ public class ANQPFactory {
                 target.putShort(id.shortValue());
             } else {
                 elementIterator.previous();
+                break;
             }
         }
         target.putShort(lenPos, (short) (target.position() - lenPos - Constants.BYTES_IN_SHORT));
@@ -126,9 +127,12 @@ public class ANQPFactory {
             throw new ProtocolException("Truncated payload");
         }
 
+        System.out.printf("%s:%d bytes @ %d\n", infoID, length, payload.position());
+
         ByteBuffer elementPayload = payload.duplicate();
         payload.position(payload.position() + length);
         elementPayload.limit(elementPayload.position() + length);
+        elementPayload.order(ByteOrder.LITTLE_ENDIAN);
 
         switch (infoID) {
             case ANQPCapabilityList:

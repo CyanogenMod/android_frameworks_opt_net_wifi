@@ -211,7 +211,6 @@ public class GEOLocationElement extends ANQPElement {
                 remaining -= width;
             }
 
-            System.out.printf(" - Sliced off %d bits: %x\n", bits, value);
             return value;
         }
 

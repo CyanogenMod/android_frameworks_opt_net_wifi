@@ -27,13 +27,18 @@ public class Credential implements AuthParam {
     private final CredType mCredType;
 
     public Credential(EAP.AuthInfoID infoID, ByteBuffer payload) throws ProtocolException {
-        mAuthInfoID = infoID;
-
-        if (payload.remaining() != 1) {
-            throw new ProtocolException("Bad length: " + payload.remaining());
+        if (payload.remaining() < 2) {
+            throw new ProtocolException("Runt payload: " + payload.remaining());
         }
 
+        mAuthInfoID = infoID;
+
+        int length = payload.get() & BYTE_MASK;
+        if (length != 1) {
+            throw new ProtocolException("Bad length: " + length);
+        }
         int typeID = payload.get() & BYTE_MASK;
+
         mCredType = typeID < CredType.values().length ?
                 CredType.values()[typeID] :
                 CredType.Reserved;

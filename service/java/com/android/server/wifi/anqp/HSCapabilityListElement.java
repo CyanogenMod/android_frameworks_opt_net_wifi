@@ -21,9 +21,10 @@ public class HSCapabilityListElement extends ANQPElement {
         int index = 0;
         while (payload.hasRemaining()) {
             int capID = payload.get() & Constants.BYTE_MASK;
-            Constants.ANQPElementType capability = Constants.mapANQPElement(capID);
-            if (capability == null)
+            Constants.ANQPElementType capability = Constants.mapHS20Element(capID);
+            if (capability == null) {
                 throw new ProtocolException("Unknown capability: " + capID);
+            }
             mCapabilities[index++] = capability;
         }
     }
