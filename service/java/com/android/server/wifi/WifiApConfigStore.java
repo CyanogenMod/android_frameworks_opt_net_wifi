@@ -51,7 +51,7 @@ class WifiApConfigStore extends StateMachine {
     private static final String AP_CONFIG_FILE = Environment.getDataDirectory() +
         "/misc/wifi/softap.conf";
 
-    private static final int AP_CONFIG_FILE_VERSION = 1;
+    private static final int AP_CONFIG_FILE_VERSION = 2;
 
     private State mDefaultState = new DefaultState();
     private State mInactiveState = new InactiveState();
@@ -100,9 +100,9 @@ class WifiApConfigStore extends StateMachine {
         public boolean processMessage(Message message) {
             switch (message.what) {
                 case WifiStateMachine.CMD_SET_AP_CONFIG:
-                    WifiConfiguration config = (WifiConfiguration) message.obj;
+                     WifiConfiguration config = (WifiConfiguration)message.obj;
                     if (config.SSID != null) {
-                        mWifiApConfig = (WifiConfiguration) message.obj;
+                        mWifiApConfig = config;
                         transitionTo(mActiveState);
                     } else {
                         Log.e(TAG, "Try to setup AP config without SSID: " + message);
@@ -150,12 +150,18 @@ class WifiApConfigStore extends StateMachine {
                             AP_CONFIG_FILE)));
 
             int version = in.readInt();
-            if (version != 1) {
+            if ((version != 1) && (version != 2)) {
                 Log.e(TAG, "Bad version on hotspot configuration file, set defaults");
                 setDefaultApConfiguration();
                 return;
             }
             config.SSID = in.readUTF();
+
+            if (version >= 2) {
+                config.apBand = in.readInt();
+                config.apChannel = in.readInt();
+            }
+
             int authType = in.readInt();
             config.allowedKeyManagement.set(authType);
             if (authType != KeyMgmt.NONE) {
@@ -185,6 +191,8 @@ class WifiApConfigStore extends StateMachine {
 
             out.writeInt(AP_CONFIG_FILE_VERSION);
             out.writeUTF(config.SSID);
+            out.writeInt(config.apBand);
+            out.writeInt(config.apChannel);
             int authType = config.getAuthType();
             out.writeInt(authType);
             if(authType != KeyMgmt.NONE) {
