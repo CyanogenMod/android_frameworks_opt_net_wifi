@@ -477,39 +477,54 @@ public class WifiStateMachine extends StateMachine {
                 .setTitle(R.string.wifi_connect_alert_title)
                 .setMessage(alertMessage)
                 .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
+                    /* Sometimes onClick is called twice - it might be an automation bug;
+                     * but that causes sendMessage to get called again. mClicked helps
+                     * work around that problem */
+                    AtomicBoolean mClicked = new AtomicBoolean(false);
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        config.userApproved = WifiConfiguration.USER_APPROVED;
+                        if (config.userApproved != WifiConfiguration.USER_BANNED
+                                && mClicked.compareAndSet(false, true)) {
+                            config.userApproved = WifiConfiguration.USER_APPROVED;
 
-                        if (config.linkedConfigurations != null) {
-                            for (String key : config.linkedConfigurations.keySet()) {
-                                WifiConfiguration linked =
-                                    mWifiConfigStore.getWifiConfiguration(key);
-                                linked.userApproved = config.userApproved;
+                            if (config.linkedConfigurations != null) {
+                                for (String key : config.linkedConfigurations.keySet()) {
+                                    WifiConfiguration linked =
+                                        mWifiConfigStore.getWifiConfiguration(key);
+                                    linked.userApproved = config.userApproved;
+                                }
                             }
+
+                            mWifiConfigStore.writeKnownNetworkHistory(false);
+
+                            sendMessage(newMessage);
+                            dialog.dismiss();
                         }
-
-                        mWifiConfigStore.writeKnownNetworkHistory(false);
-
-                        sendMessage(newMessage);
-                        dialog.dismiss();
                     }
                 })
                 .setNegativeButton(android.R.string.no, new DialogInterface.OnClickListener() {
+                    /* Sometimes onClick is called twice - it might be an automation bug;
+                     * but that causes sendMessage to get called again. mClicked helps
+                     * work around that problem */
+                    AtomicBoolean mClicked = new AtomicBoolean(false);
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        config.userApproved = WifiConfiguration.USER_BANNED;
+                        if (config.userApproved != WifiConfiguration.USER_APPROVED
+                                && mClicked.compareAndSet(false, true)) {
+                            config.userApproved = WifiConfiguration.USER_BANNED;
 
-                        if (config.linkedConfigurations != null) {
-                            for (String key : config.linkedConfigurations.keySet()) {
-                                WifiConfiguration linked = mWifiConfigStore.getWifiConfiguration(key);
-                                linked.userApproved = config.userApproved;
+                            if (config.linkedConfigurations != null) {
+                                for (String key : config.linkedConfigurations.keySet()) {
+                                    WifiConfiguration linked = mWifiConfigStore.getWifiConfiguration(key);
+                                    linked.userApproved = config.userApproved;
+                                }
                             }
+
+                            mWifiConfigStore.writeKnownNetworkHistory(false);
+
+                            dialog.dismiss();
+                            newMessage.recycle();
                         }
-
-                        mWifiConfigStore.writeKnownNetworkHistory(false);
-
-                        dialog.dismiss();
                     }
                 })
                 .setCancelable(false)
