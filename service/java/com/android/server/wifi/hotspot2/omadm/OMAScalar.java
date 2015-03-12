@@ -1,5 +1,7 @@
 package com.android.server.wifi.hotspot2.omadm;
 
+import android.util.Log;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Collection;
@@ -59,6 +61,8 @@ public class OMAScalar extends OMANode {
 
     @Override
     public void marshal(OutputStream out, int level) throws IOException {
+        Log.d("PARSE-LOG", "Node " + getName() + " has value " + getValue());
+
         OMAConstants.indent(level, out);
         OMAConstants.serializeString(getName(), out);
         out.write((byte) '=');

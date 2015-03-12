@@ -1691,9 +1691,10 @@ public class WifiConfigStore extends IpConfigStore {
         File file = new File(PPS_FILE);
 
         MOManager moManager;
+        List<HomeSP> homeSPs;
         try {
             moManager = new MOManager(file);
-            moManager.loadAllSPs();
+            homeSPs = moManager.loadAllSPs();
         } catch (IOException e) {
             loge("Could not read " + PPS_FILE + " : " + e);
             return;
@@ -1701,13 +1702,16 @@ public class WifiConfigStore extends IpConfigStore {
 
         mConfiguredHomeSPs.clear();
 
-        Map<String, HomeSP> homeSPs = moManager.getLoadedSPs();
+        log("read " + homeSPs.size() + " from " + PPS_FILE);
 
-        for (HomeSP homeSp : homeSPs.values()) {
+        for (HomeSP homeSp : homeSPs) {
             String fqdn = homeSp.getFQDN();
             String ssid = Long.toString(getChecksum(fqdn));
+            log("Looking for " + ssid + " for " + fqdn);
             for (WifiConfiguration config : mConfiguredNetworks.values()) {
+                log("Testing " + config.SSID);
                 if (config.SSID.equals(ssid) && config.enterpriseConfig != null) {
+                    log("Matched " + config.SSID);
                     config.FQDN = fqdn;
                     config.providerFriendlyName = homeSp.getFriendlyName();
                     config.roamingConsortiumIds = new HashSet<Long>();
@@ -1721,14 +1725,14 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
-        log("read " + mConfiguredHomeSPs.size() + " from " + PPS_FILE);
+        log("loaded " + mConfiguredHomeSPs.size() + " passpoint configs");
     }
 
     public void writePasspointConfigs() {
         mWriter.write(PPS_FILE, new DelayedDiskWrite.Writer() {
             @Override
             public void onWriteCalled(DataOutputStream out) throws IOException {
-                log("saving " + PPS_FILE + " ...");
+                log("saving " + mConfiguredHomeSPs.size() + " in " + PPS_FILE + " ...");
                 File file = new File(PPS_FILE);
 
                 MOManager moManager;
@@ -2619,6 +2623,11 @@ public class WifiConfigStore extends IpConfigStore {
                             // No need to try to set an obfuscated password, which will fail
                             continue;
                         }
+                        if (key.equals(WifiEnterpriseConfig.REALM_KEY)
+                                || key.equals(WifiEnterpriseConfig.PLMN_KEY)) {
+                            // No need to save realm or PLMN in supplicant
+                            continue;
+                        }
                         if (!mWifiNative.setNetworkVariable(
                                     netId,
                                     key,
@@ -2680,7 +2689,7 @@ public class WifiConfigStore extends IpConfigStore {
                     config.roamingConsortiumIds, Collections.<String>emptySet(),
                     Collections.<Long>emptySet(), Collections.<Long>emptyList(),
                     config.providerFriendlyName, null, credential);
-            mConfiguredHomeSPs.put(config.networkId, homeSP);
+            mConfiguredHomeSPs.put(netId, homeSP);
             log("created a homeSP object for " + config.networkId + ":" + config.SSID);
         }
 
