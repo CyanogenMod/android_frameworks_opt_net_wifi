@@ -1124,6 +1124,14 @@ public class WifiStateMachine extends StateMachine {
         return mWifiConfigStore.alwaysEnableScansWhileAssociated;
     }
 
+    public void setAllowScansWhileAssociated(boolean enabled) {
+        mWifiConfigStore.enableAutoJoinScanWhenAssociated = enabled;
+    }
+
+    public boolean getAllowScansWhileAssociated() {
+        return mWifiConfigStore.enableAutoJoinScanWhenAssociated;
+    }
+
     /*
      *
      * Framework scan control

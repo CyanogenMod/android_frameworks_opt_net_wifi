@@ -1840,6 +1840,16 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return mWifiStateMachine.getAllowScansWithTraffic();
     }
 
+    public void setAllowScansWhileAssociated(boolean enabled) {
+        enforceAccessPermission();
+        mWifiStateMachine.setAllowScansWhileAssociated(enabled);
+    }
+
+    public boolean getAllowScansWhileAssociated() {
+        enforceAccessPermission();
+        return mWifiStateMachine.getAllowScansWhileAssociated();
+    }
+
     /* Return the Wifi Connection statistics object */
     public WifiConnectionStatistics getConnectionStatistics() {
         enforceAccessPermission();
