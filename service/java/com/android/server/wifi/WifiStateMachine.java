@@ -3450,7 +3450,7 @@ public class WifiStateMachine extends StateMachine {
                 } else if (line.startsWith(DELIMITER_STR) || line.startsWith(END_STR)) {
                     if (bssid != null) {
                         NetworkDetail networkDetail =
-                                new NetworkDetail(bssid, infoElements, anqpLines);
+                                new NetworkDetail(bssid, infoElements, anqpLines, freq);
 
                         String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
                         if (!xssid.equals(networkDetail.getSSID())) {
@@ -3460,7 +3460,9 @@ public class WifiStateMachine extends StateMachine {
 
                         ScanDetail scanDetail = mScanResultCache.get(networkDetail);
                         if (scanDetail != null) {
-                            scanDetail.updateResults(level, wifiSsid, xssid, flags, freq, tsf);
+
+                            scanDetail.updateResults(networkDetail, level, wifiSsid, xssid, flags,
+                                    freq, tsf);
                         }
                         else {
                             scanDetail = new ScanDetail(networkDetail, wifiSsid, bssid,
