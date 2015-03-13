@@ -1,6 +1,7 @@
 package com.android.server.wifi.hotspot2;
 
 import android.net.wifi.ScanResult;
+import android.util.Log;
 
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
@@ -17,7 +18,7 @@ import java.util.Map;
 import static com.android.server.wifi.anqp.Constants.BYTES_IN_EUI48;
 import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 import static com.android.server.wifi.anqp.Constants.getInteger;
-import android.util.Log;
+
 public class NetworkDetail {
 
     private static final int EID_SSID = 0;
@@ -34,7 +35,7 @@ public class NetworkDetail {
     private static final long SSID_UTF8_BIT = 0x0001000000000000L;
     //turn off when SHIP
     private static final boolean DBG = true;
-    private static final String TAG = "NetworkDetail:";
+    private static final String TAG = "NetworkDetail";
 
     public enum Ant {
         Private,
@@ -162,7 +163,9 @@ public class NetworkDetail {
             int elementLength = data.get() & Constants.BYTE_MASK;
             Log.e(TAG,"eid is:" + eid + " elementLength:" +  elementLength);
             if (elementLength > data.remaining()) {
-                throw new IllegalArgumentException("Length out of bounds: " + elementLength +" ," + data.remaining());
+                Log.e(TAG, "EID " + eid + " too long: " + elementLength + "/" + data.remaining() +
+                      " data=" + infoElements.substring(separator + 1));
+                break;
             }
 
             switch (eid) {
