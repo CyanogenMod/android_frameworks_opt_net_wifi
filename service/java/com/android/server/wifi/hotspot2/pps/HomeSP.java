@@ -224,9 +224,10 @@ public class HomeSP {
         return AuthMatch.None;
     }
 
-    public String getFQDN() {
-        return mFQDN;
-    }
+    public String getFQDN() { return mFQDN; }
+    public String getFriendlyName() { return mFriendlyName; }
+    public Set<Long> getRoamingConsortiums() { return mRoamingConsortiums; }
+    public Credential getCredential() { return mCredential; }
 
     @Override
     public boolean equals(Object thatObject) {
@@ -238,7 +239,6 @@ public class HomeSP {
 
         HomeSP that = (HomeSP) thatObject;
         return mFQDN.equals(that.mFQDN);
-
     }
 
     @Override

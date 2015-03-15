@@ -24,6 +24,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -46,6 +47,10 @@ public class MOManager {
 
     public File getPpsFile() {
         return mPpsFile;
+    }
+
+    public Map<String, HomeSP> getLoadedSPs() {
+        return mSPs;
     }
 
     public List<HomeSP> loadAllSPs() throws IOException {
@@ -121,6 +126,45 @@ public class MOManager {
         }
 
         return sp;
+    }
+
+    public void saveAllSps(Collection<HomeSP> homeSPs) throws IOException {
+        OMAConstructed root = new OMAConstructed(null, TAG_PerProviderSubscription, "");
+
+        for (HomeSP homeSP : homeSPs) {
+            if (mSPs.put(homeSP.getFQDN(), homeSP) != null) {
+                throw new OMAException("SP " + homeSP.getFQDN() + " already exists");
+            }
+            OMAConstructed homeSpNode = new OMAConstructed(root, TAG_HomeSP, "");
+            homeSpNode.addChild(TAG_FQDN, null, homeSP.getFQDN(), null);
+            homeSpNode.addChild(TAG_FriendlyName, null, homeSP.getFriendlyName(), null);
+
+            OMAConstructed credentialNode = new OMAConstructed(homeSpNode, TAG_Credential, "");
+            credentialNode.addChild(TAG_Realm, null, homeSP.getCredential().getRealm(), null);
+            credentialNode.addChild(TAG_IMSI, null, homeSP.getCredential().getImsi(), null);
+
+            StringBuilder builder = new StringBuilder();
+            for (Long roamingConsortium : homeSP.getRoamingConsortiums()) {
+                builder.append(roamingConsortium.toString());
+            }
+            credentialNode.addChild(TAG_RoamingConsortiumOI, null, builder.toString(), null);
+        }
+
+        MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", root);
+        BufferedOutputStream out = null;
+        try {
+            out = new BufferedOutputStream(new FileOutputStream(mPpsFile, true));
+            tree.marshal(out);
+            out.flush();
+        } finally {
+            if (out != null) {
+                try {
+                    out.close();
+                } catch (IOException ioe) {
+                    /**/
+                }
+            }
+        }
     }
 
     private static final DateFormat DTFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
