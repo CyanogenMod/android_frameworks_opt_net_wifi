@@ -1111,8 +1111,8 @@ static jboolean android_net_wifi_requestRange(
         config.peer = (wifi_peer_type)getIntField(env, param, "deviceType");
         config.channel.center_freq = getIntField(env, param, "frequency");
         config.channel.width = (wifi_channel_width)getIntField(env, param, "channelWidth");
-        config.num_samples_per_measurement = getIntField(env, param, "num_samples");
-        config.num_retries_per_measurement = getIntField(env, param, "num_retries");
+        config.num_frames_per_burst = getIntField(env, param, "num_samples");
+        config.num_retries_per_measurement_frame = getIntField(env, param, "num_retries");
     }
 
     wifi_rtt_event_handler handler;
