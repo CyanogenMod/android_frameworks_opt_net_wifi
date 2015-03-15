@@ -250,7 +250,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         @Override
         public void onScanStatus() {
             if (DBG) Log.d(TAG, "onScanStatus event received");
-            /* sendMessage(CMD_SCAN_RESULTS_AVAILABLE); */
+            sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
         }
 
         @Override
