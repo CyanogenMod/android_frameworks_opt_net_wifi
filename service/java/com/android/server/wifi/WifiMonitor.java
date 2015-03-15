@@ -31,6 +31,7 @@ import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl.P2pStatus;
 
 import com.android.internal.util.Protocol;
@@ -396,6 +397,7 @@ public class WifiMonitor {
     private static final String AP_STA_CONNECTED_STR = "AP-STA-CONNECTED";
     /* AP-STA-DISCONNECTED 42:fc:89:a8:96:09 */
     private static final String AP_STA_DISCONNECTED_STR = "AP-STA-DISCONNECTED";
+    private static final String ANQP_DONE_STR = "ANQP-QUERY-DONE";
 
     /* Supplicant events reported to a state machine */
     private static final int BASE = Protocol.BASE_WIFI_MONITOR;
@@ -462,6 +464,7 @@ public class WifiMonitor {
 
     /* Indicates assoc reject event */
     public static final int ASSOCIATION_REJECTION_EVENT          = BASE + 43;
+    public static final int ANQP_DONE_EVENT                      = BASE + 44;
 
     /* hotspot 2.0 ANQP events */
     public static final int GAS_QUERY_START_EVENT                = BASE + 51;
@@ -633,6 +636,7 @@ public class WifiMonitor {
 
         private synchronized boolean dispatchEvent(String eventStr) {
             String iface;
+            // IFNAME=wlan0 ANQP-QUERY-DONE addr=18:cf:5e:26:a4:88 result=SUCCESS
             if (eventStr.startsWith("IFNAME=")) {
                 int space = eventStr.indexOf(' ');
                 if (space != -1) {
@@ -764,13 +768,20 @@ public class WifiMonitor {
                 handleP2pEvents(eventStr);
             } else if (eventStr.startsWith(HOST_AP_EVENT_PREFIX_STR)) {
                 handleHostApEvents(eventStr);
-            } else if (eventStr.startsWith(GAS_QUERY_PREFIX_STR)) {
+            } else if (eventStr.startsWith(ANQP_DONE_STR)) {
+                try {
+                    handleAnqpResult(eventStr);
+                }
+                catch (IllegalArgumentException iae) {
+                    Log.e("HS2J", "Bad ANQP event string: '" + eventStr + "': " + iae);
+                }
+            } else if (eventStr.startsWith(GAS_QUERY_PREFIX_STR)) {        // !!! clean >>End
                 handleGasQueryEvents(eventStr);
             } else if (eventStr.startsWith(RX_HS20_ANQP_ICON_STR)) {
                 if (mStateMachine2 != null)
                     mStateMachine2.sendMessage(RX_HS20_ANQP_ICON_EVENT,
                             eventStr.substring(RX_HS20_ANQP_ICON_STR_LEN + 1));
-            } else if (eventStr.startsWith(HS20_PREFIX_STR)) {
+            } else if (eventStr.startsWith(HS20_PREFIX_STR)) {                  // !!! <<End
                 handleHs20Events(eventStr);
             } else if (eventStr.startsWith(REQUEST_PREFIX_STR)) {
                 handleRequests(eventStr);
@@ -824,11 +835,7 @@ public class WifiMonitor {
             event = BSS_ADDED;
         } else if (eventName.equals(BSS_REMOVED_STR)) {
             event = BSS_REMOVED;
-        } else if (eventName.equals("ANQP-QUERY-DONE")) {   // !!!
-            Log.d("HS2J", "ANQP done: '" + eventStr + "'" );
-            event = UNKNOWN;
-        }
-        else
+        } else
             event = UNKNOWN;
 
         String eventData = eventStr;
@@ -1122,6 +1129,35 @@ public class WifiMonitor {
         } else if (tokens[0].equals(AP_STA_DISCONNECTED_STR)) {
             mStateMachine.sendMessage(AP_STA_DISCONNECTED_EVENT, new WifiP2pDevice(dataString));
         }
+    }
+
+    private static final String ADDR_STRING = "addr=";
+    private static final String RESULT_STRING = "result=";
+
+    // ANQP-QUERY-DONE addr=18:cf:5e:26:a4:88 result=SUCCESS
+
+    private void handleAnqpResult(String eventStr) {
+        int addrPos = eventStr.indexOf(ADDR_STRING);
+        int resPos = eventStr.indexOf(RESULT_STRING);
+        if (addrPos < 0 || resPos < 0) {
+            throw new IllegalArgumentException("Unexpected ANQP result notification");
+        }
+        int eoaddr = eventStr.indexOf(' ', addrPos + ADDR_STRING.length());
+        if (eoaddr < 0) {
+            eoaddr = eventStr.length();
+        }
+        int eoresult = eventStr.indexOf(' ', resPos + RESULT_STRING.length());
+        if (eoresult < 0) {
+            eoresult = eventStr.length();
+        }
+
+        long bssid = Utils.parseMac(eventStr.substring(addrPos + ADDR_STRING.length(), eoaddr));
+        int result = eventStr.substring(
+                resPos + RESULT_STRING.length(), eoresult).equalsIgnoreCase("success") ? 1 : 0;
+
+        Log.d("HS2J", String.format("AQPD %016x %d", bssid, result));
+
+        mStateMachine.sendMessage(ANQP_DONE_EVENT, result, 0, bssid);
     }
 
     /**

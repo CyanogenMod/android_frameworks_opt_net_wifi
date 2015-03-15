@@ -111,15 +111,11 @@ import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 import com.android.server.net.NetlinkTracker;
 import com.android.server.wifi.hotspot2.NetworkDetail;
-import com.android.server.wifi.hotspot2.PasspointMatch;
-import com.android.server.wifi.hotspot2.SelectionManager;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
-import com.android.server.wifi.hotspot2.pps.HomeSP;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 import com.android.server.wifi.passpoint.WifiPasspointServiceImpl;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -133,7 +129,6 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1030,8 +1025,6 @@ public class WifiStateMachine extends StateMachine {
 
     private BatchedScanSettings mBatchedScanSettings = null;
 
-    private final SelectionManager mSelectionManager;
-
     /**
      * Track the worksource/cost of the current settings and track what's been noted
      * to the battery stats, so we can mark the end of the previous when changing.
@@ -1244,21 +1237,6 @@ public class WifiStateMachine extends StateMachine {
         setLogRecSize(ActivityManager.isLowRamDeviceStatic() ? 100 : 3000);
         setLogOnlyTransitions(false);
         if (VDBG) setDbg(true);
-
-        File f = new File("/data/misc/wifi/pps.data");
-        logd("Jan: WFSM constructed on " + Thread.currentThread() +
-                ", file: " + (f.exists() ? f.length() : "-"));
-
-        SelectionManager selectionManager;
-        try {
-            selectionManager = new SelectionManager(new File("/data/misc/wifi/pps.data"),
-                    new File("/data/misc/wifi/lastssid"),
-                    mWifiNative, this);
-        }
-        catch (IOException ioe) {
-            selectionManager = null;
-        }
-        mSelectionManager = selectionManager;
 
         //start the state machine
         start();
@@ -3668,20 +3646,10 @@ public class WifiStateMachine extends StateMachine {
                         ScanDetail scanDetail = mScanResultCache.get(networkDetail);
                         if (scanDetail != null) {
                             scanDetail.updateResults(level, wifiSsid, xssid, flags, freq, tsf);
-                            ScanDetail update =
-                                    mSelectionManager.scoreNetwork(scanDetail);
-                            if (update != null) {
-                                mScanResultCache.put(networkDetail, update);
-                            }
                         }
                         else {
                             scanDetail = new ScanDetail(networkDetail, wifiSsid, bssid,
                                     flags, level, freq, tsf);
-                            ScanDetail update =
-                                    mSelectionManager.scoreNetwork(scanDetail);
-                            if (update != null) {
-                                scanDetail = update;
-                            }
                             mScanResultCache.put(networkDetail, scanDetail);
                         }
 
@@ -3754,12 +3722,6 @@ public class WifiStateMachine extends StateMachine {
             // in WifiAutoJoinController, instead,
             // just try to reconnect to the same SSID by triggering a roam
             sendMessage(CMD_AUTO_ROAM, mLastNetworkId, 1, null);
-        }
-    }
-
-    public void updateScanResults(ScanDetail network, Map<HomeSP, PasspointMatch> matches) {
-        synchronized (mScanResultCache) {
-            mScanResultCache.put(network.getNetworkDetail(), network.score(matches));
         }
     }
 
@@ -7226,6 +7188,11 @@ public class WifiStateMachine extends StateMachine {
 
                     sendNetworkStateChangeBroadcast(mLastBssid);
                     transitionTo(mObtainingIpState);
+                    break;
+                case WifiMonitor.ANQP_DONE_EVENT:
+                    Log.d("HS2J", String.format("WFSM: ANQP for %016x %s",
+                            (Long)message.obj, message.arg1 != 0 ? "success" : "fail"));
+                    mWifiAutoJoinController.notifyANQPDone((Long) message.obj, message.arg1 != 0);
                     break;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     // Calling handleNetworkDisconnect here is redundant because we might already

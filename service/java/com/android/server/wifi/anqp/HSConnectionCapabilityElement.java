@@ -60,7 +60,7 @@ public class HSConnectionCapabilityElement extends ANQPElement {
             throws ProtocolException {
         super(infoID);
 
-        mStatusList = new ArrayList<ProtocolTuple>();
+        mStatusList = new ArrayList<>();
         while (payload.hasRemaining()) {
             mStatusList.add(new ProtocolTuple(payload));
         }

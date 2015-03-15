@@ -10,6 +10,7 @@ import java.util.Map;
 public class ANQPData {
     private static final long ANQP_QUALIFIED_CACHE_TIMEOUT = 3600000L;
     private static final long ANQP_UNQUALIFIED_CACHE_TIMEOUT = 60000L;
+    private static final long ANQP_HOLDOFF_TIME =              60000L;
     private static final long ANQP_RECACHE_TIME =             300000L;
 
     private final NetworkDetail mNetwork;
@@ -63,6 +64,10 @@ public class ANQPData {
 
     public boolean isResolved() {
         return mANQPElements != null;
+    }
+
+    public boolean expendable(long at) {
+        return mANQPElements == null && mCtime + ANQP_HOLDOFF_TIME < at;
     }
 
     public int incrementAndGetRetry() {
