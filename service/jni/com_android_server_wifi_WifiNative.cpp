@@ -197,7 +197,6 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result *result) {
 int set_iface_flags(const char *ifname, int dev_up) {
     struct ifreq ifr;
     int ret;
-
     int sock = socket(PF_INET, SOCK_DGRAM, 0);
     if (sock < 0) {
         ALOGD("Bad socket: %d\n", sock);
@@ -247,6 +246,10 @@ int set_iface_flags(const char *ifname, int dev_up) {
     return 0;
 }
 
+static jboolean android_net_wifi_toggle_interface(JNIEnv* env, jclass cls, int toggle) {
+    return(set_iface_flags("wlan0", toggle) == 0);
+}
+
 static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
     wifi_handle halHandle = getWifiHandle(env, cls);
     if (halHandle == NULL) {
@@ -280,6 +283,7 @@ void android_net_wifi_hal_cleaned_up_handler(wifi_handle handle) {
 
 static void android_net_wifi_stopHal(JNIEnv* env, jclass cls) {
     ALOGD("In wifi stop Hal");
+
     wifi_handle halHandle = getWifiHandle(env, cls);
     wifi_cleanup(halHandle, android_net_wifi_hal_cleaned_up_handler);
     set_iface_flags("wlan0", 0);
@@ -1253,7 +1257,8 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_cancelRange},
     { "setScanningMacOuiNative", "(I[B)Z",  (void*) android_net_wifi_setScanningMacOui},
     { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels},
-    { "setDfsFlagNative",         "(IZ)Z",  (void*) android_net_wifi_setDfsFlag }
+    { "setDfsFlagNative",         "(IZ)Z",  (void*) android_net_wifi_setDfsFlag},
+    { "toggleInterfaceNative",    "(I)Z",  (void*) android_net_wifi_toggle_interface}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

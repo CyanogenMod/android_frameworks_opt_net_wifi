@@ -1655,4 +1655,16 @@ public class WifiNative {
             }
         }
     }
+
+    private static native boolean toggleInterfaceNative(int on);
+    synchronized public static boolean toggleInterface(int on) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return toggleInterfaceNative(0);
+            } else {
+
+                return false;
+            }
+        }
+    }
 }
