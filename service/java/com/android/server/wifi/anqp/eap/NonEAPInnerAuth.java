@@ -25,6 +25,28 @@ public class NonEAPInnerAuth implements AuthParam {
                 NonEAPType.Reserved;
     }
 
+    /**
+     * Construct from the OMA-DM PPS data
+     * @param eapType as defined in the HS2.0 spec.
+     */
+    public NonEAPInnerAuth(String eapType) {
+        if (eapType.equalsIgnoreCase("PAP")) {
+            mType = NonEAPType.PAP;
+        }
+        else if (eapType.equalsIgnoreCase("CHAP")) {
+            mType = NonEAPType.CHAP;
+        }
+        else if (eapType.equalsIgnoreCase("MS-CHAP")) {
+            mType = NonEAPType.MSCHAP;
+        }
+        else if (eapType.equalsIgnoreCase("MS-CHAP-V2")) {
+            mType = NonEAPType.MSCHAPv2;
+        }
+        else {
+            mType = null;
+        }
+    }
+
     @Override
     public EAP.AuthInfoID getAuthInfoID() {
         return EAP.AuthInfoID.NonEAPInnerAuthType;

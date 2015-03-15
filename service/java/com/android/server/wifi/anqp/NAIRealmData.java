@@ -1,6 +1,7 @@
 package com.android.server.wifi.anqp;
 
 import com.android.server.wifi.anqp.eap.EAPMethod;
+import com.android.server.wifi.hotspot2.AuthMatch;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
@@ -52,6 +53,26 @@ public class NAIRealmData {
 
     public List<EAPMethod> getEAPMethods() {
         return Collections.unmodifiableList(mEAPMethods);
+    }
+
+    public AuthMatch matchEAPMethods(EAPMethod refMethod) {
+        if (mEAPMethods.isEmpty()) {
+            return AuthMatch.RealmOnly;
+        }
+
+        AuthMatch best = AuthMatch.None;
+        AuthMatch exitCondition = AuthMatch.values()[AuthMatch.values().length-1];
+
+        for (EAPMethod method : mEAPMethods) {
+            AuthMatch match = method.matchAuthParams(refMethod);
+            if (match.compareTo(best) > 0) {
+                best = match;
+                if (match == exitCondition) {
+                    return match;
+                }
+            }
+        }
+        return best;
     }
 
     @Override

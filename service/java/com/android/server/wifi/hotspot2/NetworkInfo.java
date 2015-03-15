@@ -2,9 +2,6 @@ package com.android.server.wifi.hotspot2;
 
 import com.android.server.wifi.anqp.VenueNameElement;
 
-/**
- * Created by jannq on 1/20/15.
- */
 public class NetworkInfo {
 
     public enum Ant {
@@ -109,6 +106,10 @@ public class NetworkInfo {
 
     public int getCapacity() {
         return mCapacity;
+    }
+
+    public boolean isInterworking() {
+        return mAnt != null;
     }
 
     public Ant getAnt() {

@@ -54,7 +54,7 @@ public class Credential implements AuthParam {
     public boolean equals(Object thatObject) {
         if (thatObject == this) {
             return true;
-        } else if (thatObject == null || thatObject.getClass() != AuthParam.class) {
+        } else if (thatObject == null || thatObject.getClass() != Credential.class) {
             return false;
         } else {
             return ((Credential) thatObject).getCredType() == getCredType();
