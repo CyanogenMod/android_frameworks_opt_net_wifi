@@ -64,8 +64,10 @@ public class OSUProvider {
         while (iconsBuffer.hasRemaining()) {
             mIcons.add(new IconInfo(iconsBuffer));
         }
+        System.out.println( "OSU Names: " + mNames + ", server '" + mOSUServer + ", methods " + mOSUMethods + ", icons " + mIcons + " (" + iconsLength + ")");
 
-        mOsuNai = Constants.getString(payload, 1, StandardCharsets.UTF_8, true);
+        mOsuNai = Constants.getPrefixedString(payload, 1, StandardCharsets.UTF_8, true);
+        System.out.println( "OSU NAI '" + mOsuNai + "'");
 
         int descriptionsLength = payload.getShort() & SHORT_MASK;
         ByteBuffer descriptionsBuffer = payload.duplicate();

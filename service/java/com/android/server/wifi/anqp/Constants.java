@@ -155,10 +155,15 @@ public class Constants {
 
     public static String getPrefixedString(ByteBuffer payload, int lengthLength, Charset charset)
             throws ProtocolException {
+        return getPrefixedString(payload, lengthLength, charset, false);
+    }
+
+    public static String getPrefixedString(ByteBuffer payload, int lengthLength, Charset charset,
+                                           boolean useNull) throws ProtocolException {
         if (payload.remaining() < lengthLength) {
             throw new ProtocolException("Runt string: " + payload.remaining());
         }
-        return getString(payload, (int) getInteger(payload, lengthLength), charset, false);
+        return getString(payload, (int) getInteger(payload, lengthLength), charset, useNull);
     }
 
     public static String getString(ByteBuffer payload, int length, Charset charset)
@@ -175,6 +180,7 @@ public class Constants {
             return null;
         }
         byte[] octets = new byte[length];
+        payload.get(octets);
         return new String(octets, charset);
     }
 

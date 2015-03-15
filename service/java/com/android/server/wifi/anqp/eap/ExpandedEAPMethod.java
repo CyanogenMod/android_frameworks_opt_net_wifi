@@ -16,11 +16,11 @@ public class ExpandedEAPMethod implements AuthParam {
     private final long m_vendorType;
 
     public ExpandedEAPMethod(EAP.AuthInfoID authInfoID, ByteBuffer payload) throws ProtocolException {
-        m_authInfoID = authInfoID;
         if (payload.remaining() != 7) {
             throw new ProtocolException("Bad length: " + payload.remaining());
         }
 
+        m_authInfoID = authInfoID;
         m_vendorID = (int) getInteger(payload, 3);
         m_vendorType = payload.getInt() & INT_MASK;
     }

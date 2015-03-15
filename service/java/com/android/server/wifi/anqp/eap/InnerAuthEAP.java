@@ -13,10 +13,14 @@ public class InnerAuthEAP implements AuthParam {
     private final EAP.EAPMethodID mEapMethodID;
 
     public InnerAuthEAP(ByteBuffer payload) throws ProtocolException {
-        if (payload.remaining() != 1) {
-            throw new ProtocolException("Bad length: " + payload.remaining());
+        if (payload.remaining() < 2) {
+            throw new ProtocolException("Runt payload: " + payload.remaining());
         }
 
+        int length = payload.get() & BYTE_MASK;
+        if (length != 1) {
+            throw new ProtocolException("Bad length: " + length);
+        }
         int typeID = payload.get() & BYTE_MASK;
         mEapMethodID = EAP.mapEAPMethod(typeID);
     }
@@ -32,7 +36,7 @@ public class InnerAuthEAP implements AuthParam {
 
     @Override
     public int hashCode() {
-        return mEapMethodID.hashCode();
+        return mEapMethodID != null ? mEapMethodID.hashCode() : 0;
     }
 
     @Override
