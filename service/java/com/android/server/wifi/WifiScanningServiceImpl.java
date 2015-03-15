@@ -126,17 +126,21 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     return;
             }
 
-            ClientInfo ci = mClients.get(msg.replyTo);
-            if (ci == null) {
-                Slog.e(TAG, "Could not find client info for message " + msg.replyTo);
-                replyFailed(msg, WifiScanner.REASON_INVALID_LISTENER, "Could not find listener");
-                return;
-            }
-
             try {
                 enforceConnectivityInternalPermission();
             } catch (SecurityException e) {
                 replyFailed(msg, WifiScanner.REASON_NOT_AUTHORIZED, "Not authorized");
+                return;
+            }
+
+            if (msg.what == WifiScanner.CMD_GET_SCAN_RESULTS) {
+                mStateMachine.sendMessage(Message.obtain(msg));
+                return;
+            }
+            ClientInfo ci = mClients.get(msg.replyTo);
+            if (ci == null) {
+                Slog.e(TAG, "Could not find client info for message " + msg.replyTo);
+                replyFailed(msg, WifiScanner.REASON_INVALID_LISTENER, "Could not find listener");
                 return;
             }
 
@@ -319,6 +323,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case WifiScanner.CMD_CONFIGURE_WIFI_CHANGE:
                     case WifiScanner.CMD_START_TRACKING_CHANGE:
                     case WifiScanner.CMD_STOP_TRACKING_CHANGE:
+                    case WifiScanner.CMD_GET_SCAN_RESULTS:
                         replyFailed(msg, WifiScanner.REASON_UNSPECIFIED, "not available");
                         break;
 
@@ -369,6 +374,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case WifiScanner.CMD_STOP_BACKGROUND_SCAN:
                         removeScanRequest(ci, msg.arg2);
                         break;
+                    case WifiScanner.CMD_GET_SCAN_RESULTS:
+                        reportScanResults();
+                        replySucceeded(msg);
+                        break;
                     case WifiScanner.CMD_START_SINGLE_SCAN:
                         if (addSingleScanRequest(ci, msg.arg2, (ScanSettings) msg.obj)) {
                             replySucceeded(msg);
@@ -382,10 +391,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case CMD_STOP_SCAN_INTERNAL:
                         Log.d(TAG, "Removing single shot scan");
                         removeScanRequest((ClientInfo) msg.obj, msg.arg2);
-                        break;
-                    case WifiScanner.CMD_GET_SCAN_RESULTS:
-                        reportScanResults(ci);
-                        replySucceeded(msg);
                         break;
                     case WifiScanner.CMD_SET_HOTLIST:
                         setHotlist(ci, msg.arg2, (WifiScanner.HotlistSettings) msg.obj);
@@ -1150,7 +1155,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         resetBuckets();
     }
 
-    boolean reportScanResults(ClientInfo ci) {
+    boolean reportScanResults() {
         WifiScanner.ScanData results[] = WifiNative.getScanResults(/* flush = */ true);
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci2 : clients) {
