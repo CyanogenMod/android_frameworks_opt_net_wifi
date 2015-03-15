@@ -17,18 +17,24 @@ import java.util.Map;
 import static com.android.server.wifi.anqp.Constants.BYTES_IN_EUI48;
 import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 import static com.android.server.wifi.anqp.Constants.getInteger;
-
+import android.util.Log;
 public class NetworkDetail {
 
     private static final int EID_SSID = 0;
     private static final int EID_BSSLoad = 11;
+    private static final int EID_HT_OPERATION = 61;
+    private static final int EID_VHT_OPERATION = 192;
     private static final int EID_Interworking = 107;
     private static final int EID_RoamingConsortium = 111;
     private static final int EID_ExtendedCaps = 127;
     private static final int EID_VSA = 221;
     private static final int ANQP_DOMID_BIT = 0x04;
+    private static final int RTT_RESP_ENABLE_BIT = 70;
 
     private static final long SSID_UTF8_BIT = 0x0001000000000000L;
+    //turn off when SHIP
+    private static final boolean DBG = true;
+    private static final String TAG = "NetworkDetail:";
 
     public enum Ant {
         Private,
@@ -65,6 +71,19 @@ public class NetworkDetail {
     private final int mChannelUtilization;
     private final int mCapacity;
 
+    //channel detailed information
+   /*
+    * 0 -- 20 MHz
+    * 1 -- 40 MHz
+    * 2 -- 80 MHz
+    * 3 -- 160 MHz
+    * 4 -- 80 + 80 MHz
+    */
+    private final int mChannelWidth;
+    private final int mPrimaryFreq;
+    private final int mCenterfreq0;
+    private final int mCenterfreq1;
+    private final boolean m80211McRTTResponder;
     /*
      * From Interworking element:
      * mAnt non null indicates the presence of Interworking, i.e. 802.11u
@@ -96,7 +115,7 @@ public class NetworkDetail {
 
     private final Map<Constants.ANQPElementType, ANQPElement> mANQPElements;
 
-    public NetworkDetail(String bssid, String infoElements, List<String> anqpLines) {
+    public NetworkDetail(String bssid, String infoElements, List<String> anqpLines, int freq) {
 
         if (infoElements == null) {
             throw new IllegalArgumentException("Null information element string");
@@ -131,11 +150,19 @@ public class NetworkDetail {
 
         Long extendedCapabilities = null;
 
+        int secondChanelOffset = 0;
+        int channelMode = 0;
+        int centerFreqIndex1 = 0;
+        int centerFreqIndex2 = 0;
+        boolean RTTResponder = false;
+
+        Log.e(TAG,"IE Length is %d" + data.remaining());
         while (data.hasRemaining()) {
             int eid = data.get() & Constants.BYTE_MASK;
             int elementLength = data.get() & Constants.BYTE_MASK;
+            Log.e(TAG,"eid is:" + eid + " elementLength:" +  elementLength);
             if (elementLength > data.remaining()) {
-                throw new IllegalArgumentException("Length out of bounds: " + elementLength);
+                throw new IllegalArgumentException("Length out of bounds: " + elementLength +" ," + data.remaining());
             }
 
             switch (eid) {
@@ -151,6 +178,26 @@ public class NetworkDetail {
                     stationCount = data.getShort() & Constants.SHORT_MASK;
                     channelUtilization = data.get() & Constants.BYTE_MASK;
                     capacity = data.getShort() & Constants.SHORT_MASK;
+                    break;
+                case EID_HT_OPERATION:
+                    int primary_channel = data.get();
+                    byte tmp = data.get();
+                    secondChanelOffset = tmp & 0x3;
+                    data.position(data.position() + elementLength - 2);
+                    if(DBG) {
+                        Log.d(TAG, "primary_channel: " + primary_channel + " secondChanelOffset:"
+                                + tmp);
+                    }
+                    break;
+                case EID_VHT_OPERATION:
+                    channelMode = data.get() & Constants.BYTE_MASK;
+                    centerFreqIndex1 = data.get() & Constants.BYTE_MASK;
+                    centerFreqIndex2 = data.get() & Constants.BYTE_MASK;
+                    data.position(data.position() + elementLength - 3);
+                    if(DBG) {
+                        Log.d(TAG, "channelMode :" + channelMode + " centerFreqIndex1: " +
+                                centerFreqIndex1 + " centerFreqIndex2: " + centerFreqIndex1);
+                    }
                     break;
                 case EID_Interworking:
                     int anOptions = data.get() & Constants.BYTE_MASK;
@@ -230,8 +277,30 @@ public class NetworkDetail {
                     }
                     break;
                 case EID_ExtendedCaps:
+                    int position = data.position();
                     extendedCapabilities =
-                            Constants.getInteger(data, ByteOrder.LITTLE_ENDIAN, elementLength);
+-                           Constants.getInteger(data, ByteOrder.LITTLE_ENDIAN, elementLength);
+
+                    //recover
+                    data.position(position);
+                    int index = RTT_RESP_ENABLE_BIT / 8;
+                    byte offset = RTT_RESP_ENABLE_BIT % 8;
+
+                    if(elementLength < index + 1) {
+                        RTTResponder = false;
+                        data.position(data.position() + elementLength);
+                        break;
+                    }
+
+                    data.position(data.position() + index);
+                    elementLength -= index;
+
+                    if ((data.get() & (0x1 << offset)) != 0) {
+                        RTTResponder =  true;
+                    } else {
+                        RTTResponder = false;
+                    }
+                    data.position(data.position()+ elementLength - 1);
                     break;
                 default:
                     data.position(data.position()+elementLength);
@@ -265,6 +334,42 @@ public class NetworkDetail {
         mRoamingConsortiums = roamingConsortiums;
         mExtendedCapabilities = extendedCapabilities;
         mANQPElements = SupplicantBridge.parseANQPLines(anqpLines);
+        //set up channel info
+        mPrimaryFreq = freq;
+
+        if (channelMode != 0) {
+            // 80 or 160 MHz
+            mChannelWidth = channelMode + 1;
+            mCenterfreq0 = (centerFreqIndex1 - 36) * 5 + 5180;
+            if(channelMode > 1) { //160MHz
+                mCenterfreq1 = (centerFreqIndex2 - 36) * 5 + 5180;
+            } else {
+                mCenterfreq1 = 0;
+            }
+        } else {
+            //20 or 40 MHz
+            if (secondChanelOffset != 0) {//40MHz
+                mChannelWidth = 1;
+                if (secondChanelOffset == 1) {
+                    mCenterfreq0 = mPrimaryFreq + 20;
+                } else if (secondChanelOffset == 3) {
+                    mCenterfreq0 = mPrimaryFreq - 20;
+                } else {
+                    mCenterfreq0 = 0;
+                    Log.e(TAG,"Error on secondChanelOffset");
+                }
+            } else {
+                mCenterfreq0 = 0;
+                mChannelWidth = 0;
+            }
+            mCenterfreq1 = 0;
+        }
+        m80211McRTTResponder = RTTResponder;
+        if(DBG) {
+            Log.d(TAG, mSSID + "ChannelWidth is: " + mChannelWidth + " PrimaryFreq: " + mPrimaryFreq +
+                    " mCenterfreq0: " + mCenterfreq0 + " mCenterfreq1: " + mCenterfreq1 +
+                    (m80211McRTTResponder ? "Support RTT reponder" : "Do not support RTT responder"));
+        }
     }
 
     private NetworkDetail(NetworkDetail base, Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
@@ -284,6 +389,11 @@ public class NetworkDetail {
         mRoamingConsortiums = base.mRoamingConsortiums;
         mExtendedCapabilities = base.mExtendedCapabilities;
         mANQPElements = anqpElements;
+        mChannelWidth = base.mChannelWidth;
+        mPrimaryFreq = base.mPrimaryFreq;
+        mCenterfreq0 = base.mCenterfreq0;
+        mCenterfreq1 = base.mCenterfreq1;
+        m80211McRTTResponder = base.m80211McRTTResponder;
     }
 
     public NetworkDetail complete(Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
@@ -383,6 +493,22 @@ public class NetworkDetail {
         return mANQPElements;
     }
 
+    public int getChannelWidth() {
+        return mChannelWidth;
+    }
+
+    public int getCenterfreq0() {
+        return mCenterfreq0;
+    }
+
+    public int getCenterfreq1() {
+        return mCenterfreq1;
+    }
+
+    public boolean is80211McResponderSupport() {
+        return m80211McRTTResponder;
+    }
+
     public boolean isSSID_UTF8() {
         return mExtendedCapabilities != null && (mExtendedCapabilities & SSID_UTF8_BIT) != 0;
     }
@@ -453,7 +579,7 @@ public class NetworkDetail {
         ScanResult scanResult = new ScanResult();
         scanResult.SSID = "wing";
         scanResult.BSSID = "610408";
-        NetworkDetail nwkDetail = new NetworkDetail(scanResult.BSSID, IE2, null);
+        NetworkDetail nwkDetail = new NetworkDetail(scanResult.BSSID, IE2, null, 0);
         System.out.println(nwkDetail);
     }
 }

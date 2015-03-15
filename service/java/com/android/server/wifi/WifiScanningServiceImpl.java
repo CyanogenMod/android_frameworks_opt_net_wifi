@@ -645,7 +645,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     if (channelSpec.frequency == result.frequency) {
                         WifiSsid wifiSsid = WifiSsid.createFromAsciiEncoded(result.SSID);
                         ScanResult newResult = new ScanResult(wifiSsid, result.BSSID, "",
-                                result.level, result.frequency, result.timestamp);
+                                result.level, result.frequency, result.timestamp,
+                                ScanResult.UNSPECIFIED, ScanResult.UNSPECIFIED,result.channelWidth,
+                                result.centerFreq0, result.centerFreq1,
+                                result.is80211McRTTResponder);
                         if (DBG) Log.d(TAG, "sending it to " + handler);
                         newResult.informationElements = result.informationElements.clone();
                         mChannel.sendMessage(

@@ -26,6 +26,10 @@ public class ScanDetail {
         mNetworkDetail = networkDetail;
         mScanResult = new ScanResult(wifiSsid, BSSID, caps, level, frequency, tsf );
         mScanResult.seen = System.currentTimeMillis();
+        mScanResult.channelWidth = networkDetail.getChannelWidth();
+        mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
+        mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
+        mScanResult.is80211McRTTResponder = networkDetail.is80211McResponderSupport();
         mMatches = null;
     }
 
@@ -40,7 +44,7 @@ public class ScanDetail {
         return new ScanDetail(mScanResult, mNetworkDetail, matches);
     }
 
-    public void updateResults(int level, WifiSsid wssid, String ssid,
+    public void updateResults(NetworkDetail networkDetail, int level, WifiSsid wssid, String ssid,
                               String flags, int freq, long tsf) {
         mScanResult.level = level;
         mScanResult.wifiSsid = wssid;
@@ -50,6 +54,10 @@ public class ScanDetail {
         mScanResult.frequency = freq;
         mScanResult.timestamp = tsf;
         mScanResult.seen = System.currentTimeMillis();
+        mScanResult.channelWidth = networkDetail.getChannelWidth();
+        mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
+        mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
+        mScanResult.is80211McRTTResponder = networkDetail.is80211McResponderSupport();
     }
 
     public void propagateANQPInfo(Map<Constants.ANQPElementType, ANQPElement> anqpElements) {

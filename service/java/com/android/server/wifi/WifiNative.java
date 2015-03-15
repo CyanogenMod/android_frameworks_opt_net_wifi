@@ -66,6 +66,10 @@ public class WifiNative {
 
     private boolean mSuspendOptEnabled = false;
 
+    private static final int EID_HT_OPERATION = 61;
+    private static final int EID_VHT_OPERATION = 192;
+    private static final int EID_EXTENDED_CAPS = 127;
+    private static final int RTT_RESP_ENABLE_BIT = 70;
     /* Register native functions */
 
     static {
@@ -1341,6 +1345,12 @@ public class WifiNative {
                     "next = " + i);
         }
 
+        int secondChanelOffset = 0;
+        byte channelMode = 0;
+        byte centerFreqIndex1 = 0;
+        byte centerFreqIndex2 = 0;
+        result.is80211McRTTResponder = false;
+
         ScanResult.InformationElement elements[] = new ScanResult.InformationElement[num];
         for (int i = 0, index = 0; i < num; i++) {
             int type  = bytes[index] & 0xFF;
@@ -1353,7 +1363,66 @@ public class WifiNative {
                 elem.bytes[j] = bytes[index + j + 2];
             }
             elements[i] = elem;
+            int inforStart = index + 2;
             index += (len + 2);
+
+            if(type == EID_HT_OPERATION) {
+                secondChanelOffset = bytes[inforStart + 1] & 0x3;
+            } else if(type == EID_VHT_OPERATION) {
+                channelMode = bytes[inforStart];
+                centerFreqIndex1 = bytes[inforStart + 1];
+                centerFreqIndex2 = bytes[inforStart + 2];
+            } else if (type == EID_EXTENDED_CAPS) {
+                 int tempIndex = RTT_RESP_ENABLE_BIT / 8;
+                 byte offset = RTT_RESP_ENABLE_BIT % 8;
+
+                 if(len < tempIndex + 1) {
+                     result.is80211McRTTResponder = false;
+                 } else {
+                     if ((bytes[inforStart + tempIndex] & ((byte)0x1 << offset)) != 0) {
+                         result.is80211McRTTResponder = true;
+                     } else {
+                         result.is80211McRTTResponder = false;
+                     }
+                 }
+            }
+        }
+        //handle RTT related information
+        if (channelMode != 0) {
+            // 80 or 160 MHz
+            result.channelWidth = channelMode + 1;
+
+            //convert channel index to frequency in MHz, channel 36 is 5180MHz
+            result.centerFreq0 = (centerFreqIndex1 - 36) * 5 + 5180;
+
+            if(channelMode > 1) { //160MHz
+                result.centerFreq1 = (centerFreqIndex2 - 36) * 5 + 5180;
+            } else {
+                result.centerFreq1 = 0;
+            }
+        } else {
+            //20 or 40 MHz
+            if (secondChanelOffset != 0) {//40MHz
+                result.channelWidth = 1;
+                if (secondChanelOffset == 1) {
+                    result.centerFreq0 = result.frequency + 20;
+                } else if (secondChanelOffset == 3) {
+                    result.centerFreq0 = result.frequency - 20;
+                } else {
+                    result.centerFreq0 = 0;
+                    Log.e(TAG, ": Error on secondChanelOffset");
+                }
+            } else {
+                result.centerFreq0  = 0;
+                result.centerFreq1  = 0;
+            }
+            result.centerFreq1  = 0;
+        }
+        if(DBG) {
+            Log.d(TAG, ":SSID: " + result.SSID + "ChannelWidth is: " + result.channelWidth +
+                    " PrimaryFreq: " + result.frequency +" mCenterfreq0: " + result.centerFreq0 +
+                    " mCenterfreq1: " + result.centerFreq1 + (result.is80211McRTTResponder ?
+                    "Support RTT reponder: " : "Do not support RTT responder"));
         }
 
         result.informationElements = elements;
