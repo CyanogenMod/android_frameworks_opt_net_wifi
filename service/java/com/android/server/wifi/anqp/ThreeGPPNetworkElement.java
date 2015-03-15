@@ -45,7 +45,7 @@ public class ThreeGPPNetworkElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "ThreeGPPNetworkElement{" +
+        return "ThreeGPPNetwork{" +
                 "mUserData=" + mUserData +
                 ", mPlmns=" + mPlmns +
                 '}';

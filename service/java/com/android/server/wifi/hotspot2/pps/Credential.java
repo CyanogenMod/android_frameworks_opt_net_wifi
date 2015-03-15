@@ -6,11 +6,15 @@ import android.util.Base64;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.anqp.eap.InnerAuthEAP;
+import com.android.server.wifi.anqp.eap.AuthParam;
 import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.OMAException;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 public class Credential {
     public enum CertType {IEEE, x509v3}
@@ -166,6 +170,14 @@ public class Credential {
 
     public String getImsi() {
         return mImsi;
+    }
+
+    public String getUserName() {
+        return mUserName;
+    }
+
+    public String getPassword() {
+        return mPassword;
     }
 
     @Override

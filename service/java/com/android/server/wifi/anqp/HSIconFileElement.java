@@ -51,7 +51,7 @@ public class HSIconFileElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "HSIconFileElement{" +
+        return "HSIconFile{" +
                 "mStatusCode=" + mStatusCode +
                 ", mType='" + mType + '\'' +
                 ", mIconData=" + mIconData.length + " bytes }";

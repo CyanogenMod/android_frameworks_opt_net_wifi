@@ -43,7 +43,7 @@ public class NAIRealmElement extends ANQPElement {
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("NAI Realm Element:\n");
+        sb.append("NAI Realm:\n");
         for (NAIRealmData data : mRealmData) {
             sb.append(data);
         }

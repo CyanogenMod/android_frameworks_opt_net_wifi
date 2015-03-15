@@ -72,7 +72,7 @@ public class HSConnectionCapabilityElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "HSConnectionCapabilityElement{" +
+        return "HSConnectionCapability{" +
                 "mStatusList=" + mStatusList +
                 '}';
     }

@@ -5,15 +5,12 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-/**
- * Created by jannq on 1/12/15.
- */
 public class OMAConstructed extends OMANode {
     private final Map<String, OMANode> m_children;
 
     public OMAConstructed(OMANode parent, String name, String context) {
         super(parent, name, context);
-        m_children = new HashMap<String, OMANode>();
+        m_children = new HashMap<>();
     }
 
     @Override

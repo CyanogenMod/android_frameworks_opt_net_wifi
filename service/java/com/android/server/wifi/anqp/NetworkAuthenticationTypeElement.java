@@ -72,4 +72,11 @@ public class NetworkAuthenticationTypeElement extends ANQPElement {
     public List<NetworkAuthentication> getAuthenticationTypes() {
         return Collections.unmodifiableList(m_authenticationTypes);
     }
+
+    @Override
+    public String toString() {
+        return "NetworkAuthenticationType{" +
+                "m_authenticationTypes=" + m_authenticationTypes +
+                '}';
+    }
 }

@@ -5,6 +5,7 @@ import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.anqp.eap.ExpandedEAPMethod;
 import com.android.server.wifi.anqp.eap.InnerAuthEAP;
 import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
+import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
@@ -12,11 +13,9 @@ import org.xml.sax.SAXException;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.DateFormat;
@@ -42,7 +41,7 @@ public class MOManager {
 
     public MOManager(File ppsFile) throws IOException {
         mPpsFile = ppsFile;
-        mSPs = new HashMap<String, HomeSP>();
+        mSPs = new HashMap<>();
     }
 
     public File getPpsFile() {
@@ -274,14 +273,13 @@ public class MOManager {
             }
         }
 
-        Map<String, String> ssids = new HashMap<String, String>();
+        Map<String, Long> ssids = new HashMap<String, Long>();
 
         OMANode ssidListNode = spRoot.getListValue(Arrays.asList(TAG_NetworkID).iterator());
         if (ssidListNode != null) {
             for (OMANode ssidRoot : ssidListNode.getChildren()) {
                 OMANode hessidNode = ssidRoot.getChild(TAG_HESSID);
-                ssids.put(ssidRoot.getChild(TAG_SSID).getValue(),
-                        hessidNode != null ? hessidNode.getValue() : null);
+                ssids.put(ssidRoot.getChild(TAG_SSID).getValue(), getMac(hessidNode));
             }
         }
 
@@ -382,13 +380,18 @@ public class MOManager {
                     password, machineManaged, softTokenApp, ableToShare);
         }
         if (certNode != null) {
-            String certTypeString = getString(certNode.getChild(TAG_CertificateType));
-            byte[] fingerPrint = getOctets(certNode.getChild(TAG_CertSHA256Fingerprint));
+            try {
+                String certTypeString = getString(certNode.getChild(TAG_CertificateType));
+                byte[] fingerPrint = getOctets(certNode.getChild(TAG_CertSHA256Fingerprint));
 
-            EAPMethod eapMethod = new EAPMethod(EAP.EAPMethodID.EAP_TLS, null);
+                EAPMethod eapMethod = new EAPMethod(EAP.EAPMethodID.EAP_TLS, null);
 
-            return new Credential(ctime, expTime, realm, checkAAACert, eapMethod,
-                    Credential.mapCertType(certTypeString), fingerPrint);
+                return new Credential(ctime, expTime, realm, checkAAACert, eapMethod,
+                        Credential.mapCertType(certTypeString), fingerPrint);
+            }
+            catch (NumberFormatException nfe) {
+                throw new OMAException("Bad hex string: " + nfe.toString());
+            }
         }
         if (simNode != null) {
 
@@ -421,6 +424,17 @@ public class MOManager {
         }
     }
 
+    private static Long getMac(OMANode macNode) throws OMAException {
+        if (macNode == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(macNode.getValue(), 16);
+        } catch (NumberFormatException nfe) {
+            throw new OMAException("Invalid MAC: " + macNode.getValue());
+        }
+    }
+
     private static Long getOptionalInteger(OMANode intNode) throws OMAException {
         if (intNode == null) {
             return null;
@@ -449,28 +463,6 @@ public class MOManager {
         if (octetNode == null) {
             throw new OMAException("Missing byte value");
         }
-        String text = octetNode.getValue();
-        if ((text.length() & 1) == 1) {
-            throw new OMAException("Odd length octet value: " + text);
-        }
-        byte[] octets = new byte[text.length() / 2];
-        for (int n = 0; n < octets.length; n++) {
-            octets[n] = (byte) (fromHex(text.charAt(n * 2)) << Byte.SIZE |
-                    fromHex(text.charAt(n * 2 + 1)));
-        }
-        return octets;
+        return Utils.hexToBytes(octetNode.getValue());
     }
-
-    private static int fromHex(char ch) throws OMAException {
-        if (ch <= '9' && ch >= '0') {
-            return ch - '0';
-        } else if (ch >= 'a' && ch <= 'f') {
-            return ch + 10 - 'a';
-        } else if (ch <= 'F' && ch >= 'A') {
-            return ch + 10 - 'A';
-        } else {
-            throw new OMAException("Bad hex-character: " + ch);
-        }
-    }
-
 }

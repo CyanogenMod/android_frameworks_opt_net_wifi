@@ -35,7 +35,7 @@ public class HSCapabilityListElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "HSCapabilityListElement{" +
+        return "HSCapabilityList{" +
                 "mCapabilities=" + Arrays.toString(mCapabilities) +
                 '}';
     }

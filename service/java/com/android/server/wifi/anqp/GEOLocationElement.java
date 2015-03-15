@@ -173,7 +173,7 @@ public class GEOLocationElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "GEOLocationElement{" +
+        return "GEOLocation{" +
                 "mLatitude=" + mLatitude +
                 ", mLongitude=" + mLongitude +
                 ", mAltitude=" + mAltitude +

@@ -29,7 +29,7 @@ public class EmergencyNumberElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "EmergencyNumberElement{" +
+        return "EmergencyNumber{" +
                 "mNumbers=" + mNumbers +
                 '}';
     }

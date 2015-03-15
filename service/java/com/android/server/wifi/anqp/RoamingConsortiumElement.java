@@ -4,12 +4,13 @@ import com.android.server.wifi.hotspot2.Utils;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
-import static com.android.server.wifi.anqp.Constants.getLEInteger;
+import static com.android.server.wifi.anqp.Constants.getInteger;
 
 /**
  * The Roaming Consortium ANQP Element, IEEE802.11-2012 section 8.4.4.7
@@ -29,7 +30,7 @@ public class RoamingConsortiumElement extends ANQPElement {
             if (length > payload.remaining()) {
                 throw new ProtocolException("Bad OI length: " + length);
             }
-            mOis.add(getLEInteger(payload, length));
+            mOis.add(getInteger(payload, ByteOrder.BIG_ENDIAN, length));
         }
     }
 
@@ -39,6 +40,6 @@ public class RoamingConsortiumElement extends ANQPElement {
 
     @Override
     public String toString() {
-        return "RoamingConsortiumElement{mOis=[" + Utils.roamingConsortiumsToString(mOis) + "]}";
+        return "RoamingConsortium{mOis=[" + Utils.roamingConsortiumsToString(mOis) + "]}";
     }
 }
