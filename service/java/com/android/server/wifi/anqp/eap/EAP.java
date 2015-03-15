@@ -8,7 +8,8 @@ import java.util.Map;
  */
 public abstract class EAP {
 
-    private static final Map<Integer, EAPMethodID> s_eapIds = new HashMap<Integer, EAPMethodID>();
+    private static final Map<Integer, EAPMethodID> sEapIds = new HashMap<Integer, EAPMethodID>();
+    private static final Map<Integer, AuthInfoID> sAuthIds = new HashMap<Integer, AuthInfoID>();
 
     public static final int EAP_MD5 = 4;
     public static final int EAP_OTP = 5;
@@ -94,39 +95,50 @@ public abstract class EAP {
     }
 
     static {
-        s_eapIds.put(EAP_MD5, EAPMethodID.EAP_MD5);
-        s_eapIds.put(EAP_OTP, EAPMethodID.EAP_OTP);
-        s_eapIds.put(EAP_RSA, EAPMethodID.EAP_RSA);
-        s_eapIds.put(EAP_KEA, EAPMethodID.EAP_KEA);
-        s_eapIds.put(EAP_KEA_VALIDATE, EAPMethodID.EAP_KEA_VALIDATE);
-        s_eapIds.put(EAP_TLS, EAPMethodID.EAP_TLS);
-        s_eapIds.put(EAP_LEAP, EAPMethodID.EAP_LEAP);
-        s_eapIds.put(EAP_SIM, EAPMethodID.EAP_SIM);
-        s_eapIds.put(EAP_TTLS, EAPMethodID.EAP_TTLS);
-        s_eapIds.put(EAP_AKA, EAPMethodID.EAP_AKA);
-        s_eapIds.put(EAP_3Com, EAPMethodID.EAP_3Com);
-        s_eapIds.put(EAP_MSCHAPv2, EAPMethodID.EAP_MSCHAPv2);
-        s_eapIds.put(EAP_PEAP, EAPMethodID.EAP_PEAP);
-        s_eapIds.put(EAP_POTP, EAPMethodID.EAP_POTP);
-        s_eapIds.put(EAP_ActiontecWireless, EAPMethodID.EAP_ActiontecWireless);
-        s_eapIds.put(EAP_HTTPDigest, EAPMethodID.EAP_HTTPDigest);
-        s_eapIds.put(EAP_SPEKE, EAPMethodID.EAP_SPEKE);
-        s_eapIds.put(EAP_MOBAC, EAPMethodID.EAP_MOBAC);
-        s_eapIds.put(EAP_FAST, EAPMethodID.EAP_FAST);
-        s_eapIds.put(EAP_ZLXEAP, EAPMethodID.EAP_ZLXEAP);
-        s_eapIds.put(EAP_Link, EAPMethodID.EAP_Link);
-        s_eapIds.put(EAP_PAX, EAPMethodID.EAP_PAX);
-        s_eapIds.put(EAP_PSK, EAPMethodID.EAP_PSK);
-        s_eapIds.put(EAP_SAKE, EAPMethodID.EAP_SAKE);
-        s_eapIds.put(EAP_IKEv2, EAPMethodID.EAP_IKEv2);
-        s_eapIds.put(EAP_AKAPrim, EAPMethodID.EAP_AKAPrim);
-        s_eapIds.put(EAP_GPSK, EAPMethodID.EAP_GPSK);
-        s_eapIds.put(EAP_PWD, EAPMethodID.EAP_PWD);
-        s_eapIds.put(EAP_EKE, EAPMethodID.EAP_EKE);
-        s_eapIds.put(EAP_TEAP, EAPMethodID.EAP_TEAP);
+        sEapIds.put(EAP_MD5, EAPMethodID.EAP_MD5);
+        sEapIds.put(EAP_OTP, EAPMethodID.EAP_OTP);
+        sEapIds.put(EAP_RSA, EAPMethodID.EAP_RSA);
+        sEapIds.put(EAP_KEA, EAPMethodID.EAP_KEA);
+        sEapIds.put(EAP_KEA_VALIDATE, EAPMethodID.EAP_KEA_VALIDATE);
+        sEapIds.put(EAP_TLS, EAPMethodID.EAP_TLS);
+        sEapIds.put(EAP_LEAP, EAPMethodID.EAP_LEAP);
+        sEapIds.put(EAP_SIM, EAPMethodID.EAP_SIM);
+        sEapIds.put(EAP_TTLS, EAPMethodID.EAP_TTLS);
+        sEapIds.put(EAP_AKA, EAPMethodID.EAP_AKA);
+        sEapIds.put(EAP_3Com, EAPMethodID.EAP_3Com);
+        sEapIds.put(EAP_MSCHAPv2, EAPMethodID.EAP_MSCHAPv2);
+        sEapIds.put(EAP_PEAP, EAPMethodID.EAP_PEAP);
+        sEapIds.put(EAP_POTP, EAPMethodID.EAP_POTP);
+        sEapIds.put(EAP_ActiontecWireless, EAPMethodID.EAP_ActiontecWireless);
+        sEapIds.put(EAP_HTTPDigest, EAPMethodID.EAP_HTTPDigest);
+        sEapIds.put(EAP_SPEKE, EAPMethodID.EAP_SPEKE);
+        sEapIds.put(EAP_MOBAC, EAPMethodID.EAP_MOBAC);
+        sEapIds.put(EAP_FAST, EAPMethodID.EAP_FAST);
+        sEapIds.put(EAP_ZLXEAP, EAPMethodID.EAP_ZLXEAP);
+        sEapIds.put(EAP_Link, EAPMethodID.EAP_Link);
+        sEapIds.put(EAP_PAX, EAPMethodID.EAP_PAX);
+        sEapIds.put(EAP_PSK, EAPMethodID.EAP_PSK);
+        sEapIds.put(EAP_SAKE, EAPMethodID.EAP_SAKE);
+        sEapIds.put(EAP_IKEv2, EAPMethodID.EAP_IKEv2);
+        sEapIds.put(EAP_AKAPrim, EAPMethodID.EAP_AKAPrim);
+        sEapIds.put(EAP_GPSK, EAPMethodID.EAP_GPSK);
+        sEapIds.put(EAP_PWD, EAPMethodID.EAP_PWD);
+        sEapIds.put(EAP_EKE, EAPMethodID.EAP_EKE);
+        sEapIds.put(EAP_TEAP, EAPMethodID.EAP_TEAP);
+
+        sAuthIds.put(ExpandedEAPMethod, AuthInfoID.ExpandedEAPMethod);
+        sAuthIds.put(NonEAPInnerAuthType, AuthInfoID.NonEAPInnerAuthType);
+        sAuthIds.put(InnerAuthEAPMethodType, AuthInfoID.InnerAuthEAPMethodType);
+        sAuthIds.put(ExpandedInnerEAPMethod, AuthInfoID.ExpandedInnerEAPMethod);
+        sAuthIds.put(CredentialType, AuthInfoID.CredentialType);
+        sAuthIds.put(TunneledEAPMethodCredType, AuthInfoID.TunneledEAPMethodCredType);
+        sAuthIds.put(VendorSpecific, AuthInfoID.VendorSpecific);
     }
 
     public static EAPMethodID mapEAPMethod(int methodID) {
-        return s_eapIds.get(methodID);
+        return sEapIds.get(methodID);
+    }
+    public static AuthInfoID mapAuthMethod(int methodID) {
+        return sAuthIds.get(methodID);
     }
 }

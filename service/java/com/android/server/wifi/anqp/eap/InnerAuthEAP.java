@@ -12,12 +12,7 @@ public class InnerAuthEAP implements AuthParam {
 
     private final EAP.EAPMethodID mEapMethodID;
 
-    public InnerAuthEAP(ByteBuffer payload) throws ProtocolException {
-        if (payload.remaining() < 2) {
-            throw new ProtocolException("Runt payload: " + payload.remaining());
-        }
-
-        int length = payload.get() & BYTE_MASK;
+    public InnerAuthEAP(int length, ByteBuffer payload) throws ProtocolException {
         if (length != 1) {
             throw new ProtocolException("Bad length: " + length);
         }
