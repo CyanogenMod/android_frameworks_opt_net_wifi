@@ -1017,8 +1017,6 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls, jint 
 
     result = wifi_get_supported_feature_set(handle, &set);
     if (result == WIFI_SUCCESS) {
-        /* Temporary workaround for RTT capability */
-        set = set | WIFI_FEATURE_D2AP_RTT;
         ALOGD("wifi_get_supported_feature_set returned set = 0x%x", set);
         return set;
     } else {
