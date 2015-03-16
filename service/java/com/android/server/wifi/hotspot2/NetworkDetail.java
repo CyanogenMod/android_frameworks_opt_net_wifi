@@ -157,11 +157,10 @@ public class NetworkDetail {
         int centerFreqIndex2 = 0;
         boolean RTTResponder = false;
 
-        Log.e(TAG,"IE Length is %d" + data.remaining());
         while (data.hasRemaining()) {
             int eid = data.get() & Constants.BYTE_MASK;
             int elementLength = data.get() & Constants.BYTE_MASK;
-            Log.e(TAG,"eid is:" + eid + " elementLength:" +  elementLength);
+
             if (elementLength > data.remaining()) {
                 Log.e(TAG, "EID " + eid + " too long: " + elementLength + "/" + data.remaining() +
                       " data=" + infoElements.substring(separator + 1));
@@ -187,20 +186,12 @@ public class NetworkDetail {
                     byte tmp = data.get();
                     secondChanelOffset = tmp & 0x3;
                     data.position(data.position() + elementLength - 2);
-                    if(DBG) {
-                        Log.d(TAG, "primary_channel: " + primary_channel + " secondChanelOffset:"
-                                + tmp);
-                    }
                     break;
                 case EID_VHT_OPERATION:
                     channelMode = data.get() & Constants.BYTE_MASK;
                     centerFreqIndex1 = data.get() & Constants.BYTE_MASK;
                     centerFreqIndex2 = data.get() & Constants.BYTE_MASK;
                     data.position(data.position() + elementLength - 3);
-                    if(DBG) {
-                        Log.d(TAG, "channelMode :" + channelMode + " centerFreqIndex1: " +
-                                centerFreqIndex1 + " centerFreqIndex2: " + centerFreqIndex1);
-                    }
                     break;
                 case EID_Interworking:
                     int anOptions = data.get() & Constants.BYTE_MASK;
@@ -368,11 +359,6 @@ public class NetworkDetail {
             mCenterfreq1 = 0;
         }
         m80211McRTTResponder = RTTResponder;
-        if(DBG) {
-            Log.d(TAG, mSSID + "ChannelWidth is: " + mChannelWidth + " PrimaryFreq: " + mPrimaryFreq +
-                    " mCenterfreq0: " + mCenterfreq0 + " mCenterfreq1: " + mCenterfreq1 +
-                    (m80211McRTTResponder ? "Support RTT reponder" : "Do not support RTT responder"));
-        }
     }
 
     private NetworkDetail(NetworkDetail base, Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
