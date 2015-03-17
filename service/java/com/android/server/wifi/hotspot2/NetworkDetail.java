@@ -10,7 +10,10 @@ import com.android.server.wifi.anqp.VenueNameElement;
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +32,7 @@ public class NetworkDetail {
     private static final int EID_RoamingConsortium = 111;
     private static final int EID_ExtendedCaps = 127;
     private static final int EID_VSA = 221;
+
     private static final int ANQP_DOMID_BIT = 0x04;
     private static final int RTT_RESP_ENABLE_BIT = 70;
 
@@ -157,149 +161,156 @@ public class NetworkDetail {
         int centerFreqIndex2 = 0;
         boolean RTTResponder = false;
 
-        while (data.hasRemaining()) {
-            int eid = data.get() & Constants.BYTE_MASK;
-            int elementLength = data.get() & Constants.BYTE_MASK;
+        RuntimeException exception = null;
 
-            if (elementLength > data.remaining()) {
-                Log.e(TAG, "EID " + eid + " too long: " + elementLength + "/" + data.remaining() +
-                      " data=" + infoElements.substring(separator + 1));
-                break;
-            }
+        try {
+            while (data.hasRemaining()) {
+                int eid = data.get() & Constants.BYTE_MASK;
+                int elementLength = data.get() & Constants.BYTE_MASK;
 
-            switch (eid) {
-                case EID_SSID:
-                    ssidOctets = new byte[elementLength];
-                    data.get(ssidOctets);
-                    break;
-                case EID_BSSLoad:
-                    if (elementLength != 5) {
-                        throw new IllegalArgumentException("BSS Load element length is not 5: " +
-                                elementLength);
-                    }
-                    stationCount = data.getShort() & Constants.SHORT_MASK;
-                    channelUtilization = data.get() & Constants.BYTE_MASK;
-                    capacity = data.getShort() & Constants.SHORT_MASK;
-                    break;
-                case EID_HT_OPERATION:
-                    int primary_channel = data.get();
-                    byte tmp = data.get();
-                    secondChanelOffset = tmp & 0x3;
-                    data.position(data.position() + elementLength - 2);
-                    break;
-                case EID_VHT_OPERATION:
-                    channelMode = data.get() & Constants.BYTE_MASK;
-                    centerFreqIndex1 = data.get() & Constants.BYTE_MASK;
-                    centerFreqIndex2 = data.get() & Constants.BYTE_MASK;
-                    data.position(data.position() + elementLength - 3);
-                    break;
-                case EID_Interworking:
-                    int anOptions = data.get() & Constants.BYTE_MASK;
-                    ant = Ant.values()[anOptions&0x0f];
-                    internet = ( anOptions & 0x10 ) != 0;
-                    // Len 1 none, 3 venue-info, 7 HESSID, 9 venue-info & HESSID
-                    if (elementLength == 3 || elementLength == 9) {
-                        try {
-                            ByteBuffer vinfo = data.duplicate();
-                            vinfo.limit(vinfo.position() + 2);
-                            VenueNameElement vne =
-                                    new VenueNameElement(Constants.ANQPElementType.ANQPVenueName,
-                                            vinfo);
-                            venueGroup = vne.getGroup();
-                            venueType = vne.getType();
-                            data.getShort();
+                if (elementLength > data.remaining()) {
+                    throw new IllegalArgumentException("Element length " + elementLength +
+                            " exceeds payload length " + data.remaining() +
+                            " @ " + data.position());
+                }
+
+                ByteBuffer element;
+
+                switch (eid) {
+                    case EID_SSID:
+                        ssidOctets = new byte[elementLength];
+                        data.get(ssidOctets);
+                        break;
+                    case EID_BSSLoad:
+                        if (elementLength != 5) {
+                            throw new IllegalArgumentException("BSS Load element length is not 5: " +
+                                    elementLength);
                         }
-                        catch ( ProtocolException pe ) {
-                            /*Cannot happen*/
+                        stationCount = data.getShort() & Constants.SHORT_MASK;
+                        channelUtilization = data.get() & Constants.BYTE_MASK;
+                        capacity = data.getShort() & Constants.SHORT_MASK;
+                        break;
+                    case EID_HT_OPERATION:
+                        element = getAndAdvancePayload(data, elementLength);
+                        int primary_channel = element.get();
+                        secondChanelOffset = element.get() & 0x3;
+                        break;
+                    case EID_VHT_OPERATION:
+                        element = getAndAdvancePayload(data, elementLength);
+                        channelMode = element.get() & Constants.BYTE_MASK;
+                        centerFreqIndex1 = element.get() & Constants.BYTE_MASK;
+                        centerFreqIndex2 = element.get() & Constants.BYTE_MASK;
+                        break;
+                    case EID_Interworking:
+                        int anOptions = data.get() & Constants.BYTE_MASK;
+                        ant = Ant.values()[anOptions & 0x0f];
+                        internet = (anOptions & 0x10) != 0;
+                        // Len 1 none, 3 venue-info, 7 HESSID, 9 venue-info & HESSID
+                        if (elementLength == 3 || elementLength == 9) {
+                            try {
+                                ByteBuffer vinfo = data.duplicate();
+                                vinfo.limit(vinfo.position() + 2);
+                                VenueNameElement vne =
+                                        new VenueNameElement(Constants.ANQPElementType.ANQPVenueName,
+                                                vinfo);
+                                venueGroup = vne.getGroup();
+                                venueType = vne.getType();
+                                data.getShort();
+                            } catch (ProtocolException pe) {
+                                /*Cannot happen*/
+                            }
+                        } else if (elementLength != 1 && elementLength != 7) {
+                            throw new IllegalArgumentException("Bad Interworking element length: " +
+                                    elementLength);
                         }
-                    }
-                    if (elementLength == 7 || elementLength == 9) {
-                        hessid = getInteger(data, ByteOrder.BIG_ENDIAN, 6);
-                    }
-                    break;
-                case EID_RoamingConsortium:
-                    anqpOICount = data.get() & Constants.BYTE_MASK;
+                        if (elementLength == 7 || elementLength == 9) {
+                            hessid = getInteger(data, ByteOrder.BIG_ENDIAN, 6);
+                        }
+                        break;
+                    case EID_RoamingConsortium:
+                        anqpOICount = data.get() & Constants.BYTE_MASK;
 
-                    int oi12Length = data.get() & Constants.BYTE_MASK;
-                    int oi1Length = oi12Length & Constants.NIBBLE_MASK;
-                    int oi2Length = (oi12Length >>> 4) & Constants.NIBBLE_MASK;
-                    int oi3Length = elementLength - 2 - oi1Length - oi2Length;
-                    int oiCount = 0;
-                    if (oi1Length > 0) {
-                        oiCount++;
-                        if (oi2Length > 0) {
+                        int oi12Length = data.get() & Constants.BYTE_MASK;
+                        int oi1Length = oi12Length & Constants.NIBBLE_MASK;
+                        int oi2Length = (oi12Length >>> 4) & Constants.NIBBLE_MASK;
+                        int oi3Length = elementLength - 2 - oi1Length - oi2Length;
+                        int oiCount = 0;
+                        if (oi1Length > 0) {
                             oiCount++;
-                            if (oi3Length > 0) {
+                            if (oi2Length > 0) {
                                 oiCount++;
+                                if (oi3Length > 0) {
+                                    oiCount++;
+                                }
                             }
                         }
-                    }
-                    roamingConsortiums = new long[oiCount];
-                    if (oi1Length > 0 ) {
-                        roamingConsortiums[0] = getInteger(data, ByteOrder.BIG_ENDIAN, oi1Length);
-                    }
-                    if (oi2Length > 0 ) {
-                        roamingConsortiums[1] = getInteger(data, ByteOrder.BIG_ENDIAN, oi2Length);
-                    }
-                    if (oi3Length > 0 ) {
-                        roamingConsortiums[2] = getInteger(data, ByteOrder.BIG_ENDIAN, oi3Length);
-                    }
-                    break;
-                case EID_VSA:
-                    if (elementLength < 5) {
-                        data.position(data.position() + elementLength);
-                    }
-                    else if (data.getInt() != Constants.HS20_FRAME_PREFIX) {
-                        data.position(data.position() + elementLength - Constants.BYTES_IN_INT);
-                    }
-                    else {
-                        int hsConf = data.get() & Constants.BYTE_MASK;
-                        switch ((hsConf>>4) & Constants.NIBBLE_MASK) {
-                            case 0:
-                                hsRelease = HSRelease.R1;
-                                break;
-                            case 1:
-                                hsRelease = HSRelease.R2;
-                                break;
-                            default:
-                                hsRelease = HSRelease.Unknown;
-                                break;
+                        roamingConsortiums = new long[oiCount];
+                        if (oi1Length > 0) {
+                            roamingConsortiums[0] =
+                                    getInteger(data, ByteOrder.BIG_ENDIAN, oi1Length);
                         }
-                        if ((hsConf & ANQP_DOMID_BIT) != 0) {
-                            anqpDomainID = data.getShort() & Constants.SHORT_MASK;
+                        if (oi2Length > 0) {
+                            roamingConsortiums[1] =
+                                    getInteger(data, ByteOrder.BIG_ENDIAN, oi2Length);
                         }
-                    }
-                    break;
-                case EID_ExtendedCaps:
-                    int position = data.position();
-                    extendedCapabilities =
--                           Constants.getInteger(data, ByteOrder.LITTLE_ENDIAN, elementLength);
+                        if (oi3Length > 0) {
+                            roamingConsortiums[2] =
+                                    getInteger(data, ByteOrder.BIG_ENDIAN, oi3Length);
+                        }
+                        break;
+                    case EID_VSA:
+                        element = getAndAdvancePayload(data, elementLength);
+                        if (elementLength >= 5 && element.getInt() == Constants.HS20_FRAME_PREFIX) {
+                            int hsConf = element.get() & Constants.BYTE_MASK;
+                            switch ((hsConf >> 4) & Constants.NIBBLE_MASK) {
+                                case 0:
+                                    hsRelease = HSRelease.R1;
+                                    break;
+                                case 1:
+                                    hsRelease = HSRelease.R2;
+                                    break;
+                                default:
+                                    hsRelease = HSRelease.Unknown;
+                                    break;
+                            }
+                            if ((hsConf & ANQP_DOMID_BIT) != 0) {
+                                if (elementLength < 7) {
+                                    throw new IllegalArgumentException(
+                                            "HS20 indication element too short: " + elementLength);
+                                }
+                                anqpDomainID = element.getShort() & Constants.SHORT_MASK;
+                            }
+                        }
+                        break;
+                    case EID_ExtendedCaps:
+                        element = getAndAdvancePayload(data, elementLength);
+                        extendedCapabilities =
+                                Constants.getInteger(data, ByteOrder.LITTLE_ENDIAN, elementLength);
 
-                    //recover
-                    data.position(position);
-                    int index = RTT_RESP_ENABLE_BIT / 8;
-                    byte offset = RTT_RESP_ENABLE_BIT % 8;
+                        int index = RTT_RESP_ENABLE_BIT / 8;
+                        byte offset = RTT_RESP_ENABLE_BIT % 8;
 
-                    if(elementLength < index + 1) {
-                        RTTResponder = false;
+                        if (elementLength < index + 1) {
+                            RTTResponder = false;
+                            element.position(element.position() + elementLength);
+                            break;
+                        }
+
+                        element.position(element.position() + index);
+
+                        RTTResponder = (element.get() & (0x1 << offset)) != 0;
+                        break;
+                    default:
                         data.position(data.position() + elementLength);
                         break;
-                    }
-
-                    data.position(data.position() + index);
-                    elementLength -= index;
-
-                    if ((data.get() & (0x1 << offset)) != 0) {
-                        RTTResponder =  true;
-                    } else {
-                        RTTResponder = false;
-                    }
-                    data.position(data.position()+ elementLength - 1);
-                    break;
-                default:
-                    data.position(data.position()+elementLength);
-                    break;
+                }
             }
+        }
+        catch (IllegalArgumentException iae) {
+            if (ssidOctets == null) {
+                throw iae;
+            }
+            exception = iae;
         }
 
         if (ssidOctets != null) {
@@ -310,7 +321,21 @@ public class NetworkDetail {
             else {
                 encoding = StandardCharsets.ISO_8859_1;
             }
-            ssid = new String(ssidOctets, encoding);
+
+            if (exception == null) {
+                ssid = new String(ssidOctets, encoding);
+            }
+            else {
+                // Apply strict checking if there were previous errors:
+                CharsetDecoder decoder = encoding.newDecoder();
+                try {
+                    CharBuffer decoded = decoder.decode(ByteBuffer.wrap(ssidOctets));
+                    ssid = decoded.toString();
+                }
+                catch (CharacterCodingException cce) {
+                    throw exception;
+                }
+            }
         }
 
         mSSID = ssid;
@@ -359,6 +384,13 @@ public class NetworkDetail {
             mCenterfreq1 = 0;
         }
         m80211McRTTResponder = RTTResponder;
+    }
+
+    private static ByteBuffer getAndAdvancePayload(ByteBuffer data, int plLength) {
+        ByteBuffer payload = data.duplicate();
+        payload.limit(payload.position() + plLength);
+        data.position(data.position() + plLength);
+        return payload;
     }
 
     private NetworkDetail(NetworkDetail base, Map<Constants.ANQPElementType, ANQPElement> anqpElements) {

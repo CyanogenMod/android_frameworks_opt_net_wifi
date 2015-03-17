@@ -3452,30 +3452,37 @@ public class WifiStateMachine extends StateMachine {
                     anqpLines.add(line);
                 } else if (line.startsWith(DELIMITER_STR) || line.startsWith(END_STR)) {
                     if (bssid != null) {
-                        NetworkDetail networkDetail =
-                                new NetworkDetail(bssid, infoElements, anqpLines, freq);
+                        try {
+                            NetworkDetail networkDetail =
+                                    new NetworkDetail(bssid, infoElements, anqpLines, freq);
 
-                        String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
-                        if (!xssid.equals(networkDetail.getSSID())) {
-                            Log.d("HS2J", "Inconsistency: SSID: '" + xssid +
-                                    "' vs '" + networkDetail.getSSID() + "'");
+                            String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
+                            if (!xssid.equals(networkDetail.getSSID())) {
+                                Log.d("HS2J", "Inconsistency: SSID: '" + xssid +
+                                        "' vs '" + networkDetail.getSSID() + "'");
+                            }
+
+                            if (networkDetail.hasInterworking()) {
+                                Log.d("HS2J", "HSNwk: '" + networkDetail);
+                            }
+
+                            ScanDetail scanDetail = mScanResultCache.get(networkDetail);
+                            if (scanDetail != null) {
+                                scanDetail.updateResults(networkDetail, level, wifiSsid, xssid,
+                                        flags, freq, tsf);
+                            } else {
+                                scanDetail = new ScanDetail(networkDetail, wifiSsid, bssid,
+                                        flags, level, freq, tsf);
+                                mScanResultCache.put(networkDetail, scanDetail);
+                            }
+
+                            mNumScanResultsReturned++; // Keep track of how many scan results we got
+                            // as part of this scan's processing
+                            mScanResults.add(scanDetail);
                         }
-
-                        ScanDetail scanDetail = mScanResultCache.get(networkDetail);
-                        if (scanDetail != null) {
-
-                            scanDetail.updateResults(networkDetail, level, wifiSsid, xssid, flags,
-                                    freq, tsf);
+                        catch (IllegalArgumentException iae) {
+                            Log.d("HS2J", "Failed to parse information elements: " + iae);
                         }
-                        else {
-                            scanDetail = new ScanDetail(networkDetail, wifiSsid, bssid,
-                                    flags, level, freq, tsf);
-                            mScanResultCache.put(networkDetail, scanDetail);
-                        }
-
-                        mNumScanResultsReturned ++; // Keep track of how many scan results we got
-                                                    // as part of this scan's processing
-                        mScanResults.add(scanDetail);
                     }
                     bssid = null;
                     level = 0;
