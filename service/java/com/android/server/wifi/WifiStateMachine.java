@@ -7849,9 +7849,10 @@ public class WifiStateMachine extends StateMachine {
                 sendMessageDelayed(obtainMessage(CMD_TEST_NETWORK_DISCONNECT,
                         testNetworkDisconnectCounter, 0), 15000);
             }
-
-            // Reenable all networks, allow for hidden networks to be scanned
-            mWifiConfigStore.enableAllNetworks();
+            if (!mWifiConfigStore.enableAutoJoinWhenAssociated) {
+                // Reenable all networks, allow for hidden networks to be scanned
+                mWifiConfigStore.enableAllNetworks();
+            }
 
             mLastDriverRoamAttempt = 0;
         }
