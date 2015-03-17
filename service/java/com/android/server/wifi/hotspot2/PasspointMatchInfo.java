@@ -1,7 +1,6 @@
 package com.android.server.wifi.hotspot2;
 
 import com.android.server.wifi.anqp.ANQPElement;
-import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.HSConnectionCapabilityElement;
 import com.android.server.wifi.anqp.HSWanMetricsElement;
 import com.android.server.wifi.anqp.IPAddressTypeAvailabilityElement;
@@ -10,6 +9,7 @@ import com.android.server.wifi.hotspot2.pps.HomeSP;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
+
 import static com.android.server.wifi.anqp.Constants.ANQPElementType;
 import static com.android.server.wifi.anqp.IPAddressTypeAvailabilityElement.IPv4Availability;
 import static com.android.server.wifi.anqp.IPAddressTypeAvailabilityElement.IPv6Availability;
@@ -18,74 +18,7 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
     private final PasspointMatch mPasspointMatch;
     private final NetworkDetail mNetworkDetail;
     private final HomeSP mHomeSP;
-
-    private static final Map<NetworkDetail.Ant, Integer> sAntScores = new HashMap<>();
-
-    static {
-        sAntScores.put(NetworkDetail.Ant.FreePublic, 7);
-        sAntScores.put(NetworkDetail.Ant.ChargeablePublic, 6);
-        sAntScores.put(NetworkDetail.Ant.PrivateWithGuest, 5);
-        sAntScores.put(NetworkDetail.Ant.Private, 4);
-        sAntScores.put(NetworkDetail.Ant.Personal, 3);
-        sAntScores.put(NetworkDetail.Ant.EmergencyOnly, 2);
-        sAntScores.put(NetworkDetail.Ant.Wildcard, 1);
-        sAntScores.put(NetworkDetail.Ant.TestOrExperimental, 0);
-    }
-
-    public PasspointMatchInfo(PasspointMatch passpointMatch,
-                              NetworkDetail networkDetail, HomeSP homeSP) {
-        mPasspointMatch = passpointMatch;
-        mNetworkDetail = networkDetail;
-        mHomeSP = homeSP;
-    }
-
-    public PasspointMatch getPasspointMatch() {
-        return mPasspointMatch;
-    }
-
-    public NetworkDetail getNetworkDetail() {
-        return mNetworkDetail;
-    }
-
-    public HomeSP getHomeSP() {
-        return mHomeSP;
-    }
-
-    @Override
-    public int compareTo(PasspointMatchInfo that) {
-        if (getPasspointMatch() != that.getPasspointMatch()) {
-            return getPasspointMatch().compareTo(that.getPasspointMatch());
-        }
-
-        // IP Address Type Availability (802.11)
-
-        NetworkDetail n1 = getNetworkDetail();
-        NetworkDetail n2 = that.getNetworkDetail();
-
-        if (n1.isInternet() != n2.isInternet()) {
-            return n1.isInternet() ? 1 : -1;
-        }
-
-        if (n1.hasInterworking() && n2.hasInterworking() && n1.getAnt() != n2.getAnt()) {
-            int an1 = sAntScores.get(n1.getAnt());
-            int an2 = sAntScores.get(n2.getAnt());
-            return an1 - an2;
-        }
-
-        long score1 = n1.getCapacity() * n1.getChannelUtilization() * n1.getStationCount();
-        long score2 = n2.getCapacity() * n2.getChannelUtilization() * n2.getStationCount();
-
-        if (score1 != score2) {
-            return score1 < score2 ? 1 : -1;
-        }
-
-        int comp = subCompare(n1.getANQPElements(), n2.getANQPElements());
-        if (comp != 0) {
-            return comp;
-        }
-
-        return Utils.compare(n1.getHSRelease(), n2.getHSRelease());
-    }
+    private final int mScore;
 
     private static final Map<IPv4Availability, Integer> sIP4Scores =
             new EnumMap<>(IPv4Availability.class);
@@ -98,8 +31,20 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
     private static final int IPPROTO_TCP = 6;
     private static final int IPPROTO_UDP = 17;
     private static final int IPPROTO_ESP = 50;
+    private static final Map<NetworkDetail.Ant, Integer> sAntScores = new HashMap<>();
 
     static {
+        // These are all arbitrarily chosen scores, subject to tuning.
+
+        sAntScores.put(NetworkDetail.Ant.FreePublic, 4);
+        sAntScores.put(NetworkDetail.Ant.ChargeablePublic, 4);
+        sAntScores.put(NetworkDetail.Ant.PrivateWithGuest, 4);
+        sAntScores.put(NetworkDetail.Ant.Private, 4);
+        sAntScores.put(NetworkDetail.Ant.Personal, 2);
+        sAntScores.put(NetworkDetail.Ant.EmergencyOnly, 2);
+        sAntScores.put(NetworkDetail.Ant.Wildcard, 1);
+        sAntScores.put(NetworkDetail.Ant.TestOrExperimental, 0);
+
         sIP4Scores.put(IPv4Availability.NotAvailable, 0);
         sIP4Scores.put(IPv4Availability.PortRestricted, 1);
         sIP4Scores.put(IPv4Availability.PortRestrictedAndSingleNAT, 1);
@@ -139,75 +84,99 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
         sPortScores.put(IPPROTO_UDP, udpMap);
     }
 
-    private int subCompare(Map<Constants.ANQPElementType, ANQPElement> anqp1,
-                           Map<Constants.ANQPElementType, ANQPElement> anqp2) {
-        if (anqp1 == null || anqp2 == null) {
-            return 0;
+
+    public PasspointMatchInfo(PasspointMatch passpointMatch,
+                              NetworkDetail networkDetail, HomeSP homeSP) {
+        mPasspointMatch = passpointMatch;
+        mNetworkDetail = networkDetail;
+        mHomeSP = homeSP;
+
+        int score;
+        if (passpointMatch == PasspointMatch.HomeProvider) {
+            score = 100;
+        }
+        else if (passpointMatch == PasspointMatch.RoamingProvider) {
+            score = 0;
+        }
+        else {
+            score = -1000;  // Don't expect to see anything not home or roaming.
         }
 
-        int cmp;
+        if (networkDetail.getHSRelease() != null) {
+            score += networkDetail.getHSRelease() != NetworkDetail.HSRelease.Unknown ? 50 : 0;
+        }
 
-        HSWanMetricsElement w1 = (HSWanMetricsElement) anqp1.get(ANQPElementType.HSWANMetrics);
-        HSWanMetricsElement w2 = (HSWanMetricsElement) anqp2.get(ANQPElementType.HSWANMetrics);
-        if (w1 != null && w2 != null) {
+        if (networkDetail.hasInterworking()) {
+            score += networkDetail.isInternet() ? 20 : -20;
+        }
 
-            boolean u1 = w1.getStatus() == HSWanMetricsElement.LinkStatus.Up;
-            boolean u2 = w2.getStatus() == HSWanMetricsElement.LinkStatus.Up;
-            cmp = Boolean.compare(u1, u2);
-            if (cmp != 0) {
-                return cmp;
+        score += (Math.max(200-networkDetail.getStationCount(), 0) *
+                (255-networkDetail.getChannelUtilization()) *
+                networkDetail.getCapacity()) >>> 26;
+                // Gives a value of 23 max capped at 200 stations and max cap 31250
+
+        Map<ANQPElementType, ANQPElement> anqp = networkDetail.getANQPElements();
+
+        HSWanMetricsElement wm = (HSWanMetricsElement) anqp.get(ANQPElementType.HSWANMetrics);
+
+        if (wm != null) {
+            if (wm.getStatus() != HSWanMetricsElement.LinkStatus.Up || wm.isCapped()) {
+                score -= 1000;
             }
-
-            cmp = Boolean.compare(w1.isCapped(), w2.isCapped());
-            if (cmp != 0) {
-                return cmp;
-            }
-
-            long bw1 = (w1.getDlSpeed() * (long)w1.getDlLoad()) * 8 +
-                       (w1.getUlSpeed() * (long)w1.getUlLoad()) * 2;
-            long bw2 = (w2.getDlSpeed() * (long)w2.getDlLoad()) * 8 +
-                       (w2.getUlSpeed() * (long)w2.getUlLoad()) * 2;
-            cmp = Long.compare(bw1, bw2);
-            if (cmp != 0) {
-                return cmp;
+            else {
+                long scaledSpeed =
+                        wm.getDlSpeed() * (255 - wm.getDlLoad()) * 8 +
+                        wm.getUlSpeed() * (255 - wm.getUlLoad()) * 2;
+                score += Math.min(scaledSpeed, 255000000L) >>> 23;
+                // Max value is 30 capped at 100Mb/s
             }
         }
 
-        IPAddressTypeAvailabilityElement a1 =
-                (IPAddressTypeAvailabilityElement)anqp1.get(ANQPElementType.ANQPIPAddrAvailability);
-        IPAddressTypeAvailabilityElement a2 =
-                (IPAddressTypeAvailabilityElement)anqp2.get(ANQPElementType.ANQPIPAddrAvailability);
-        if (a1 != null && a2 != null) {
-            Integer as14 = sIP4Scores.get(a1.getV4Availability());
-            Integer as16 = sIP6Scores.get(a1.getV6Availability());
-            Integer as24 = sIP4Scores.get(a2.getV4Availability());
-            Integer as26 = sIP6Scores.get(a2.getV6Availability());
+        if (networkDetail.hasInterworking()) {
+            score += sAntScores.get(networkDetail.getAnt());
+        }
+
+        IPAddressTypeAvailabilityElement ipa =
+                (IPAddressTypeAvailabilityElement)anqp.get(ANQPElementType.ANQPIPAddrAvailability);
+
+        if (ipa != null) {
+            Integer as14 = sIP4Scores.get(ipa.getV4Availability());
+            Integer as16 = sIP6Scores.get(ipa.getV6Availability());
             as14 = as14 != null ? as14 : 1;
             as16 = as16 != null ? as16 : 1;
-            as24 = as24 != null ? as24 : 1;
-            as26 = as26 != null ? as26 : 1;
             // Is IPv4 twice as important as IPv6???
-            int s1 = as14 * 2 + as16;
-            int s2 = as24 * 2 + as26;
-            cmp = Integer.compare(s1, s2);
-            if (cmp != 0) {
-                return cmp;
-            }
+            score += as14 * 2 + as16;
         }
 
-        HSConnectionCapabilityElement cc1 =
-                (HSConnectionCapabilityElement) anqp1.get(ANQPElementType.HSConnCapability);
-        HSConnectionCapabilityElement cc2 =
-                (HSConnectionCapabilityElement) anqp2.get(ANQPElementType.HSConnCapability);
+        HSConnectionCapabilityElement cce =
+                (HSConnectionCapabilityElement) anqp.get(ANQPElementType.HSConnCapability);
 
-        if (cc1 != null && cc2 != null) {
-            cmp = Integer.compare(protoScore(cc1), protoScore(cc2));
-            if (cmp != 0) {
-                return cmp;
-            }
+        if (cce != null) {
+            score = Math.min(Math.max(protoScore(cce) >> 3, -10), 10);
         }
 
-        return 0;
+        mScore = score;
+    }
+
+    public PasspointMatch getPasspointMatch() {
+        return mPasspointMatch;
+    }
+
+    public NetworkDetail getNetworkDetail() {
+        return mNetworkDetail;
+    }
+
+    public HomeSP getHomeSP() {
+        return mHomeSP;
+    }
+
+    public int getScore() {
+        return mScore;
+    }
+
+    @Override
+    public int compareTo(PasspointMatchInfo that) {
+        return getScore() - that.getScore();
     }
 
     private static int protoScore(HSConnectionCapabilityElement cce) {
