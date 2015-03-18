@@ -22,6 +22,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiLinkLayerStats;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
+import android.net.wifi.RttManager;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
@@ -1741,6 +1742,17 @@ public class WifiNative {
             } else {
 
                 return false;
+            }
+        }
+    }
+
+    private static native RttManager.RttCapabilities getRttCapabilitiesNative(int iface);
+    synchronized public static RttManager.RttCapabilities getRttCapabilities() {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getRttCapabilitiesNative(sWlan0Index);
+            } else {
+                return null;
             }
         }
     }

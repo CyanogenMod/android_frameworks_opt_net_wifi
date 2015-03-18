@@ -222,6 +222,24 @@ void setIntField(JNIEnv *env, jobject obj, const char *name, jint value)
     env->DeleteLocalRef(cls);
 }
 
+void setBooleanField(JNIEnv *env, jobject obj, const char *name, jboolean value)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    if (cls == NULL) {
+        THROW(env, "Error in accessing class");
+        return;
+    }
+
+    jfieldID field = (env)->GetFieldID(cls, name, "Z");
+    if (field == NULL) {
+        THROW(env, "Error in accessing field");
+        return;
+    }
+
+    (env)->SetBooleanField(obj, field, value);
+    env->DeleteLocalRef(cls);
+}
+
 void setLongField(JNIEnv *env, jobject obj, const char *name, jlong value)
 {
     jclass cls = (env)->GetObjectClass(obj);
