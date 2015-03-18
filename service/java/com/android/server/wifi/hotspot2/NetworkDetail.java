@@ -285,7 +285,7 @@ public class NetworkDetail {
                         }
                         break;
                     case EID_ExtendedCaps:
-                        element = getAndAdvancePayload(data, elementLength);
+                        element = data.duplicate();
                         extendedCapabilities =
                                 Constants.getInteger(data, ByteOrder.LITTLE_ENDIAN, elementLength);
 
@@ -309,6 +309,7 @@ public class NetworkDetail {
             }
         }
         catch (IllegalArgumentException iae) {
+            Log.d("HS2J", "Caught " + iae);
             if (ssidOctets == null) {
                 throw iae;
             }
@@ -394,7 +395,7 @@ public class NetworkDetail {
     }
 
     private static ByteBuffer getAndAdvancePayload(ByteBuffer data, int plLength) {
-        ByteBuffer payload = data.duplicate();
+        ByteBuffer payload = data.duplicate().order(data.order());
         payload.limit(payload.position() + plLength);
         data.position(data.position() + plLength);
         return payload;

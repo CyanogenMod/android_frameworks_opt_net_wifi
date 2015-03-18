@@ -312,10 +312,10 @@ public class MOManager {
 
         List<HomeSP> homeSPs = new ArrayList<HomeSP>();
 
-        Log.d("PARSE-LOG", " node-name = " + spList.getName());
         if (spList == null) {
             return homeSPs;
         }
+        Log.d("PARSE-LOG", " node-name = " + spList.getName());
 
         Log.d("PARSE-LOG", " num_children = " + spList.getChildren().size());
         for (OMANode spRoot : spList.getChildren()) {

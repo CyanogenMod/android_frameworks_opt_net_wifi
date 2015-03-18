@@ -3467,7 +3467,7 @@ public class WifiStateMachine extends StateMachine {
                             String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
                             if (!xssid.equals(networkDetail.getSSID())) {
                                 Log.d("HS2J", "Inconsistency: SSID: '" + xssid +
-                                        "' vs '" + networkDetail.getSSID() + "'");
+                                        "' vs '" + networkDetail.getSSID() + "': " + infoElements);
                             }
 
                             if (networkDetail.hasInterworking()) {
