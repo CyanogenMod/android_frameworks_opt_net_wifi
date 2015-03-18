@@ -316,7 +316,6 @@ public class MOManager {
             return homeSPs;
         }
         Log.d("PARSE-LOG", " node-name = " + spList.getName());
-
         Log.d("PARSE-LOG", " num_children = " + spList.getChildren().size());
         for (OMANode spRoot : spList.getChildren()) {
             Log.d("PARSE-LOG", " node-name = " + spRoot.getName());

@@ -151,7 +151,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static boolean VVDBG = false;
 
     private static final String SUPPLICANT_CONFIG_FILE = "/data/misc/wifi/wpa_supplicant.conf";
-    private static final String PPS_FILE = "/data/misc/wifi/PerProviderSubscription.xml";
+    private static final String PPS_FILE = "/data/misc/wifi/PerProviderSubscription.conf";
 
     /* configured networks with network id as the key */
     private HashMap<Integer, WifiConfiguration> mConfiguredNetworks =
@@ -859,7 +859,8 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private boolean setSSIDNative(int netId, String ssid) {
-        return mWifiNative.setNetworkVariable(netId, WifiConfiguration.ssidVarName, ssid);
+        return mWifiNative.setNetworkVariable(netId, WifiConfiguration.ssidVarName,
+                encodeSSID(ssid));
     }
 
     /**
@@ -874,17 +875,19 @@ public class WifiConfigStore extends IpConfigStore {
      * @param netId network to select for connection
      * @return false if the network id is invalid
      */
-    boolean selectNetwork(WifiConfiguration config) {
+    boolean selectNetwork(WifiConfiguration config, boolean updatePriorities) {
         if (VDBG) localLog("selectNetwork", config.networkId);
         if (config.networkId == INVALID_NETWORK_ID) return false;
 
         // Reset the priority of each network at start or if it goes too high.
-        boolean saveNetworkHistory = false;
+        boolean saveNetworkHistory = updatePriorities;
         if (mLastPriority == -1 || mLastPriority > 1000000) {
             for(WifiConfiguration config2 : mConfiguredNetworks.values()) {
-                if (config2.networkId != INVALID_NETWORK_ID) {
-                    config2.priority = 0;
-                    setNetworkPriorityNative(config2.networkId, config.priority);
+                if (updatePriorities) {
+                    if (config2.networkId != INVALID_NETWORK_ID) {
+                        config2.priority = 0;
+                        setNetworkPriorityNative(config2.networkId, config.priority);
+                    }
                 }
                 if (config2.dirty) {
                     saveNetworkHistory = true;
@@ -894,17 +897,21 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         // Set to the highest priority and save the configuration.
-        config.priority = ++mLastPriority;
-        setNetworkPriorityNative(config.networkId, config.priority);
+        if (updatePriorities) {
+            config.priority = ++mLastPriority;
+            setNetworkPriorityNative(config.networkId, config.priority);
+        }
 
         if (config.isPasspoint()) {
             /* need to slap on the SSID of selected bssid to work */
-            if (config.BSSID != null) {
-                ScanResult result = config.scanResultCache.get(config.BSSID);
+            if (config.scanResultCache.size() != 0) {
+                HashMap<String, ScanResult> scanResultHashMap = config.scanResultCache;
+                Iterator<ScanResult> it = scanResultHashMap.values().iterator();
+                ScanResult result = it.next();
                 if (result == null) {
                     loge("Could not find scan result for " + config.BSSID);
                 } else {
-                    log("Setting SSID for " + config.networkId);
+                    log("Setting SSID for " + config.networkId + " to" + result.SSID);
                     setSSIDNative(config.networkId, result.SSID);
                 }
 
@@ -913,10 +920,16 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
-        mWifiNative.saveConfig();
+        if (updatePriorities)
+            mWifiNative.saveConfig();
+        else
+            mWifiNative.selectNetwork(config.networkId);
 
-        if (saveNetworkHistory)
+        if (saveNetworkHistory) {
+            /* TODO: we should remove this from here; selectNetwork *
+             * shouldn't have this side effect of saving data       */
             writeKnownNetworkHistory(false);
+        }
 
         /* Enable the given network while disabling all other networks */
         enableNetworkWithoutBroadcast(config.networkId, true);
@@ -1743,6 +1756,9 @@ public class WifiConfigStore extends IpConfigStore {
         } catch (IOException e) {
             loge("Could not read " + PPS_FILE + " : " + e);
             return;
+        } catch (NullPointerException e) {
+            loge("Could not read " + PPS_FILE + " : " + e);
+            return;
         }
 
         mConfiguredHomeSPs.clear();
@@ -1757,9 +1773,8 @@ public class WifiConfigStore extends IpConfigStore {
                 log("Testing " + config.SSID);
 
                 String id_str = mWifiNative.getNetworkVariable(config.networkId, idStringVarName);
-                if (id_str.equals(chksum) && config.enterpriseConfig != null) {
-                    log("Matched " + config.SSID);
-                    config.SSID = "";
+                if (id_str != null && id_str.equals(chksum) && config.enterpriseConfig != null) {
+                    log("Matched " + id_str);
                     config.FQDN = fqdn;
                     config.providerFriendlyName = homeSp.getFriendlyName();
                     config.roamingConsortiumIds = new HashSet<Long>();
@@ -2482,13 +2497,17 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
-            if (config.isPasspoint() &&
-                    !mWifiNative.setNetworkVariable(
+            if (config.isPasspoint()) {
+                if (!mWifiNative.setNetworkVariable(
                             netId,
                             idStringVarName,
                             Long.toString(getChecksum(config.FQDN)))) {
-                loge("failed to set id_str: "+config.SSID);
-                break setVariables;
+                    loge("failed to set id_str: " + config.SSID);
+                    break setVariables;
+                }
+            } else {
+                loge("not writing id_str: "+config.SSID + " because not a passpoint network");
+                loge("Config is : " + config);
             }
 
             if (config.BSSID != null) {
@@ -2731,6 +2750,9 @@ public class WifiConfigStore extends IpConfigStore {
                 currentConfig.lastUpdateUid = config.lastUpdateUid;
                 currentConfig.creatorUid = config.creatorUid;
                 currentConfig.peerWifiConfiguration = config.peerWifiConfiguration;
+                currentConfig.FQDN = config.FQDN;
+                currentConfig.providerFriendlyName = config.providerFriendlyName;
+                currentConfig.roamingConsortiumIds = config.roamingConsortiumIds;
             }
             if (DBG) {
                 loge("created new config netId=" + Integer.toString(netId)
@@ -2739,8 +2761,12 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         /* save HomeSP object for passpoint networks */
-        if (config.FQDN != null && config.FQDN.isEmpty() == false
-                && config.enterpriseConfig != null) {
+        if (config.isPasspoint()) {
+            if (newNetwork == false) {
+                /* when updating a network, we'll just create a new HomeSP */
+                mConfiguredHomeSPs.remove(netId);
+            }
+
             Credential credential = new Credential(config.enterpriseConfig);
             HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
                     config.roamingConsortiumIds, Collections.<String>emptySet(),
@@ -2748,6 +2774,10 @@ public class WifiConfigStore extends IpConfigStore {
                     config.providerFriendlyName, null, credential);
             mConfiguredHomeSPs.put(netId, homeSP);
             log("created a homeSP object for " + config.networkId + ":" + config.SSID);
+
+            /* fix enterprise config properties for passpoint */
+            currentConfig.enterpriseConfig.setRealm(config.enterpriseConfig.getRealm());
+            currentConfig.enterpriseConfig.setPlmn(config.enterpriseConfig.getPlmn());
         }
 
         if (uid >= 0) {

@@ -311,6 +311,11 @@ public class WifiNative {
         return doBooleanCommand("DISABLE_NETWORK " + netId);
     }
 
+    public boolean selectNetwork(int netId) {
+        if (DBG) logDbg("selectNetwork nid=" + Integer.toString(netId));
+        return doBooleanCommand("SELECT_NETWORK " + netId);
+    }
+
     public boolean reconnect() {
         if (DBG) logDbg("RECONNECT ");
         return doBooleanCommand("RECONNECT");

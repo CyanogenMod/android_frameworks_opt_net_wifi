@@ -6631,7 +6631,7 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(config) &&
+                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
@@ -6753,7 +6753,7 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(config) &&
+                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ true) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
@@ -7899,7 +7899,7 @@ public class WifiStateMachine extends StateMachine {
 
                     boolean ret = false;
                     if (mLastNetworkId != netId) {
-                       if (mWifiConfigStore.selectNetwork(config) &&
+                       if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false) &&
                            mWifiNative.reconnect()) {
                            ret = true;
                        }
