@@ -4,6 +4,7 @@ import android.util.Log;
 
 import com.android.server.wifi.ScanDetail;
 import com.android.server.wifi.WifiAutoJoinController;
+import com.android.server.wifi.WifiConfigStore;
 import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.ANQPFactory;
@@ -29,7 +30,7 @@ import java.util.Map;
 
 public class SupplicantBridge {
     private final WifiNative mSupplicantHook;
-    private final WifiAutoJoinController mAutoJoinController;
+    private final WifiConfigStore mConfigStore;
     private final Map<Long, ScanDetail> mRequestMap = new HashMap<>();
 
     private static final Map<String, Constants.ANQPElementType> sWpsNames = new HashMap<>();
@@ -55,9 +56,9 @@ public class SupplicantBridge {
         return split >= 0 && sWpsNames.containsKey(line.substring(0, split));
     }
 
-    public SupplicantBridge(WifiNative supplicantHook, WifiAutoJoinController autoJoinController) {
+    public SupplicantBridge(WifiNative supplicantHook, WifiConfigStore configStore) {
         mSupplicantHook = supplicantHook;
-        mAutoJoinController = autoJoinController;
+        mConfigStore = configStore;
     }
 
     public static Map<Constants.ANQPElementType, ANQPElement> parseANQPLines(List<String> lines) {
@@ -106,13 +107,13 @@ public class SupplicantBridge {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
             if (!elements.isEmpty()) {
                 Log.d("HS2J", "Parsed ANQP: " + elements);
-                mAutoJoinController.notifyANQPResponse(scanDetail, elements);
+                mConfigStore.notifyANQPResponse(scanDetail, elements);
             }
         }
         catch (IOException ioe) {
             Log.e("HS2J", ioe.toString());
         }
-        mAutoJoinController.notifyANQPResponse(scanDetail, null);
+        mConfigStore.notifyANQPResponse(scanDetail, null);
     }
 
     /*

@@ -1,5 +1,6 @@
 package com.android.server.wifi.hotspot2;
 
+import com.android.server.wifi.ScanDetail;
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.HSConnectionCapabilityElement;
 import com.android.server.wifi.anqp.HSWanMetricsElement;
@@ -16,7 +17,7 @@ import static com.android.server.wifi.anqp.IPAddressTypeAvailabilityElement.IPv6
 
 public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
     private final PasspointMatch mPasspointMatch;
-    private final NetworkDetail mNetworkDetail;
+    private final ScanDetail mScanDetail;
     private final HomeSP mHomeSP;
     private final int mScore;
 
@@ -86,9 +87,9 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
 
 
     public PasspointMatchInfo(PasspointMatch passpointMatch,
-                              NetworkDetail networkDetail, HomeSP homeSP) {
+                              ScanDetail scanDetail, HomeSP homeSP) {
         mPasspointMatch = passpointMatch;
-        mNetworkDetail = networkDetail;
+        mScanDetail = scanDetail;
         mHomeSP = homeSP;
 
         int score;
@@ -102,20 +103,20 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
             score = -1000;  // Don't expect to see anything not home or roaming.
         }
 
-        if (networkDetail.getHSRelease() != null) {
-            score += networkDetail.getHSRelease() != NetworkDetail.HSRelease.Unknown ? 50 : 0;
+        if (getNetworkDetail().getHSRelease() != null) {
+            score += getNetworkDetail().getHSRelease() != NetworkDetail.HSRelease.Unknown ? 50 : 0;
         }
 
-        if (networkDetail.hasInterworking()) {
-            score += networkDetail.isInternet() ? 20 : -20;
+        if (getNetworkDetail().hasInterworking()) {
+            score += getNetworkDetail().isInternet() ? 20 : -20;
         }
 
-        score += (Math.max(200-networkDetail.getStationCount(), 0) *
-                (255-networkDetail.getChannelUtilization()) *
-                networkDetail.getCapacity()) >>> 26;
+        score += (Math.max(200-getNetworkDetail().getStationCount(), 0) *
+                (255-getNetworkDetail().getChannelUtilization()) *
+                getNetworkDetail().getCapacity()) >>> 26;
                 // Gives a value of 23 max capped at 200 stations and max cap 31250
 
-        Map<ANQPElementType, ANQPElement> anqp = networkDetail.getANQPElements();
+        Map<ANQPElementType, ANQPElement> anqp = getNetworkDetail().getANQPElements();
 
         HSWanMetricsElement wm = (HSWanMetricsElement) anqp.get(ANQPElementType.HSWANMetrics);
 
@@ -132,8 +133,8 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
             }
         }
 
-        if (networkDetail.hasInterworking()) {
-            score += sAntScores.get(networkDetail.getAnt());
+        if (getNetworkDetail().hasInterworking()) {
+            score += sAntScores.get(getNetworkDetail().getAnt());
         }
 
         IPAddressTypeAvailabilityElement ipa =
@@ -162,9 +163,14 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
         return mPasspointMatch;
     }
 
-    public NetworkDetail getNetworkDetail() {
-        return mNetworkDetail;
+    public ScanDetail getScanDetail() {
+        return mScanDetail; 
     }
+
+    public NetworkDetail getNetworkDetail() {
+        return mScanDetail.getNetworkDetail(); 
+    }
+
 
     public HomeSP getHomeSP() {
         return mHomeSP;
@@ -223,7 +229,7 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
     @Override
     public int hashCode() {
         int result = mPasspointMatch != null ? mPasspointMatch.hashCode() : 0;
-        result = 31 * result + mNetworkDetail.hashCode();
+        result = 31 * result + getNetworkDetail().hashCode();
         result = 31 * result + (mHomeSP != null ? mHomeSP.hashCode() : 0);
         return result;
     }
@@ -232,7 +238,7 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
     public String toString() {
         return "PasspointMatchInfo{" +
                 ", mPasspointMatch=" + mPasspointMatch +
-                ", mNetworkInfo=" + mNetworkDetail.getSSID() +
+                ", mNetworkInfo=" + getNetworkDetail().getSSID() +
                 ", mHomeSP=" + mHomeSP.getFQDN() +
                 '}';
     }

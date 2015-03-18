@@ -45,6 +45,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -115,10 +116,6 @@ public class WifiAutoJoinController {
      */
     int weakRssiBailCount = 0;
 
-    private final AnqpCache mAnqpCache;
-    private final SupplicantBridge mSupplicantBridge;
-    private final List<PasspointMatchInfo> mMatchInfoList;
-
     WifiAutoJoinController(Context c, WifiStateMachine w, WifiConfigStore s,
                            WifiConnectionStatistics st, WifiNative n) {
         mContext = c;
@@ -141,11 +138,6 @@ public class WifiAutoJoinController {
                     + " service " + Context.NETWORK_SCORE_SERVICE);
             mNetworkScoreCache = null;
         }
-
-        mMatchInfoList = new ArrayList<>();
-        Chronograph chronograph = new Chronograph();
-        mAnqpCache = new AnqpCache(chronograph);
-        mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -183,103 +175,54 @@ public class WifiAutoJoinController {
         }
     }
 
-    // !!! JNo >>
 
-    // !!! Call from addToScanCache
-    private ScanDetail scoreHSNetwork(ScanDetail scanDetail) {
-        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
-        if (!networkDetail.has80211uInfo()) {
-            return null;
-        }
-        updateCache(scanDetail, networkDetail.getANQPElements());
-
-        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail,
-                networkDetail.getANQPElements() == null);
-        if (!matches.isEmpty()) {
-            return scanDetail.score(matches);
-        } else {
-            return null;
-        }
-    }
-
-    private Map<HomeSP, PasspointMatch> matchNetwork(ScanDetail scanDetail, boolean query) {
-        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
-
-        ANQPData anqpData = mAnqpCache.getEntry(networkDetail);
-
-        Map<Constants.ANQPElementType, ANQPElement> anqpElements =
-                anqpData != null ? anqpData.getANQPElements() : null;
-
-        boolean queried = !query;
-        Collection<HomeSP> homeSPs = mWifiConfigStore.getHomeSPs();
-        Map<HomeSP, PasspointMatch> matches = new HashMap<>(homeSPs.size());
-        for (HomeSP homeSP : homeSPs) {
-            PasspointMatch match = homeSP.match(networkDetail, anqpElements);
-
-            if (match == PasspointMatch.Incomplete && networkDetail.isInterworking() && !queried) {
-                if (mAnqpCache.initiate(networkDetail)) {
-                    mSupplicantBridge.startANQP(scanDetail);
-                }
-                queried = true;
+    void averageRssiAndRemoveFromCache(ScanResult result) {
+        // Fetch the previous instance for this result
+        ScanResult sr = scanResultCache.get(result.BSSID);
+        if (sr != null) {
+            if (mWifiConfigStore.scanResultRssiLevelPatchUp != 0
+                    && result.level == 0
+                    && sr.level < -20) {
+                // A 'zero' RSSI reading is most likely a chip problem which returns
+                // an unknown RSSI, hence ignore it
+                result.level = sr.level;
             }
-            matches.put(homeSP, match);
+
+            // If there was a previous cache result for this BSSID, average the RSSI values
+            result.averageRssi(sr.level, sr.seen, mScanResultMaximumAge);
+
+            // Remove the previous Scan Result - this is not necessary
+            scanResultCache.remove(result.BSSID);
+        } else if (mWifiConfigStore.scanResultRssiLevelPatchUp != 0 && result.level == 0) {
+            // A 'zero' RSSI reading is most likely a chip problem which returns
+            // an unknown RSSI, hence initialize it to a sane value
+            result.level = mWifiConfigStore.scanResultRssiLevelPatchUp;
         }
-        return matches;
     }
 
-    public void notifyANQPDone(Long bssid, boolean success) {
-        mSupplicantBridge.notifyANQPDone(bssid, success);
-    }
-
-    public void notifyANQPResponse(ScanDetail scanDetail,
-                                   Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
-
-        updateCache(scanDetail, anqpElements);
-        if (anqpElements == null) {
-            return;
+    void addToUnscoredNetworks(ScanResult result, List<NetworkKey> unknownScanResults) {
+        WifiKey wkey;
+        // Quoted SSIDs are the only one valid at this stage
+        try {
+            wkey = new WifiKey("\"" + result.SSID + "\"", result.BSSID);
+        } catch (IllegalArgumentException e) {
+            logDbg("AutoJoinController: received badly encoded SSID=[" + result.SSID +
+                    "] ->skipping this network");
+            wkey = null;
         }
-
-        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, false);
-        Log.d("HS2J", scanDetail.getSSID() + " 2nd Matches: " + toMatchString(matches));
-
-        for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
-            mMatchInfoList.add(
-                    new PasspointMatchInfo(entry.getValue(), scanDetail.getNetworkDetail(),
-                            entry.getKey()));
+        if (wkey != null) {
+            NetworkKey nkey = new NetworkKey(wkey);
+            //if we don't know this scan result then request a score from the scorer
+            unknownScanResults.add(nkey);
         }
-
-        //mWifiStateMachine.updateScanResults(scanDetail, matches);
-    }
-
-    private void updateCache(ScanDetail scanDetail, Map<Constants.ANQPElementType,
-            ANQPElement> anqpElements)
-    {
-        NetworkDetail networkDetail = scanDetail.getNetworkDetail();
-
-        if (anqpElements == null) {
-            ANQPData data = mAnqpCache.getEntry(networkDetail);
-            if (data != null) {
-                scanDetail.propagateANQPInfo(data.getANQPElements());
-            }
-            return;
+        if (VDBG) {
+            String cap = "";
+            if (result.capabilities != null)
+                cap = result.capabilities;
+            logDbg(result.SSID + " " + result.BSSID + " rssi="
+                    + result.level + " cap " + cap + " is not scored");
         }
-
-        mAnqpCache.update(networkDetail, anqpElements);
-
-        Log.d("HS2J", "Cached " + networkDetail.getBSSIDString() +
-                "/" + networkDetail.getAnqpDomainID());
-        scanDetail.propagateANQPInfo(anqpElements);
     }
-
-    private static String toMatchString(Map<HomeSP, PasspointMatch> matches) {
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
-            sb.append(' ').append(entry.getKey().getFQDN()).append("->").append(entry.getValue());
-        }
-        return sb.toString();
-    }
-
-    // !!! << JNo
 
     int addToScanCache(List<ScanDetail> scanList) {
         int numScanResultsKnown = 0; // Record number of scan results we knew about
@@ -289,57 +232,17 @@ public class WifiAutoJoinController {
 
         ArrayList<NetworkKey> unknownScanResults = new ArrayList<NetworkKey>();
 
-        for(ScanDetail scanDetail: scanList) {
+        for(ScanDetail scanDetail : scanList) {
             ScanResult result = scanDetail.getScanResult();
             if (result.SSID == null) continue;
 
             // Make sure we record the last time we saw this result
             result.seen = System.currentTimeMillis();
 
-            // Fetch the previous instance for this result
-            ScanResult sr = scanResultCache.get(result.BSSID);
-            if (sr != null) {
-                if (mWifiConfigStore.scanResultRssiLevelPatchUp != 0
-                        && result.level == 0
-                        && sr.level < -20) {
-                    // A 'zero' RSSI reading is most likely a chip problem which returns
-                    // an unknown RSSI, hence ignore it
-                    result.level = sr.level;
-                }
-
-                // If there was a previous cache result for this BSSID, average the RSSI values
-                result.averageRssi(sr.level, sr.seen, mScanResultMaximumAge);
-
-                // Remove the previous Scan Result - this is not necessary
-                scanResultCache.remove(result.BSSID);
-            } else if (mWifiConfigStore.scanResultRssiLevelPatchUp != 0 && result.level == 0) {
-                // A 'zero' RSSI reading is most likely a chip problem which returns
-                // an unknown RSSI, hence initialize it to a sane value
-                result.level = mWifiConfigStore.scanResultRssiLevelPatchUp;
-            }
+            averageRssiAndRemoveFromCache(result);
 
             if (!mNetworkScoreCache.isScoredNetwork(result)) {
-                WifiKey wkey;
-                // Quoted SSIDs are the only one valid at this stage
-                try {
-                    wkey = new WifiKey("\"" + result.SSID + "\"", result.BSSID);
-                } catch (IllegalArgumentException e) {
-                    logDbg("AutoJoinController: received badly encoded SSID=[" + result.SSID +
-                            "] ->skipping this network");
-                    wkey = null;
-                }
-                if (wkey != null) {
-                    NetworkKey nkey = new NetworkKey(wkey);
-                    //if we don't know this scan result then request a score from the scorer
-                    unknownScanResults.add(nkey);
-                }
-                if (VDBG) {
-                    String cap = "";
-                    if (result.capabilities != null)
-                        cap = result.capabilities;
-                    logDbg(result.SSID + " " + result.BSSID + " rssi="
-                            + result.level + " cap " + cap + " is not scored");
-                }
+                addToUnscoredNetworks(result, unknownScanResults);
             } else {
                 if (VDBG) {
                     String cap = "";
@@ -354,7 +257,7 @@ public class WifiAutoJoinController {
             // scanResultCache.put(result.BSSID, new ScanResult(result));
             scanResultCache.put(result.BSSID, result);
             // Add this BSSID to the scanResultCache of a Saved WifiConfiguration
-            didAssociate = mWifiConfigStore.updateSavedNetworkHistory(result);
+            didAssociate = mWifiConfigStore.updateSavedNetworkHistory(scanDetail);
 
             // If not successful, try to associate this BSSID to an existing Saved WifiConfiguration
             if (!didAssociate) {
@@ -933,6 +836,27 @@ public class WifiAutoJoinController {
     }
      */
 
+    int getSecurityScore(WifiConfiguration config) {
+
+        if (TextUtils.isEmpty(config.SSID) == false) {
+            if (config.allowedKeyManagement.get(KeyMgmt.WPA_EAP)
+                    || config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)
+                    || config.allowedKeyManagement.get(KeyMgmt.WPA2_PSK)) {
+                /* enterprise or PSK networks get highest score */
+                return 100;
+            } else if (config.allowedKeyManagement.get(KeyMgmt.NONE)) {
+                /* open networks have lowest score */
+                return 33;
+            }
+        } else if (TextUtils.isEmpty(config.FQDN) == false) {
+            /* passpoint networks have medium preference */
+            return 66;
+        }
+
+        /* bad network */
+        return 0;
+    }
+
     int compareWifiConfigurations(WifiConfiguration a, WifiConfiguration b) {
         int order = 0;
         boolean linked = false;
@@ -959,6 +883,15 @@ public class WifiAutoJoinController {
                         + " over " + b.configKey());
             }
             return -1; // a is of higher priority - descending
+        }
+
+        int aSecurityScore = getSecurityScore(a);
+        int bSecurityScore = getSecurityScore(b);
+
+        if (aSecurityScore < bSecurityScore) {
+            order += 2;
+        } else if (bSecurityScore < aSecurityScore) {
+            order -= 2;
         }
 
         // Apply RSSI, in the range [-5, +5]

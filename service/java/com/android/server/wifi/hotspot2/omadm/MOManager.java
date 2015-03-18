@@ -174,12 +174,13 @@ public class MOManager {
 
                 Log.d("PARSE-LOG", "Saving SIM credential");
                 credRootNode = credentialNode.addChild(TAG_SIM, null, null, null);
-                credRootNode.addChild(TAG_IMSI, null, homeSP.getCredential().getImsi(), null);
+                credRootNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
 
             } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
 
                 Log.d("PARSE-LOG", "Saving TTLS Credential");
                 credRootNode = credentialNode.addChild(TAG_UsernamePassword, null, null, null);
+                credRootNode.addChild(TAG_Username, null, cred.getUserName(), null);
 
             } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS) {
 
@@ -192,9 +193,14 @@ public class MOManager {
 
             credentialNode.addChild(TAG_Realm, null, homeSP.getCredential().getRealm(), null);
             credentialNode.addChild(TAG_CheckAAAServerCertStatus, null, "true", null);
-            OMANode EapMethodNode = credRootNode.addChild(TAG_EAPMethod, null, null, null);
-            OMANode EapTypeNode = EapMethodNode.addChild(TAG_EAPType,
-                    null, method.getEAPMethodID().toString(), null);
+            OMANode eapMethodNode = credRootNode.addChild(TAG_EAPMethod, null, null, null);
+            OMANode eapTypeNode = eapMethodNode.addChild(TAG_EAPType,
+                    null, EAP.mapEAPMethod(method.getEAPMethodID()).toString(), null);
+
+            if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
+                OMANode innerEAPType = eapMethodNode.addChild(TAG_InnerEAPType,
+                        null, EAP.mapEAPMethod(EAP.EAPMethodID.EAP_MSCHAPv2).toString(), null);
+            }
 
             StringBuilder builder = new StringBuilder();
             for (Long roamingConsortium : homeSP.getRoamingConsortiums()) {
@@ -397,8 +403,8 @@ public class MOManager {
         }
 
         if (unNode != null) {
-            String userName = unNode.getChild(TAG_Username).getValue();
-            String password = unNode.getChild(TAG_Password).getValue();
+            String userName = getString(unNode.getChild(TAG_Username));
+            String password = getString(unNode.getChild(TAG_Password));
             boolean machineManaged = getBoolean(unNode.getChild(TAG_MachineManaged));
             String softTokenApp = getString(unNode.getChild(TAG_SoftTokenApp));
             boolean ableToShare = getBoolean(unNode.getChild(TAG_AbleToShare));

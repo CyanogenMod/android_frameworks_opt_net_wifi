@@ -1138,11 +1138,11 @@ public class WifiStateMachine extends StateMachine {
     }
 
     public void setAllowScansWhileAssociated(boolean enabled) {
-        mWifiConfigStore.enableAutoJoinScanWhenAssociated = enabled;
+        mWifiConfigStore.enableAutoJoinScanWhenAssociated.set(enabled);
     }
 
     public boolean getAllowScansWhileAssociated() {
-        return mWifiConfigStore.enableAutoJoinScanWhenAssociated;
+        return mWifiConfigStore.enableAutoJoinScanWhenAssociated.get();
     }
 
     /*
@@ -6629,7 +6629,7 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(netId) &&
+                    if (mWifiConfigStore.selectNetwork(config) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
@@ -6701,9 +6701,12 @@ public class WifiStateMachine extends StateMachine {
                     config = mWifiConfigStore.getWifiConfiguration(netId);
 
                     if (config == null) {
-                        loge("CONNECT_NETWORK id=" + Integer.toString(netId) + " "
+                        loge("CONNECT_NETWORK no config for id=" + Integer.toString(netId) + " "
                                 + mSupplicantStateTracker.getSupplicantStateName() + " my state "
                                 + getCurrentState().getName());
+                        replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+                                WifiManager.ERROR);
+                        break;
                     } else {
                         String wasSkipped = config.autoJoinBailedDueToLowRssi ? " skipped" : "";
                         loge("CONNECT_NETWORK id=" + Integer.toString(netId)
@@ -6748,7 +6751,7 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(netId) &&
+                    if (mWifiConfigStore.selectNetwork(config) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
@@ -6901,7 +6904,7 @@ public class WifiStateMachine extends StateMachine {
                 case WifiMonitor.ANQP_DONE_EVENT:
                     Log.d("HS2J", String.format("WFSM: ANQP for %016x %s",
                             (Long)message.obj, message.arg1 != 0 ? "success" : "fail"));
-                    mWifiAutoJoinController.notifyANQPDone((Long) message.obj, message.arg1 != 0);
+                    mWifiConfigStore.notifyANQPDone((Long) message.obj, message.arg1 != 0);
                     break;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     // Calling handleNetworkDisconnect here is redundant because we might already
@@ -7894,7 +7897,7 @@ public class WifiStateMachine extends StateMachine {
 
                     boolean ret = false;
                     if (mLastNetworkId != netId) {
-                       if (mWifiConfigStore.selectNetwork(netId) &&
+                       if (mWifiConfigStore.selectNetwork(config) &&
                            mWifiNative.reconnect()) {
                            ret = true;
                        }

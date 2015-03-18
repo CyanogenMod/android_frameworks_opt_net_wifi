@@ -62,21 +62,18 @@ public class ScanDetail {
 
     public void propagateANQPInfo(Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
         mNetworkDetail = mNetworkDetail.complete(anqpElements);
-        ANQPElement nameElement = anqpElements.get(Constants.ANQPElementType.HSFriendlyName);
+        HSFriendlyNameElement fne = (HSFriendlyNameElement)anqpElements.get(Constants
+                .ANQPElementType.HSFriendlyName);
         // !!! Match with language
-        /*
-        if (nameElement != null) {
-            mScanResult.friendlyName =
-                    (((HSFriendlyNameElement)nameElement).getNames().get(0).getText());
-        }
-        else {
-            nameElement = anqpElements.get(Constants.ANQPElementType.ANQPVenueName);
-            if (nameElement != null) {
-                mScanResult.friendlyName =
-                        (((VenueNameElement)nameElement).getNames().get(0).getText());
+        if (fne != null && !fne.getNames().isEmpty()) {
+            mScanResult.venueName = fne.getNames().get(0).getText();
+        } else {
+            VenueNameElement vne =
+                    (((VenueNameElement)anqpElements.get(Constants.ANQPElementType.ANQPVenueName)));
+            if (vne != null && !vne.getNames().isEmpty()) {
+                mScanResult.venueName = vne.getNames().get(0).getText();
             }
         }
-        */
     }
 
     public ScanResult getScanResult() {
@@ -102,7 +99,7 @@ public class ScanDetail {
 
         List<PasspointMatchInfo> list = new ArrayList<>();
         for (Map.Entry<HomeSP, PasspointMatch> entry : mMatches.entrySet()) {
-            new PasspointMatchInfo(entry.getValue(), mNetworkDetail, entry.getKey());
+            new PasspointMatchInfo(entry.getValue(), this, entry.getKey());
         }
         return list;
     }

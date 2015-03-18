@@ -39,7 +39,9 @@ public class NetworkDetail {
     private static final long SSID_UTF8_BIT = 0x0001000000000000L;
     //turn off when SHIP
     private static final boolean DBG = true;
-    private static final String TAG = "NetworkDetail";
+    private static final boolean VDBG = false;
+    
+    private static final String TAG = "NetworkDetail:";
 
     public enum Ant {
         Private,
@@ -384,6 +386,11 @@ public class NetworkDetail {
             mCenterfreq1 = 0;
         }
         m80211McRTTResponder = RTTResponder;
+        if (VDBG) {
+            Log.d(TAG, mSSID + "ChannelWidth is: " + mChannelWidth + " PrimaryFreq: " + mPrimaryFreq +
+                    " mCenterfreq0: " + mCenterfreq0 + " mCenterfreq1: " + mCenterfreq1 +
+                    (m80211McRTTResponder ? "Support RTT reponder" : "Do not support RTT responder"));
+        }
     }
 
     private static ByteBuffer getAndAdvancePayload(ByteBuffer data, int plLength) {
