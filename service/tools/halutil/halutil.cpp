@@ -62,9 +62,16 @@ static wifi_band band = WIFI_BAND_UNSPECIFIED;
 
 mac_addr hotlist_bssids[16];
 unsigned char mac_oui[3];
+wifi_epno_network epno_ssid[32];
 int channel_list[16];
 int num_hotlist_bssids = 0;
 int num_channels = 0;
+int num_epno_ssids = -1;
+
+#define EPNO_HIDDEN               (1 << 0)
+#define EPNO_A_BAND_TRIG          (1 << 1)
+#define EPNO_BG_BAND_TRIG         (1 << 2)
+#define EPNO_ABG_BAND_TRIG        (EPNO_A_BAND_TRIG | EPNO_BG_BAND_TRIG)
 
 void parseMacAddress(const char *str, mac_addr addr);
 
@@ -243,7 +250,8 @@ typedef enum {
     EVENT_TYPE_SIGNIFICANT_WIFI_CHANGE = 1002,
     EVENT_TYPE_RTT_RESULTS = 1003,
     EVENT_TYPE_SCAN_COMPLETE = 1004,
-    EVENT_TYPE_HOTLIST_AP_LOST = 1005
+    EVENT_TYPE_HOTLIST_AP_LOST = 1005,
+    EVENT_TYPE_EPNO_SSID = 1006
 } EventType;
 
 typedef struct {
@@ -308,6 +316,7 @@ static int scanCmdId;
 static int hotlistCmdId;
 static int significantChangeCmdId;
 static int rttCmdId;
+static int epnoCmdId;
 
 static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
         int max_ap_per_scan, int base_period, int threshold_percent, int threshold_num_scans) {
@@ -596,6 +605,16 @@ static void onHotlistAPLost(wifi_request_id id, unsigned num_results, wifi_scan_
     putEventInCache(EVENT_TYPE_HOTLIST_AP_LOST, "Lost event Hotlist APs");
 }
 
+static void onePnoSsidFound(wifi_request_id id, unsigned num_results, wifi_scan_result *results) {
+
+    printMsg("Found ePNO SSID\n");
+    for (unsigned i = 0; i < num_results; i++) {
+        printMsg("SSID %s, channel %d, rssi %d\n", results[i].ssid,
+            results[i].channel, (signed char)results[i].rssi);
+    }
+    putEventInCache(EVENT_TYPE_EPNO_SSID, "Found ePNO SSID");
+}
+
 static void testRTT() {
 
     wifi_scan_result results[256];
@@ -800,6 +819,43 @@ static void testHotlistAPs(){
         resetHotlistAPs();
     } else {
         printMsg("Could not set AP hotlist : %d\n", result);
+    }
+}
+
+static void testPNO(){
+
+    EventInfo info;
+    wifi_epno_handler handler;
+    handler.on_network_found = &onePnoSsidFound;
+    printMsg("configuring ePNO SSIDs\n");
+    memset(&info, 0, sizeof(info));
+    epnoCmdId = getNewCmdId();
+    int result = wifi_set_epno_list(epnoCmdId, wlan0Handle, num_epno_ssids, epno_ssid, handler);
+     if (result == WIFI_SUCCESS) {
+        bool startScanResult = startScan(&onScanResultsAvailable, stest_max_ap,
+            stest_base_period, stest_threshold_percent, stest_threshold_num_scans);
+        if (!startScanResult) {
+            printMsg("testPNO failed to start scan!!\n");
+            return;
+        }
+        printMsg("Waiting for ePNO events\n");
+        while (true) {
+            memset(&info, 0, sizeof(info));
+            getEventFromCache(info);
+
+            if (info.type == EVENT_TYPE_SCAN_RESULTS_AVAILABLE) {
+                retrieveScanResults();
+            } else if (info.type == EVENT_TYPE_EPNO_SSID) {
+                printMsg("FOUND ePNO event");
+                if (--max_event_wait > 0)
+                  printMsg(", waiting for more event ::%d\n", max_event_wait);
+                else
+                  break;
+            }
+        }
+        //wifi_reset_epno_list(epnoCmdId, wlan0Handle);
+    } else {
+        printMsg("Could not set ePNO : %d\n", result);
     }
 }
 
@@ -1045,7 +1101,43 @@ void readTestOptions(int argc, char *argv[]){
             printf(" rtt_retries #-%d\n", rtt_samples);
         } else if (strcmp(argv[j], "-scan_mac_oui") == 0 && isxdigit(argv[j+1][0])) {
             parseMacOUI(argv[++j], mac_oui);
-     }
+        } else if ((strcmp(argv[j], "-ssid") == 0)) {
+            num_epno_ssids++;
+            if (num_epno_ssids < 32) {
+                memcpy(epno_ssid[num_epno_ssids].ssid, argv[j + 1], strlen(argv[j + 1]));
+                printf(" SSID %s\n", epno_ssid[num_epno_ssids].ssid);
+                j++;
+            }
+        } else if ((strcmp(argv[j], "-auth") == 0)) {
+            if (num_epno_ssids < 32) {
+               epno_ssid[num_epno_ssids].auth_bit_field = atoi(argv[++j]);
+               printf(" auth %d\n", epno_ssid[num_epno_ssids].auth_bit_field);
+            }
+
+        } else if ((strcmp(argv[j], "-rssi") == 0) && isdigit(argv[j+1][0])) {
+            if (num_epno_ssids < 32) {
+               epno_ssid[num_epno_ssids].rssi_threshold = atoi(argv[++j]) * -1;
+               printf(" rssi thresh %d\n", epno_ssid[num_epno_ssids].rssi_threshold);
+
+            }
+        } else if ((strcmp(argv[j], "-hidden") == 0)) {
+            if (num_epno_ssids < 32) {
+               epno_ssid[num_epno_ssids].flags |= atoi(argv[++j]) ? EPNO_HIDDEN: 0;
+               printf(" flags %d\n", epno_ssid[num_epno_ssids].flags);
+            }
+        } else if ((strcmp(argv[j], "-trig") == 0)) {
+            if (num_epno_ssids < 32) {
+                if ((strcmp(argv[j + 1], "a") == 0)) {
+                   epno_ssid[num_epno_ssids].flags |= EPNO_A_BAND_TRIG;
+                } else if ((strcmp(argv[j + 1], "bg") == 0)) {
+                   epno_ssid[num_epno_ssids].flags |= EPNO_BG_BAND_TRIG;
+                } else if ((strcmp(argv[j + 1], "abg") == 0)) {
+                   epno_ssid[num_epno_ssids].flags |= EPNO_ABG_BAND_TRIG;
+                }
+               printf(" flags %d\n", epno_ssid[num_epno_ssids].flags);
+            }
+            j++;
+        }
     }
 }
 
@@ -1263,6 +1355,7 @@ int main(int argc, char *argv[]) {
         printf(" -rtt_samples     Run RTT on nearby APs\n");
         printf(" -scan_mac_oui XY:AB:CD\n");
         printf(" -nodfs <0|1>     Turn OFF/ON non-DFS locales\n");
+        printf(" -ePNO Configure ePNO SSIDs\n");
         goto cleanup;
     }
     memset(mac_oui, 0, 3);
@@ -1305,6 +1398,12 @@ int main(int argc, char *argv[]) {
         if (argc > 2)
             nodfs = (u32)atoi(argv[2]);
         wifi_set_nodfs_flag(wlan0Handle, nodfs);
+    } else if ((strcmp(argv[1], "-ePNO") == 0)) {
+        memset(epno_ssid, 0, 16 * sizeof(epno_ssid[0]));
+        num_epno_ssids = -1;
+        readTestOptions(argc, argv);
+        num_epno_ssids++;
+        testPNO();
     }
 cleanup:
     cleanup();
