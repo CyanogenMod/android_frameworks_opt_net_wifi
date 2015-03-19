@@ -32,8 +32,9 @@ public class NetworkDetail {
     private static final int RTT_RESP_ENABLE_BIT = 70;
 
     private static final long SSID_UTF8_BIT = 0x0001000000000000L;
-    //turn off when SHIP
-    private static final boolean DBG = true;
+
+    // This should only be enabled locally for debugging purposes.
+    private static final boolean DBG = false;
     private static final String TAG = "NetworkDetail:";
 
     public enum Ant {
@@ -156,11 +157,11 @@ public class NetworkDetail {
         int centerFreqIndex2 = 0;
         boolean RTTResponder = false;
 
-        Log.e(TAG,"IE Length is %d" + data.remaining());
+        if (DBG) Log.e(TAG,"IE Length is %d" + data.remaining());
         while (data.hasRemaining()) {
             int eid = data.get() & Constants.BYTE_MASK;
             int elementLength = data.get() & Constants.BYTE_MASK;
-            Log.e(TAG,"eid is:" + eid + " elementLength:" +  elementLength);
+            if (DBG) Log.e(TAG,"eid is:" + eid + " elementLength:" +  elementLength);
             if (elementLength > data.remaining()) {
                 throw new IllegalArgumentException("Length out of bounds: " + elementLength +" ," + data.remaining());
             }
