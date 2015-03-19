@@ -456,93 +456,12 @@ public class WifiStateMachine extends StateMachine {
             case WifiConfiguration.USER_BANNED:
                 return false;
             case WifiConfiguration.USER_PENDING:
-                return true;
             default: // USER_UNSPECIFIED
-                break;
+               /* the intention was to ask user here; but a dialog box is   *
+                * too invasive; so we are going to allow connection for now */
+                config.userApproved = WifiConfiguration.USER_APPROVED;
+                return false;
         }
-
-        // Stop multiple connects from opening multiple alerts
-        config.userApproved = WifiConfiguration.USER_PENDING;
-
-        final Message newMessage = Message.obtain(message);
-
-        String appLabel;
-        try {
-            PackageManager pm = mContext.getPackageManager();
-            ApplicationInfo info = pm.getApplicationInfo(config.creatorName, 0);
-            appLabel = pm.getApplicationLabel(info).toString();
-        } catch( NameNotFoundException e) {
-            // This will happen when a shared user owns the network.
-            // In that case we might be able to display something more meaningful
-            appLabel = mContext.getString(R.string.wifi_connect_default_application);
-        }
-
-        String alertMessage = mContext.getResources()
-                .getString(R.string.wifi_connect_alert_message, appLabel, config.SSID);
-
-        AlertDialog alert = new AlertDialog.Builder(mContext)
-                .setTitle(R.string.wifi_connect_alert_title)
-                .setMessage(alertMessage)
-                .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
-                    /* Sometimes onClick is called twice - it might be an automation bug;
-                     * but that causes sendMessage to get called again. mClicked helps
-                     * work around that problem */
-                    AtomicBoolean mClicked = new AtomicBoolean(false);
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        if (config.userApproved != WifiConfiguration.USER_BANNED
-                                && mClicked.compareAndSet(false, true)) {
-                            config.userApproved = WifiConfiguration.USER_APPROVED;
-
-                            if (config.linkedConfigurations != null) {
-                                for (String key : config.linkedConfigurations.keySet()) {
-                                    WifiConfiguration linked =
-                                        mWifiConfigStore.getWifiConfiguration(key);
-                                    linked.userApproved = config.userApproved;
-                                }
-                            }
-
-                            mWifiConfigStore.writeKnownNetworkHistory(false);
-
-                            sendMessage(newMessage);
-                            dialog.dismiss();
-                        }
-                    }
-                })
-                .setNegativeButton(android.R.string.no, new DialogInterface.OnClickListener() {
-                    /* Sometimes onClick is called twice - it might be an automation bug;
-                     * but that causes sendMessage to get called again. mClicked helps
-                     * work around that problem */
-                    AtomicBoolean mClicked = new AtomicBoolean(false);
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        if (config.userApproved != WifiConfiguration.USER_APPROVED
-                                && mClicked.compareAndSet(false, true)) {
-                            config.userApproved = WifiConfiguration.USER_BANNED;
-
-                            if (config.linkedConfigurations != null) {
-                                for (String key : config.linkedConfigurations.keySet()) {
-                                    WifiConfiguration linked = mWifiConfigStore.getWifiConfiguration(key);
-                                    linked.userApproved = config.userApproved;
-                                }
-                            }
-
-                            mWifiConfigStore.writeKnownNetworkHistory(false);
-
-                            dialog.dismiss();
-                            newMessage.recycle();
-                        }
-                    }
-                })
-                .setCancelable(false)
-                .create();
-        alert.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
-        WindowManager.LayoutParams attrs = alert.getWindow().getAttributes();
-        attrs.privateFlags = WindowManager.LayoutParams.PRIVATE_FLAG_SHOW_FOR_ALL_USERS;
-        alert.getWindow().setAttributes(attrs);
-        alert.show();
-
-        return true;
     }
 
     /**
