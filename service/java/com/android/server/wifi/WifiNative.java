@@ -1192,13 +1192,7 @@ public class WifiNative {
         synchronized (mLock) {
             if (sHalFailed)
                 return false;
-            if (startHalNative()) {
-                int num = getInterfaces();
-                if ((num == 0) || (sWlan0Index != -1)) {
-                    Log.e(TAG, "Could not load wlan0 interface");
-                    sHalFailed = true;
-                    return false;
-                }
+            if (startHalNative() && (getInterfaces() != 0) && (sWlan0Index != -1)) {
                 new MonitorThread().start();
                 sHalIsStarted = true;
                 return true;
