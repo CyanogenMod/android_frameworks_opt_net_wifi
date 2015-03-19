@@ -582,7 +582,7 @@ static jboolean android_net_wifi_getScanCapabilities(
     setIntField(env, capabilities, "max_ap_cache_per_scan", c.max_ap_cache_per_scan);
     setIntField(env, capabilities, "max_rssi_sample_size", c.max_rssi_sample_size);
     setIntField(env, capabilities, "max_scan_reporting_threshold", c.max_scan_reporting_threshold);
-    setIntField(env, capabilities, "max_hotlist_aps", c.max_hotlist_aps);
+    setIntField(env, capabilities, "max_hotlist_bssids", c.max_hotlist_bssids);
     setIntField(env, capabilities, "max_significant_wifi_change_aps",
                 c.max_significant_wifi_change_aps);
 
@@ -757,14 +757,14 @@ static jboolean android_net_wifi_setHotlist(
 
     jobjectArray array = (jobjectArray) getObjectField(env, ap,
             "bssidInfos", "[Landroid/net/wifi/WifiScanner$BssidInfo;");
-    params.num_ap = env->GetArrayLength(array);
+    params.num_bssid = env->GetArrayLength(array);
 
-    if (params.num_ap == 0) {
+    if (params.num_bssid == 0) {
         ALOGE("Error in accesing array");
         return false;
     }
 
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         jobject objAp = env->GetObjectArrayElement(array, i);
 
         jstring macAddrString = (jstring) getObjectField(
@@ -876,17 +876,17 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
     const char *bssid_info_array_type = "[Landroid/net/wifi/WifiScanner$BssidInfo;";
     jobjectArray bssids = (jobjectArray)getObjectField(
                 env, settings, "bssidInfos", bssid_info_array_type);
-    params.num_ap = env->GetArrayLength(bssids);
+    params.num_bssid = env->GetArrayLength(bssids);
 
-    if (params.num_ap == 0) {
+    if (params.num_bssid == 0) {
         ALOGE("Error in accessing array");
         return false;
     }
 
     ALOGD("Initialized common fields %d, %d, %d, %d", params.rssi_sample_size,
-            params.lost_ap_sample_size, params.min_breaching, params.num_ap);
+            params.lost_ap_sample_size, params.min_breaching, params.num_bssid);
 
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         jobject objAp = env->GetObjectArrayElement(bssids, i);
 
         jstring macAddrString = (jstring) getObjectField(
@@ -916,7 +916,7 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
         ALOGD("Added bssid %s, [%04d, %04d]", bssidOut, params.ap[i].low, params.ap[i].high);
     }
 
-    ALOGD("Added %d bssids", params.num_ap);
+    ALOGD("Added %d bssids", params.num_bssid);
 
     wifi_significant_change_handler handler;
     memset(&handler, 0, sizeof(handler));
