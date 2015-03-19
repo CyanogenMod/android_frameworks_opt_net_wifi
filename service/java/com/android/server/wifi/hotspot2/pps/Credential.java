@@ -8,15 +8,12 @@ import android.util.Log;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.anqp.eap.InnerAuthEAP;
-import com.android.server.wifi.anqp.eap.AuthParam;
-import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.OMAException;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
 
 public class Credential {
     public enum CertType {IEEE, x509v3}
@@ -48,7 +45,7 @@ public class Credential {
         mEAPMethod = eapMethod;
         mUserName = userName;
 
-        if (TextUtils.isEmpty(password) == false) {
+        if (!TextUtils.isEmpty(password)) {
             byte[] pwOctets = Base64.decode(password, Base64.DEFAULT);
             mPassword = new String(pwOctets, StandardCharsets.UTF_8);
         } else {
@@ -111,11 +108,20 @@ public class Credential {
         mEAPMethod = mapEapMethod(enterpriseConfig.getEapMethod(),
                 enterpriseConfig.getPhase2Method());
         mCertType = mapCertType(enterpriseConfig.getEapMethod());
-        if (enterpriseConfig.getCaCertificate() != null) {
-            mFingerPrint = enterpriseConfig.getClientCertificate().getSignature();
+        byte[] fingerPrint = null;
+        if (enterpriseConfig.getClientCertificate() != null) {
+            try {
+                MessageDigest digester = MessageDigest.getInstance("SHA-256");
+                fingerPrint = digester.digest(enterpriseConfig.getClientCertificate().getEncoded());
+            }
+            catch (GeneralSecurityException gse) {
+                Log.e("CRED", "Failed to generate certificate fingerprint: " + gse);
+                fingerPrint = null;
+            }
         } else {
-            mFingerPrint = null;
+            fingerPrint = null;
         }
+        mFingerPrint = fingerPrint;
         mImsi = enterpriseConfig.getPlmn();
         mUserName = enterpriseConfig.getIdentity();
         mPassword = enterpriseConfig.getPassword();
@@ -193,6 +199,14 @@ public class Credential {
 
     public String getPassword() {
         return mPassword;
+    }
+
+    public CertType getCertType() {
+        return mCertType;
+    }
+
+    public byte[] getFingerPrint() {
+        return mFingerPrint;
     }
 
     @Override

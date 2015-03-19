@@ -12,7 +12,7 @@ import java.util.Map;
 
 public class AnqpCache implements AlarmHandler {
     private static final long CACHE_RECHECK = 60000L;
-    private static final boolean STANDARD_ESS = false;  // Per AP keying; see CacheKey below.
+    private static final boolean STANDARD_ESS = true;  // Regular AP keying; see CacheKey below.
 
     private final HashMap<CacheKey, ANQPData> mANQPCache;
     private final Chronograph mChronograph;
@@ -157,8 +157,12 @@ public class AnqpCache implements AlarmHandler {
                     !data.isResolved() ||
                     data.getDomainID() != network.getAnqpDomainID() ||
                     data.recacheable(now)) {
+                Log.d("HS2J", "Updating " + key + " -> " + data);
                 data = new ANQPData(network, anqpElements);
                 mANQPCache.put(key, data);
+            }
+            else {
+                Log.d("HS2J", "Not recaching " + key + " -> " + data);
             }
         }
     }

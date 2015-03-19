@@ -34,6 +34,7 @@ import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
+import android.net.Uri;
 import android.net.wifi.*;
 import android.net.wifi.IWifiManager;
 import android.os.AsyncTask;
@@ -61,6 +62,8 @@ import java.io.PrintWriter;
 import java.lang.Override;
 import java.net.InetAddress;
 import java.net.Inet4Address;
+import java.net.URISyntaxException;
+import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -69,6 +72,9 @@ import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.configparse.ConfigBuilder;
+
+import org.xml.sax.SAXException;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -751,6 +757,25 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public WifiConfiguration getWifiApConfiguration() {
         enforceAccessPermission();
         return mWifiStateMachine.syncGetWifiApConfiguration();
+    }
+
+    /**
+     * see {@link WifiManager#buildWifiConfig()}
+     * @return a WifiConfiguration.
+     */
+    public WifiConfiguration buildWifiConfig(String uriString, String mimeType, byte[] data) {
+        if (mimeType.equals("application/x-wifi-config")) {
+            try {
+                return ConfigBuilder.buildConfig(uriString, data, mContext);
+            }
+            catch (IOException | GeneralSecurityException | SAXException e) {
+                Log.e(TAG, "Failed to parse wi-fi configuration: " + e);
+            }
+        }
+        else {
+            Log.i(TAG, "Unknown wi-fi config type: " + mimeType);
+        }
+        return null;
     }
 
     /**
