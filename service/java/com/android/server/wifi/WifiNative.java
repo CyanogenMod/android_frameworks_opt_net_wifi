@@ -1242,7 +1242,7 @@ public class WifiNative {
         public int  max_ap_cache_per_scan;
         public int  max_rssi_sample_size;
         public int  max_scan_reporting_threshold;        // in number of scan results??
-        public int  max_hotlist_aps;
+        public int  max_hotlist_bssids;
         public int  max_significant_wifi_change_aps;
     }
 
@@ -1761,6 +1761,9 @@ public class WifiNative {
     //---------------------------------------------------------------------------------
 
     /* Wifi Logger commands/events */
+
+    private static native boolean startLogging(int iface);
+
     public static interface WifiLoggerEventHandler {
         void onDataAvailable(char data[], int len);
     }

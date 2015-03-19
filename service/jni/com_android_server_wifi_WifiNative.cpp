@@ -1303,11 +1303,10 @@ int buffer_size, wifi_ring_buffer_status *status) {
         0, 0);
 }
 
-static jboolean android_net_wifi_start_logging(
-        JNIEnv *env, jclass cls, jint iface, jint id, jobject params)  {
+static jboolean android_net_wifi_start_logging(JNIEnv *env, jclass cls, jint iface)  {
 
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("android_net_wifi_start_logging [%d] = %p", id, handle);
+    ALOGD("android_net_wifi_start_logging = %p", handle);
 
     if (handle == 0) {
         return WIFI_ERROR_UNINITIALIZED;
@@ -1375,7 +1374,7 @@ static JNINativeMethod gWifiMethods[] = {
     { "toggleInterfaceNative",    "(I)Z",  (void*) android_net_wifi_toggle_interface},
     { "getRttCapabilitiesNative", "(I)Landroid/net/wifi/RttManager$RttCapabilities;",
             (void*) android_net_wifi_get_rtt_capabilities},
-    { "android_net_wifi_start_logging", "(IZ)Z", (void*) android_net_wifi_start_logging}
+    { "startLogging", "(I)Z", (void*) android_net_wifi_start_logging}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

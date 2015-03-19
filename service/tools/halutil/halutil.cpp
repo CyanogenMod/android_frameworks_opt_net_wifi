@@ -227,7 +227,7 @@ void printScanCapabilities(wifi_gscan_capabilities capabilities)
     printMsg("max_ap_cache_per_scan = %d\n", capabilities.max_ap_cache_per_scan);
     printMsg("max_rssi_sample_size = %d\n", capabilities.max_rssi_sample_size);
     printMsg("max_scan_reporting_threshold = %d\n", capabilities.max_scan_reporting_threshold);
-    printMsg("max_hotlist_aps = %d\n", capabilities.max_hotlist_aps);
+    printMsg("max_hotlist_bssids = %d\n", capabilities.max_hotlist_bssids);
     printMsg("max_significant_wifi_change_aps = %d\n",
     capabilities.max_significant_wifi_change_aps);
 }
@@ -721,7 +721,7 @@ static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params
         params->ap[i].low  = -htest_low_threshold;
         params->ap[i].high = -htest_high_threshold;
     }
-    params->num_ap = stest_max_ap;
+    params->num_bssid = stest_max_ap;
     return WIFI_SUCCESS;
 }
 
@@ -736,13 +736,13 @@ static wifi_error setHotlistAPs() {
           params.ap[i].low  = -htest_low_threshold;
           params.ap[i].high = -htest_high_threshold;
       }
-      params.num_ap = num_hotlist_bssids;
+      params.num_bssid = num_hotlist_bssids;
     } else {
       setHotlistAPsUsingScanResult(&params);
     }
 
     printMsg("BSSID\t\t\tHIGH\tLOW\n");
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         mac_addr &addr = params.ap[i].bssid;
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%d\t%d\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5],
@@ -842,13 +842,13 @@ static int SelectSignificantAPsFromScanResults() {
         params.ap[i].low  = results[i].rssi - swctest_rssi_ch_threshold;
         params.ap[i].high = results[i].rssi + swctest_rssi_ch_threshold;
     }
-    params.num_ap = stest_max_ap;
+    params.num_bssid = stest_max_ap;
 
     printMsg("Settting Significant change params rssi_sample_size#%d lost_ap_sample_size#%d"
         " and min_breaching#%d\n", params.rssi_sample_size,
         params.lost_ap_sample_size , params.min_breaching);
     printMsg("BSSID\t\t\tHIGH\tLOW\n");
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         mac_addr &addr = params.ap[i].bssid;
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%d\t%d\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5],
