@@ -1289,6 +1289,39 @@ static jobject android_net_wifi_get_rtt_capabilities(JNIEnv *env, jclass cls, ji
 }
 
 // ----------------------------------------------------------------------------
+// Debug framework
+// ----------------------------------------------------------------------------
+
+static void onRingBufferData(wifi_request_id id, wifi_ring_buffer_id ring_id, char * buffer,
+int buffer_size, wifi_ring_buffer_status *status) {
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onRingBufferData called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+
+    reportEvent(env, mCls, "onDataAvailable", "(I[Landroid/net/wifi/WiFiLogger$LogData;)V",
+        0, 0);
+}
+
+static jboolean android_net_wifi_start_logging(
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject params)  {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("android_net_wifi_start_logging [%d] = %p", id, handle);
+
+    if (handle == 0) {
+        return WIFI_ERROR_UNINITIALIZED;
+    }
+    wifi_ring_buffer_data_handler handler;
+    handler.on_ring_buffer_data = &onRingBufferData;
+
+    wifi_error result = WIFI_SUCCESS; //ifi_start_logging(handle, 1, 0, 5, 4*1024,(u8*)"wifi_connectivity_events", handler);
+
+    return result;
+}
+
+
+// ----------------------------------------------------------------------------
 
 /*
  * JNI registration.
@@ -1341,7 +1374,8 @@ static JNINativeMethod gWifiMethods[] = {
     { "setDfsFlagNative",         "(IZ)Z",  (void*) android_net_wifi_setDfsFlag},
     { "toggleInterfaceNative",    "(I)Z",  (void*) android_net_wifi_toggle_interface},
     { "getRttCapabilitiesNative", "(I)Landroid/net/wifi/RttManager$RttCapabilities;",
-            (void*) android_net_wifi_get_rtt_capabilities}
+            (void*) android_net_wifi_get_rtt_capabilities},
+    { "android_net_wifi_start_logging", "(IZ)Z", (void*) android_net_wifi_start_logging}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

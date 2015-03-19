@@ -183,6 +183,7 @@ public class WifiStateMachine extends StateMachine {
     private WifiAutoJoinController mWifiAutoJoinController;
     private INetworkManagementService mNwService;
     private ConnectivityManager mCm;
+    private WifiLogger mWifiLogger;
 
     private final boolean mP2pSupported;
     private final AtomicBoolean mP2pConnected = new AtomicBoolean(false);
@@ -902,6 +903,7 @@ public class WifiStateMachine extends StateMachine {
         mWifiConfigStore = new WifiConfigStore(context, mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
+        mWifiLogger = new WifiLogger(mContext, this);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
         mWifiInfo = new WifiInfo();
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,

@@ -348,6 +348,8 @@ public class WifiNative {
         return null;
     }
 
+
+
     /**
      * Format of results:
      * =================
@@ -1754,6 +1756,20 @@ public class WifiNative {
             } else {
                 return null;
             }
+        }
+    }
+    //---------------------------------------------------------------------------------
+
+    /* Wifi Logger commands/events */
+    public static interface WifiLoggerEventHandler {
+        void onDataAvailable(char data[], int len);
+    }
+
+    private static WifiLoggerEventHandler sWifiLoggerEventHandler = null;
+
+    synchronized private static void onDataAvailable(char data[], int len) {
+        if (sWifiLoggerEventHandler != null) {
+            sWifiLoggerEventHandler.onDataAvailable(data, len);
         }
     }
 }
