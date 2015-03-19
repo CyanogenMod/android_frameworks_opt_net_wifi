@@ -368,7 +368,7 @@ static void onScanEvent(wifi_scan_event event, unsigned status) {
 
     ALOGD("onScanStatus called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
-    reportEvent(env, mCls, "onScanStatus", "(I)V", status);
+    reportEvent(env, mCls, "onScanStatus", "(I)V", event);
 }
 
 static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
