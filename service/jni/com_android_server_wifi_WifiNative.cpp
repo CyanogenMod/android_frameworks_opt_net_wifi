@@ -1026,7 +1026,7 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls, jint 
     }
 }
 
-static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_result results[]) {
+static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_result* results[]) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
@@ -1046,7 +1046,7 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
 
     for (unsigned i = 0; i < num_results; i++) {
 
-        wifi_rtt_result& result = results[i];
+        wifi_rtt_result *result = results[i];
 
         jobject rttResult = createObject(env, "android/net/wifi/RttManager$RttResult");
         if (rttResult == NULL) {
@@ -1055,31 +1055,31 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
         }
 
         char bssid[32];
-        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result.addr[0], result.addr[1],
-            result.addr[2], result.addr[3], result.addr[4], result.addr[5]);
+        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result->addr[0], result->addr[1],
+            result->addr[2], result->addr[3], result->addr[4], result->addr[5]);
 
         setStringField(env, rttResult, "bssid", bssid);
-        setIntField(env,  rttResult, "burstNumber",              result.burst_num);
-        setIntField(env,  rttResult, "measurementFrameNumber",   result.measurement_number);
-        setIntField(env,  rttResult, "successMeasurementFrameNumber",   result.success_number);
-        setIntField(env, rttResult, "frameNumberPerBurstPeer",   result.number_per_burst_peer);
-        setIntField(env,  rttResult, "status",                   result.status);
-        setIntField(env,  rttResult, "measurementType",          result.type);
-        setIntField(env, rttResult, "retryAfterDuration",       result.retry_after_duration);
-        setLongField(env, rttResult, "ts",                       result.ts);
-        setIntField(env,  rttResult, "rssi",                     result.rssi);
-        setIntField(env,  rttResult, "rssiSpread",               result.rssi_spread);
-        setIntField(env,  rttResult, "txRate",                   result.tx_rate.bitrate);
-        setIntField(env,  rttResult, "RxRate",                   result.rx_rate.bitrate);
-        setLongField(env, rttResult, "rtt",                      result.rtt);
-        setLongField(env, rttResult, "rttStandardDeviation",     result.rtt_sd);
-        setLongField(env, rttResult, "rttSpread",                result.rtt_spread);
-        setIntField(env,  rttResult, "distance",                 result.distance);
-        setIntField(env,  rttResult, "distanceStandardDeviation", result.distance_sd);
-        setIntField(env,  rttResult, "distanceSpread",           result.distance_spread);
-        setIntField(env,  rttResult, "burstDuration",             result.burst_duration);
+        setIntField(env,  rttResult, "burstNumber",              result->burst_num);
+        setIntField(env,  rttResult, "measurementFrameNumber",   result->measurement_number);
+        setIntField(env,  rttResult, "successMeasurementFrameNumber",   result->success_number);
+        setIntField(env, rttResult, "frameNumberPerBurstPeer",   result->number_per_burst_peer);
+        setIntField(env,  rttResult, "status",                   result->status);
+        setIntField(env,  rttResult, "measurementType",          result->type);
+        setIntField(env, rttResult, "retryAfterDuration",       result->retry_after_duration);
+        setLongField(env, rttResult, "ts",                       result->ts);
+        setIntField(env,  rttResult, "rssi",                     result->rssi);
+        setIntField(env,  rttResult, "rssiSpread",               result->rssi_spread);
+        setIntField(env,  rttResult, "txRate",                   result->tx_rate.bitrate);
+        setIntField(env,  rttResult, "rxRate",                   result->rx_rate.bitrate);
+        setLongField(env, rttResult, "rtt",                      result->rtt);
+        setLongField(env, rttResult, "rttStandardDeviation",     result->rtt_sd);
+        setLongField(env, rttResult, "rttSpread",                result->rtt_spread);
+        setIntField(env,  rttResult, "distance",                 result->distance);
+        setIntField(env,  rttResult, "distanceStandardDeviation", result->distance_sd);
+        setIntField(env,  rttResult, "distanceSpread",           result->distance_spread);
+        setIntField(env,  rttResult, "burstDuration",             result->burst_duration);
 
-        if (result.LCI.len != 0) {
+        /*if (result->LCI.len != 0) {
             jobject LCI = createObject(env, "android/net/wifi/RttManager$wifiInformationElement");
             setIntField(env, LCI, "id",           (int) result.LCI.id);
             //setStringField(env, LCI,"data",        result.LCI.data);
@@ -1093,7 +1093,7 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
             //setStringField(env, LCR,"data",        result.LCI.data);
             setObjectField(env, rttResult, "LCR",
                     "android/net/wifi/RttManager$WifiInformationElement;", LCR);
-        }
+        }*/
 
         env->SetObjectArrayElement(rttResults, i, rttResult);
     }
