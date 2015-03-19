@@ -3299,9 +3299,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         // Adding a new BSSID
         ScanResult result = config.scanResultCache.get(scanResult.BSSID);
-        if (result == null) {
-            config.dirty = true;
-        } else {
+        if (result != null) {
             // transfer the black list status
             scanResult.autoJoinStatus = result.autoJoinStatus;
             scanResult.blackListTimestamp = result.blackListTimestamp;
