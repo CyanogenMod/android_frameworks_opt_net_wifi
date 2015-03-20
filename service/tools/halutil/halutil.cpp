@@ -419,14 +419,16 @@ void printSignificantChangeResult(wifi_significant_change_result *res) {
 
 void printScanCapabilities(wifi_gscan_capabilities capabilities)
 {
-    printMsg("max_scan_cache_size = %d\n", capabilities.max_scan_cache_size);
-    printMsg("max_scan_buckets = %d\n", capabilities.max_scan_buckets);
-    printMsg("max_ap_cache_per_scan = %d\n", capabilities.max_ap_cache_per_scan);
-    printMsg("max_rssi_sample_size = %d\n", capabilities.max_rssi_sample_size);
-    printMsg("max_scan_reporting_threshold = %d\n", capabilities.max_scan_reporting_threshold);
-    printMsg("max_hotlist_bssids = %d\n", capabilities.max_hotlist_bssids);
-    printMsg("max_significant_wifi_change_aps = %d\n",
+    printMsg("Scan Capabililites\n");
+    printMsg("  max_scan_cache_size = %d\n", capabilities.max_scan_cache_size);
+    printMsg("  max_scan_buckets = %d\n", capabilities.max_scan_buckets);
+    printMsg("  max_ap_cache_per_scan = %d\n", capabilities.max_ap_cache_per_scan);
+    printMsg("  max_rssi_sample_size = %d\n", capabilities.max_rssi_sample_size);
+    printMsg("  max_scan_reporting_threshold = %d\n", capabilities.max_scan_reporting_threshold);
+    printMsg("  max_hotlist_bssids = %d\n", capabilities.max_hotlist_bssids);
+    printMsg("  max_significant_wifi_change_aps = %d\n",
             capabilities.max_significant_wifi_change_aps);
+    printMsg("  max_number_epno_networks = %d\n", capabilities.max_number_epno_networks);
 }
 
 
@@ -1265,7 +1267,7 @@ static void testPNO(){
     EventInfo info;
     wifi_epno_handler handler;
     handler.on_network_found = &onePnoSsidFound;
-    printMsg("configuring ePNO SSIDs\n");
+    printMsg("configuring ePNO SSIDs num %u\n", num_epno_ssids);
     memset(&info, 0, sizeof(info));
     epnoCmdId = getNewCmdId();
     int result = wifi_set_epno_list(epnoCmdId, wlan0Handle, num_epno_ssids, epno_ssid, handler);
