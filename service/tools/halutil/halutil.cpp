@@ -1890,6 +1890,11 @@ int main(int argc, char *argv[]) {
         readTestOptions(argc, argv);
         num_epno_ssids++;
         testPNO();
+    } else if (strcmp(argv[1], "-country") == 0) {
+        char *country_code;
+        if (argc > 2)
+            country_code = argv[2];
+        wifi_set_country_code(wlan0Handle, country_code);
     } else if (strcmp(argv[1], "-help") == 0) {
         printUsage();
     }
