@@ -11,6 +11,7 @@
 #include <linux/if.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <semaphore.h>
 
 pthread_mutex_t printMutex;
 void printMsg(const char *fmt, ...)
@@ -366,9 +367,12 @@ static void cleanup() {
     wifi_cleanup(halHandle, cleaned_up_handler);
 }
 
+sem_t event_thread_mutex;
+
 static void *eventThreadFunc(void *context) {
 
     printMsg("starting wifi event loop\n");
+    sem_post( &event_thread_mutex );
     wifi_event_loop(halHandle);
     printMsg("out of wifi event loop\n");
 
@@ -1837,6 +1841,7 @@ int main(int argc, char *argv[]) {
     } else {
         printMsg("successfully initialized HAL; wlan0 = %p\n", wlan0Handle);
     }
+    sem_init(&event_thread_mutex,0,0);
 
     pthread_cond_init(&eventCacheCondition, NULL);
     pthread_mutex_init(&eventCacheMutex, NULL);
@@ -1844,7 +1849,8 @@ int main(int argc, char *argv[]) {
     pthread_t tidEvent;
     pthread_create(&tidEvent, NULL, &eventThreadFunc, NULL);
 
-    sleep(2);     // let the thread start
+    sem_wait(&event_thread_mutex);
+    //sleep(2);     // let the thread start
 
     if (argc < 2 || argv[1][0] != '-') {
         printUsage();
