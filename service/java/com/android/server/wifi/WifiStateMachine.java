@@ -73,11 +73,13 @@ import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiLinkLayerStats;
 import android.net.wifi.WifiManager;
+import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
+import android.net.wifi.IWifiScanner;
 import android.os.BatteryStats;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -144,11 +146,11 @@ import java.util.regex.Pattern;
  *
  * @hide
  */
-public class WifiStateMachine extends StateMachine {
+public class WifiStateMachine extends StateMachine implements WifiNative.WifiPnoEventHandler {
 
     private static final String NETWORKTYPE = "WIFI";
     private static final String NETWORKTYPE_UNTRUSTED = "WIFI_UT";
-    private static boolean DBG = false;
+    private static boolean DBG = true;
     private static boolean VDBG = false;
     private static boolean VVDBG = false;
     private static boolean mLogMessages = false;
@@ -159,7 +161,7 @@ public class WifiStateMachine extends StateMachine {
     private static final String GOOGLE_OUI = "DA-A1-19";
 
     /* temporary debug flag - best network selection development */
-    private static boolean PDBG = false;
+    private static boolean PDBG = true;
 
     /* debug flag, indicating if handling of ASSOCIATION_REJECT ended up blacklisting
      * the corresponding BSSID.
@@ -175,7 +177,7 @@ public class WifiStateMachine extends StateMachine {
         Log.e(getName(), s);
     }
     protected void log(String s) {
-        Log.d(getName(), s);
+        Log.e(getName(), s);
     }
 
     private WifiMonitor mWifiMonitor;
@@ -222,6 +224,42 @@ public class WifiStateMachine extends StateMachine {
     private int mLastNetworkId; // The network Id we successfully joined
     private boolean linkDebouncing = false;
 
+    private boolean mAlwaysOnPnoSupported = false;
+    private int mHalFeatureSet = 0;
+    private static int mPnoResultFound = 0;
+
+    @Override
+    public void onPnoNetworkFound(ScanResult results[]) {
+        if (DBG) {
+            Log.e(TAG, "onPnoNetworkFound event received num = " + results.length);
+            for (int i = 0; i < results.length; i++) {
+                Log.e(TAG, results[i].toString());
+            }
+        }
+        sendMessage(CMD_PNO_NETWORK_FOUND, results.length, 0, results);
+    }
+
+    public void processPnoNetworkFound(ScanResult results[]) {
+        ScanSettings settings = new ScanSettings();
+        settings.channelSet = new ArrayList<WifiChannel>();
+
+        for (int i=0; i<results.length; i++) {
+            WifiChannel channel = new WifiChannel();
+            channel.freqMHz = results[i].frequency;
+            settings.channelSet.add(channel);
+        }
+
+        stopPno();
+
+        Log.e(TAG, "processPnoNetworkFound starting scan cnt=" + mPnoResultFound);
+        startScan(PNO_NETWORK_FOUND_SOURCE, mPnoResultFound,  settings, null);
+        mPnoResultFound ++;
+        //sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
+
+        // restart Pno after 30ms
+        sendMessageDelayed(CMD_START_PNO, 30 * 1000);
+    }
+
     // Testing various network disconnect cases by sending lots of spurious
     // disconnect to supplicant
     private boolean testNetworkDisconnect = false;
@@ -247,6 +285,7 @@ public class WifiStateMachine extends StateMachine {
     private static final int SET_ALLOW_UNTRUSTED_SOURCE = -4;
     private static final int ENABLE_WIFI = -5;
     public static final int DFS_RESTRICTED_SCAN_REQUEST = -6;
+    public static final int PNO_NETWORK_FOUND_SOURCE = -7;
 
     private static final int SCAN_REQUEST_BUFFER_MAX_SIZE = 10;
     private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
@@ -358,6 +397,7 @@ public class WifiStateMachine extends StateMachine {
 
     //Random used by softAP channel Selection
     private static Random mRandom = new Random(Calendar.getInstance().getTimeInMillis());
+
     boolean isRoaming() {
         return mAutoRoaming == WifiAutoJoinController.AUTO_JOIN_ROAMING
                 || mAutoRoaming == WifiAutoJoinController.AUTO_JOIN_EXTENDED_ROAMING;
@@ -379,12 +419,12 @@ public class WifiStateMachine extends StateMachine {
         if (!mTargetRoamBSSID.equals("any") && bssid.equals("any")) {
             // Changing to ANY
             if (!mWifiConfigStore.roamOnAny) {
-                ret =  false; // Nothing to do
+                ret = false; // Nothing to do
             }
         }
         if (VDBG) {
-           loge("autoRoamSetBSSID " + bssid
-                   + " key=" + config.configKey());
+            loge("autoRoamSetBSSID " + bssid
+                    + " key=" + config.configKey());
         }
         config.autoJoinBSSID = bssid;
         mTargetRoamBSSID = bssid;
@@ -419,6 +459,8 @@ public class WifiStateMachine extends StateMachine {
     private AsyncChannel mWifiP2pChannel;
     private AsyncChannel mWifiApConfigChannel;
 
+    private WifiScanner mWifiScanner;
+
     private int mConnectionRequests = 0;
     private WifiNetworkFactory mNetworkFactory;
     private UntrustedWifiNetworkFactory mUntrustedNetworkFactory;
@@ -435,87 +477,87 @@ public class WifiStateMachine extends StateMachine {
     /* The base for wifi message types */
     static final int BASE = Protocol.BASE_WIFI;
     /* Start the supplicant */
-    static final int CMD_START_SUPPLICANT                 = BASE + 11;
+    static final int CMD_START_SUPPLICANT = BASE + 11;
     /* Stop the supplicant */
-    static final int CMD_STOP_SUPPLICANT                  = BASE + 12;
+    static final int CMD_STOP_SUPPLICANT = BASE + 12;
     /* Start the driver */
-    static final int CMD_START_DRIVER                     = BASE + 13;
+    static final int CMD_START_DRIVER = BASE + 13;
     /* Stop the driver */
-    static final int CMD_STOP_DRIVER                      = BASE + 14;
+    static final int CMD_STOP_DRIVER = BASE + 14;
     /* Indicates Static IP succeeded */
-    static final int CMD_STATIC_IP_SUCCESS                = BASE + 15;
+    static final int CMD_STATIC_IP_SUCCESS = BASE + 15;
     /* Indicates Static IP failed */
-    static final int CMD_STATIC_IP_FAILURE                = BASE + 16;
+    static final int CMD_STATIC_IP_FAILURE = BASE + 16;
     /* Indicates supplicant stop failed */
-    static final int CMD_STOP_SUPPLICANT_FAILED           = BASE + 17;
+    static final int CMD_STOP_SUPPLICANT_FAILED = BASE + 17;
     /* Delayed stop to avoid shutting down driver too quick*/
-    static final int CMD_DELAYED_STOP_DRIVER              = BASE + 18;
+    static final int CMD_DELAYED_STOP_DRIVER = BASE + 18;
     /* A delayed message sent to start driver when it fail to come up */
-    static final int CMD_DRIVER_START_TIMED_OUT           = BASE + 19;
+    static final int CMD_DRIVER_START_TIMED_OUT = BASE + 19;
 
     /* Start the soft access point */
-    static final int CMD_START_AP                         = BASE + 21;
+    static final int CMD_START_AP = BASE + 21;
     /* Indicates soft ap start succeeded */
-    static final int CMD_START_AP_SUCCESS                 = BASE + 22;
+    static final int CMD_START_AP_SUCCESS = BASE + 22;
     /* Indicates soft ap start failed */
-    static final int CMD_START_AP_FAILURE                 = BASE + 23;
+    static final int CMD_START_AP_FAILURE = BASE + 23;
     /* Stop the soft access point */
-    static final int CMD_STOP_AP                          = BASE + 24;
+    static final int CMD_STOP_AP = BASE + 24;
     /* Set the soft access point configuration */
-    static final int CMD_SET_AP_CONFIG                    = BASE + 25;
+    static final int CMD_SET_AP_CONFIG = BASE + 25;
     /* Soft access point configuration set completed */
-    static final int CMD_SET_AP_CONFIG_COMPLETED          = BASE + 26;
+    static final int CMD_SET_AP_CONFIG_COMPLETED = BASE + 26;
     /* Request the soft access point configuration */
-    static final int CMD_REQUEST_AP_CONFIG                = BASE + 27;
+    static final int CMD_REQUEST_AP_CONFIG = BASE + 27;
     /* Response to access point configuration request */
-    static final int CMD_RESPONSE_AP_CONFIG               = BASE + 28;
+    static final int CMD_RESPONSE_AP_CONFIG = BASE + 28;
     /* Invoked when getting a tether state change notification */
-    static final int CMD_TETHER_STATE_CHANGE              = BASE + 29;
+    static final int CMD_TETHER_STATE_CHANGE = BASE + 29;
     /* A delayed message sent to indicate tether state change failed to arrive */
-    static final int CMD_TETHER_NOTIFICATION_TIMED_OUT    = BASE + 30;
+    static final int CMD_TETHER_NOTIFICATION_TIMED_OUT = BASE + 30;
 
-    static final int CMD_BLUETOOTH_ADAPTER_STATE_CHANGE   = BASE + 31;
+    static final int CMD_BLUETOOTH_ADAPTER_STATE_CHANGE = BASE + 31;
 
     /* Supplicant commands */
     /* Is supplicant alive ? */
-    static final int CMD_PING_SUPPLICANT                  = BASE + 51;
+    static final int CMD_PING_SUPPLICANT = BASE + 51;
     /* Add/update a network configuration */
-    static final int CMD_ADD_OR_UPDATE_NETWORK            = BASE + 52;
+    static final int CMD_ADD_OR_UPDATE_NETWORK = BASE + 52;
     /* Delete a network */
-    static final int CMD_REMOVE_NETWORK                   = BASE + 53;
+    static final int CMD_REMOVE_NETWORK = BASE + 53;
     /* Enable a network. The device will attempt a connection to the given network. */
-    static final int CMD_ENABLE_NETWORK                   = BASE + 54;
+    static final int CMD_ENABLE_NETWORK = BASE + 54;
     /* Enable all networks */
-    static final int CMD_ENABLE_ALL_NETWORKS              = BASE + 55;
+    static final int CMD_ENABLE_ALL_NETWORKS = BASE + 55;
     /* Blacklist network. De-prioritizes the given BSSID for connection. */
-    static final int CMD_BLACKLIST_NETWORK                = BASE + 56;
+    static final int CMD_BLACKLIST_NETWORK = BASE + 56;
     /* Clear the blacklist network list */
-    static final int CMD_CLEAR_BLACKLIST                  = BASE + 57;
+    static final int CMD_CLEAR_BLACKLIST = BASE + 57;
     /* Save configuration */
-    static final int CMD_SAVE_CONFIG                      = BASE + 58;
+    static final int CMD_SAVE_CONFIG = BASE + 58;
     /* Get configured networks */
-    static final int CMD_GET_CONFIGURED_NETWORKS          = BASE + 59;
+    static final int CMD_GET_CONFIGURED_NETWORKS = BASE + 59;
     /* Get available frequencies */
-    static final int CMD_GET_CAPABILITY_FREQ              = BASE + 60;
+    static final int CMD_GET_CAPABILITY_FREQ = BASE + 60;
     /* Get adaptors */
-    static final int CMD_GET_SUPPORTED_FEATURES           = BASE + 61;
+    static final int CMD_GET_SUPPORTED_FEATURES = BASE + 61;
     /* Get configured networks with real preSharedKey */
     static final int CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS = BASE + 62;
     /* Get Link Layer Stats thru HAL */
-    static final int CMD_GET_LINK_LAYER_STATS             = BASE + 63;
+    static final int CMD_GET_LINK_LAYER_STATS = BASE + 63;
     /* Supplicant commands after driver start*/
     /* Initiate a scan */
-    static final int CMD_START_SCAN                       = BASE + 71;
+    static final int CMD_START_SCAN = BASE + 71;
     /* Set operational mode. CONNECT, SCAN ONLY, SCAN_ONLY with Wi-Fi off mode */
-    static final int CMD_SET_OPERATIONAL_MODE             = BASE + 72;
+    static final int CMD_SET_OPERATIONAL_MODE = BASE + 72;
     /* Disconnect from a network */
-    static final int CMD_DISCONNECT                       = BASE + 73;
+    static final int CMD_DISCONNECT = BASE + 73;
     /* Reconnect to a network */
-    static final int CMD_RECONNECT                        = BASE + 74;
+    static final int CMD_RECONNECT = BASE + 74;
     /* Reassociate to a network */
-    static final int CMD_REASSOCIATE                      = BASE + 75;
+    static final int CMD_REASSOCIATE = BASE + 75;
     /* Get Connection Statistis */
-    static final int CMD_GET_CONNECTION_STATISTICS        = BASE + 76;
+    static final int CMD_GET_CONNECTION_STATISTICS = BASE + 76;
 
     /* Controls suspend mode optimizations
      *
@@ -528,38 +570,38 @@ public class WifiStateMachine extends StateMachine {
      * - turn off roaming
      * - DTIM wake up settings
      */
-    static final int CMD_SET_HIGH_PERF_MODE               = BASE + 77;
+    static final int CMD_SET_HIGH_PERF_MODE = BASE + 77;
     /* Set the country code */
-    static final int CMD_SET_COUNTRY_CODE                 = BASE + 80;
+    static final int CMD_SET_COUNTRY_CODE = BASE + 80;
     /* Enables RSSI poll */
-    static final int CMD_ENABLE_RSSI_POLL                 = BASE + 82;
+    static final int CMD_ENABLE_RSSI_POLL = BASE + 82;
     /* RSSI poll */
-    static final int CMD_RSSI_POLL                        = BASE + 83;
+    static final int CMD_RSSI_POLL = BASE + 83;
     /* Set up packet filtering */
-    static final int CMD_START_PACKET_FILTERING           = BASE + 84;
+    static final int CMD_START_PACKET_FILTERING = BASE + 84;
     /* Clear packet filter */
-    static final int CMD_STOP_PACKET_FILTERING            = BASE + 85;
+    static final int CMD_STOP_PACKET_FILTERING = BASE + 85;
     /* Enable suspend mode optimizations in the driver */
-    static final int CMD_SET_SUSPEND_OPT_ENABLED          = BASE + 86;
+    static final int CMD_SET_SUSPEND_OPT_ENABLED = BASE + 86;
     /* Delayed NETWORK_DISCONNECT */
-    static final int CMD_DELAYED_NETWORK_DISCONNECT       = BASE + 87;
+    static final int CMD_DELAYED_NETWORK_DISCONNECT = BASE + 87;
     /* When there are no saved networks, we do a periodic scan to notify user of
      * an open network */
-    static final int CMD_NO_NETWORKS_PERIODIC_SCAN        = BASE + 88;
+    static final int CMD_NO_NETWORKS_PERIODIC_SCAN = BASE + 88;
     /* Test network Disconnection NETWORK_DISCONNECT */
-    static final int CMD_TEST_NETWORK_DISCONNECT          = BASE + 89;
+    static final int CMD_TEST_NETWORK_DISCONNECT = BASE + 89;
     private int testNetworkDisconnectCounter = 0;
 
     /* arg1 values to CMD_STOP_PACKET_FILTERING and CMD_START_PACKET_FILTERING */
-    static final int MULTICAST_V6  = 1;
-    static final int MULTICAST_V4  = 0;
+    static final int MULTICAST_V6 = 1;
+    static final int MULTICAST_V4 = 0;
 
-   /* Set the frequency band */
-    static final int CMD_SET_FREQUENCY_BAND               = BASE + 90;
+    /* Set the frequency band */
+    static final int CMD_SET_FREQUENCY_BAND = BASE + 90;
     /* Enable TDLS on a specific MAC address */
-    static final int CMD_ENABLE_TDLS                      = BASE + 92;
+    static final int CMD_ENABLE_TDLS = BASE + 92;
     /* DHCP/IP configuration watchdog */
-    static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER    = BASE + 93;
+    static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER = BASE + 93;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
@@ -572,7 +614,7 @@ public class WifiStateMachine extends StateMachine {
 
     /* Commands from/to the SupplicantStateTracker */
     /* Reset the supplicant state tracker */
-    static final int CMD_RESET_SUPPLICANT_STATE           = BASE + 111;
+    static final int CMD_RESET_SUPPLICANT_STATE = BASE + 111;
 
 
     /**
@@ -583,15 +625,15 @@ public class WifiStateMachine extends StateMachine {
 
     int roamWatchdogCount = 0;
     /* Roam state watchdog */
-    static final int CMD_ROAM_WATCHDOG_TIMER    = BASE + 94;
+    static final int CMD_ROAM_WATCHDOG_TIMER = BASE + 94;
     /* Screen change intent handling */
-    static final int CMD_SCREEN_STATE_CHANGED              = BASE + 95;
+    static final int CMD_SCREEN_STATE_CHANGED = BASE + 95;
 
     int disconnectingWatchdogCount = 0;
     static final int DISCONNECTING_GUARD_TIMER_MSEC = 5000;
 
     /* Disconnecting state watchdog */
-    static final int CMD_DISCONNECTING_WATCHDOG_TIMER     = BASE + 96;
+    static final int CMD_DISCONNECTING_WATCHDOG_TIMER = BASE + 96;
 
     /* Disable an ephemeral network */
     static final int CMD_DISABLE_EPHEMERAL_NETWORK = BASE + 98;
@@ -601,58 +643,66 @@ public class WifiStateMachine extends StateMachine {
 
     /* P2p commands */
     /* We are ok with no response here since we wont do much with it anyway */
-    public static final int CMD_ENABLE_P2P                = BASE + 131;
+    public static final int CMD_ENABLE_P2P = BASE + 131;
     /* In order to shut down supplicant cleanly, we wait till p2p has
      * been disabled */
-    public static final int CMD_DISABLE_P2P_REQ           = BASE + 132;
-    public static final int CMD_DISABLE_P2P_RSP           = BASE + 133;
+    public static final int CMD_DISABLE_P2P_REQ = BASE + 132;
+    public static final int CMD_DISABLE_P2P_RSP = BASE + 133;
 
-    public static final int CMD_BOOT_COMPLETED            = BASE + 134;
+    public static final int CMD_BOOT_COMPLETED = BASE + 134;
 
     /* change the batch scan settings.
      * arg1 = responsible UID
      * arg2 = csph (channel scans per hour)
      * obj = bundle with the new settings and the optional worksource
      */
-    public static final int CMD_SET_BATCHED_SCAN          = BASE + 135;
-    public static final int CMD_START_NEXT_BATCHED_SCAN   = BASE + 136;
-    public static final int CMD_POLL_BATCHED_SCAN         = BASE + 137;
+    public static final int CMD_SET_BATCHED_SCAN = BASE + 135;
+    public static final int CMD_START_NEXT_BATCHED_SCAN = BASE + 136;
+    public static final int CMD_POLL_BATCHED_SCAN = BASE + 137;
 
     /* We now have a valid IP configuration. */
-    static final int CMD_IP_CONFIGURATION_SUCCESSFUL      = BASE + 138;
+    static final int CMD_IP_CONFIGURATION_SUCCESSFUL = BASE + 138;
     /* We no longer have a valid IP configuration. */
-    static final int CMD_IP_CONFIGURATION_LOST            = BASE + 139;
+    static final int CMD_IP_CONFIGURATION_LOST = BASE + 139;
     /* Link configuration (IP address, DNS, ...) changes notified via netlink */
-    static final int CMD_UPDATE_LINKPROPERTIES            = BASE + 140;
+    static final int CMD_UPDATE_LINKPROPERTIES = BASE + 140;
 
     /* Supplicant is trying to associate to a given BSSID */
-    static final int CMD_TARGET_BSSID                     = BASE + 141;
+    static final int CMD_TARGET_BSSID = BASE + 141;
 
     /* Reload all networks and reconnect */
-    static final int CMD_RELOAD_TLS_AND_RECONNECT         = BASE + 142;
+    static final int CMD_RELOAD_TLS_AND_RECONNECT = BASE + 142;
 
-    static final int CMD_AUTO_CONNECT                     = BASE + 143;
+    static final int CMD_AUTO_CONNECT = BASE + 143;
 
     static final int network_status_unwanted_disconnect = 0;
     static final int network_status_unwanted_disable_autojoin = 1;
 
-    static final int CMD_UNWANTED_NETWORK                 = BASE + 144;
+    static final int CMD_UNWANTED_NETWORK = BASE + 144;
 
-    static final int CMD_AUTO_ROAM                        = BASE + 145;
+    static final int CMD_AUTO_ROAM = BASE + 145;
 
-    static final int CMD_AUTO_SAVE_NETWORK                = BASE + 146;
+    static final int CMD_AUTO_SAVE_NETWORK = BASE + 146;
 
-    static final int CMD_ASSOCIATED_BSSID                = BASE + 147;
+    static final int CMD_ASSOCIATED_BSSID = BASE + 147;
 
-    static final int CMD_NETWORK_STATUS                  = BASE + 148;
+    static final int CMD_NETWORK_STATUS = BASE + 148;
+
+    static final int CMD_START_PNO = BASE + 149; /* used to restart PNO when it was
+                                                    stopped due to association attempt */
+
+    static final int CMD_STARTED_PNO_DBG = BASE + 150; /* used to log if PNO was started */
+
+    static final int CMD_PNO_NETWORK_FOUND = BASE + 151;
+
 
     /* Wifi state machine modes of operation */
     /* CONNECT_MODE - connect to any 'known' AP when it becomes available */
-    public static final int CONNECT_MODE                   = 1;
+    public static final int CONNECT_MODE = 1;
     /* SCAN_ONLY_MODE - don't connect to any APs; scan, but only while apps hold lock */
-    public static final int SCAN_ONLY_MODE                 = 2;
+    public static final int SCAN_ONLY_MODE = 2;
     /* SCAN_ONLY_WITH_WIFI_OFF - scan, but don't connect to any APs */
-    public static final int SCAN_ONLY_WITH_WIFI_OFF_MODE   = 3;
+    public static final int SCAN_ONLY_WITH_WIFI_OFF_MODE = 3;
 
     private static final int SUCCESS = 1;
     private static final int FAILURE = -1;
@@ -664,9 +714,9 @@ public class WifiStateMachine extends StateMachine {
      */
     private int mSuspendOptNeedsDisabled = 0;
 
-    private static final int SUSPEND_DUE_TO_DHCP       = 1;
-    private static final int SUSPEND_DUE_TO_HIGH_PERF  = 1<<1;
-    private static final int SUSPEND_DUE_TO_SCREEN     = 1<<2;
+    private static final int SUSPEND_DUE_TO_DHCP = 1;
+    private static final int SUSPEND_DUE_TO_HIGH_PERF = 1 << 1;
+    private static final int SUSPEND_DUE_TO_SCREEN = 1 << 2;
 
     /* Tracks if user has enabled suspend optimizations through settings */
     private AtomicBoolean mUserWantsSuspendOpt = new AtomicBoolean(true);
@@ -679,8 +729,6 @@ public class WifiStateMachine extends StateMachine {
      * override this.
      */
     private final int mDefaultFrameworkScanIntervalMs;
-
-    private int mDisconnectedScanPeriodMs = 10000;
 
     /**
      * Supplicant scan interval in milliseconds.
@@ -705,7 +753,7 @@ public class WifiStateMachine extends StateMachine {
      * autojoin while connected with screen lit
      * Max time is 5 minutes
      */
-    private static final long  maxFullBandConnectedTimeIntervalMilli = 1000 * 60 * 5;
+    private static final long maxFullBandConnectedTimeIntervalMilli = 1000 * 60 * 5;
 
     /**
      * Minimum time interval between enabling all networks.
@@ -789,9 +837,44 @@ public class WifiStateMachine extends StateMachine {
     /* Waiting for untether confirmation before stopping soft Ap */
     private State mUntetheringState = new UntetheringState();
 
+
+
+    private class WifiScanListener implements WifiScanner.ScanListener {
+        @Override
+        public void onSuccess() {
+            Log.e(TAG, "WifiScanListener onSuccess");
+        };
+        @Override
+        public void onFailure(int reason, String description) {
+            Log.e(TAG, "WifiScanListener onFailure");
+        };
+        @Override
+        public void onPeriodChanged(int periodInMs) {
+            Log.e(TAG, "WifiScanListener onPeriodChanged  period=" + periodInMs);
+        }
+        @Override
+        public void onResults(ScanResult[] results) {
+            Log.e(TAG, "WifiScanListener onResults" + results.length);
+        }
+        @Override
+        public void onResults(WifiScanner.ScanData[] results) {
+            Log.e(TAG, "WifiScanListener onResults2 "  + results.length);
+        }
+        @Override
+        public void onFullResult(ScanResult fullScanResult) {
+            Log.e(TAG, "WifiScanListener onFullResult " + fullScanResult.toString());
+        }
+
+        WifiScanListener() {}
+    }
+
+    WifiScanListener mWifiScanListener = new WifiScanListener();
+
+
     private class TetherStateChange {
         ArrayList<String> available;
         ArrayList<String> active;
+
         TetherStateChange(ArrayList<String> av, ArrayList<String> ac) {
             available = av;
             active = ac;
@@ -809,32 +892,30 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * One of  {@link WifiManager#WIFI_STATE_DISABLED},
-     *         {@link WifiManager#WIFI_STATE_DISABLING},
-     *         {@link WifiManager#WIFI_STATE_ENABLED},
-     *         {@link WifiManager#WIFI_STATE_ENABLING},
-     *         {@link WifiManager#WIFI_STATE_UNKNOWN}
-     *
+     * {@link WifiManager#WIFI_STATE_DISABLING},
+     * {@link WifiManager#WIFI_STATE_ENABLED},
+     * {@link WifiManager#WIFI_STATE_ENABLING},
+     * {@link WifiManager#WIFI_STATE_UNKNOWN}
      */
     private final AtomicInteger mWifiState = new AtomicInteger(WIFI_STATE_DISABLED);
 
     /**
      * One of  {@link WifiManager#WIFI_AP_STATE_DISABLED},
-     *         {@link WifiManager#WIFI_AP_STATE_DISABLING},
-     *         {@link WifiManager#WIFI_AP_STATE_ENABLED},
-     *         {@link WifiManager#WIFI_AP_STATE_ENABLING},
-     *         {@link WifiManager#WIFI_AP_STATE_FAILED}
-     *
+     * {@link WifiManager#WIFI_AP_STATE_DISABLING},
+     * {@link WifiManager#WIFI_AP_STATE_ENABLED},
+     * {@link WifiManager#WIFI_AP_STATE_ENABLING},
+     * {@link WifiManager#WIFI_AP_STATE_FAILED}
      */
     private final AtomicInteger mWifiApState = new AtomicInteger(WIFI_AP_STATE_DISABLED);
 
     private static final int SCAN_REQUEST = 0;
     private static final String ACTION_START_SCAN =
-        "com.android.server.WifiManager.action.START_SCAN";
+            "com.android.server.WifiManager.action.START_SCAN";
 
     private static final String DELAYED_STOP_COUNTER = "DelayedStopCounter";
     private static final int DRIVER_STOP_REQUEST = 0;
     private static final String ACTION_DELAYED_DRIVER_STOP =
-        "com.android.server.WifiManager.action.DELAYED_DRIVER_STOP";
+            "com.android.server.WifiManager.action.DELAYED_DRIVER_STOP";
 
     private static final String ACTION_REFRESH_BATCHED_SCAN =
             "com.android.server.WifiManager.action.REFRESH_BATCHED_SCAN";
@@ -879,7 +960,7 @@ public class WifiStateMachine extends StateMachine {
     final static int frameworkMinScanIntervalSaneValue = 10000;
 
     public WifiStateMachine(Context context, String wlanInterface,
-            WifiTrafficPoller trafficPoller){
+                            WifiTrafficPoller trafficPoller) {
         super("WifiStateMachine");
         mContext = context;
         mSetCountryCode = Settings.Global.getString(
@@ -907,7 +988,7 @@ public class WifiStateMachine extends StateMachine {
         mLinkProperties = new LinkProperties();
 
         IBinder s1 = ServiceManager.getService(Context.WIFI_P2P_SERVICE);
-        mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s1);
+        mWifiP2pServiceImpl = (WifiP2pServiceImpl) IWifiP2pManager.Stub.asInterface(s1);
 
         mNetworkInfo.setIsAvailable(false);
         mLastBssid = null;
@@ -925,7 +1006,7 @@ public class WifiStateMachine extends StateMachine {
             loge("Couldn't register netlink tracker: " + e.toString());
         }
 
-        mAlarmManager = (AlarmManager)mContext.getSystemService(Context.ALARM_SERVICE);
+        mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
         mBatchedScanIntervalIntent = getPrivateBroadcast(ACTION_REFRESH_BATCHED_SCAN, 0);
 
@@ -946,7 +1027,7 @@ public class WifiStateMachine extends StateMachine {
                 R.string.config_wifi_p2p_device_type);
 
         mUserWantsSuspendOpt.set(Settings.Global.getInt(mContext.getContentResolver(),
-                    Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED, 1) == 1);
+                Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED, 1) == 1);
 
         mNetworkCapabilitiesFilter.addTransportType(NetworkCapabilities.TRANSPORT_WIFI);
         mNetworkCapabilitiesFilter.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
@@ -957,16 +1038,16 @@ public class WifiStateMachine extends StateMachine {
         mNetworkCapabilities = new NetworkCapabilities(mNetworkCapabilitiesFilter);
 
         mContext.registerReceiver(
-            new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    ArrayList<String> available = intent.getStringArrayListExtra(
-                            ConnectivityManager.EXTRA_AVAILABLE_TETHER);
-                    ArrayList<String> active = intent.getStringArrayListExtra(
-                            ConnectivityManager.EXTRA_ACTIVE_TETHER);
-                    sendMessage(CMD_TETHER_STATE_CHANGE, new TetherStateChange(available, active));
-                }
-            },new IntentFilter(ConnectivityManager.ACTION_TETHER_STATE_CHANGED));
+                new BroadcastReceiver() {
+                    @Override
+                    public void onReceive(Context context, Intent intent) {
+                        ArrayList<String> available = intent.getStringArrayListExtra(
+                                ConnectivityManager.EXTRA_AVAILABLE_TETHER);
+                        ArrayList<String> active = intent.getStringArrayListExtra(
+                                ConnectivityManager.EXTRA_ACTIVE_TETHER);
+                        sendMessage(CMD_TETHER_STATE_CHANGE, new TetherStateChange(available, active));
+                    }
+                }, new IntentFilter(ConnectivityManager.ACTION_TETHER_STATE_CHANGED));
 
         mContext.registerReceiver(
                 new BroadcastReceiver() {
@@ -1004,14 +1085,14 @@ public class WifiStateMachine extends StateMachine {
                 new BroadcastReceiver() {
                     @Override
                     public void onReceive(Context context, Intent intent) {
-                       int counter = intent.getIntExtra(DELAYED_STOP_COUNTER, 0);
-                       sendMessage(CMD_DELAYED_STOP_DRIVER, counter, 0);
+                        int counter = intent.getIntExtra(DELAYED_STOP_COUNTER, 0);
+                        sendMessage(CMD_DELAYED_STOP_DRIVER, counter, 0);
                     }
                 },
                 new IntentFilter(ACTION_DELAYED_DRIVER_STOP));
 
         mContext.getContentResolver().registerContentObserver(Settings.Global.getUriFor(
-                Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED), false,
+                        Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED), false,
                 new ContentObserver(getHandler()) {
                     @Override
                     public void onChange(boolean selfChange) {
@@ -1031,7 +1112,7 @@ public class WifiStateMachine extends StateMachine {
 
         mScanResultCache = new LruCache<>(SCAN_RESULT_CACHE_SIZE);
 
-        PowerManager powerManager = (PowerManager)mContext.getSystemService(Context.POWER_SERVICE);
+        PowerManager powerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
         mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getName());
 
         mSuspendWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiSuspend");
@@ -1041,30 +1122,30 @@ public class WifiStateMachine extends StateMachine {
                 com.android.internal.R.string.config_wifi_tcp_buffers);
 
         addState(mDefaultState);
-            addState(mInitialState, mDefaultState);
-            addState(mSupplicantStartingState, mDefaultState);
-            addState(mSupplicantStartedState, mDefaultState);
-                addState(mDriverStartingState, mSupplicantStartedState);
-                addState(mDriverStartedState, mSupplicantStartedState);
-                    addState(mScanModeState, mDriverStartedState);
-                    addState(mConnectModeState, mDriverStartedState);
-                        addState(mL2ConnectedState, mConnectModeState);
-                            addState(mObtainingIpState, mL2ConnectedState);
-                            addState(mVerifyingLinkState, mL2ConnectedState);
-                            addState(mConnectedState, mL2ConnectedState);
-                            addState(mRoamingState, mL2ConnectedState);
-                        addState(mDisconnectingState, mConnectModeState);
-                        addState(mDisconnectedState, mConnectModeState);
-                        addState(mWpsRunningState, mConnectModeState);
-                addState(mWaitForP2pDisableState, mSupplicantStartedState);
-                addState(mDriverStoppingState, mSupplicantStartedState);
-                addState(mDriverStoppedState, mSupplicantStartedState);
-            addState(mSupplicantStoppingState, mDefaultState);
-            addState(mSoftApStartingState, mDefaultState);
-            addState(mSoftApStartedState, mDefaultState);
-                addState(mTetheringState, mSoftApStartedState);
-                addState(mTetheredState, mSoftApStartedState);
-                addState(mUntetheringState, mSoftApStartedState);
+        addState(mInitialState, mDefaultState);
+        addState(mSupplicantStartingState, mDefaultState);
+        addState(mSupplicantStartedState, mDefaultState);
+        addState(mDriverStartingState, mSupplicantStartedState);
+        addState(mDriverStartedState, mSupplicantStartedState);
+        addState(mScanModeState, mDriverStartedState);
+        addState(mConnectModeState, mDriverStartedState);
+        addState(mL2ConnectedState, mConnectModeState);
+        addState(mObtainingIpState, mL2ConnectedState);
+        addState(mVerifyingLinkState, mL2ConnectedState);
+        addState(mConnectedState, mL2ConnectedState);
+        addState(mRoamingState, mL2ConnectedState);
+        addState(mDisconnectingState, mConnectModeState);
+        addState(mDisconnectedState, mConnectModeState);
+        addState(mWpsRunningState, mConnectModeState);
+        addState(mWaitForP2pDisableState, mSupplicantStartedState);
+        addState(mDriverStoppingState, mSupplicantStartedState);
+        addState(mDriverStoppedState, mSupplicantStartedState);
+        addState(mSupplicantStoppingState, mDefaultState);
+        addState(mSoftApStartingState, mDefaultState);
+        addState(mSoftApStartedState, mDefaultState);
+        addState(mTetheringState, mSoftApStartedState);
+        addState(mTetheredState, mSoftApStartedState);
+        addState(mUntetheringState, mSoftApStartedState);
 
         setInitialState(mInitialState);
 
@@ -1149,10 +1230,6 @@ public class WifiStateMachine extends StateMachine {
      */
 
     private boolean mAlarmEnabled = false;
-    /* This is set from the overlay config file or from a secure setting.
-     * A value of 0 disables scanning in the framework.
-     */
-    private long mFrameworkScanIntervalMs = 10000;
 
     private AtomicInteger mDelayedScanCounter = new AtomicInteger();
 
@@ -1189,7 +1266,8 @@ public class WifiStateMachine extends StateMachine {
     }
 
     private boolean checkAndRestartDelayedScan(int counter, boolean restart, int milli,
-                                   ScanSettings settings, WorkSource workSource) {
+                                               ScanSettings settings, WorkSource workSource) {
+
         if (counter != mDelayedScanCounter.get()) {
             return false;
         }
@@ -1211,7 +1289,7 @@ public class WifiStateMachine extends StateMachine {
         mDelayedScanCounter.incrementAndGet();
         if (mScreenOn &&
                 (getCurrentState() == mDisconnectedState
-                || getCurrentState() == mConnectedState)) {
+                        || getCurrentState() == mConnectedState)) {
             Bundle bundle = new Bundle();
             bundle.putParcelable(CUSTOMIZED_SCAN_SETTING, settings);
             bundle.putParcelable(CUSTOMIZED_SCAN_WORKSOURCE, workSource);
@@ -1243,9 +1321,11 @@ public class WifiStateMachine extends StateMachine {
         return mWifiNative.setScanningMacOui(ouiBytes);
     }
 
-    /*********************************************************
+    /**
+     * ******************************************************
      * Methods exposed for public use
-     ********************************************************/
+     * ******************************************************
+     */
 
     public Messenger getMessenger() {
         return new Messenger(getHandler());
@@ -1281,7 +1361,8 @@ public class WifiStateMachine extends StateMachine {
                     try {
                         c.channelNum = Integer.parseInt(prop[1]);
                         c.freqMHz = Integer.parseInt(prop[3]);
-                    } catch (NumberFormatException e) { }
+                    } catch (NumberFormatException e) {
+                    }
                     c.isDFS = line.contains("(DFS)");
                     list.add(c);
                 } else if (line.contains("Mode[B] Channels:")) {
@@ -1308,7 +1389,7 @@ public class WifiStateMachine extends StateMachine {
      * @param callingUid The uid initiating the wifi scan. Blame will be given here unless
      *                   workSource is specified.
      * @param workSource If not null, blame is given to workSource.
-     * @param settings Scan settings, see {@link ScanSettings}.
+     * @param settings   Scan settings, see {@link ScanSettings}.
      */
     public void startScan(int callingUid, int scanCounter,
                           ScanSettings settings, WorkSource workSource) {
@@ -1323,7 +1404,7 @@ public class WifiStateMachine extends StateMachine {
      * start or stop batched scanning using the given settings
      */
     public void setBatchedScanSettings(BatchedScanSettings settings, int callingUid, int csph,
-            WorkSource workSource) {
+                                       WorkSource workSource) {
         Bundle bundle = new Bundle();
         bundle.putParcelable(BATCHED_SETTING, settings);
         bundle.putParcelable(BATCHED_WORKSOURCE, workSource);
@@ -1334,7 +1415,7 @@ public class WifiStateMachine extends StateMachine {
         synchronized (mBatchedScanResults) {
             List<BatchedScanResult> batchedScanList =
                     new ArrayList<BatchedScanResult>(mBatchedScanResults.size());
-            for(BatchedScanResult result: mBatchedScanResults) {
+            for (BatchedScanResult result : mBatchedScanResults) {
                 batchedScanList.add(new BatchedScanResult(result));
             }
             return batchedScanList;
@@ -1455,7 +1536,7 @@ public class WifiStateMachine extends StateMachine {
         // set the alarm to do the next poll.  We set it a little short as we'd rather
         // wake up wearly than miss a scan due to buffer overflow
         mAlarmManager.setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis()
-                + ((secToFull - (mBatchedScanSettings.scanIntervalSec / 2)) * 1000),
+                        + ((secToFull - (mBatchedScanSettings.scanIntervalSec / 2)) * 1000),
                 mBatchedScanIntervalIntent);
     }
 
@@ -1464,29 +1545,30 @@ public class WifiStateMachine extends StateMachine {
      * Data comes in as:
      * "scancount=5\n"
      * "nextcount=5\n"
-     *   "apcount=3\n"
-     *   "trunc\n" (optional)
-     *     "bssid=...\n"
-     *     "ssid=...\n"
-     *     "freq=...\n" (in Mhz)
-     *     "level=...\n"
-     *     "dist=...\n" (in cm)
-     *     "distsd=...\n" (standard deviation, in cm)
-     *     "===="
-     *     "bssid=...\n"
-     *     etc
-     *     "===="
-     *     "bssid=...\n"
-     *     etc
-     *     "%%%%"
-     *   "apcount=2\n"
-     *     "bssid=...\n"
-     *     etc
-     *     "%%%%
-     *   etc
-     *   "----"
+     * "apcount=3\n"
+     * "trunc\n" (optional)
+     * "bssid=...\n"
+     * "ssid=...\n"
+     * "freq=...\n" (in Mhz)
+     * "level=...\n"
+     * "dist=...\n" (in cm)
+     * "distsd=...\n" (standard deviation, in cm)
+     * "===="
+     * "bssid=...\n"
+     * etc
+     * "===="
+     * "bssid=...\n"
+     * etc
+     * "%%%%"
+     * "apcount=2\n"
+     * "bssid=...\n"
+     * etc
+     * "%%%%
+     * etc
+     * "----"
      */
     private final static boolean DEBUG_PARSE = false;
+
     private void retrieveBatchedScanData() {
         String rawData = mWifiNative.getBatchedScanResults();
         if (DEBUG_PARSE) log("rawData = " + rawData);
@@ -1539,8 +1621,8 @@ public class WifiStateMachine extends StateMachine {
                 while (n < splitData.length) {
                     if (DEBUG_PARSE) logd("parsing " + splitData[n]);
                     if (splitData[n].equals(END_OF_BATCHES)) {
-                        if (n+1 != splitData.length) {
-                            loge("didn't consume " + (splitData.length-n));
+                        if (n + 1 != splitData.length) {
+                            loge("didn't consume " + (splitData.length - n));
                         }
                         if (mBatchedScanResults.size() > 0) {
                             mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
@@ -1716,12 +1798,12 @@ public class WifiStateMachine extends StateMachine {
         mTxTimeLastReport = mTxTime;
         int rx = mRxTime - mRxTimeLastReport;
         mRxTimeLastReport = mRxTime;
-        int period = (int)(now - lastOntimeReportTimeStamp);
+        int period = (int) (now - lastOntimeReportTimeStamp);
         lastOntimeReportTimeStamp = now;
         sb.append(String.format("[on:%d tx:%d rx:%d period:%d]", on, tx, rx, period));
         // Report stats since Screen State Changed
         on = mOnTime - mOnTimeScreenStateChange;
-        period = (int)(now - lastScreenStateChangeTimeStamp);
+        period = (int) (now - lastScreenStateChangeTimeStamp);
         sb.append(String.format(" from screen [on:%d period:%d]", on, period));
         return sb.toString();
     }
@@ -1837,7 +1919,7 @@ public class WifiStateMachine extends StateMachine {
         // note the end of a previous scan set
         if (mNotedBatchedScanWorkSource != null &&
                 (mNotedBatchedScanWorkSource.equals(mBatchedScanWorkSource) == false ||
-                 mNotedBatchedScanCsph != mBatchedScanCsph)) {
+                        mNotedBatchedScanCsph != mBatchedScanCsph)) {
             try {
                 mBatteryStats.noteWifiBatchedScanStoppedFromSource(mNotedBatchedScanWorkSource);
             } catch (RemoteException e) {
@@ -1891,7 +1973,8 @@ public class WifiStateMachine extends StateMachine {
             StringBuilder sb = new StringBuilder();
             boolean first = true;
             for (WifiChannel channel : settings.channelSet) {
-                if (!first) sb.append(','); else first = false;
+                if (!first) sb.append(',');
+                else first = false;
                 sb.append(channel.freqMHz);
             }
             freqs = sb.toString();
@@ -1949,7 +2032,9 @@ public class WifiStateMachine extends StateMachine {
     }
 
 
-    /** return true iff scan request is accepted */
+    /**
+     * return true iff scan request is accepted
+     */
     private boolean startScanNative(int type, String freqs) {
         if (mWifiNative.scan(type, freqs)) {
             mIsScanOngoing = true;
@@ -2049,8 +2134,8 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Get status information for the current connection, if any.
-     * @return a {@link WifiInfo} object containing information about the current connection
      *
+     * @return a {@link WifiInfo} object containing information about the current connection
      */
     public WifiInfo syncRequestConnectionInfo() {
         return mWifiInfo;
@@ -2087,7 +2172,7 @@ public class WifiStateMachine extends StateMachine {
     public List<ScanResult> syncGetScanResultsList() {
         synchronized (mScanResultCache) {
             List<ScanResult> scanList = new ArrayList<ScanResult>();
-            for(ScanDetail result: mScanResults) {
+            for (ScanDetail result : mScanResults) {
                 scanList.add(new ScanResult(result.getScanResult()));
             }
             return scanList;
@@ -2155,6 +2240,7 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Get configured networks synchronously
+     *
      * @param channel
      * @return
      */
@@ -2181,6 +2267,7 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Get connection statistics synchronously
+     *
      * @param channel
      * @return
      */
@@ -2228,7 +2315,7 @@ public class WifiStateMachine extends StateMachine {
     /**
      * Enable a network
      *
-     * @param netId network id of the network
+     * @param netId         network id of the network
      * @param disableOthers true, if all other networks have to be disabled
      * @return {@code true} if the operation succeeds, {@code false} otherwise
      */
@@ -2255,6 +2342,7 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Retrieves a WPS-NFC configuration token for the specified network
+     *
      * @return a hex string representation of the WPS-NFC configuration token
      */
     public String syncGetWpsNfcConfigurationToken(int netId) {
@@ -2280,14 +2368,13 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Clear the blacklist list
-     *
      */
     public void clearBlacklist() {
         sendMessage(CMD_CLEAR_BLACKLIST);
     }
 
     public void enableRssiPolling(boolean enabled) {
-       sendMessage(CMD_ENABLE_RSSI_POLL, enabled ? 1 : 0, 0);
+        sendMessage(CMD_ENABLE_RSSI_POLL, enabled ? 1 : 0, 0);
     }
 
     public void enableAllNetworks() {
@@ -2328,6 +2415,7 @@ public class WifiStateMachine extends StateMachine {
      * Set high performance mode of operation.
      * Enabling would set active power mode and disable suspend optimizations;
      * disabling would set auto power mode and enable suspend optimizations
+     *
      * @param enable true if enable, false otherwise
      */
     public void setHighPerfModeEnabled(boolean enable) {
@@ -2336,8 +2424,9 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Set the country code
+     *
      * @param countryCode following ISO 3166 format
-     * @param persist {@code true} if the setting should be remembered.
+     * @param persist     {@code true} if the setting should be remembered.
      */
     public synchronized void setCountryCode(String countryCode, boolean persist) {
         // If it's a good country code, apply after the current
@@ -2351,7 +2440,7 @@ public class WifiStateMachine extends StateMachine {
             // if mCountryCodeSequence == 0, it is the first time to set country code, always set
             // else only when the new country code is different from the current one to set
             int countryCodeSequence = mCountryCodeSequence.get();
-            if(countryCodeSequence == 0 || countryCode.equals(mSetCountryCode) == false) {
+            if (countryCodeSequence == 0 || countryCode.equals(mSetCountryCode) == false) {
 
                 countryCodeSequence = mCountryCodeSequence.incrementAndGet();
                 mSetCountryCode = countryCode;
@@ -2369,6 +2458,7 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Get the country code
+     *
      * @param countryCode following ISO 3166 format
      */
     public String getCountryCode() {
@@ -2378,6 +2468,7 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Set the operational frequency band
+     *
      * @param band
      * @param persist {@code true} if the setting should be remembered.
      */
@@ -2423,7 +2514,7 @@ public class WifiStateMachine extends StateMachine {
      * Save configuration on supplicant
      *
      * @return {@code true} if the operation succeeds, {@code false} otherwise
-     *
+     * <p/>
      * TODO: deprecate this
      */
     public boolean syncSaveConfig(AsyncChannel channel) {
@@ -2492,9 +2583,11 @@ public class WifiStateMachine extends StateMachine {
         mWifiConfigStore.dump(fd, pw, args);
     }
 
-    /*********************************************************
+    /**
+     * ******************************************************
      * Internal private functions
-     ********************************************************/
+     * ******************************************************
+     */
 
     private void logStateAndMessage(Message message, String state) {
         messageHandlingStatus = 0;
@@ -2502,7 +2595,7 @@ public class WifiStateMachine extends StateMachine {
             //long now = SystemClock.elapsedRealtimeNanos();
             //String ts = String.format("[%,d us]", now/1000);
 
-            loge( " " + state + " " + getLogRecString(message));
+            loge(" " + state + " " + getLogRecString(message));
         }
     }
 
@@ -2539,6 +2632,29 @@ public class WifiStateMachine extends StateMachine {
             sb.append(" uid=" + msg.sendingUid);
         }
         switch (msg.what) {
+            case CMD_STARTED_PNO_DBG:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                if (msg.obj != null) {
+                    sb.append((String)msg.obj);
+                }
+                break;
+            case CMD_PNO_NETWORK_FOUND:
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg1));
+                sb.append(" ");
+                sb.append(Integer.toString(msg.arg2));
+                if (msg.obj != null) {
+                    ScanResult[] results = (ScanResult[])msg.obj;
+                    for (int i = 0; i < results.length; i++) {
+                       sb.append(" ").append(results[i].SSID).append(" ");
+                       sb.append(results[i].frequency);
+                       sb.append(" ").append(results[i].level);
+                    }
+                }
+                break;
             case CMD_START_SCAN:
                 now = System.currentTimeMillis();
                 sb.append(" ");
@@ -2548,7 +2664,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ic=");
                 sb.append(Integer.toString(sScanAlarmIntentCount));
                 if (msg.obj != null) {
-                    Bundle bundle = (Bundle)msg.obj;
+                    Bundle bundle = (Bundle) msg.obj;
                     Long request = bundle.getLong(SCAN_REQUEST_TIME, 0);
                     if (request != 0) {
                         sb.append(" proc(ms):").append(now - request);
@@ -2649,8 +2765,8 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
-                String bssid = (String)msg.obj;
-                if (bssid != null && bssid.length()>0) {
+                String bssid = (String) msg.obj;
+                if (bssid != null && bssid.length() > 0) {
                     sb.append(" ");
                     sb.append(bssid);
                 }
@@ -2714,7 +2830,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 if (msg.obj != null) {
-                    sb.append(" BSSID=").append((String)msg.obj);
+                    sb.append(" BSSID=").append((String) msg.obj);
                 }
                 if (mTargetRoamBSSID != null) {
                     sb.append(" Target=").append(mTargetRoamBSSID);
@@ -2724,7 +2840,7 @@ public class WifiStateMachine extends StateMachine {
                 break;
             case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                 if (msg.obj != null) {
-                    sb.append(" ").append((String)msg.obj);
+                    sb.append(" ").append((String) msg.obj);
                 }
                 sb.append(" nid=").append(msg.arg1);
                 sb.append(" reason=").append(msg.arg2);
@@ -2744,7 +2860,7 @@ public class WifiStateMachine extends StateMachine {
             case WifiMonitor.SSID_REENABLED:
                 sb.append(" nid=").append(msg.arg1);
                 if (msg.obj != null) {
-                    sb.append(" ").append((String)msg.obj);
+                    sb.append(" ").append((String) msg.obj);
                 }
                 config = getCurrentWifiConfiguration();
                 if (config != null) {
@@ -2780,8 +2896,8 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 if (mWifiInfo.getSSID() != null)
-                if (mWifiInfo.getSSID() != null)
-                    sb.append(" ").append(mWifiInfo.getSSID());
+                    if (mWifiInfo.getSSID() != null)
+                        sb.append(" ").append(mWifiInfo.getSSID());
                 if (mWifiInfo.getBSSID() != null)
                     sb.append(" ").append(mWifiInfo.getBSSID());
                 sb.append(" rssi=").append(mWifiInfo.getRssi());
@@ -2832,7 +2948,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
-                ScanResult result = (ScanResult)msg.obj;
+                ScanResult result = (ScanResult) msg.obj;
                 if (result != null) {
                     now = System.currentTimeMillis();
                     sb.append(" bssid=").append(result.BSSID);
@@ -2858,7 +2974,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 if (msg.obj != null) {
-                    config = (WifiConfiguration)msg.obj;
+                    config = (WifiConfiguration) msg.obj;
                     sb.append(" ").append(config.configKey());
                     sb.append(" prio=").append(config.priority);
                     sb.append(" status=").append(config.status);
@@ -2945,7 +3061,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 if (msg.obj != null) {
-                    NetworkInfo info = (NetworkInfo)msg.obj;
+                    NetworkInfo info = (NetworkInfo) msg.obj;
                     NetworkInfo.State state = info.getState();
                     NetworkInfo.DetailedState detailedState = info.getDetailedState();
                     if (state != null) {
@@ -3024,7 +3140,7 @@ public class WifiStateMachine extends StateMachine {
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 if (msg.obj != null) {
-                    sb.append(" ").append((String)msg.obj);
+                    sb.append(" ").append((String) msg.obj);
                 }
                 break;
             case CMD_ROAM_WATCHDOG_TIMER:
@@ -3050,6 +3166,75 @@ public class WifiStateMachine extends StateMachine {
         }
 
         return sb.toString();
+    }
+
+    private void stopPno() {
+
+        // Stop PNO scans while we are trying to associate
+        mWifiScanner.stopBackgroundScan(mWifiScanListener);
+
+        // clear the PNO list
+        if (!WifiNative.setPnoList(null, WifiStateMachine.this)) {
+            Log.e(TAG, "Failed to stop pno");
+        }
+
+    }
+
+    private boolean startPno() {
+        if (!mAlwaysOnPnoSupported || (!mWifiConfigStore.enableHalBasedPno.get())) return false;
+
+        /*
+        if (mWifiScannerChannel == null) {
+            log("startPno: mWifiScannerChannel is null ");
+            return false;
+        }*/
+        if (mWifiScanner == null) {
+            log("startPno: mWifiScanner is null ");
+            return true;
+        }
+
+        List<WifiNative.WifiPnoNetwork> llist
+                = mWifiAutoJoinController.getPnoList(getCurrentWifiConfiguration());
+        if (llist != null) {
+            log("startPno: got llist size " + llist.size());
+
+            // first program the network we want to look for thru the pno API
+            WifiNative.WifiPnoNetwork list[]
+                    = (WifiNative.WifiPnoNetwork[]) llist.toArray(new WifiNative.WifiPnoNetwork[0]);
+
+            if (!WifiNative.setPnoList(list, WifiStateMachine.this)) {
+                Log.e(TAG, "Failed to set pno, length = " + list.length);
+            }
+
+            // then send a scan background request so as firmware
+            // starts looking for our networks
+            WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
+            settings.band = WifiScanner.WIFI_BAND_BOTH;
+
+            // TODO, fix the scan interval logic
+            if (mScreenOn)
+                settings.periodInMs = mDefaultFrameworkScanIntervalMs;
+            else
+                settings.periodInMs = mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
+
+            settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL;
+            log("startPno: settings BOTH_BANDS, length = " + list.length);
+
+            mWifiScanner.startBackgroundScan(settings, mWifiScanListener);
+//            mWifiScannerChannel.sendMessage
+//                  (WifiScanner.CMD_START_BACKGROUND_SCAN, settings);
+            if (DBG) {
+                StringBuilder sb = new StringBuilder();
+                sb.append(" list: ");
+                for (WifiNative.WifiPnoNetwork net : llist) {
+                    sb.append(" ").append(net.SSID).append(" auth ").append(net.auth);
+                }
+                sendMessage(CMD_STARTED_PNO_DBG, 1, 0, sb.toString());
+            }
+            return true;
+        }
+        log("startPno: couldnt get PNO list ");
+        return false;
     }
 
     private void handleScreenStateChanged(boolean screenOn, boolean startBackgroundScanIfNeeded) {
@@ -3088,28 +3273,36 @@ public class WifiStateMachine extends StateMachine {
             // start the scan alarm so as to enable autojoin
             if (getCurrentState() == mConnectedState
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
-                // Scan after 500ms
-                startDelayedScan(500, null, null);
+                if (!startPno()) {
+                    // Scan after 500ms
+                    startDelayedScan(500, null, null);
+                }
             } else if (getCurrentState() == mDisconnectedState) {
-                // Scan after 200ms
-                startDelayedScan(200, null, null);
+                if (!startPno()) {
+                    // Scan after 500ms
+                    startDelayedScan(500, null, null);
+                }
             }
         } else if (startBackgroundScanIfNeeded) {
             // Screen Off and Disconnected and chipset doesn't support scan offload
             //              => start scan alarm
             // Screen Off and Disconnected and chipset does support scan offload
             //              => will use scan offload (i.e. background scan)
-            if (!mBackgroundScanSupported) {
-                setScanAlarm(true);
-            } else {
-                mEnableBackgroundScan = true;
+            if (!mAlwaysOnPnoSupported) {
+                if (!mBackgroundScanSupported) {
+                    setScanAlarm(true);
+                } else {
+                    mEnableBackgroundScan = true;
+                }
             }
         }
         if (DBG) logd("backgroundScan enabled=" + mEnableBackgroundScan
                 + " startBackgroundScanIfNeeded:" + startBackgroundScanIfNeeded);
         if (startBackgroundScanIfNeeded) {
-            // to scan for them in background, we need all networks enabled
-            enableBackgroundScan(mEnableBackgroundScan);
+            if (!startPno()) {
+                // to scan for them in background, we need all networks enabled
+                enableBackgroundScan(mEnableBackgroundScan);
+            }
         }
         if (DBG) log("handleScreenStateChanged Exit: " + screenOn);
     }
@@ -3148,7 +3341,7 @@ public class WifiStateMachine extends StateMachine {
                         return false;
                     }
 
-                    if(mCm.tether(intf) != ConnectivityManager.TETHER_ERROR_NO_ERROR) {
+                    if (mCm.tether(intf) != ConnectivityManager.TETHER_ERROR_NO_ERROR) {
                         loge("Error tethering on " + intf);
                         return false;
                     }
@@ -3227,9 +3420,9 @@ public class WifiStateMachine extends StateMachine {
             log("setSuspendOptimizationsNative: " + reason + " " + enabled
                     + " -want " + mUserWantsSuspendOpt.get()
                     + " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
-                    +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName()
-                    +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
-                    +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
+                    + " - " + Thread.currentThread().getStackTrace()[3].getMethodName()
+                    + " - " + Thread.currentThread().getStackTrace()[4].getMethodName()
+                    + " - " + Thread.currentThread().getStackTrace()[5].getMethodName());
         }
         //mWifiNative.setSuspendOptimizations(enabled);
 
@@ -3240,9 +3433,9 @@ public class WifiStateMachine extends StateMachine {
                 if (DBG) {
                     log("setSuspendOptimizationsNative do it " + reason + " " + enabled
                             + " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
-                            +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName()
-                            +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
-                            +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
+                            + " - " + Thread.currentThread().getStackTrace()[3].getMethodName()
+                            + " - " + Thread.currentThread().getStackTrace()[4].getMethodName()
+                            + " - " + Thread.currentThread().getStackTrace()[5].getMethodName());
                 }
                 mWifiNative.setSuspendOptimizations(true);
             }
@@ -3344,7 +3537,7 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Format:
-     *
+     * <p/>
      * id=1
      * bssid=68:7f:76:d7:1a:6e
      * freq=2412
@@ -3383,7 +3576,7 @@ public class WifiStateMachine extends StateMachine {
             scanResultsBuf.append("\n");
             String[] lines = tmpResults.split("\n");
             sid = -1;
-            for (int i=lines.length - 1; i >= 0; i--) {
+            for (int i = lines.length - 1; i >= 0; i--) {
                 if (lines[i].startsWith(END_STR)) {
                     break;
                 } else if (lines[i].startsWith(ID_STR)) {
@@ -3410,7 +3603,7 @@ public class WifiStateMachine extends StateMachine {
                 // hence clear it.
                 mScanResults = new ArrayList<>();
             }
-           return;
+            return;
         }
 
         emptyScanResultCount = 0;
@@ -3418,7 +3611,7 @@ public class WifiStateMachine extends StateMachine {
         // note that all these splits and substrings keep references to the original
         // huge string buffer while the amount we really want is generally pretty small
         // so make copies instead (one example b/11087956 wasted 400k of heap here).
-        synchronized(mScanResultCache) {
+        synchronized (mScanResultCache) {
             mScanResults = new ArrayList<>();
             String[] lines = scanResults.split("\n");
             final int bssidStrLen = BSSID_STR.length();
@@ -3442,7 +3635,7 @@ public class WifiStateMachine extends StateMachine {
                          * so we need to adjust for that here.
                          */
                         if (level > 0) level -= 256;
-                    } catch(NumberFormatException e) {
+                    } catch (NumberFormatException e) {
                         level = 0;
                     }
                 } else if (line.startsWith(TSF_STR)) {
@@ -3492,8 +3685,7 @@ public class WifiStateMachine extends StateMachine {
                             mNumScanResultsReturned++; // Keep track of how many scan results we got
                             // as part of this scan's processing
                             mScanResults.add(scanDetail);
-                        }
-                        catch (IllegalArgumentException iae) {
+                        } catch (IllegalArgumentException iae) {
                             Log.d("HS2J", "Failed to parse information elements: " + iae);
                         }
                     }
@@ -3525,7 +3717,7 @@ public class WifiStateMachine extends StateMachine {
                 || state == SupplicantState.GROUP_HANDSHAKE
                 || (/* keep autojoin enabled if user has manually selected a wifi network,
                         so as to make sure we reliably remain connected to this network */
-                        mConnectionRequests == 0 && selection == null)) {
+                mConnectionRequests == 0 && selection == null)) {
             // Dont attempt auto-joining again while we are already attempting to join
             // and/or obtaining Ip address
             attemptAutoJoin = false;
@@ -3549,7 +3741,7 @@ public class WifiStateMachine extends StateMachine {
         }
 
         if (mWifiConfigStore.enableAutoJoinWhenAssociated.get()) {
-            synchronized(mScanResultCache) {
+            synchronized (mScanResultCache) {
                 // AutoJoincontroller will directly acces the scan result list and update it with
                 // ScanResult status
                 mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
@@ -3600,7 +3792,7 @@ public class WifiStateMachine extends StateMachine {
         }
 
         if (newRssi > WifiInfo.INVALID_RSSI && newRssi < WifiInfo.MAX_RSSI) {
-        // screen out invalid values
+            // screen out invalid values
             /* some implementations avoid negative values by adding 256
              * so we need to adjust for that here.
              */
@@ -3641,7 +3833,7 @@ public class WifiStateMachine extends StateMachine {
     }
 
     /**
-     *  Determine if we need to switch network:
+     * Determine if we need to switch network:
      * - the delta determine the urgency to switch and/or or the expected evilness of the disruption
      * - match the uregncy of the switch versus the packet usage at the interface
      */
@@ -3694,6 +3886,7 @@ public class WifiStateMachine extends StateMachine {
 
     // For debug, provide information about the last scoring operation
     String wifiScoringReport = null;
+
     private void calculateWifiScore(WifiLinkLayerStats stats) {
         StringBuilder sb = new StringBuilder();
 
@@ -3736,7 +3929,7 @@ public class WifiStateMachine extends StateMachine {
             if (currentConfiguration.visibility != null) {
                 if (currentConfiguration.visibility.rssi24 != WifiConfiguration.INVALID_RSSI
                         && currentConfiguration.visibility.rssi24
-                        >= (currentConfiguration.visibility.rssi5-2)) {
+                        >= (currentConfiguration.visibility.rssi5 - 2)) {
                     use24Thresholds = true;
                 }
             }
@@ -3770,7 +3963,7 @@ public class WifiStateMachine extends StateMachine {
         if (isHighRSSI) sb.append(" hr");
 
         int penalizedDueToUserTriggeredDisconnect = 0;        // For debug information
-        if (currentConfiguration!= null &&
+        if (currentConfiguration != null &&
                 (mWifiInfo.txSuccessRate > 5 || mWifiInfo.rxSuccessRate > 5)) {
             if (isBadRSSI) {
                 currentConfiguration.numTicksAtBadRSSI++;
@@ -3790,9 +3983,9 @@ public class WifiStateMachine extends StateMachine {
                 }
                 if (mWifiConfigStore.enableWifiCellularHandoverUserTriggeredAdjustment &&
                         (currentConfiguration.numUserTriggeredWifiDisableBadRSSI > 0
-                        || currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
-                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
-                    score = score -5;
+                                || currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
+                                || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
+                    score = score - 5;
                     penalizedDueToUserTriggeredDisconnect = 1;
                     sb.append(" p1");
                 }
@@ -3811,8 +4004,8 @@ public class WifiStateMachine extends StateMachine {
                 }
                 if (mWifiConfigStore.enableWifiCellularHandoverUserTriggeredAdjustment &&
                         (currentConfiguration.numUserTriggeredWifiDisableLowRSSI > 0
-                        || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
-                    score = score -5;
+                                || currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0)) {
+                    score = score - 5;
                     penalizedDueToUserTriggeredDisconnect = 2;
                     sb.append(" p2");
                 }
@@ -3828,7 +4021,7 @@ public class WifiStateMachine extends StateMachine {
                 }
                 if (mWifiConfigStore.enableWifiCellularHandoverUserTriggeredAdjustment &&
                         currentConfiguration.numUserTriggeredWifiDisableNotHighRSSI > 0) {
-                    score = score -5;
+                    score = score - 5;
                     penalizedDueToUserTriggeredDisconnect = 3;
                     sb.append(" p3");
                 }
@@ -3845,14 +4038,14 @@ public class WifiStateMachine extends StateMachine {
             else if (isLowRSSI) rssiStatus += " lowRSSI ";
             if (isBadLinkspeed) rssiStatus += " lowSpeed ";
             loge("calculateWifiScore freq=" + Integer.toString(mWifiInfo.getFrequency())
-                            + " speed=" + Integer.toString(mWifiInfo.getLinkSpeed())
-                            + " score=" + Integer.toString(mWifiInfo.score)
-                            + rssiStatus
-                            + " -> txbadrate=" + String.format( "%.2f", mWifiInfo.txBadRate )
-                            + " txgoodrate=" + String.format("%.2f", mWifiInfo.txSuccessRate)
-                            + " txretriesrate=" + String.format("%.2f", mWifiInfo.txRetriesRate)
-                            + " rxrate=" + String.format("%.2f", mWifiInfo.rxSuccessRate)
-                            + " userTriggerdPenalty" + penalizedDueToUserTriggeredDisconnect);
+                    + " speed=" + Integer.toString(mWifiInfo.getLinkSpeed())
+                    + " score=" + Integer.toString(mWifiInfo.score)
+                    + rssiStatus
+                    + " -> txbadrate=" + String.format("%.2f", mWifiInfo.txBadRate)
+                    + " txgoodrate=" + String.format("%.2f", mWifiInfo.txSuccessRate)
+                    + " txretriesrate=" + String.format("%.2f", mWifiInfo.txRetriesRate)
+                    + " rxrate=" + String.format("%.2f", mWifiInfo.rxSuccessRate)
+                    + " userTriggerdPenalty" + penalizedDueToUserTriggeredDisconnect);
         }
 
         if ((mWifiInfo.txBadRate >= 1) && (mWifiInfo.txSuccessRate < 3)
@@ -3880,7 +4073,7 @@ public class WifiStateMachine extends StateMachine {
         sb.append(String.format(",%d", score));
 
         if (isBadLinkspeed) {
-            score -= 4 ;
+            score -= 4;
             if (PDBG) {
                 loge(" isBadLinkspeed   ---> count=" + mBadLinkspeedcount
                         + " score=" + Integer.toString(score));
@@ -3904,12 +4097,12 @@ public class WifiStateMachine extends StateMachine {
             mWifiInfo.lowRssiCount = 0;
         }
 
-        score -= mWifiInfo.badRssiCount * 2 +  mWifiInfo.lowRssiCount ;
+        score -= mWifiInfo.badRssiCount * 2 + mWifiInfo.lowRssiCount;
         sb.append(String.format(",%d", score));
 
         if (PDBG) loge(" badRSSI count" + Integer.toString(mWifiInfo.badRssiCount)
-                     + " lowRSSI count" + Integer.toString(mWifiInfo.lowRssiCount)
-                        + " --> score " + Integer.toString(score));
+                + " lowRSSI count" + Integer.toString(mWifiInfo.lowRssiCount)
+                + " --> score " + Integer.toString(score));
 
 
         if (isHighRSSI) {
@@ -3990,19 +4183,19 @@ public class WifiStateMachine extends StateMachine {
 
     private boolean isProvisioned(LinkProperties lp) {
         return lp.isProvisioned() ||
-               (mWifiConfigStore.isUsingStaticIp(mLastNetworkId) && lp.hasIPv4Address());
+                (mWifiConfigStore.isUsingStaticIp(mLastNetworkId) && lp.hasIPv4Address());
     }
 
     /**
      * Updates mLinkProperties by merging information from various sources.
-     *
+     * <p/>
      * This is needed because the information in mLinkProperties comes from multiple sources (DHCP,
      * netlink, static configuration, ...). When one of these sources of information has updated
      * link properties, we can't just assign them to mLinkProperties or we'd lose track of the
      * information that came from other sources. Instead, when one of those sources has new
      * information, we update the object that tracks the information from that source and then
      * call this method to apply the change to mLinkProperties.
-     *
+     * <p/>
      * The information in mLinkProperties is currently obtained as follows:
      * - Interface name: set in the constructor.
      * - IPv4 and IPv6 addresses: netlink, passed in by mNetlinkTracker.
@@ -4046,7 +4239,7 @@ public class WifiStateMachine extends StateMachine {
         final boolean wasProvisioned = isProvisioned(mLinkProperties);
         final boolean isProvisioned = isProvisioned(newLp);
         final boolean lostIPv4Provisioning =
-            mLinkProperties.hasIPv4Address() && !newLp.hasIPv4Address();
+                mLinkProperties.hasIPv4Address() && !newLp.hasIPv4Address();
         final DetailedState detailedState = getNetworkDetailedState();
 
         if (linkChanged) {
@@ -4166,62 +4359,62 @@ public class WifiStateMachine extends StateMachine {
     /**
      * Clears all our link properties.
      */
-     private void clearLinkProperties() {
-         // Clear the link properties obtained from DHCP and netlink.
-         synchronized (mDhcpResultsLock) {
-             if (mDhcpResults != null) {
-                 mDhcpResults.clear();
-             }
-         }
-         mNetlinkTracker.clearLinkProperties();
+    private void clearLinkProperties() {
+        // Clear the link properties obtained from DHCP and netlink.
+        synchronized (mDhcpResultsLock) {
+            if (mDhcpResults != null) {
+                mDhcpResults.clear();
+            }
+        }
+        mNetlinkTracker.clearLinkProperties();
 
-         // Now clear the merged link properties.
-         mLinkProperties.clear();
-         if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
-     }
+        // Now clear the merged link properties.
+        mLinkProperties.clear();
+        if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
+    }
 
-     /**
-      * try to update default route MAC address.
-      */
-      private String updateDefaultRouteMacAddress(int timeout) {
-          String address = null;
-          for (RouteInfo route : mLinkProperties.getRoutes()) {
-              if (route.isDefaultRoute() && route.hasGateway()) {
-                  InetAddress gateway = route.getGateway();
-                  if (gateway instanceof Inet4Address) {
-                      if (PDBG) {
-                          loge("updateDefaultRouteMacAddress found Ipv4 default :"
-                                  + gateway.getHostAddress());
-                      }
-                      address = macAddressFromRoute(gateway.getHostAddress());
+    /**
+     * try to update default route MAC address.
+     */
+    private String updateDefaultRouteMacAddress(int timeout) {
+        String address = null;
+        for (RouteInfo route : mLinkProperties.getRoutes()) {
+            if (route.isDefaultRoute() && route.hasGateway()) {
+                InetAddress gateway = route.getGateway();
+                if (gateway instanceof Inet4Address) {
+                    if (PDBG) {
+                        loge("updateDefaultRouteMacAddress found Ipv4 default :"
+                                + gateway.getHostAddress());
+                    }
+                    address = macAddressFromRoute(gateway.getHostAddress());
                      /* The gateway's MAC address is known */
-                      if ((address == null) && (timeout > 0)) {
-                          boolean reachable = false;
-                          try {
-                              reachable = gateway.isReachable(timeout);
-                          } catch (Exception e) {
-                              loge("updateDefaultRouteMacAddress exception reaching :"
-                                      + gateway.getHostAddress());
+                    if ((address == null) && (timeout > 0)) {
+                        boolean reachable = false;
+                        try {
+                            reachable = gateway.isReachable(timeout);
+                        } catch (Exception e) {
+                            loge("updateDefaultRouteMacAddress exception reaching :"
+                                    + gateway.getHostAddress());
 
-                          } finally {
-                              if (reachable == true) {
+                        } finally {
+                            if (reachable == true) {
 
-                                  address = macAddressFromRoute(gateway.getHostAddress());
-                                  if (PDBG) {
-                                      loge("updateDefaultRouteMacAddress reachable (tried again) :"
-                                              + gateway.getHostAddress() + " found " + address);
-                                  }
-                              }
-                          }
-                      }
-                      if (address != null) {
-                          mWifiConfigStore.setDefaultGwMacAddress(mLastNetworkId, address);
-                      }
-                  }
-              }
-          }
-          return address;
-      }
+                                address = macAddressFromRoute(gateway.getHostAddress());
+                                if (PDBG) {
+                                    loge("updateDefaultRouteMacAddress reachable (tried again) :"
+                                            + gateway.getHostAddress() + " found " + address);
+                                }
+                            }
+                        }
+                    }
+                    if (address != null) {
+                        mWifiConfigStore.setDefaultGwMacAddress(mLastNetworkId, address);
+                    }
+                }
+            }
+        }
+        return address;
+    }
 
     private void sendScanResultsAvailableBroadcast() {
         Intent intent = new Intent(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
@@ -4245,7 +4438,7 @@ public class WifiStateMachine extends StateMachine {
         Intent intent = new Intent(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.putExtra(WifiManager.EXTRA_NETWORK_INFO, new NetworkInfo(mNetworkInfo));
-        intent.putExtra(WifiManager.EXTRA_LINK_PROPERTIES, new LinkProperties (mLinkProperties));
+        intent.putExtra(WifiManager.EXTRA_LINK_PROPERTIES, new LinkProperties(mLinkProperties));
         if (bssid != null)
             intent.putExtra(WifiManager.EXTRA_BSSID, bssid);
         if (mNetworkInfo.getDetailedState() == DetailedState.VERIFYING_POOR_LINK ||
@@ -4271,6 +4464,7 @@ public class WifiStateMachine extends StateMachine {
 
     /**
      * Record the detailed state of a network.
+     *
      * @param state the new {@code DetailedState}
      */
     private boolean setNetworkDetailedState(NetworkInfo.DetailedState state) {
@@ -4300,7 +4494,7 @@ public class WifiStateMachine extends StateMachine {
             // Always indicate that SSID has changed
             if (!mNetworkInfo.getExtraInfo().equals(mWifiInfo.getSSID())) {
                 if (DBG) {
-                    log("setDetailed state send new extra info"  + mWifiInfo.getSSID());
+                    log("setDetailed state send new extra info" + mWifiInfo.getSSID());
                 }
                 mNetworkInfo.setExtraInfo(mWifiInfo.getSSID());
                 sendNetworkStateChangeBroadcast(null);
@@ -4356,9 +4550,9 @@ public class WifiStateMachine extends StateMachine {
     private void handleNetworkDisconnect() {
         if (DBG) log("handleNetworkDisconnect: Stopping DHCP and clearing IP"
                 + " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
-                +" - "+ Thread.currentThread().getStackTrace()[3].getMethodName()
-                +" - "+ Thread.currentThread().getStackTrace()[4].getMethodName()
-                +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName());
+                + " - " + Thread.currentThread().getStackTrace()[3].getMethodName()
+                + " - " + Thread.currentThread().getStackTrace()[4].getMethodName()
+                + " - " + Thread.currentThread().getStackTrace()[5].getMethodName());
 
 
         clearCurrentConfigBSSID("handleNetworkDisconnect");
@@ -4403,7 +4597,7 @@ public class WifiStateMachine extends StateMachine {
         /* Cancel auto roam requests */
         autoRoamSetBSSID(mLastNetworkId, "any");
 
-        mLastBssid= null;
+        mLastBssid = null;
         registerDisconnected();
         mLastNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
     }
@@ -4518,6 +4712,13 @@ public class WifiStateMachine extends StateMachine {
 
         // startBatchedScan();
         WifiNative.restartScan();
+    }
+
+    void connectScanningService() {
+
+        if (mWifiScanner == null)
+            mWifiScanner = (WifiScanner) mContext.getSystemService(Context.WIFI_SCANNING_SERVICE);
+
     }
 
     private void handleIPv4Success(DhcpResults dhcpResults, int reason) {
@@ -5600,8 +5801,17 @@ public class WifiStateMachine extends StateMachine {
             intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_ENABLED);
             mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
 
+            if (WifiNative.startHal()) {
+                mHalFeatureSet = WifiNative.getSupportedFeatureSet();
+                if ((mHalFeatureSet & WifiManager.WIFI_FEATURE_HAL_EPNO)
+                        == WifiManager.WIFI_FEATURE_HAL_EPNO) {
+                    mAlwaysOnPnoSupported = true;
+                }
+            }
+
             if (PDBG) {
-                loge("Driverstarted State enter done");
+                loge("Driverstarted State enter done, epno=" + mAlwaysOnPnoSupported
+                     + " feature=" + mHalFeatureSet);
             }
         }
 
@@ -6263,6 +6473,15 @@ public class WifiStateMachine extends StateMachine {
             case CMD_DISCONNECTING_WATCHDOG_TIMER:
                 s = "CMD_DISCONNECTING_WATCHDOG_TIMER";
                 break;
+            case CMD_START_PNO:
+                s = "CMD_START_PNO";
+                break;
+            case CMD_STARTED_PNO_DBG:
+                s = "CMD_STARTED_PNO_DBG";
+                break;
+            case CMD_PNO_NETWORK_FOUND:
+                s = "CMD_PNO_NETWORK_FOUND";
+                break;
             default:
                 s = "what:" + Integer.toString(what);
                 break;
@@ -6376,6 +6595,8 @@ public class WifiStateMachine extends StateMachine {
             String ssid;
             NetworkUpdateResult result;
             logStateAndMessage(message, getClass().getSimpleName());
+
+            connectScanningService();
 
             switch (message.what) {
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
@@ -6990,6 +7211,13 @@ public class WifiStateMachine extends StateMachine {
                     if (DBG) log("ConnectModeState: Network connection lost ");
                     handleNetworkDisconnect();
                     transitionTo(mDisconnectedState);
+                    break;
+                case CMD_START_PNO:
+                    // Restart Pno if required, reevaluating the list of networks
+                    startPno();
+                    break;
+                case CMD_PNO_NETWORK_FOUND:
+                    processPnoNetworkFound((ScanResult[])message.obj);
                     break;
                 default:
                     return NOT_HANDLED;
@@ -7836,8 +8064,13 @@ public class WifiStateMachine extends StateMachine {
             }
             if (mScreenOn
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
-                // restart scan alarm
-                startDelayedScan(mWifiConfigStore.associatedPartialScanPeriodMilli.get(), null, null);
+                if (mAlwaysOnPnoSupported) {
+                    startPno();
+                } else {
+                    // restart scan alarm
+                    startDelayedScan(mWifiConfigStore.associatedPartialScanPeriodMilli.get(),
+                            null, null);
+                }
             }
             registerConnected();
             lastConnectAttempt = 0;
@@ -8049,7 +8282,8 @@ public class WifiStateMachine extends StateMachine {
         public void enter() {
 
             if (PDBG) {
-                loge(" Enter DisconnectingState State scan interval " + mFrameworkScanIntervalMs
+                loge(" Enter DisconnectingState State scan interval "
+                        + mWifiConfigStore.wifiDisconnectedScanIntervalMs
                         + " mEnableBackgroundScan= " + mEnableBackgroundScan
                         + " screenOn=" + mScreenOn);
             }
@@ -8112,41 +8346,40 @@ public class WifiStateMachine extends StateMachine {
                 return;
             }
 
-            mFrameworkScanIntervalMs = Settings.Global.getLong(mContext.getContentResolver(),
-                    Settings.Global.WIFI_FRAMEWORK_SCAN_INTERVAL_MS,
-                    mDefaultFrameworkScanIntervalMs);
-
             if (PDBG) {
-                loge(" Enter disconnected State scan interval " + mFrameworkScanIntervalMs
+                loge(" Enter disconnected State scan interval "
+                        + mWifiConfigStore.wifiDisconnectedScanIntervalMs.get()
                         + " mEnableBackgroundScan= " + mEnableBackgroundScan
-                        + " screenOn=" + mScreenOn
-                        + " mFrameworkScanIntervalMs=" + mFrameworkScanIntervalMs);
+                        + " screenOn=" + mScreenOn);
             }
 
             /** clear the roaming state, if we were roaming, we failed */
             mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
 
-            if (mScreenOn) {
-                /**
-                 * screen lit and => delayed timer
-                 */
-                startDelayedScan(mDisconnectedScanPeriodMs, null, null);
-            } else {
-                /**
-                 * screen dark and PNO supported => scan alarm disabled
-                 */
-                if (mEnableBackgroundScan) {
-                    /* If a regular scan result is pending, do not initiate background
-                     * scan until the scan results are returned. This is needed because
-                     * initiating a background scan will cancel the regular scan and
-                     * scan results will not be returned until background scanning is
-                     * cleared
+            if (!startPno()) {
+                if (mScreenOn) {
+                    /**
+                     * screen lit and => delayed timer
                      */
-                    if (!mIsScanOngoing) {
-                        enableBackgroundScan(true);
-                    }
+                    startDelayedScan(mWifiConfigStore.wifiDisconnectedScanIntervalMs.get(),
+                            null, null);
                 } else {
-                    setScanAlarm(true);
+                    /**
+                     * screen dark and PNO supported => scan alarm disabled
+                     */
+                    if (mEnableBackgroundScan) {
+                        /* If a regular scan result is pending, do not initiate background
+                         * scan until the scan results are returned. This is needed because
+                        * initiating a background scan will cancel the regular scan and
+                        * scan results will not be returned until background scanning is
+                        * cleared
+                        */
+                        if (!mIsScanOngoing) {
+                            enableBackgroundScan(true);
+                        }
+                    } else {
+                        setScanAlarm(true);
+                    }
                 }
             }
 
@@ -8229,11 +8462,11 @@ public class WifiStateMachine extends StateMachine {
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
                         // Check if the CMD_START_SCAN message is obsolete (and thus if it should
                         // not be processed) and restart the scan
-                        int period =  mDisconnectedScanPeriodMs;
+                        int period =  mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
                         if (mP2pConnected.get()) {
                            period = (int)Settings.Global.getLong(mContext.getContentResolver(),
                                     Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
-                                    mDisconnectedScanPeriodMs);
+                                    period);
                         }
                         if (!checkAndRestartDelayedScan(message.arg2,
                                 true, period, null, null)) {
@@ -8277,7 +8510,10 @@ public class WifiStateMachine extends StateMachine {
                         // scanning at the normal period. This is necessary because scanning might
                         // have been disabled altogether if WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS
                         // was set to zero.
-                        startDelayedScan(mDisconnectedScanPeriodMs, null, null);
+                        if (!startPno()) {
+                            startDelayedScan(mWifiConfigStore.wifiDisconnectedScanIntervalMs.get(),
+                                    null, null);
+                        }
                     }
                     break;
                 case CMD_RECONNECT:

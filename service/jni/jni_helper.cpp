@@ -118,7 +118,7 @@ jlong getStaticLongField(JNIEnv *env, jclass cls, const char *name)
         THROW(env, "Error in accessing field");
         return 0;
     }
-    ALOGE("getStaticLongField %s %p", name, cls);
+    //ALOGE("getStaticLongField %s %p", name, cls);
 
     return (env)->GetStaticLongField(cls, field);
 }

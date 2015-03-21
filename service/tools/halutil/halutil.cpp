@@ -604,7 +604,6 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
 
         /* create a schedule to scan channels 1, 6, 11 every 5 second and
          * scan 36, 40, 44, 149, 153, 157, 161 165 every 10 second */
-
         params.max_ap_per_scan = max_ap_per_scan;
         params.base_period = base_period;                      // 5 second
         params.report_threshold_percent = threshold_percent;
@@ -643,7 +642,6 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
         params.buckets[2].num_channels = 1;
 
         params.buckets[2].channels[0].channel = 2462;
-
     }
 
     wifi_scan_result_handler handler;
