@@ -125,6 +125,13 @@ wifi_error wifi_rtt_range_cancel(wifi_request_id id,  wifi_interface_handle ifac
     return WIFI_ERROR_NOT_SUPPORTED;
 }
 
+/* API to get RTT capability */
+wifi_error wifi_get_rtt_capabilities(wifi_interface_handle iface,
+        wifi_rtt_capabilities *capabilities)
+{
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
 wifi_error wifi_set_nodfs_flag(wifi_interface_handle iface, u32 nodfs) {
     return WIFI_ERROR_NOT_SUPPORTED;
 }
@@ -133,4 +140,13 @@ wifi_error wifi_start_logging(wifi_interface_handle iface, u32 verbose_level, u3
         u32 max_interval_sec, u32 min_data_size, u8 *buffer_name,
         wifi_ring_buffer_data_handler handler) {
             return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_set_epno_list(int id, wifi_interface_info *iface, int num_networks,
+        wifi_epno_network *networks, wifi_epno_handler handler) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_set_country_code(wifi_interface_handle iface, const char *code) {
+    return WIFI_ERROR_NOT_SUPPORTED;
 }
