@@ -1288,6 +1288,18 @@ static jobject android_net_wifi_get_rtt_capabilities(JNIEnv *env, jclass cls, ji
     }
 }
 
+static jboolean android_net_wifi_set_Country_Code_Hal(JNIEnv *env,jclass cls, jint iface,
+        jstring country_code) {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    const char *country = env->GetStringUTFChars(country_code, NULL);
+
+    ALOGD("set country code: %s", country);
+    wifi_error res = wifi_set_country_code(handle, country);
+    env->ReleaseStringUTFChars(country_code, country);
+
+    return res == WIFI_SUCCESS;
+}
 // ----------------------------------------------------------------------------
 // Debug framework
 // ----------------------------------------------------------------------------
@@ -1374,7 +1386,9 @@ static JNINativeMethod gWifiMethods[] = {
     { "toggleInterfaceNative",    "(I)Z",  (void*) android_net_wifi_toggle_interface},
     { "getRttCapabilitiesNative", "(I)Landroid/net/wifi/RttManager$RttCapabilities;",
             (void*) android_net_wifi_get_rtt_capabilities},
-    { "startLogging", "(I)Z", (void*) android_net_wifi_start_logging}
+    { "startLogging", "(I)Z", (void*) android_net_wifi_start_logging},
+    {"setCountryCodeHalNative", "(ILjava/lang/String;)Z",
+            (void*) android_net_wifi_set_Country_Code_Hal}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
