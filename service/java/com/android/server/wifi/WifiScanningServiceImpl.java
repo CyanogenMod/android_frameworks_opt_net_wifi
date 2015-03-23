@@ -836,7 +836,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         private static final int DEFAULT_MAX_AP_PER_SCAN = 10;
         private static final int DEFAULT_REPORT_THRESHOLD_PERCENT = 80;
         private static final int DEFAULT_BASE_PERIOD_MS = 5000;
-        private static final int DEFAULT_REPORT_THRESHOLD_NUM_SCANS = 20;
+        private static final int DEFAULT_REPORT_THRESHOLD_NUM_SCANS = 10;
 
         private WifiNative.ScanSettings mSettings;
         {
