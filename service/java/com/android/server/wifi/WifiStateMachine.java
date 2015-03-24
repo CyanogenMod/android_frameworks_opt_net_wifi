@@ -6052,7 +6052,7 @@ public class WifiStateMachine extends StateMachine {
                 s = "CMD_GET_CONFIGURED_NETWORKS";
                 break;
             case CMD_GET_SUPPORTED_FEATURES:
-                s = "CMD_GET_ADAPTORS";
+                s = "CMD_GET_SUPPORTED_FEATURES";
                 break;
             case CMD_UNWANTED_NETWORK:
                 s = "CMD_UNWANTED_NETWORK";
