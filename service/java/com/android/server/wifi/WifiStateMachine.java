@@ -48,7 +48,9 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
+import android.net.BaseDhcpStateMachine;
 import android.net.DhcpStateMachine;
+import android.net.dhcp.DhcpClient;
 import android.net.InterfaceConfiguration;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
@@ -123,6 +125,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
@@ -190,6 +193,7 @@ public class WifiStateMachine extends StateMachine {
     private WifiAutoJoinController mWifiAutoJoinController;
     private INetworkManagementService mNwService;
     private ConnectivityManager mCm;
+    private WifiLogger mWifiLogger;
 
     private final boolean mP2pSupported;
     private final AtomicBoolean mP2pConnected = new AtomicBoolean(false);
@@ -332,7 +336,7 @@ public class WifiStateMachine extends StateMachine {
     private NetworkInfo mNetworkInfo;
     private NetworkCapabilities mNetworkCapabilities;
     private SupplicantStateTracker mSupplicantStateTracker;
-    private DhcpStateMachine mDhcpStateMachine;
+    private BaseDhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
 
     private int mWifiLinkLayerStatsSupported = 4; // Temporary disable
@@ -981,6 +985,7 @@ public class WifiStateMachine extends StateMachine {
         mWifiConfigStore = new WifiConfigStore(context, mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
+        mWifiLogger = new WifiLogger(mContext, this);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
         mWifiInfo = new WifiInfo();
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
@@ -1218,6 +1223,14 @@ public class WifiStateMachine extends StateMachine {
 
     public int getAllowScansWithTraffic() {
         return mWifiConfigStore.alwaysEnableScansWhileAssociated.get();
+    }
+
+    public void setAllowScansWhileAssociated(boolean enabled) {
+        mWifiConfigStore.enableAutoJoinScanWhenAssociated.set(enabled);
+    }
+
+    public boolean getAllowScansWhileAssociated() {
+        return mWifiConfigStore.enableAutoJoinScanWhenAssociated.get();
     }
 
     /*
@@ -3560,27 +3573,29 @@ public class WifiStateMachine extends StateMachine {
                             String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
                             if (!xssid.equals(networkDetail.getSSID())) {
                                 Log.d("HS2J", "Inconsistency: SSID: '" + xssid +
-                                        "' vs '" + networkDetail.getSSID() + "'");
+                                        "' vs '" + networkDetail.getSSID() + "': " + infoElements);
+                            }
+
+                            if (networkDetail.hasInterworking()) {
+                                Log.d("HS2J", "HSNwk: '" + networkDetail);
                             }
 
                             ScanDetail scanDetail = mScanResultCache.get(networkDetail);
                             if (scanDetail != null) {
-
-                                scanDetail.updateResults(networkDetail, level, wifiSsid, xssid, flags,
-                                        freq, tsf);
-                            }
-                            else {
+                                scanDetail.updateResults(networkDetail, level, wifiSsid, xssid,
+                                        flags, freq, tsf);
+                            } else {
                                 scanDetail = new ScanDetail(networkDetail, wifiSsid, bssid,
                                         flags, level, freq, tsf);
                                 mScanResultCache.put(networkDetail, scanDetail);
                             }
 
-                            mNumScanResultsReturned ++; // Keep track of how many scan results we got
-                                                        // as part of this scan's processing
-
+                            mNumScanResultsReturned++; // Keep track of how many scan results we got
+                            // as part of this scan's processing
                             mScanResults.add(scanDetail);
-                        } catch (IllegalArgumentException e) {
-                            logd("failed to parse data from an AP");
+                        }
+                        catch (IllegalArgumentException iae) {
+                            Log.d("HS2J", "Failed to parse information elements: " + iae);
                         }
                     }
                     bssid = null;
@@ -4549,22 +4564,32 @@ public class WifiStateMachine extends StateMachine {
     }
 
 
-    void startDhcp() {
-        if (mDhcpStateMachine == null) {
-            mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(
-                    mContext, WifiStateMachine.this, mInterfaceName);
+    private boolean useLegacyDhcpClient() {
+        return Settings.Global.getInt(
+                mContext.getContentResolver(),
+                Settings.Global.LEGACY_DHCP_CLIENT, 0) == 1;
+    }
 
+    private void maybeInitDhcpStateMachine() {
+        if (mDhcpStateMachine == null) {
+            if (useLegacyDhcpClient()) {
+                mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(
+                        mContext, WifiStateMachine.this, mInterfaceName);
+            } else {
+                mDhcpStateMachine = DhcpClient.makeDhcpStateMachine(
+                        mContext, WifiStateMachine.this, mInterfaceName);
+            }
         }
+    }
+
+    void startDhcp() {
+        maybeInitDhcpStateMachine();
         mDhcpStateMachine.registerForPreDhcpNotification();
         mDhcpStateMachine.sendMessage(DhcpStateMachine.CMD_START_DHCP);
     }
 
     void renewDhcp() {
-        if (mDhcpStateMachine == null) {
-            mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(
-                    mContext, WifiStateMachine.this, mInterfaceName);
-
-        }
+        maybeInitDhcpStateMachine();
         mDhcpStateMachine.registerForPreDhcpNotification();
         mDhcpStateMachine.sendMessage(DhcpStateMachine.CMD_RENEW_DHCP);
     }
@@ -6785,7 +6810,7 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(netId) &&
+                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
@@ -6873,9 +6898,12 @@ public class WifiStateMachine extends StateMachine {
                     config = mWifiConfigStore.getWifiConfiguration(netId);
 
                     if (config == null) {
-                        loge("CONNECT_NETWORK id=" + Integer.toString(netId) + " "
+                        loge("CONNECT_NETWORK no config for id=" + Integer.toString(netId) + " "
                                 + mSupplicantStateTracker.getSupplicantStateName() + " my state "
                                 + getCurrentState().getName());
+                        replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+                                WifiManager.ERROR);
+                        break;
                     } else {
                         String wasSkipped = config.autoJoinBailedDueToLowRssi ? " skipped" : "";
                         loge("CONNECT_NETWORK id=" + Integer.toString(netId)
@@ -6931,7 +6959,7 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(netId) &&
+                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ true) &&
                             mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
@@ -7117,7 +7145,7 @@ public class WifiStateMachine extends StateMachine {
                 case WifiMonitor.ANQP_DONE_EVENT:
                     Log.d("HS2J", String.format("WFSM: ANQP for %016x %s",
                             (Long)message.obj, message.arg1 != 0 ? "success" : "fail"));
-                    mWifiAutoJoinController.notifyANQPDone((Long) message.obj, message.arg1 != 0);
+                    mWifiConfigStore.notifyANQPDone((Long) message.obj, message.arg1 != 0);
                     break;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     // Calling handleNetworkDisconnect here is redundant because we might already
@@ -8154,7 +8182,7 @@ public class WifiStateMachine extends StateMachine {
 
                     boolean ret = false;
                     if (mLastNetworkId != netId) {
-                       if (mWifiConfigStore.selectNetwork(netId) &&
+                       if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false) &&
                            mWifiNative.reconnect()) {
                            ret = true;
                        }

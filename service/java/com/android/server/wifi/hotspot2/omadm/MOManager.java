@@ -1,5 +1,7 @@
 package com.android.server.wifi.hotspot2.omadm;
 
+import android.util.Log;
+
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.anqp.eap.ExpandedEAPMethod;
@@ -66,6 +68,7 @@ public class MOManager {
             while (in.available() > 0) {
                 MOTree tree = MOTree.unmarshal(in);
                 if (tree != null) {
+                    Log.d("PARSE-LOG", "adding tree no " + trees.size());
                     trees.add(tree);
                 } else {
                     break;
@@ -81,18 +84,30 @@ public class MOManager {
             }
         }
 
+        Log.d("PARSE-LOG", "number of trees " + trees.size());
         for (MOTree moTree : trees) {
+            Log.d("PARSE-LOG", "pasring a moTree");
             List<HomeSP> sp = buildSPs(moTree);
             if (sp != null) {
+                Log.d("PARSE-LOG", "built " + sp.size() + " HomeSPs");
                 sps.addAll(sp);
+            } else {
+                Log.d("PARSE-LOG", "failed to build HomeSP");
             }
         }
 
+        Log.d("PARSE-LOG", "collected " + sps.size());
         for (HomeSP sp : sps) {
+            Log.d("PARSE-LOG", "adding " + sp.getFQDN());
             if (mSPs.put(sp.getFQDN(), sp) != null) {
+                Log.d("PARSE-LOG", "failed to add " + sp.getFQDN());
                 throw new OMAException("Multiple SPs for FQDN '" + sp.getFQDN() + "'");
+            } else {
+                Log.d("PARSE-LOG", "added " + sp.getFQDN() + " to list");
             }
         }
+
+        Log.d("PARSE-LOG", "found " + mSPs.size() + " configurations");
         return sps;
     }
 
@@ -128,19 +143,64 @@ public class MOManager {
     }
 
     public void saveAllSps(Collection<HomeSP> homeSPs) throws IOException {
-        OMAConstructed root = new OMAConstructed(null, TAG_PerProviderSubscription, "");
+
+        OMAConstructed root = new OMAConstructed(null, "MgmtTree", "");
 
         for (HomeSP homeSP : homeSPs) {
+            OMANode providerNode = root.addChild(TAG_PerProviderSubscription, null, null, null);
+            OMANode providerSubNode = providerNode.addChild("Node", null, null, null);
+
+            Log.d("PARSE-LOG", "creating node homeSP for " + homeSP.getFQDN());
+
             if (mSPs.put(homeSP.getFQDN(), homeSP) != null) {
                 throw new OMAException("SP " + homeSP.getFQDN() + " already exists");
             }
-            OMAConstructed homeSpNode = new OMAConstructed(root, TAG_HomeSP, "");
+            OMANode homeSpNode = providerSubNode.addChild(TAG_HomeSP, null, null, null);
             homeSpNode.addChild(TAG_FQDN, null, homeSP.getFQDN(), null);
             homeSpNode.addChild(TAG_FriendlyName, null, homeSP.getFriendlyName(), null);
 
-            OMAConstructed credentialNode = new OMAConstructed(homeSpNode, TAG_Credential, "");
+            OMANode credentialNode = providerSubNode.addChild(TAG_Credential, null, null, null);
+            Credential cred = homeSP.getCredential();
+            EAPMethod method = cred.getEAPMethod();
+
+            if (method == null) {
+                throw new OMAException("SP " + homeSP.getFQDN() + " already exists");
+            }
+
+            OMANode credRootNode;
+            if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_SIM
+                    || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKA
+                    || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKAPrim) {
+
+                Log.d("PARSE-LOG", "Saving SIM credential");
+                credRootNode = credentialNode.addChild(TAG_SIM, null, null, null);
+                credRootNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
+
+            } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
+
+                Log.d("PARSE-LOG", "Saving TTLS Credential");
+                credRootNode = credentialNode.addChild(TAG_UsernamePassword, null, null, null);
+                credRootNode.addChild(TAG_Username, null, cred.getUserName(), null);
+
+            } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS) {
+
+                Log.d("PARSE-LOG", "Saving TLS Credential");
+                credRootNode = credentialNode.addChild(TAG_DigitalCertificate, null, null, null);
+
+            } else {
+                throw new OMAException("Invalid credential on " + homeSP.getFQDN());
+            }
+
             credentialNode.addChild(TAG_Realm, null, homeSP.getCredential().getRealm(), null);
-            credentialNode.addChild(TAG_IMSI, null, homeSP.getCredential().getImsi(), null);
+            credentialNode.addChild(TAG_CheckAAAServerCertStatus, null, "true", null);
+            OMANode eapMethodNode = credRootNode.addChild(TAG_EAPMethod, null, null, null);
+            OMANode eapTypeNode = eapMethodNode.addChild(TAG_EAPType,
+                    null, EAP.mapEAPMethod(method.getEAPMethodID()).toString(), null);
+
+            if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
+                OMANode innerEAPType = eapMethodNode.addChild(TAG_InnerEAPType,
+                        null, EAP.mapEAPMethod(EAP.EAPMethodID.EAP_MSCHAPv2).toString(), null);
+            }
 
             StringBuilder builder = new StringBuilder();
             for (Long roamingConsortium : homeSP.getRoamingConsortiums()) {
@@ -148,6 +208,8 @@ public class MOManager {
             }
             credentialNode.addChild(TAG_RoamingConsortiumOI, null, builder.toString(), null);
         }
+
+        Log.d("PARSE-LOG", "Saving all SPs");
 
         MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", root);
         BufferedOutputStream out = null;
@@ -253,8 +315,10 @@ public class MOManager {
         if (spList == null) {
             return homeSPs;
         }
-
+        Log.d("PARSE-LOG", " node-name = " + spList.getName());
+        Log.d("PARSE-LOG", " num_children = " + spList.getChildren().size());
         for (OMANode spRoot : spList.getChildren()) {
+            Log.d("PARSE-LOG", " node-name = " + spRoot.getName());
             homeSPs.add(buildHomeSP(spRoot));
         }
 
@@ -262,6 +326,7 @@ public class MOManager {
     }
 
     private static HomeSP buildHomeSP(OMANode ppsRoot) throws OMAException {
+        Log.d("PARSE-LOG", " node-name = " + ppsRoot.getName());
         OMANode spRoot = ppsRoot.getChild(TAG_HomeSP);
 
         String fqdn = spRoot.getScalarValue(Arrays.asList(TAG_FQDN).iterator());
@@ -312,11 +377,13 @@ public class MOManager {
 
         Credential credential = buildCredential(ppsRoot.getChild(TAG_Credential));
 
+        Log.d("PARSE-LOG", " Building a new HomeSP for " + fqdn);
         return new HomeSP(ssids, fqdn, roamingConsortiums, otherHomePartners,
                 matchAnyOIs, matchAllOIs, friendlyName, iconURL, credential);
     }
 
     private static Credential buildCredential(OMANode credNode) throws OMAException {
+        Log.d("PARSE-LOG", " Reading credential from " + credNode.getName());
         long ctime = getTime(credNode.getChild(TAG_CreationDate));
         long expTime = getTime(credNode.getChild(TAG_ExpirationDate));
         String realm = getString(credNode.getChild(TAG_Realm));
@@ -335,8 +402,8 @@ public class MOManager {
         }
 
         if (unNode != null) {
-            String userName = unNode.getChild(TAG_Username).getValue();
-            String password = unNode.getChild(TAG_Password).getValue();
+            String userName = getString(unNode.getChild(TAG_Username));
+            String password = getString(unNode.getChild(TAG_Password));
             boolean machineManaged = getBoolean(unNode.getChild(TAG_MachineManaged));
             String softTokenApp = getString(unNode.getChild(TAG_SoftTokenApp));
             boolean ableToShare = getBoolean(unNode.getChild(TAG_AbleToShare));
@@ -465,7 +532,8 @@ public class MOManager {
 
     private static byte[] getOctets(OMANode octetNode) throws OMAException {
         if (octetNode == null) {
-            throw new OMAException("Missing byte value");
+            // throw new OMAException("Missing byte value");
+            return null;
         }
         return Utils.hexToBytes(octetNode.getValue());
     }

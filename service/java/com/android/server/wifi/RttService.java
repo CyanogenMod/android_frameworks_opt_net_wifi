@@ -414,6 +414,10 @@ class RttService extends SystemService {
             if (DBG) Log.d(TAG, "No more requests left");
             return null;
         }
+        @Override
+        public RttManager.RttCapabilities getRttCapabilities() {
+            return WifiNative.getRttCapabilities();
+        }
     }
 
     private static final String TAG = "RttService";
@@ -442,4 +446,6 @@ class RttService extends SystemService {
             mImpl.startService(getContext());
         }
     }
+
+
 }

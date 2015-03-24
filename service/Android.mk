@@ -65,6 +65,8 @@ LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
 LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_C_INCLUDES += \
+	external/stlport/stlport \
+    	bionic \
 	$(call include-path-for, libhardware)/hardware \
 	$(call include-path-for, libhardware_legacy)/hardware_legacy \
 	libcore/include
@@ -73,6 +75,7 @@ LOCAL_SHARED_LIBRARIES += \
 	libcutils \
 	libnl \
 	libandroid_runtime \
+    	libstlport \
 	libutils
 
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)

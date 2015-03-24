@@ -1,5 +1,7 @@
 package com.android.server.wifi.hotspot2.omadm;
 
+import android.util.Log;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -102,7 +104,9 @@ public class OMAConstructed extends OMANode {
         }
         out.write(new byte[] { '+', '\n' });
 
+        Log.d("PARSE-LOG", "Node " + getName() + " has " + m_children.size() + " children");
         for (OMANode child : m_children.values()) {
+            Log.d("PARSE-LOG", "marshalling " + child.getName());
             child.marshal(out, level + 1);
         }
         OMAConstants.indent(level, out);

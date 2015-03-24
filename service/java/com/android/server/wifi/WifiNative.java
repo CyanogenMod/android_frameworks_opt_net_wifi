@@ -22,6 +22,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiLinkLayerStats;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
+import android.net.wifi.RttManager;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
@@ -310,6 +311,11 @@ public class WifiNative {
         return doBooleanCommand("DISABLE_NETWORK " + netId);
     }
 
+    public boolean selectNetwork(int netId) {
+        if (DBG) logDbg("selectNetwork nid=" + Integer.toString(netId));
+        return doBooleanCommand("SELECT_NETWORK " + netId);
+    }
+
     public boolean reconnect() {
         if (DBG) logDbg("RECONNECT ");
         return doBooleanCommand("RECONNECT");
@@ -346,6 +352,8 @@ public class WifiNative {
         }
         return null;
     }
+
+
 
     /**
      * Format of results:
@@ -1245,7 +1253,7 @@ public class WifiNative {
         public int  max_ap_cache_per_scan;
         public int  max_rssi_sample_size;
         public int  max_scan_reporting_threshold;        // in number of scan results??
-        public int  max_hotlist_aps;
+        public int  max_hotlist_bssids;
         public int  max_significant_wifi_change_aps;
     }
 
@@ -1748,6 +1756,34 @@ public class WifiNative {
 
                 return false;
             }
+        }
+    }
+
+    private static native RttManager.RttCapabilities getRttCapabilitiesNative(int iface);
+    synchronized public static RttManager.RttCapabilities getRttCapabilities() {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getRttCapabilitiesNative(sWlan0Index);
+            } else {
+                return null;
+            }
+        }
+    }
+    //---------------------------------------------------------------------------------
+
+    /* Wifi Logger commands/events */
+
+    private static native boolean startLogging(int iface);
+
+    public static interface WifiLoggerEventHandler {
+        void onDataAvailable(char data[], int len);
+    }
+
+    private static WifiLoggerEventHandler sWifiLoggerEventHandler = null;
+
+    synchronized private static void onDataAvailable(char data[], int len) {
+        if (sWifiLoggerEventHandler != null) {
+            sWifiLoggerEventHandler.onDataAvailable(data, len);
         }
     }
 }

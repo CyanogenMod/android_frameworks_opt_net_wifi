@@ -1,7 +1,9 @@
 package com.android.server.wifi.hotspot2.pps;
 
 import android.net.wifi.WifiEnterpriseConfig;
+import android.text.TextUtils;
 import android.util.Base64;
+import android.util.Log;
 
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
@@ -45,8 +47,14 @@ public class Credential {
         mCheckAAACert = checkAAACert;
         mEAPMethod = eapMethod;
         mUserName = userName;
-        byte[] pwOctets = Base64.decode(password, Base64.DEFAULT);
-        mPassword = new String(pwOctets, StandardCharsets.UTF_8);
+
+        if (TextUtils.isEmpty(password) == false) {
+            byte[] pwOctets = Base64.decode(password, Base64.DEFAULT);
+            mPassword = new String(pwOctets, StandardCharsets.UTF_8);
+        } else {
+            mPassword = null;
+        }
+
         mMachineManaged = machineManaged;
         mSTokenApp = stApp;
         mShare = share;
@@ -103,10 +111,14 @@ public class Credential {
         mEAPMethod = mapEapMethod(enterpriseConfig.getEapMethod(),
                 enterpriseConfig.getPhase2Method());
         mCertType = mapCertType(enterpriseConfig.getEapMethod());
-        mFingerPrint = null;
+        if (enterpriseConfig.getCaCertificate() != null) {
+            mFingerPrint = enterpriseConfig.getClientCertificate().getSignature();
+        } else {
+            mFingerPrint = null;
+        }
         mImsi = enterpriseConfig.getPlmn();
-        mUserName = null;
-        mPassword = null;
+        mUserName = enterpriseConfig.getIdentity();
+        mPassword = enterpriseConfig.getPassword();
         mMachineManaged = false;
         mSTokenApp = null;
         mShare = false;
@@ -127,9 +139,10 @@ public class Credential {
             return new EAPMethod(EAP.EAPMethodID.EAP_TLS, null);
         } else if (eapMethod == WifiEnterpriseConfig.Eap.TTLS) {
             /* keep this table in sync with WifiEnterpriseConfig.Phase2 enum */
-            final String innnerMethods[] = { null, "PAP", "MS-CHAP", "MS-CHAP-V2", null };
-            return new EAPMethod(EAP.EAPMethodID.EAP_TLS,
-                    new NonEAPInnerAuth(innnerMethods[phase2Method]));
+            if (phase2Method == WifiEnterpriseConfig.Phase2.MSCHAPV2) {
+                return new EAPMethod(EAP.EAPMethodID.EAP_TTLS,
+                        new InnerAuthEAP(EAP.EAPMethodID.EAP_MSCHAPv2));
+            }
         } else if (eapMethod == WifiEnterpriseConfig.Eap.PEAP) {
             /* restricting passpoint implementation from using PEAP */
             return null;
@@ -148,6 +161,7 @@ public class Credential {
         }
         */
 
+        Log.d("PARSE-LOG", "Invalid eap method");
         return null;
     }
 
@@ -156,6 +170,7 @@ public class Credential {
                 || eapMethod == WifiEnterpriseConfig.Eap.TTLS) {
             return CertType.x509v3;
         } else {
+            Log.d("PARSE-LOG", "Invalid cert type" + eapMethod);
             return null;
         }
     }

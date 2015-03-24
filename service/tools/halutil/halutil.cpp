@@ -36,6 +36,172 @@ T min(const T& t1, const T& t2) {
     return (t1 < t2) ? t1 : t2;
 }
 
+#define	NBBY    8  /* number of bits/byte */
+
+/* Bit map related macros. */
+#define setbit(a,i) ((a)[(i)/NBBY] |= 1<<((i)%NBBY))
+#define clrbit(a,i) ((a)[(i)/NBBY] &= ~(1<<((i)%NBBY)))
+#define isset(a,i)  ((a)[(i)/NBBY] & (1<<((i)%NBBY)))
+#define isclr(a,i)  (((a)[(i)/NBBY] & (1<<((i)%NBBY))) == 0)
+#define CEIL(x, y)  (((x) + ((y) - 1)) / (y))
+
+/* TLV defines */
+#define TLV_TAG_OFF     0   /* tag offset */
+#define TLV_LEN_OFF     1   /* length offset */
+#define TLV_HDR_LEN     2   /* header length */
+#define TLV_BODY_OFF    2   /* body offset */
+#define TLV_BODY_LEN_MAX 255  /* max body length */
+
+
+/* Information Element IDs */
+#define WIFI_EID_SSID 0
+#define WIFI_EID_SUPP_RATES 1
+#define WIFI_EID_FH_PARAMS 2
+#define WIFI_EID_DS_PARAMS 3
+#define WIFI_EID_CF_PARAMS 4
+#define WIFI_EID_TIM 5
+#define WIFI_EID_IBSS_PARAMS 6
+#define WIFI_EID_COUNTRY 7
+#define WIFI_EID_BSS_LOAD 11
+#define WIFI_EID_CHALLENGE 16
+/* EIDs defined by IEEE 802.11h - START */
+#define WIFI_EID_PWR_CONSTRAINT 32
+#define WIFI_EID_PWR_CAPABILITY 33
+#define WIFI_EID_TPC_REQUEST 34
+#define WIFI_EID_TPC_REPORT 35
+#define WIFI_EID_SUPPORTED_CHANNELS 36
+#define WIFI_EID_CHANNEL_SWITCH 37
+#define WIFI_EID_MEASURE_REQUEST 38
+#define WIFI_EID_MEASURE_REPORT 39
+#define WIFI_EID_QUITE 40
+#define WIFI_EID_IBSS_DFS 41
+/* EIDs defined by IEEE 802.11h - END */
+#define WIFI_EID_ERP_INFO 42
+#define WIFI_EID_HT_CAP 45
+#define WIFI_EID_QOS 46
+#define WIFI_EID_RSN 48
+#define WIFI_EID_EXT_SUPP_RATES 50
+#define WIFI_EID_NEIGHBOR_REPORT 52
+#define WIFI_EID_MOBILITY_DOMAIN 54
+#define WIFI_EID_FAST_BSS_TRANSITION 55
+#define WIFI_EID_TIMEOUT_INTERVAL 56
+#define WIFI_EID_RIC_DATA 57
+#define WIFI_EID_SUPPORTED_OPERATING_CLASSES 59
+#define WIFI_EID_HT_OPERATION 61
+#define WIFI_EID_SECONDARY_CHANNEL_OFFSET 62
+#define WIFI_EID_WAPI 68
+#define WIFI_EID_TIME_ADVERTISEMENT 69
+#define WIFI_EID_20_40_BSS_COEXISTENCE 72
+#define WIFI_EID_20_40_BSS_INTOLERANT 73
+#define WIFI_EID_OVERLAPPING_BSS_SCAN_PARAMS 74
+#define WIFI_EID_MMIE 76
+#define WIFI_EID_SSID_LIST 84
+#define WIFI_EID_BSS_MAX_IDLE_PERIOD 90
+#define WIFI_EID_TFS_REQ 91
+#define WIFI_EID_TFS_RESP 92
+#define WIFI_EID_WNMSLEEP 93
+#define WIFI_EID_TIME_ZONE 98
+#define WIFI_EID_LINK_ID 101
+#define WIFI_EID_INTERWORKING 107
+#define WIFI_EID_ADV_PROTO 108
+#define WIFI_EID_QOS_MAP_SET 110
+#define WIFI_EID_ROAMING_CONSORTIUM 111
+#define WIFI_EID_EXT_CAPAB 127
+#define WIFI_EID_CCKM 156
+#define WIFI_EID_VHT_CAP 191
+#define WIFI_EID_VHT_OPERATION 192
+#define WIFI_EID_VHT_EXTENDED_BSS_LOAD 193
+#define WIFI_EID_VHT_WIDE_BW_CHSWITCH  194
+#define WIFI_EID_VHT_TRANSMIT_POWER_ENVELOPE 195
+#define WIFI_EID_VHT_CHANNEL_SWITCH_WRAPPER 196
+#define WIFI_EID_VHT_AID 197
+#define WIFI_EID_VHT_QUIET_CHANNEL 198
+#define WIFI_EID_VHT_OPERATING_MODE_NOTIFICATION 199
+#define WIFI_EID_VENDOR_SPECIFIC 221
+
+
+/* Extended capabilities IE bitfields */
+/* 20/40 BSS Coexistence Management support bit position */
+#define DOT11_EXT_CAP_OBSS_COEX_MGMT        0
+/* Extended Channel Switching support bit position */
+#define DOT11_EXT_CAP_EXT_CHAN_SWITCHING    2
+/* scheduled PSMP support bit position */
+#define DOT11_EXT_CAP_SPSMP         6
+/*  Flexible Multicast Service */
+#define DOT11_EXT_CAP_FMS           11
+/* proxy ARP service support bit position */
+#define DOT11_EXT_CAP_PROXY_ARP     12
+/* Civic Location */
+#define DOT11_EXT_CAP_CIVIC_LOC     14
+/* Geospatial Location */
+#define DOT11_EXT_CAP_LCI           15
+/* Traffic Filter Service */
+#define DOT11_EXT_CAP_TFS           16
+/* WNM-Sleep Mode */
+#define DOT11_EXT_CAP_WNM_SLEEP	    17
+/* TIM Broadcast service */
+#define DOT11_EXT_CAP_TIMBC         18
+/* BSS Transition Management support bit position */
+#define DOT11_EXT_CAP_BSSTRANS_MGMT 19
+/* Direct Multicast Service */
+#define DOT11_EXT_CAP_DMS           26
+/* Interworking support bit position */
+#define DOT11_EXT_CAP_IW            31
+/* QoS map support bit position */
+#define DOT11_EXT_CAP_QOS_MAP       32
+/* service Interval granularity bit position and mask */
+#define DOT11_EXT_CAP_SI            41
+#define DOT11_EXT_CAP_SI_MASK       0x0E
+/* WNM notification */
+#define DOT11_EXT_CAP_WNM_NOTIF     46
+/* Operating mode notification - VHT (11ac D3.0 - 8.4.2.29) */
+#define DOT11_EXT_CAP_OPER_MODE_NOTIF  62
+/* Fine timing measurement - D3.0 */
+#define DOT11_EXT_CAP_FTM_RESPONDER    70
+#define DOT11_EXT_CAP_FTM_INITIATOR	   71 /* tentative 11mcd3.0 */
+
+#define DOT11_EXT_CH_MASK   0x03 /* extension channel mask */
+#define DOT11_EXT_CH_UPPER  0x01 /* ext. ch. on upper sb */
+#define DOT11_EXT_CH_LOWER  0x03 /* ext. ch. on lower sb */
+#define DOT11_EXT_CH_NONE   0x00 /* no extension ch.  */
+
+enum vht_op_chan_width {
+    VHT_OP_CHAN_WIDTH_20_40	= 0,
+    VHT_OP_CHAN_WIDTH_80	= 1,
+    VHT_OP_CHAN_WIDTH_160	= 2,
+    VHT_OP_CHAN_WIDTH_80_80	= 3
+};
+/**
+ * Channel Factor for the starting frequence of 2.4 GHz channels.
+ * The value corresponds to 2407 MHz.
+ */
+#define CHAN_FACTOR_2_4_G 4814 /* 2.4 GHz band, 2407 MHz */
+
+/**
+ * Channel Factor for the starting frequence of 5 GHz channels.
+ * The value corresponds to 5000 MHz.
+ */
+#define CHAN_FACTOR_5_G 10000 /* 5 GHz band, 5000 MHz */
+
+
+/* ************* HT definitions. ************* */
+#define MCSSET_LEN 16       /* 16-bits per 8-bit set to give 128-bits bitmap of MCS Index */
+#define MAX_MCS_NUM (128)   /* max mcs number = 128 */
+
+struct ht_op_ie {
+    u8  ctl_ch;         /* control channel number */
+    u8  chan_info;      /* ext ch,rec. ch. width, RIFS support */
+    u16 opmode;         /* operation mode */
+    u16 misc_bits;      /* misc bits */
+    u8  basic_mcs[MCSSET_LEN];  /* required MCS set */
+} __attribute__ ((packed));
+struct vht_op_ie {
+    u8  chan_width;
+    u8  chan1;
+    u8  chan2;
+    u16 supp_mcs; /* same def as above in vht cap */
+} __attribute__ ((packed));
+
 #define EVENT_BUF_SIZE 2048
 #define MAX_CH_BUF_SIZE  64
 #define MAX_FEATURE_SET  8
@@ -59,14 +225,44 @@ static int swctest_rssi_min_breaching =  2;
 static int swctest_rssi_ch_threshold =  1;
 static int htest_low_threshold =  90;
 static int htest_high_threshold =  10;
-static int rtt_samples = 30;
+
+
+// RTT related to configuration
+#define FILE_NAME_LEN 128
+#define MAX_SSID_LEN (32 + 1)
+/* 18-bytes of Ethernet address buffer length */
+#define ETHER_ADDR_STR_LEN	18
+
+#define DEFAULT_RTT_FILE "/data/rtt-ap.list"
+static int rtt_from_file = 0;
+static int rtt_to_file = 0;
 static wifi_band band = WIFI_BAND_UNSPECIFIED;
+static int max_ap = 256; // the maximum count of  ap for RTT test
+static char rtt_aplist[FILE_NAME_LEN] = DEFAULT_RTT_FILE;
+struct rtt_params {
+    u32 interval;
+    u32 num_burst;
+    u32 num_frames_per_burst;
+    u32 num_retries_per_ftm;
+    u32 num_retries_per_ftmr;
+    u32 burst_timeout;
+    u8 LCI_request;
+    u8 LCR_request;
+};
+struct rtt_params default_rtt_param = {0,0,0,0,0,0,0,0};
 
 mac_addr hotlist_bssids[16];
 unsigned char mac_oui[3];
+wifi_epno_network epno_ssid[32];
 int channel_list[16];
 int num_hotlist_bssids = 0;
 int num_channels = 0;
+int num_epno_ssids = -1;
+
+#define EPNO_HIDDEN               (1 << 0)
+#define EPNO_A_BAND_TRIG          (1 << 1)
+#define EPNO_BG_BAND_TRIG         (1 << 2)
+#define EPNO_ABG_BAND_TRIG        (EPNO_A_BAND_TRIG | EPNO_BG_BAND_TRIG)
 
 void parseMacAddress(const char *str, mac_addr addr);
 
@@ -78,8 +274,8 @@ int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
     printMsg("setting interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
 
     if (sock < 0) {
-      printMsg("Bad socket: %d\n", sock);
-      return -1;
+        printMsg("Bad socket: %d\n", sock);
+        return -1;
     }
 
     memset(&ifr, 0, sizeof(ifr));
@@ -88,25 +284,25 @@ int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
     printMsg("reading old value\n");
 
     if (ioctl(sock, SIOCGIFFLAGS, &ifr) != 0) {
-      ret = errno ? -errno : -999;
-      printMsg("Could not read interface %s flags: %d\n", ifname, errno);
-      return ret;
-    }else {
-      printMsg("writing new value\n");
+        ret = errno ? -errno : -999;
+        printMsg("Could not read interface %s flags: %d\n", ifname, errno);
+        return ret;
+    } else {
+        printMsg("writing new value\n");
     }
 
     if (dev_up) {
-      if (ifr.ifr_flags & IFF_UP) {
-        printMsg("interface %s is already up\n", ifname);
-        return 0;
-      }
-      ifr.ifr_flags |= IFF_UP;
-    }else {
-      if (!(ifr.ifr_flags & IFF_UP)) {
-        printMsg("interface %s is already down\n", ifname);
-        return 0;
-      }
-      ifr.ifr_flags &= ~IFF_UP;
+        if (ifr.ifr_flags & IFF_UP) {
+            printMsg("interface %s is already up\n", ifname);
+            return 0;
+        }
+        ifr.ifr_flags |= IFF_UP;
+    } else {
+        if (!(ifr.ifr_flags & IFF_UP)) {
+            printMsg("interface %s is already down\n", ifname);
+            return 0;
+        }
+        ifr.ifr_flags &= ~IFF_UP;
     }
 
     if (ioctl(sock, SIOCSIFFLAGS, &ifr) != 0) {
@@ -115,6 +311,10 @@ int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
       return ret;
     }else {
       printMsg("set interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
+        printMsg("Could not set interface %s flags \n", ifname);
+        return ret;
+    } else {
+        printMsg("set interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
     }
     printMsg("Done\n");
     return 0;
@@ -125,10 +325,10 @@ static int init() {
 
     ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
     if (ioctl_sock < 0) {
-      printMsg("Bad socket: %d\n", ioctl_sock);
-      return errno;
+        printMsg("Bad socket: %d\n", ioctl_sock);
+        return errno;
     } else {
-      printMsg("Good socket: %d\n", ioctl_sock);
+        printMsg("Good socket: %d\n", ioctl_sock);
     }
 
     int ret = linux_set_iface_flags(ioctl_sock, "wlan0", 1);
@@ -193,6 +393,7 @@ static int getNewCmdId() {
 
 void printScanHeader() {
     printMsg("SSID\t\t\t\t\tBSSID\t\t  RSSI\tchannel\ttimestamp\tRTT\tRTT SD\n");
+    printMsg("----\t\t\t\t\t-----\t\t  ----\t-------\t---------\t---\t------\n");
 }
 
 void printScanResult(wifi_scan_result result) {
@@ -225,14 +426,16 @@ void printSignificantChangeResult(wifi_significant_change_result *res) {
 
 void printScanCapabilities(wifi_gscan_capabilities capabilities)
 {
-    printMsg("max_scan_cache_size = %d\n", capabilities.max_scan_cache_size);
-    printMsg("max_scan_buckets = %d\n", capabilities.max_scan_buckets);
-    printMsg("max_ap_cache_per_scan = %d\n", capabilities.max_ap_cache_per_scan);
-    printMsg("max_rssi_sample_size = %d\n", capabilities.max_rssi_sample_size);
-    printMsg("max_scan_reporting_threshold = %d\n", capabilities.max_scan_reporting_threshold);
-    printMsg("max_hotlist_aps = %d\n", capabilities.max_hotlist_aps);
-    printMsg("max_significant_wifi_change_aps = %d\n",
-    capabilities.max_significant_wifi_change_aps);
+    printMsg("Scan Capabililites\n");
+    printMsg("  max_scan_cache_size = %d\n", capabilities.max_scan_cache_size);
+    printMsg("  max_scan_buckets = %d\n", capabilities.max_scan_buckets);
+    printMsg("  max_ap_cache_per_scan = %d\n", capabilities.max_ap_cache_per_scan);
+    printMsg("  max_rssi_sample_size = %d\n", capabilities.max_rssi_sample_size);
+    printMsg("  max_scan_reporting_threshold = %d\n", capabilities.max_scan_reporting_threshold);
+    printMsg("  max_hotlist_bssids = %d\n", capabilities.max_hotlist_bssids);
+    printMsg("  max_significant_wifi_change_aps = %d\n",
+            capabilities.max_significant_wifi_change_aps);
+    printMsg("  max_number_epno_networks = %d\n", capabilities.max_number_epno_networks);
 }
 
 
@@ -246,7 +449,8 @@ typedef enum {
     EVENT_TYPE_SIGNIFICANT_WIFI_CHANGE = 1002,
     EVENT_TYPE_RTT_RESULTS = 1003,
     EVENT_TYPE_SCAN_COMPLETE = 1004,
-    EVENT_TYPE_HOTLIST_AP_LOST = 1005
+    EVENT_TYPE_HOTLIST_AP_LOST = 1005,
+    EVENT_TYPE_EPNO_SSID = 1006
 } EventType;
 
 typedef struct {
@@ -311,6 +515,7 @@ static int scanCmdId;
 static int hotlistCmdId;
 static int significantChangeCmdId;
 static int rttCmdId;
+static int epnoCmdId;
 
 static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
         int max_ap_per_scan, int base_period, int threshold_percent, int threshold_num_scans) {
@@ -349,44 +554,44 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
         /* create a schedule to scan channels 1, 6, 11 every 5 second and
          * scan 36, 40, 44, 149, 153, 157, 161 165 every 10 second */
 
-      params.max_ap_per_scan = max_ap_per_scan;
-      params.base_period = base_period;                      // 5 second
-      params.report_threshold_percent = threshold_percent;
-      params.report_threshold_num_scans = threshold_num_scans;
-      params.num_buckets = 3;
+        params.max_ap_per_scan = max_ap_per_scan;
+        params.base_period = base_period;                      // 5 second
+        params.report_threshold_percent = threshold_percent;
+        params.report_threshold_num_scans = threshold_num_scans;
+        params.num_buckets = 3;
 
-      params.buckets[0].bucket = 0;
-      params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
-      params.buckets[0].period = 5000;                // 5 second
-      params.buckets[0].report_events = 0;
-      params.buckets[0].num_channels = 2;
+        params.buckets[0].bucket = 0;
+        params.buckets[0].band = WIFI_BAND_UNSPECIFIED;
+        params.buckets[0].period = 5000;                // 5 second
+        params.buckets[0].report_events = 0;
+        params.buckets[0].num_channels = 2;
 
-      params.buckets[0].channels[0].channel = 2412;
-      params.buckets[0].channels[1].channel = 2437;
+        params.buckets[0].channels[0].channel = 2412;
+        params.buckets[0].channels[1].channel = 2437;
 
-      params.buckets[1].bucket = 1;
-      params.buckets[1].band = WIFI_BAND_A;
-      params.buckets[1].period = 10000;               // 10 second
-      params.buckets[1].report_events = 1;
-      params.buckets[1].num_channels = 8;   // driver should ignore list since band is specified
+        params.buckets[1].bucket = 1;
+        params.buckets[1].band = WIFI_BAND_A;
+        params.buckets[1].period = 10000;               // 10 second
+        params.buckets[1].report_events = 1;
+        params.buckets[1].num_channels = 8;   // driver should ignore list since band is specified
 
 
-      params.buckets[1].channels[0].channel = 5180;
-      params.buckets[1].channels[1].channel = 5200;
-      params.buckets[1].channels[2].channel = 5220;
-      params.buckets[1].channels[3].channel = 5745;
-      params.buckets[1].channels[4].channel = 5765;
-      params.buckets[1].channels[5].channel = 5785;
-      params.buckets[1].channels[6].channel = 5805;
-      params.buckets[1].channels[7].channel = 5825;
+        params.buckets[1].channels[0].channel = 5180;
+        params.buckets[1].channels[1].channel = 5200;
+        params.buckets[1].channels[2].channel = 5220;
+        params.buckets[1].channels[3].channel = 5745;
+        params.buckets[1].channels[4].channel = 5765;
+        params.buckets[1].channels[5].channel = 5785;
+        params.buckets[1].channels[6].channel = 5805;
+        params.buckets[1].channels[7].channel = 5825;
 
-      params.buckets[2].bucket = 2;
-      params.buckets[2].band = WIFI_BAND_UNSPECIFIED;
-      params.buckets[2].period = 15000;                // 15 second
-      params.buckets[2].report_events = 2;
-      params.buckets[2].num_channels = 1;
+        params.buckets[2].bucket = 2;
+        params.buckets[2].band = WIFI_BAND_UNSPECIFIED;
+        params.buckets[2].period = 15000;                // 15 second
+        params.buckets[2].report_events = 2;
+        params.buckets[2].num_channels = 1;
 
-      params.buckets[2].channels[0].channel = 2462;
+        params.buckets[2].channels[0].channel = 2462;
 
     }
 
@@ -409,7 +614,7 @@ static void stopScan() {
     scanCmdId = 0;
 }
 
-wifi_scan_result *saved_scan_results;
+wifi_scan_result **saved_scan_results;
 unsigned max_saved_scan_results;
 unsigned num_saved_scan_results;
 
@@ -424,16 +629,15 @@ static void on_single_shot_scan_event(wifi_scan_event event, unsigned status) {
 
 static void on_full_scan_result(wifi_request_id id, wifi_scan_result *r) {
     if (num_saved_scan_results < max_saved_scan_results) {
-        wifi_scan_result *result = &(saved_scan_results[num_saved_scan_results]);
-        memcpy(result, r, sizeof(wifi_scan_result));
-        //printMsg("Retrieved full scan result for %s(%02x:%02x:%02x:%02x:%02x:%02x)\n",
-        //    result->ssid, result->bssid[0], result->bssid[1], result->bssid[2], result->bssid[3],
-        //    result->bssid[4], result->bssid[5]);
+        int alloc_len = offsetof(wifi_scan_result, ie_data) + r->ie_length;
+        wifi_scan_result **result = &(saved_scan_results[num_saved_scan_results]);
+        *result = (wifi_scan_result *)malloc(alloc_len);
+        memcpy(*result, r, alloc_len);
         num_saved_scan_results++;
     }
 }
 
-static int scanOnce(wifi_band band, wifi_scan_result *results, int num_results) {
+static int scanOnce(wifi_band band, wifi_scan_result **results, int num_results) {
 
     saved_scan_results = results;
     max_saved_scan_results = num_results;
@@ -445,6 +649,7 @@ static int scanOnce(wifi_band band, wifi_scan_result *results, int num_results) 
     params.max_ap_per_scan = 10;
     params.base_period = 5000;                        // 5 second by default
     params.report_threshold_percent = 90;
+    params.report_threshold_num_scans = 1;
     params.num_buckets = 1;
 
     params.buckets[0].bucket = 0;
@@ -468,21 +673,13 @@ static int scanOnce(wifi_band band, wifi_scan_result *results, int num_results) 
             memset(&info, 0, sizeof(info));
             getEventFromCache(info);
             if (info.type == EVENT_TYPE_SCAN_RESULTS_AVAILABLE
-                || info.type == EVENT_TYPE_SCAN_COMPLETE) {
+                    || info.type == EVENT_TYPE_SCAN_COMPLETE) {
                 int retrieved_num_results = num_saved_scan_results;
                 if (retrieved_num_results == 0) {
                     printMsg("fetched 0 scan results, waiting for more..\n");
                     continue;
                 } else {
                     printMsg("fetched %d scan results\n", retrieved_num_results);
-
-                    /*
-                    printScanHeader();
-
-                    for (int i = 0; i < retrieved_num_results; i++) {
-                        printScanResult(results[i]);
-                    }
-                    */
 
                     printMsg("Scan once completed, stopping scan\n");
                     wifi_stop_gscan(scanCmdId, wlan0Handle);
@@ -522,8 +719,8 @@ static void retrieveScanResults() {
 
 
 static int compareScanResultsByRssi(const void *p1, const void *p2) {
-    const wifi_scan_result *result1 = static_cast<const wifi_scan_result *>(p1);
-    const wifi_scan_result *result2 = static_cast<const wifi_scan_result *>(p2);
+    const wifi_scan_result *result1 = *(const wifi_scan_result **)(p1);
+    const wifi_scan_result *result2 = *(const wifi_scan_result **)(p2);
 
     /* RSSI is -ve, so lower one wins */
     if (result1->rssi < result2->rssi) {
@@ -535,47 +732,56 @@ static int compareScanResultsByRssi(const void *p1, const void *p2) {
     }
 }
 
-static void sortScanResultsByRssi(wifi_scan_result *results, int num_results) {
-    qsort(results, num_results, sizeof(wifi_scan_result), &compareScanResultsByRssi);
+static void sortScanResultsByRssi(wifi_scan_result **results, int num_results) {
+    qsort(results, num_results, sizeof(wifi_scan_result*), &compareScanResultsByRssi);
 }
 
-static int removeDuplicateScanResults(wifi_scan_result *results, int num) {
+static int removeDuplicateScanResults(wifi_scan_result **results, int num) {
     /* remove duplicates by BSSID */
     int num_results = num;
+    wifi_scan_result *tmp;
     for (int i = 0; i < num_results; i++) {
-        //printMsg("Processing result[%d] - %02x:%02x:%02x:%02x:%02x:%02x\n", i,
-        //        results[i].bssid[0], results[i].bssid[1], results[i].bssid[2],
-        //        results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
-
         for (int j = i + 1; j < num_results; ) {
-            if (memcmp(results[i].bssid, results[j].bssid, sizeof(mac_addr)) == 0) {
-                /* 'remove' this scan result from the list */
-                // printMsg("removing dupe entry\n");
+            if (memcmp((*results[i]).bssid, (*results[j]).bssid, sizeof(mac_addr)) == 0) {
                 int num_to_move = num_results - j - 1;
-                memmove(&results[j], &results[j+1], num_to_move * sizeof(wifi_scan_result));
+                tmp = results[j];
+                memmove(&results[j], &results[j+1], num_to_move * sizeof(wifi_scan_result *));
+                free(tmp);
                 num_results--;
             } else {
                 j++;
             }
         }
-
-        // printMsg("num_results = %d\n", num_results);
     }
-
     return num_results;
 }
 
-static void onRTTResults (wifi_request_id id, unsigned num_results, wifi_rtt_result result[]) {
+static void onRTTResults (wifi_request_id id, unsigned num_results, wifi_rtt_result *result[]) {
 
-    printMsg("RTT results!!\n");
-    printMsg("Addr\t\t\tts\t\tRSSI\tSpread\trtt\tsd\tspread\tdist\tsd\tspread\n");
-
+    printMsg("RTT results\n");
+    wifi_rtt_result *rtt_result;
+    mac_addr addr = {0};
     for (unsigned i = 0; i < num_results; i++) {
-        printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%lld\t%d\t%d\t%lld\t%lld\t%lld\t%d\t%d\t%d\n",
-                result[i].addr[0], result[i].addr[1], result[i].addr[2], result[i].addr[3],
-                result[i].addr[4], result[i].addr[5], result[i].ts, result[i].rssi,
-                result[i].rssi_spread, result[i].rtt, result[i].rtt_sd, result[i].rtt_spread,
-                result[i].distance, result[i].distance_sd, result[i].distance_spread);
+        rtt_result = result[i];
+        if (memcmp(addr, rtt_result->addr, sizeof(mac_addr))) {
+            printMsg("Target mac : %02x:%02x:%02x:%02x:%02x:%02x\n",
+                    rtt_result->addr[0],
+                    rtt_result->addr[1],
+                    rtt_result->addr[2],
+                    rtt_result->addr[3],
+                    rtt_result->addr[4],
+                    rtt_result->addr[5]);
+            memcpy(addr, rtt_result->addr, sizeof(mac_addr));
+        }
+        printMsg("\tburst_num : %d, measurement_number : %d, success_number : %d\n"
+                "\tnumber_per_burst_peer : %d, status : %d, retry_after_duration : %d s\n"
+                "\trssi : %d dbm, rx_rate : %d Kbps, rtt : %llu ns, rtt_sd : %llu\n"
+                "\tdistance : %d cm, burst_duration : %d ms\n",
+                rtt_result->burst_num, rtt_result->measurement_number,
+                rtt_result->success_number, rtt_result->number_per_burst_peer,
+                rtt_result->status, rtt_result->retry_after_duration,
+                rtt_result->rssi, rtt_result->rx_rate.bitrate * 100,
+                rtt_result->rtt/10, rtt_result->rtt_sd, rtt_result->distance, rtt_result->burst_duration);
     }
 
     putEventInCache(EVENT_TYPE_RTT_RESULTS, "RTT results");
@@ -599,82 +805,338 @@ static void onHotlistAPLost(wifi_request_id id, unsigned num_results, wifi_scan_
     putEventInCache(EVENT_TYPE_HOTLIST_AP_LOST, "Lost event Hotlist APs");
 }
 
-static void testRTT() {
+static void onePnoSsidFound(wifi_request_id id, unsigned num_results, wifi_scan_result *results) {
 
-    wifi_scan_result results[256];
-    int num_results = scanOnce(WIFI_BAND_ABG, results, countof(results));
-    if (num_results == 0) {
-        printMsg("RTT aborted because of no scan results\n");
-        return;
-    } else {
-        printMsg("Retrieved %d scan results\n", num_results);
+    printMsg("Found ePNO SSID\n");
+    for (unsigned i = 0; i < num_results; i++) {
+        printMsg("SSID %s, channel %d, rssi %d\n", results[i].ssid,
+            results[i].channel, (signed char)results[i].rssi);
+    }
+    putEventInCache(EVENT_TYPE_EPNO_SSID, "Found ePNO SSID");
+}
+
+static const u8 *bss_get_ie(u8 id, const char* ie, const s32 ie_len)
+{
+    const u8 *end, *pos;
+
+    pos = (const u8 *)ie;
+    end = pos + ie_len;
+
+    while (pos + 1 < end) {
+        if (pos + 2 + pos[1] > end)
+            break;
+        if (pos[0] == id)
+            return pos;
+        pos += 2 + pos[1];
     }
 
-    num_results = removeDuplicateScanResults(results, num_results);
-    /*
-    printMsg("Deduped scan results - %d\n", num_results);
-    for (int i = 0; i < num_results; i++) {
-        printScanResult(results[i]);
+    return NULL;
+}
+static bool is11mcAP(const char* ie, const s32 ie_len)
+{
+    const u8 *ext_cap_ie, *ptr_ie;
+    u8 ext_cap_length = 0;
+    ptr_ie = bss_get_ie(WIFI_EID_EXT_CAPAB, ie, ie_len);
+    if (ptr_ie) {
+        ext_cap_length = *(ptr_ie + TLV_LEN_OFF);
+        ext_cap_ie = ptr_ie + TLV_BODY_OFF;
+        if ((ext_cap_length >= CEIL(DOT11_EXT_CAP_FTM_RESPONDER, NBBY)) &&
+                (isset(ext_cap_ie, DOT11_EXT_CAP_FTM_RESPONDER) ||
+                 isset(ext_cap_ie, DOT11_EXT_CAP_FTM_INITIATOR))) {
+            return true;
+        }
     }
-    */
+    return false;
+}
 
-    sortScanResultsByRssi(results, num_results);
-    printMsg("Sorted scan results -\n");
-    for (int i = 0; i < num_results; i++) {
-        printScanResult(results[i]);
+int channel2mhz(uint ch)
+{
+    int freq;
+    int start_factor = (ch > 14)? CHAN_FACTOR_5_G : CHAN_FACTOR_2_4_G;
+    if ((start_factor == CHAN_FACTOR_2_4_G && (ch < 1 || ch > 14)) ||
+            (ch > 200))
+        freq = -1;
+    else if ((start_factor == CHAN_FACTOR_2_4_G) && (ch == 14))
+        freq = 2484;
+    else
+        freq = ch * 5 + start_factor / 2;
+
+    return freq;
+}
+
+struct ht_op_ie *read_ht_oper_ie(const char* ie, const s32 ie_len)
+{
+    const u8 *ptr_ie;
+    ptr_ie = bss_get_ie(WIFI_EID_HT_OPERATION, ie, ie_len);
+    if (ptr_ie) {
+        return (struct ht_op_ie *)(ptr_ie + TLV_BODY_OFF);
     }
+    return NULL;
+}
 
+struct vht_op_ie *read_vht_oper_ie(const char* ie, const s32 ie_len)
+{
+    const u8 *ptr_ie;
+    ptr_ie = bss_get_ie(WIFI_EID_VHT_OPERATION, ie, ie_len);
+    if (ptr_ie) {
+        return (struct vht_op_ie *)(ptr_ie + TLV_BODY_OFF);
+    }
+    return NULL;
+}
+wifi_channel_info get_channel_of_ie(const char* ie, const s32 ie_len)
+{
+    struct vht_op_ie *vht_op;
+    struct ht_op_ie *ht_op;
+    const u8 *ptr_ie;
+    wifi_channel_info chan_info;
+    vht_op = read_vht_oper_ie(ie, ie_len);
+    if ((vht_op = read_vht_oper_ie(ie, ie_len)) &&
+            (ht_op = read_ht_oper_ie(ie, ie_len))) {
+        /* VHT mode */
+        if (vht_op->chan_width == VHT_OP_CHAN_WIDTH_80) {
+            chan_info.width = WIFI_CHAN_WIDTH_80;
+            /* primary channel */
+            chan_info.center_freq = channel2mhz(ht_op->ctl_ch);
+            /* center frequency */
+            chan_info.center_freq0 = channel2mhz(vht_op->chan1);
+			return chan_info;
+		}
+	}
+	if (ht_op = read_ht_oper_ie(ie, ie_len)){
+		/* HT mode */
+		/* control channel */
+		chan_info.center_freq = channel2mhz(ht_op->ctl_ch);
+		chan_info.width = WIFI_CHAN_WIDTH_20;
+		switch (ht_op->chan_info & DOT11_EXT_CH_MASK) {
+			chan_info.center_freq = channel2mhz(ht_op->ctl_ch);
+			case DOT11_EXT_CH_UPPER:
+				chan_info.width = WIFI_CHAN_WIDTH_40;
+				break;
+			case DOT11_EXT_CH_LOWER:
+				chan_info.width = WIFI_CHAN_WIDTH_40;
+				break;
+			case DOT11_EXT_CH_NONE:
+				break;
+		}
+	} else {
+		chan_info.width = WIFI_CHAN_WIDTH_20;
+		ptr_ie = bss_get_ie(WIFI_EID_DS_PARAMS, ie, ie_len);
+		if (ptr_ie) {
+			chan_info.center_freq = channel2mhz(ptr_ie[TLV_BODY_OFF]);
+		}
+	}
+	return chan_info;
+}
 
-    static const int max_ap = 5;
+static void testRTT()
+{
+    wifi_scan_result *results[max_ap];
+    wifi_scan_result *scan_param;
+    u32 num_ap = 0;
+    /* Run by a provided rtt-ap-list file */
+    FILE* w_fp = NULL;
     wifi_rtt_config params[max_ap];
-    memset(params, 0, sizeof(params));
+    if (!rtt_from_file) {
+        /* band filter for a specific band */
+        if (band == WIFI_BAND_UNSPECIFIED)
+            band = WIFI_BAND_ABG;
+        int num_results = scanOnce(band, results, max_ap);
+        if (num_results == 0) {
+            printMsg("RTT aborted because of no scan results\n");
+            return;
+        } else {
+            printMsg("Retrieved %d scan results\n", num_results);
+        }
 
-    printMsg("Configuring RTT for %d APs, num_samples = %d\n",
-            min(num_results, max_ap), rtt_samples);
+        num_results = removeDuplicateScanResults(results, num_results);
 
-    unsigned num_ap = 0;
-    for (int i = 0; i < min(num_results, max_ap); i++, num_ap++) {
+        sortScanResultsByRssi(results, num_results);
+        printMsg("Sorted scan results -\n");
+        for (int i = 0; i < num_results; i++) {
+            printScanResult(*results[i]);
+        }
+        if (rtt_to_file) {
+            /* Write a RTT AP list to a file */
+            w_fp = fopen(rtt_aplist, "w");
+            if (w_fp == NULL) {
+                printMsg("failed to open the file : %s\n", rtt_aplist);
+                return;
+            }
+            fprintf(w_fp, "|SSID|BSSID|Primary Freq|Center Freq|Channel BW(0=20MHZ,1=40MZ,2=80MHZ)"
+                    "|rtt_type(1=1WAY,2=2WAY,3=auto)|Peer Type(STA=0, AP=1)|burst interval|"
+                    "Num of Burst|FTM retry count|FTMR retry count|LCI|LCR|Burst Timeout|\n");
+        }
+        for (int i = 0; i < min(num_results, max_ap); i++) {
+            scan_param = results[i];
+            if(is11mcAP(&scan_param->ie_data[0], scan_param->ie_length)) {
+                memcpy(params[num_ap].addr, scan_param->bssid, sizeof(mac_addr));
+                mac_addr &addr = params[num_ap].addr;
+                printMsg("Adding %s(%02x:%02x:%02x:%02x:%02x:%02x) on Freq (%d) for 11mc RTT\n",
+                        scan_param->ssid, addr[0], addr[1],
+                        addr[2], addr[3], addr[4], addr[5],
+                        scan_param->channel);
+                params[num_ap].type = RTT_TYPE_2_SIDED;
+                params[num_ap].channel = get_channel_of_ie(&scan_param->ie_data[0],
+                        scan_param->ie_length);
+                params[num_ap].peer = WIFI_PEER_AP;
+                params[num_ap].num_burst = default_rtt_param.num_burst;
+                params[num_ap].num_frames_per_burst = default_rtt_param.num_frames_per_burst;
+                params[num_ap].num_retries_per_measurement_frame =
+                    default_rtt_param.num_retries_per_ftm;
+                params[num_ap].num_retries_per_ftmr = default_rtt_param.num_retries_per_ftmr;
+                params[num_ap].interval = default_rtt_param.interval;
+                params[num_ap].burst_timeout = default_rtt_param.burst_timeout;
+                params[num_ap].LCI_request = default_rtt_param.LCI_request;
+                params[num_ap].LCR_request = default_rtt_param.LCR_request;
+                if (rtt_to_file) {
+                    fprintf(w_fp, "%s %02x:%02x:%02x:%02x:%02x:%02x %d %d %d %d %d %d %d %d %d %d %d %d %d\n", scan_param->ssid,
+                            params[num_ap].addr[0], params[num_ap].addr[1], params[num_ap].addr[2], params[num_ap].addr[3],
+                            params[num_ap].addr[4], params[num_ap].addr[5],params[num_ap].channel.center_freq,
+                            params[num_ap].channel.center_freq0, params[num_ap].channel.width, params[num_ap].type,params[num_ap].peer,
+                            params[num_ap].interval, params[num_ap].num_burst, params[num_ap].num_frames_per_burst,
+                            params[num_ap].num_retries_per_measurement_frame, params[num_ap].num_retries_per_ftmr,
+                            params[num_ap].LCI_request, params[num_ap].LCR_request, params[num_ap].burst_timeout);
+                }
+                num_ap++;
+            } else {
+                /* legacy AP */
+            }
+        }
+        /* free the results data */
+        for (int i = 0; i < num_results; i++) {
+            free(results[i]);
+            results[i] = NULL;
+        }
+        if (w_fp)
+            fclose(w_fp);
+    } else {
+        /* Run by a provided rtt-ap-list file */
+        FILE* fp;
+        char bssid[ETHER_ADDR_STR_LEN];
+        char ssid[MAX_SSID_LEN];
+        char first_char;
+        memset(bssid, 0, sizeof(bssid));
+        memset(ssid, 0, sizeof(ssid));
+        /* Read a RTT AP list from a file */
+        fp = fopen(rtt_aplist, "r");
+        if (fp == NULL) {
+            printMsg("\nRTT AP list file does not exist on %s.\n"
+                    "Please specify correct full path or use default one, %s, \n"
+                    "  by following order in file, such as:\n"
+                    "|SSID|BSSID|Center Freq|Freq0|Channel BW(0=20MHZ,1=40MZ,2=80MHZ)|"
+                    "RTT_Type(1=1WAY,2=2WAY,3=auto)|Peer Type(STA=0, AP=1)|Burst Interval|"
+                    "No of Burst|No of FTM Burst|FTM Retry Count|FTMR Retry Count|LCI|LCR|"
+                    "Burst Timeout|Preamble|\n",
+                    rtt_aplist, DEFAULT_RTT_FILE);
+            return;
+        }
+        printMsg("    %-16s%-20s%-8s%-14s%-12s%-10s%-10s%-16s%-10s%-14s%-11s%-12s%-5s%-5s%-15s%-10s\n",
+                "SSID", "BSSID", "c_Freq", "c_Freq0", "Bandwidth", "RTT_Type", "RTT_Peer",
+                "Burst_Interval", "No_Burst", "No_FTM_Burst", "FTM_Retry",
+                "FTMR_Retry", "LCI", "LCR", "Burst_Timeout", "Preamble");
+        int i = 0;
+        while (!feof(fp)) {
+            if ((fscanf(fp, "%c", &first_char) == 1) && (first_char != '|')) {
+                fseek(fp, -1, SEEK_CUR);
+                fscanf(fp, "%s %s %u %u %u %u %u %u %u %u %u %u %hhu %hhu %u\n",
+                        ssid, bssid, (unsigned int*)&params[i].channel.center_freq,
+                        (unsigned int*)&params[i].channel.center_freq0,
+                        (unsigned int*)&params[i].channel.width,
+                        (unsigned int*)&params[i].type, (unsigned int*)&params[i].peer,
+                        &params[i].interval, &params[i].num_burst,
+                        &params[i].num_frames_per_burst,
+                        &params[i].num_retries_per_measurement_frame,
+                        &params[i].num_retries_per_ftmr,
+                        (unsigned char*)&params[i].LCI_request,
+                        (unsigned char*)&params[i].LCR_request,
+                        (unsigned int*)&params[i].burst_timeout);
 
-        memcpy(params[i].addr, results[i].bssid, sizeof(mac_addr));
-        mac_addr &addr = params[i].addr;
-        printMsg("Adding %02x:%02x:%02x:%02x:%02x:%02x (%d) for RTT\n", addr[0],
-                addr[1], addr[2], addr[3], addr[4], addr[5], results[i].channel);
+                parseMacAddress(bssid, params[i].addr);
 
-        params[i].type  = RTT_TYPE_1_SIDED;
-        params[i].channel.center_freq = results[i].channel;
-        params[i].channel.width = WIFI_CHAN_WIDTH_20;
-        params[i].peer  = WIFI_PEER_INVALID;
-        params[i].num_burst = 1;
-        params[i].interval = 1000;
-        params[i].num_frames_per_burst = rtt_samples;
-        params[i].num_retries_per_measurement_frame = 10;
+                printMsg("[%d] %-16s%-20s%-8u%-14u%-12d%-10d%-10u%-16u%-10u%-14u%-11u%-12u%-5hhu%-5hhu%-15u%-10hhu\n",
+                        i+1, ssid, bssid, params[i].channel.center_freq,
+                        params[i].channel.center_freq0, params[i].channel.width,
+                        params[i].type, params[i].peer, params[i].interval,
+                        params[i].num_burst, params[i].num_frames_per_burst,
+                        params[i].num_retries_per_measurement_frame,
+                        params[i].num_retries_per_ftmr, params[i].LCI_request,
+                        params[i].LCR_request, params[i].burst_timeout, params[i].preamble);
+
+                i++;
+            } else {
+                /* Ignore the rest of the line. */
+                fscanf(fp, "%*[^\n]");
+                fscanf(fp, "\n");
+            }
+        }
+        num_ap = i;
+        fclose(fp);
+        fp = NULL;
     }
 
     wifi_rtt_event_handler handler;
     handler.on_rtt_results = &onRTTResults;
-
-    int result = wifi_rtt_range_request(rttCmdId, wlan0Handle, num_ap, params, handler);
-
-    if (result == WIFI_SUCCESS) {
-        printMsg("Waiting for RTT results\n");
-
-        while (true) {
-            EventInfo info;
-            memset(&info, 0, sizeof(info));
-            getEventFromCache(info);
-
-            if (info.type == EVENT_TYPE_SCAN_RESULTS_AVAILABLE) {
-                retrieveScanResults();
-            } else if (info.type == EVENT_TYPE_RTT_RESULTS) {
-                break;
+    if (!rtt_to_file) {
+        if (num_ap) {
+            printMsg("Configuring RTT for %d APs\n", num_ap);
+            int result = wifi_rtt_range_request(rttCmdId, wlan0Handle, num_ap, params, handler);
+            if (result == WIFI_SUCCESS) {
+                printMsg("\nWaiting for RTT results\n");
+                while (true) {
+                    EventInfo info;
+                    memset(&info, 0, sizeof(info));
+                    getEventFromCache(info);
+                    if (info.type == EVENT_TYPE_RTT_RESULTS) {
+                        break;
+                    }
+                }
+            } else {
+                printMsg("Could not set setRTTAPs : %d\n", result);
             }
+        } else {
+            printMsg("no candidate for RTT\n");
         }
     } else {
-        printMsg("Could not set setRTTAPs : %d\n", result);
+        printMsg("written AP info into file %s successfully\n", rtt_aplist);
     }
 }
+static void getRTTCapability()
+{
+	int ret;
+	wifi_rtt_capabilities rtt_capability;
+	ret = wifi_get_rtt_capabilities(wlan0Handle, &rtt_capability);
+	if (ret == WIFI_SUCCESS) {
+		printMsg("Supported Capabilites of RTT :\n");
+		if (rtt_capability.rtt_one_sided_supported)
+			printMsg("One side RTT is supported\n");
+		if (rtt_capability.rtt_ftm_supported)
+			printMsg("FTM(11mc) RTT is supported\n");
+		if (rtt_capability.lci_support)
+			printMsg("LCI is supported\n");
+		if (rtt_capability.lcr_support)
+			printMsg("LCR is supported\n");
+		if (rtt_capability.bw_support) {
+			printMsg("BW(%s %s %s %s) are supported\n",
+				(rtt_capability.bw_support & BW_20_SUPPORT) ? "20MHZ" : "",
+				(rtt_capability.bw_support & BW_40_SUPPORT) ? "40MHZ" : "",
+				(rtt_capability.bw_support & BW_80_SUPPORT) ? "80MHZ" : "",
+				(rtt_capability.bw_support & BW_160_SUPPORT) ? "160MHZ" : "");
+		}
+		if (rtt_capability.preamble_support) {
+			printMsg("Preamble(%s %s %s) are supported\n",
+				(rtt_capability.preamble_support & PREAMBLE_LEGACY) ? "Legacy" : "",
+				(rtt_capability.preamble_support & PREAMBLE_HT) ? "HT" : "",
+				(rtt_capability.preamble_support & PREAMBLE_VHT) ? "VHT" : "");
 
-static int GetCachedGScanResults(int max, wifi_scan_result *results, int *num) {
+		}
+	} else {
+		printMsg("Could not get the rtt capabilities : %d\n", ret);
+	}
+
+}
+
+static int GetCachedGScanResults(int max, wifi_scan_result *results, int *num)
+{
     int num_results = 64;
     wifi_cached_scan_results results2[64];
     memset(results2, 0, sizeof(wifi_cached_scan_results) * num_results);
@@ -696,7 +1158,8 @@ static int GetCachedGScanResults(int max, wifi_scan_result *results, int *num) {
 }
 
 
-static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params){
+static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params)
+{
     printMsg("testHotlistAPs Scan started, waiting for event ...\n");
     EventInfo info;
     memset(&info, 0, sizeof(info));
@@ -724,7 +1187,7 @@ static wifi_error setHotlistAPsUsingScanResult(wifi_bssid_hotlist_params *params
         params->ap[i].low  = -htest_low_threshold;
         params->ap[i].high = -htest_high_threshold;
     }
-    params->num_ap = stest_max_ap;
+    params->num_bssid = stest_max_ap;
     return WIFI_SUCCESS;
 }
 
@@ -734,18 +1197,18 @@ static wifi_error setHotlistAPs() {
 
     params.lost_ap_sample_size = HOTLIST_LOST_WINDOW;
     if (num_hotlist_bssids > 0) {
-      for (int i = 0; i < num_hotlist_bssids; i++) {
-          memcpy(params.ap[i].bssid, hotlist_bssids[i], sizeof(mac_addr));
-          params.ap[i].low  = -htest_low_threshold;
-          params.ap[i].high = -htest_high_threshold;
-      }
-      params.num_ap = num_hotlist_bssids;
+        for (int i = 0; i < num_hotlist_bssids; i++) {
+            memcpy(params.ap[i].bssid, hotlist_bssids[i], sizeof(mac_addr));
+            params.ap[i].low  = -htest_low_threshold;
+            params.ap[i].high = -htest_high_threshold;
+        }
+        params.num_bssid = num_hotlist_bssids;
     } else {
-      setHotlistAPsUsingScanResult(&params);
+        setHotlistAPsUsingScanResult(&params);
     }
 
     printMsg("BSSID\t\t\tHIGH\tLOW\n");
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         mac_addr &addr = params.ap[i].bssid;
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%d\t%d\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5],
@@ -792,17 +1255,54 @@ static void testHotlistAPs(){
             if (info.type == EVENT_TYPE_SCAN_RESULTS_AVAILABLE) {
                 retrieveScanResults();
             } else if (info.type == EVENT_TYPE_HOTLIST_AP_FOUND ||
-                   info.type == EVENT_TYPE_HOTLIST_AP_LOST) {
+                    info.type == EVENT_TYPE_HOTLIST_AP_LOST) {
                 printMsg("Hotlist APs");
+                if (--max_event_wait > 0)
+                    printMsg(", waiting for more event ::%d\n", max_event_wait);
+                else
+                    break;
+            }
+        }
+        resetHotlistAPs();
+    } else {
+        printMsg("Could not set AP hotlist : %d\n", result);
+    }
+}
+
+static void testPNO(){
+
+    EventInfo info;
+    wifi_epno_handler handler;
+    handler.on_network_found = &onePnoSsidFound;
+    printMsg("configuring ePNO SSIDs num %u\n", num_epno_ssids);
+    memset(&info, 0, sizeof(info));
+    epnoCmdId = getNewCmdId();
+    int result = wifi_set_epno_list(epnoCmdId, wlan0Handle, num_epno_ssids, epno_ssid, handler);
+     if (result == WIFI_SUCCESS) {
+        bool startScanResult = startScan(&onScanResultsAvailable, stest_max_ap,
+            stest_base_period, stest_threshold_percent, stest_threshold_num_scans);
+        if (!startScanResult) {
+            printMsg("testPNO failed to start scan!!\n");
+            return;
+        }
+        printMsg("Waiting for ePNO events\n");
+        while (true) {
+            memset(&info, 0, sizeof(info));
+            getEventFromCache(info);
+
+            if (info.type == EVENT_TYPE_SCAN_RESULTS_AVAILABLE) {
+                retrieveScanResults();
+            } else if (info.type == EVENT_TYPE_EPNO_SSID) {
+                printMsg("FOUND ePNO event");
                 if (--max_event_wait > 0)
                   printMsg(", waiting for more event ::%d\n", max_event_wait);
                 else
                   break;
             }
         }
-        resetHotlistAPs();
+        //wifi_reset_epno_list(epnoCmdId, wlan0Handle);
     } else {
-        printMsg("Could not set AP hotlist : %d\n", result);
+        printMsg("Could not set ePNO : %d\n", result);
     }
 }
 
@@ -845,13 +1345,13 @@ static int SelectSignificantAPsFromScanResults() {
         params.ap[i].low  = results[i].rssi - swctest_rssi_ch_threshold;
         params.ap[i].high = results[i].rssi + swctest_rssi_ch_threshold;
     }
-    params.num_ap = stest_max_ap;
+    params.num_bssid = stest_max_ap;
 
     printMsg("Settting Significant change params rssi_sample_size#%d lost_ap_sample_size#%d"
-        " and min_breaching#%d\n", params.rssi_sample_size,
-        params.lost_ap_sample_size , params.min_breaching);
+            " and min_breaching#%d\n", params.rssi_sample_size,
+            params.lost_ap_sample_size , params.min_breaching);
     printMsg("BSSID\t\t\tHIGH\tLOW\n");
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         mac_addr &addr = params.ap[i].bssid;
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%d\t%d\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5],
@@ -875,7 +1375,7 @@ static void trackSignificantChange() {
     printMsg("starting trackSignificantChange\n");
 
     if (!startScan(&onScanResultsAvailable, stest_max_ap,
-            stest_base_period, stest_threshold_percent, stest_threshold_num_scans)) {
+                stest_base_period, stest_threshold_percent, stest_threshold_num_scans)) {
         printMsg("trackSignificantChange failed to start scan!!\n");
         return;
     } else {
@@ -909,15 +1409,12 @@ static void trackSignificantChange() {
     }
 }
 
-/* -------------------------------------------  */
-/* tests                                        */
-/* -------------------------------------------  */
 
 void testScan() {
     printf("starting scan with max_ap_per_scan#%d  base_period#%d  threshold#%d \n",
-           stest_max_ap,stest_base_period, stest_threshold_percent);
+            stest_max_ap,stest_base_period, stest_threshold_percent);
     if (!startScan(&onScanResultsAvailable, stest_max_ap,
-            stest_base_period, stest_threshold_percent, stest_threshold_num_scans)) {
+                stest_base_period, stest_threshold_percent, stest_threshold_num_scans)) {
         printMsg("failed to start scan!!\n");
         return;
     } else {
@@ -929,9 +1426,9 @@ void testScan() {
             printMsg("retrieved event %d : %s\n", info.type, info.buf);
             retrieveScanResults();
             if(--max_event_wait > 0)
-              printMsg("Waiting for more :: %d event \n", max_event_wait);
+                printMsg("Waiting for more :: %d event \n", max_event_wait);
             else
-              break;
+                break;
         }
 
         stopScan();
@@ -968,8 +1465,6 @@ void parseMacAddress(const char *str, mac_addr addr) {
     addr[3] = parseHexByte(str[9], str[10]);
     addr[4] = parseHexByte(str[12], str[13]);
     addr[5] = parseHexByte(str[15], str[16]);
-    // printMsg("read mac addr: %02x:%02x:%02x:%02x:%02x:%02x\n", addr[0],
-    //      addr[1], addr[2], addr[3], addr[4], addr[5]);
 }
 
 void parseMacOUI(char *str, unsigned char *addr) {
@@ -1017,8 +1512,8 @@ void readTestOptions(int argc, char *argv[]){
         } else if (strcmp(argv[j], "-hotlist_bssids") == 0 && isxdigit(argv[j+1][0])) {
             j++;
             for (num_hotlist_bssids = 0;
-                        j < argc && isxdigit(argv[j][0]);
-                        j++, num_hotlist_bssids++) {
+                    j < argc && isxdigit(argv[j][0]);
+                    j++, num_hotlist_bssids++) {
                 parseMacAddress(argv[j], hotlist_bssids[num_hotlist_bssids]);
             }
             j -= 1;
@@ -1043,12 +1538,93 @@ void readTestOptions(int argc, char *argv[]){
                 band = WIFI_BAND_ABG;
             }
             j++;
-        } else if ((strcmp(argv[j], "-rtt_samples") == 0)) {
-            rtt_samples = atoi(argv[++j]);
-            printf(" rtt_retries #-%d\n", rtt_samples);
         } else if (strcmp(argv[j], "-scan_mac_oui") == 0 && isxdigit(argv[j+1][0])) {
             parseMacOUI(argv[++j], mac_oui);
-     }
+        } else if ((strcmp(argv[j], "-ssid") == 0)) {
+            num_epno_ssids++;
+            if (num_epno_ssids < 32) {
+                memcpy(epno_ssid[num_epno_ssids].ssid, argv[j + 1], strlen(argv[j + 1]));
+                printf(" SSID %s\n", epno_ssid[num_epno_ssids].ssid);
+                j++;
+            }
+        } else if ((strcmp(argv[j], "-auth") == 0)) {
+            if (num_epno_ssids < 32) {
+               epno_ssid[num_epno_ssids].auth_bit_field = atoi(argv[++j]);
+               printf(" auth %d\n", epno_ssid[num_epno_ssids].auth_bit_field);
+            }
+
+        } else if ((strcmp(argv[j], "-rssi") == 0) && isdigit(argv[j+1][0])) {
+            if (num_epno_ssids < 32) {
+               epno_ssid[num_epno_ssids].rssi_threshold = atoi(argv[++j]) * -1;
+               printf(" rssi thresh %d\n", epno_ssid[num_epno_ssids].rssi_threshold);
+
+            }
+        } else if ((strcmp(argv[j], "-hidden") == 0)) {
+            if (num_epno_ssids < 32) {
+               epno_ssid[num_epno_ssids].flags |= atoi(argv[++j]) ? EPNO_HIDDEN: 0;
+               printf(" flags %d\n", epno_ssid[num_epno_ssids].flags);
+            }
+        } else if ((strcmp(argv[j], "-trig") == 0)) {
+            if (num_epno_ssids < 32) {
+                if ((strcmp(argv[j + 1], "a") == 0)) {
+                   epno_ssid[num_epno_ssids].flags |= EPNO_A_BAND_TRIG;
+                } else if ((strcmp(argv[j + 1], "bg") == 0)) {
+                   epno_ssid[num_epno_ssids].flags |= EPNO_BG_BAND_TRIG;
+                } else if ((strcmp(argv[j + 1], "abg") == 0)) {
+                   epno_ssid[num_epno_ssids].flags |= EPNO_ABG_BAND_TRIG;
+                }
+               printf(" flags %d\n", epno_ssid[num_epno_ssids].flags);
+            }
+            j++;
+        }
+    }
+}
+void readRTTOptions(int argc, char *argv[]) {
+    for (int j = 1; j < argc-1; j++) {
+        if ((strcmp(argv[j], "-get_ch_list") == 0)) {
+            if(strcmp(argv[j + 1], "a") == 0) {
+                band = WIFI_BAND_A_WITH_DFS;
+            } else if(strcmp(argv[j + 1], "bg") == 0) {
+                band = WIFI_BAND_BG;
+            } else if(strcmp(argv[j + 1], "abg") == 0) {
+                band = WIFI_BAND_ABG_WITH_DFS;
+            } else if(strcmp(argv[j + 1], "a_nodfs") == 0) {
+                band = WIFI_BAND_A;
+            } else if(strcmp(argv[j + 1], "dfs") == 0) {
+                band = WIFI_BAND_A_DFS;
+            } else if(strcmp(argv[j + 1], "abg_nodfs") == 0) {
+                band = WIFI_BAND_ABG;
+            }
+            j++;
+        } else if ((strcmp(argv[j], "-l") == 0)) {
+            /*
+             * If this option is specified but there is no file name,
+             * use a default file from rtt_aplist.
+             */
+            if (++j != argc-1)
+                strcpy(rtt_aplist, argv[j]);
+            rtt_from_file = 1;
+        } else if ((strcmp(argv[j], "-n") == 0) && isdigit(argv[j+1][0])) {
+            default_rtt_param.num_burst = atoi(argv[++j]);
+        } else if ((strcmp(argv[j], "-f") == 0) && isdigit(argv[j+1][0])) {
+            default_rtt_param.num_frames_per_burst = atoi(argv[++j]);
+        } else if ((strcmp(argv[j], "-r") == 0) && isdigit(argv[j+1][0])) {
+            default_rtt_param.num_retries_per_ftm = atoi(argv[++j]);
+        } else if ((strcmp(argv[j], "-m") == 0) && isdigit(argv[j+1][0])) {
+            default_rtt_param.num_retries_per_ftmr = atoi(argv[++j]);
+        } else if ((strcmp(argv[j], "-b") == 0) && isdigit(argv[j+1][0])) {
+            default_rtt_param.burst_timeout = atoi(argv[++j]);
+        } else if ((strcmp(argv[j], "-max_ap") == 0) && isdigit(argv[j+1][0])) {
+            max_ap = atoi(argv[++j]);
+        } else if ((strcmp(argv[j], "-o") == 0)) {
+            /*
+             * If this option is specified but there is no file name,
+             * use a default file from rtt_aplist.
+             */
+            if (++j != argc-1)
+                strcpy(rtt_aplist, argv[j]);
+            rtt_to_file = 1;
+        }
     }
 }
 
@@ -1057,7 +1633,7 @@ wifi_radio_stat trx_stat;
 wifi_peer_info peer_info;
 wifi_rate_stat rate_stat[32];
 void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
-         int num_radios, wifi_radio_stat *radio_stat)
+        int num_radios, wifi_radio_stat *radio_stat)
 {
     int num_peer = iface_stat->num_peers;
     memcpy(&trx_stat, radio_stat, sizeof(wifi_radio_stat));
@@ -1090,37 +1666,37 @@ void printFeatureListBitMask(void)
 const char *rates[] = {
     "1Mbps",
     "2Mbps",
-	"5.5Mbps",
-	"6Mbps",
-	"9Mbps",
-	"11Mbps",
-	"12Mbps",
-	"18Mbps",
-	"24Mbps",
-	"36Mbps",
-	"48Mbps",
-	"54Mbps",
-	"VHT MCS0 ss1",
-	"VHT MCS1 ss1",
-	"VHT MCS2 ss1",
-	"VHT MCS3 ss1",
-	"VHT MCS4 ss1",
-	"VHT MCS5 ss1",
-	"VHT MCS6 ss1",
-	"VHT MCS7 ss1",
+    "5.5Mbps",
+    "6Mbps",
+    "9Mbps",
+    "11Mbps",
+    "12Mbps",
+    "18Mbps",
+    "24Mbps",
+    "36Mbps",
+    "48Mbps",
+    "54Mbps",
+    "VHT MCS0 ss1",
+    "VHT MCS1 ss1",
+    "VHT MCS2 ss1",
+    "VHT MCS3 ss1",
+    "VHT MCS4 ss1",
+    "VHT MCS5 ss1",
+    "VHT MCS6 ss1",
+    "VHT MCS7 ss1",
     "VHT MCS8 ss1",
-	"VHT MCS9 ss1",
-	"VHT MCS0 ss2",
-	"VHT MCS1 ss2",
-	"VHT MCS2 ss2",
-	"VHT MCS3 ss2",
-	"VHT MCS4 ss2",
-	"VHT MCS5 ss2",
-	"VHT MCS6 ss2",
-	"VHT MCS7 ss2",
-	"VHT MCS8 ss2",
-	"VHT MCS9 ss2"
-	};
+    "VHT MCS9 ss1",
+    "VHT MCS0 ss2",
+    "VHT MCS1 ss2",
+    "VHT MCS2 ss2",
+    "VHT MCS3 ss2",
+    "VHT MCS4 ss2",
+    "VHT MCS5 ss2",
+    "VHT MCS6 ss2",
+    "VHT MCS7 ss2",
+    "VHT MCS8 ss2",
+    "VHT MCS9 ss2"
+};
 
 void printLinkStats(wifi_iface_stat link_stat, wifi_radio_stat trx_stat)
 {
@@ -1157,8 +1733,8 @@ void printLinkStats(wifi_iface_stat link_stat, wifi_radio_stat trx_stat)
     printMsg("%27s %12s %14s %15s\n", "TX",  "RX", "LOST", "RETRIES");
     for (int i=0; i < 32; i++) {
         printMsg("%-15s  %10d   %10d    %10d    %10d\n",
-	    rates[i], rate_stat[i].tx_mpdu, rate_stat[i].rx_mpdu,
-	    rate_stat[i].mpdu_lost, rate_stat[i].retries);
+                rates[i], rate_stat[i].tx_mpdu, rate_stat[i].rx_mpdu,
+                rate_stat[i].mpdu_lost, rate_stat[i].retries);
     }
 }
 
@@ -1182,7 +1758,7 @@ void getChannelList(void)
     int num_channels = 0, i;
 
     int result = wifi_get_valid_channels(wlan0Handle, band, MAX_CH_BUF_SIZE,
-                     channel, &num_channels);
+            channel, &num_channels);
     printMsg("Number of channels - %d\nChannel List:\n",num_channels);
     for (i = 0; i < num_channels; i++) {
         printMsg("%d MHz\n", channel[i]);
@@ -1219,9 +1795,37 @@ void getFeatureSetMatrix(void)
         printMsg("Concurrent feature set - %x\n", set[i]);
     return;
 }
-
-
-
+void printUsage() {
+    printf("Usage:	halutil [OPTION]\n");
+    printf(" -s 			  start AP scan test\n");
+    printf(" -swc			  start Significant Wifi change test\n");
+    printf(" -h 			  start Hotlist APs scan test\n");
+    printf(" -ss			  stop scan test\n");
+    printf(" -max_ap		  Max AP for scan \n");
+    printf(" -base_period	  Base period for scan \n");
+    printf(" -threshold 	  Threshold scan test\n");
+    printf(" -avg_RSSI		  samples for averaging RSSI\n");
+    printf(" -ap_loss		  samples to confirm AP loss\n");
+    printf(" -ap_breach 	  APs breaching threshold\n");
+    printf(" -ch_threshold	  Change in threshold\n");
+    printf(" -wt_event		  Waiting event for test\n");
+    printf(" -low_th		  Low threshold for hotlist APs\n");
+    printf(" -hight_th		  High threshold for hotlist APs\n");
+    printf(" -hotlist_bssids  BSSIDs for hotlist test\n");
+    printf(" -stats 	  print link layer statistics\n");
+    printf(" -get_ch_list <a/bg/abg/a_nodfs/abg_nodfs/dfs>	Get channel list\n");
+    printf(" -get_feature_set  Get Feature set\n");
+    printf(" -get_feature_matrix  Get concurrent feature matrix\n");
+    printf(" -rtt [-get_ch_list <a/bg/abg>] [-i <interval>] [-n <num_bursts>]\n"
+            "    [-f <num_frames_per_burst>] [-r <num_retries_per_ftm>]\n"
+            "    [-m <num_retries_per_ftmr>] [-b <burst_timeout>]"
+			"    [-max_ap <count of allowed max AP>] [-l <file to read>] [-o <file to be stored>]\n");
+    printf(" -get_capa_rtt Get the capability of RTT such as 11mc");
+    printf(" -scan_mac_oui XY:AB:CD\n");
+    printf(" -nodfs <0|1>	  Turn OFF/ON non-DFS locales\n");
+    printf(" -country <alpha2 country code> Set country\n");
+    printf(" -ePNO Configure ePNO SSIDs\n");
+}
 int main(int argc, char *argv[]) {
 
     pthread_mutex_init(&printMutex, NULL);
@@ -1242,30 +1846,7 @@ int main(int argc, char *argv[]) {
     sleep(2);     // let the thread start
 
     if (argc < 2 || argv[1][0] != '-') {
-        printf("Usage:  halutil [OPTION]\n");
-        printf(" -s               start AP scan test\n");
-        printf(" -swc             start Significant Wifi change test\n");
-        printf(" -h               start Hotlist APs scan test\n");
-        printf(" -ss              stop scan test\n");
-        printf(" -max_ap          Max AP for scan \n");
-        printf(" -base_period     Base period for scan \n");
-        printf(" -threshold       Threshold scan test\n");
-        printf(" -avg_RSSI        samples for averaging RSSI\n");
-        printf(" -ap_loss         samples to confirm AP loss\n");
-        printf(" -ap_breach       APs breaching threshold\n");
-        printf(" -ch_threshold    Change in threshold\n");
-        printf(" -wt_event        Waiting event for test\n");
-        printf(" -low_th          Low threshold for hotlist APs\n");
-        printf(" -hight_th        High threshold for hotlist APs\n");
-        printf(" -hotlist_bssids  BSSIDs for hotlist test\n");
-        printf(" -stats       print link layer statistics\n");
-        printf(" -get_ch_list <a/bg/abg/a_nodfs/abg_nodfs/dfs>  Get channel list\n");
-        printf(" -get_feature_set  Get Feature set\n");
-        printf(" -get_feature_matrix  Get concurrent feature matrix\n");
-        printf(" -rtt             Run RTT on nearby APs\n");
-        printf(" -rtt_samples     Run RTT on nearby APs\n");
-        printf(" -scan_mac_oui XY:AB:CD\n");
-        printf(" -nodfs <0|1>     Turn OFF/ON non-DFS locales\n");
+        printUsage();
         goto cleanup;
     }
     memset(mac_oui, 0, 3);
@@ -1274,25 +1855,27 @@ int main(int argc, char *argv[]) {
         readTestOptions(argc, argv);
         setPnoMacOui();
         testScan();
-    }else if(strcmp(argv[1], "-swc") == 0){
+    } else if(strcmp(argv[1], "-swc") == 0){
         readTestOptions(argc, argv);
         setPnoMacOui();
         trackSignificantChange();
-    }else if (strcmp(argv[1], "-ss") == 0) {
+    } else if (strcmp(argv[1], "-ss") == 0) {
         // Stop scan so clear the OUI too
         setPnoMacOui();
         testStopScan();
-    }else if ((strcmp(argv[1], "-h") == 0)  ||
-              (strcmp(argv[1], "-hotlist_bssids") == 0)) {
+    } else if ((strcmp(argv[1], "-h") == 0)  ||
+            (strcmp(argv[1], "-hotlist_bssids") == 0)) {
         readTestOptions(argc, argv);
         setPnoMacOui();
         testHotlistAPs();
-    }else if (strcmp(argv[1], "-stats") == 0) {
+    } else if (strcmp(argv[1], "-stats") == 0) {
         getLinkStats();
-    } else if ((strcmp(argv[1], "-rtt") == 0)) {
-        readTestOptions(argc, argv);
+    } else if (strcmp(argv[1], "-rtt") == 0) {
+        readRTTOptions(argc, ++argv);
         testRTT();
-    } else if ((strcmp(argv[1], "-get_ch_list") == 0)) {
+    } else if (strcmp(argv[1], "-get_capa_rtt") == 0) {
+		getRTTCapability();
+	} else if ((strcmp(argv[1], "-get_ch_list") == 0)) {
         readTestOptions(argc, argv);
         getChannelList();
     } else if ((strcmp(argv[1], "-get_feature_set") == 0)) {
@@ -1308,6 +1891,19 @@ int main(int argc, char *argv[]) {
         if (argc > 2)
             nodfs = (u32)atoi(argv[2]);
         wifi_set_nodfs_flag(wlan0Handle, nodfs);
+    } else if ((strcmp(argv[1], "-ePNO") == 0)) {
+        memset(epno_ssid, 0, 16 * sizeof(epno_ssid[0]));
+        num_epno_ssids = -1;
+        readTestOptions(argc, argv);
+        num_epno_ssids++;
+        testPNO();
+    } else if (strcmp(argv[1], "-country") == 0) {
+        char *country_code;
+        if (argc > 2)
+            country_code = argv[2];
+        wifi_set_country_code(wlan0Handle, country_code);
+    } else if (strcmp(argv[1], "-help") == 0) {
+        printUsage();
     }
 cleanup:
     cleanup();

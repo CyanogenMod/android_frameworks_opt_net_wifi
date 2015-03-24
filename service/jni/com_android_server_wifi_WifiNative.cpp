@@ -29,6 +29,7 @@
 #include "wifi.h"
 #include "wifi_hal.h"
 #include "jni_helper.h"
+#include "rtt.h"
 
 #define REPLY_BUF_SIZE 4096 // wpa_supplicant's maximum size.
 #define EVENT_BUF_SIZE 2048
@@ -367,7 +368,7 @@ static void onScanEvent(wifi_scan_event event, unsigned status) {
 
     ALOGD("onScanStatus called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
-    reportEvent(env, mCls, "onScanStatus", "(I)V", status);
+    reportEvent(env, mCls, "onScanStatus", "(I)V", event);
 }
 
 static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
@@ -581,7 +582,7 @@ static jboolean android_net_wifi_getScanCapabilities(
     setIntField(env, capabilities, "max_ap_cache_per_scan", c.max_ap_cache_per_scan);
     setIntField(env, capabilities, "max_rssi_sample_size", c.max_rssi_sample_size);
     setIntField(env, capabilities, "max_scan_reporting_threshold", c.max_scan_reporting_threshold);
-    setIntField(env, capabilities, "max_hotlist_aps", c.max_hotlist_aps);
+    setIntField(env, capabilities, "max_hotlist_bssids", c.max_hotlist_bssids);
     setIntField(env, capabilities, "max_significant_wifi_change_aps",
                 c.max_significant_wifi_change_aps);
 
@@ -756,14 +757,14 @@ static jboolean android_net_wifi_setHotlist(
 
     jobjectArray array = (jobjectArray) getObjectField(env, ap,
             "bssidInfos", "[Landroid/net/wifi/WifiScanner$BssidInfo;");
-    params.num_ap = env->GetArrayLength(array);
+    params.num_bssid = env->GetArrayLength(array);
 
-    if (params.num_ap == 0) {
+    if (params.num_bssid == 0) {
         ALOGE("Error in accesing array");
         return false;
     }
 
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         jobject objAp = env->GetObjectArrayElement(array, i);
 
         jstring macAddrString = (jstring) getObjectField(
@@ -875,17 +876,17 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
     const char *bssid_info_array_type = "[Landroid/net/wifi/WifiScanner$BssidInfo;";
     jobjectArray bssids = (jobjectArray)getObjectField(
                 env, settings, "bssidInfos", bssid_info_array_type);
-    params.num_ap = env->GetArrayLength(bssids);
+    params.num_bssid = env->GetArrayLength(bssids);
 
-    if (params.num_ap == 0) {
+    if (params.num_bssid == 0) {
         ALOGE("Error in accessing array");
         return false;
     }
 
     ALOGD("Initialized common fields %d, %d, %d, %d", params.rssi_sample_size,
-            params.lost_ap_sample_size, params.min_breaching, params.num_ap);
+            params.lost_ap_sample_size, params.min_breaching, params.num_bssid);
 
-    for (int i = 0; i < params.num_ap; i++) {
+    for (int i = 0; i < params.num_bssid; i++) {
         jobject objAp = env->GetObjectArrayElement(bssids, i);
 
         jstring macAddrString = (jstring) getObjectField(
@@ -915,7 +916,7 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
         ALOGD("Added bssid %s, [%04d, %04d]", bssidOut, params.ap[i].low, params.ap[i].high);
     }
 
-    ALOGD("Added %d bssids", params.num_ap);
+    ALOGD("Added %d bssids", params.num_bssid);
 
     wifi_significant_change_handler handler;
     memset(&handler, 0, sizeof(handler));
@@ -1017,8 +1018,6 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls, jint 
 
     result = wifi_get_supported_feature_set(handle, &set);
     if (result == WIFI_SUCCESS) {
-        /* Temporary workaround for RTT capability */
-        set = set | WIFI_FEATURE_D2AP_RTT;
         ALOGD("wifi_get_supported_feature_set returned set = 0x%x", set);
         return set;
     } else {
@@ -1027,7 +1026,7 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls, jint 
     }
 }
 
-static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_result results[]) {
+static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_result* results[]) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
@@ -1047,7 +1046,7 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
 
     for (unsigned i = 0; i < num_results; i++) {
 
-        wifi_rtt_result& result = results[i];
+        wifi_rtt_result *result = results[i];
 
         jobject rttResult = createObject(env, "android/net/wifi/RttManager$RttResult");
         if (rttResult == NULL) {
@@ -1056,22 +1055,45 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
         }
 
         char bssid[32];
-        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result.addr[0], result.addr[1],
-            result.addr[2], result.addr[3], result.addr[4], result.addr[5]);
+        sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result->addr[0], result->addr[1],
+            result->addr[2], result->addr[3], result->addr[4], result->addr[5]);
 
         setStringField(env, rttResult, "bssid", bssid);
-        setIntField(env,  rttResult, "status",               result.status);
-        setIntField(env,  rttResult, "requestType",          result.type);
-        setLongField(env, rttResult, "ts",                   result.ts);
-        setIntField(env,  rttResult, "rssi",                 result.rssi);
-        setIntField(env,  rttResult, "rssi_spread",          result.rssi_spread);
-        setIntField(env,  rttResult, "tx_rate",              result.tx_rate.bitrate);
-        setLongField(env, rttResult, "rtt_ns",               result.rtt);
-        setLongField(env, rttResult, "rtt_sd_ns",            result.rtt_sd);
-        setLongField(env, rttResult, "rtt_spread_ns",        result.rtt_spread);
-        setIntField(env,  rttResult, "distance_cm",          result.distance);
-        setIntField(env,  rttResult, "distance_sd_cm",       result.distance_sd);
-        setIntField(env,  rttResult, "distance_spread_cm",   result.distance_spread);
+        setIntField(env,  rttResult, "burstNumber",              result->burst_num);
+        setIntField(env,  rttResult, "measurementFrameNumber",   result->measurement_number);
+        setIntField(env,  rttResult, "successMeasurementFrameNumber",   result->success_number);
+        setIntField(env, rttResult, "frameNumberPerBurstPeer",   result->number_per_burst_peer);
+        setIntField(env,  rttResult, "status",                   result->status);
+        setIntField(env,  rttResult, "measurementType",          result->type);
+        setIntField(env, rttResult, "retryAfterDuration",       result->retry_after_duration);
+        setLongField(env, rttResult, "ts",                       result->ts);
+        setIntField(env,  rttResult, "rssi",                     result->rssi);
+        setIntField(env,  rttResult, "rssiSpread",               result->rssi_spread);
+        setIntField(env,  rttResult, "txRate",                   result->tx_rate.bitrate);
+        setIntField(env,  rttResult, "rxRate",                   result->rx_rate.bitrate);
+        setLongField(env, rttResult, "rtt",                      result->rtt);
+        setLongField(env, rttResult, "rttStandardDeviation",     result->rtt_sd);
+        setLongField(env, rttResult, "rttSpread",                result->rtt_spread);
+        setIntField(env,  rttResult, "distance",                 result->distance);
+        setIntField(env,  rttResult, "distanceStandardDeviation", result->distance_sd);
+        setIntField(env,  rttResult, "distanceSpread",           result->distance_spread);
+        setIntField(env,  rttResult, "burstDuration",             result->burst_duration);
+
+        /*if (result->LCI.len != 0) {
+            jobject LCI = createObject(env, "android/net/wifi/RttManager$wifiInformationElement");
+            setIntField(env, LCI, "id",           (int) result.LCI.id);
+            //setStringField(env, LCI,"data",        result.LCI.data);
+            setObjectField(env, rttResult, "LCI",
+                    "android/net/wifi/RttManager$WifiInformationElement;", LCI);
+        }
+
+        if (result.LCR.len != 0) {
+            jobject LCR = createObject(env, "android/net/wifi/RttManager$wifiInformationElement");
+            setIntField(env, LCR, "id",           result.LCI.id);
+            //setStringField(env, LCR,"data",        result.LCI.data);
+            setObjectField(env, rttResult, "LCR",
+                    "android/net/wifi/RttManager$WifiInformationElement;", LCR);
+        }*/
 
         env->SetObjectArrayElement(rttResults, i, rttResult);
     }
@@ -1110,9 +1132,33 @@ static jboolean android_net_wifi_requestRange(
         config.type = (wifi_rtt_type)getIntField(env, param, "requestType");
         config.peer = (wifi_peer_type)getIntField(env, param, "deviceType");
         config.channel.center_freq = getIntField(env, param, "frequency");
-        config.channel.width = (wifi_channel_width)getIntField(env, param, "channelWidth");
-        config.num_frames_per_burst = getIntField(env, param, "num_samples");
-        config.num_retries_per_measurement_frame = getIntField(env, param, "num_retries");
+        config.channel.width = (wifi_channel_width) getIntField(env, param, "channelWidth");
+        config.channel.center_freq0 = getIntField(env, param, "centerFreq0");
+        config.channel.center_freq1 = getIntField(env, param, "centerFreq1");
+
+        config.num_burst = getIntField(env, param, "numberBurst");
+        config.interval = (unsigned) getIntField(env, param, "interval");
+        config.num_frames_per_burst = (unsigned) getIntField(env, param, "numSamplesPerBurst");
+        config.num_retries_per_measurement_frame = (unsigned) getIntField(env, param,
+                "numRetriesPerMeasurementFrame");
+        config.num_retries_per_ftmr = (unsigned) getIntField(env, param, "numRetriesPerFTMR");
+        config.LCI_request = getBoolField(env, param, "LCIRequest") ? 1 : 0;
+        config.LCR_request = getBoolField(env, param, "LCRRequest") ? 1 : 0;
+        config.burst_timeout = (unsigned) getIntField(env, param, "burstTimeout");
+        config.preamble = getIntField(env, param, "preamble");
+        config.bw = getIntField(env, param, "bandwidth");
+
+        ALOGD("RTT request destination %d: type is %d, peer is %d, bw is %d, center_freq is %d ", i,
+                config.type,config.peer, config.channel.width,  config.channel.center_freq0);
+        ALOGD("center_freq0 is %d, center_freq1 is %d, num_burst is %d,interval is %d",
+                config.channel.center_freq0, config.channel.center_freq1, config.num_burst,
+                config.interval);
+        ALOGD("frames_per_burst is %d, retries of measurement frame is %d, retries_per_ftmr is %d",
+                config.num_frames_per_burst, config.num_retries_per_measurement_frame,
+                config.num_retries_per_ftmr);
+        ALOGD("LCI_requestis %d, LCR_request is %d,  burst_timeout is %d, preamble is %d, bw is %d",
+                config.LCI_request, config.LCR_request, config.burst_timeout, config.preamble,
+                config.bw);
     }
 
     wifi_rtt_event_handler handler;
@@ -1207,6 +1253,73 @@ static jboolean android_net_wifi_setDfsFlag(JNIEnv *env, jclass cls, jint iface,
     return result == WIFI_SUCCESS;
 }
 
+static jobject android_net_wifi_get_rtt_capabilities(JNIEnv *env, jclass cls, jint iface) {
+    wifi_rtt_capabilities rtt_capabilities;
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    wifi_error ret = wifi_get_rtt_capabilities(handle, &rtt_capabilities);
+
+    if(WIFI_SUCCESS == ret) {
+         jobject capabilities = createObject(env, "android/net/wifi/RttManager$RttCapabilities");
+         setBooleanField(env, capabilities, "oneSidedRttSupported",
+                 rtt_capabilities.rtt_one_sided_supported == 1);
+         setBooleanField(env, capabilities, "twoSided11McRttSupported",
+                 rtt_capabilities.rtt_ftm_supported == 1);
+         setBooleanField(env, capabilities, "lciSupported",
+                 rtt_capabilities.lci_support);
+         setBooleanField(env,capabilities, "lcrSupported",
+                 rtt_capabilities.lcr_support);
+         setIntField(env, capabilities, "preambleSupported",
+                 rtt_capabilities.preamble_support);
+         setIntField(env, capabilities, "bwSupported",
+                 rtt_capabilities.bw_support);
+         ALOGD("One side RTT is: %s", rtt_capabilities.rtt_one_sided_supported ==1 ? "support" :
+                 "not support");
+         ALOGD("Two side RTT is: %s", rtt_capabilities.rtt_ftm_supported == 1 ? "support" :
+                 "not support");
+         ALOGD("LCR is: %s", rtt_capabilities.lcr_support == 1 ? "support" : "not support");
+
+         ALOGD("LCI is: %s", rtt_capabilities.lci_support == 1 ? "support" : "not support");
+
+         ALOGD("Support Preamble is : %d support BW is %d", rtt_capabilities.preamble_support,
+                 rtt_capabilities.bw_support);
+         return capabilities;
+    } else {
+        return NULL;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Debug framework
+// ----------------------------------------------------------------------------
+
+static void onRingBufferData(wifi_request_id id, wifi_ring_buffer_id ring_id, char * buffer,
+int buffer_size, wifi_ring_buffer_status *status) {
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onRingBufferData called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+
+    reportEvent(env, mCls, "onDataAvailable", "(I[Landroid/net/wifi/WiFiLogger$LogData;)V",
+        0, 0);
+}
+
+static jboolean android_net_wifi_start_logging(JNIEnv *env, jclass cls, jint iface)  {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("android_net_wifi_start_logging = %p", handle);
+
+    if (handle == 0) {
+        return WIFI_ERROR_UNINITIALIZED;
+    }
+    wifi_ring_buffer_data_handler handler;
+    handler.on_ring_buffer_data = &onRingBufferData;
+
+    wifi_error result = WIFI_SUCCESS; //ifi_start_logging(handle, 1, 0, 5, 4*1024,(u8*)"wifi_connectivity_events", handler);
+
+    return result;
+}
+
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -1258,7 +1371,10 @@ static JNINativeMethod gWifiMethods[] = {
     { "setScanningMacOuiNative", "(I[B)Z",  (void*) android_net_wifi_setScanningMacOui},
     { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels},
     { "setDfsFlagNative",         "(IZ)Z",  (void*) android_net_wifi_setDfsFlag},
-    { "toggleInterfaceNative",    "(I)Z",  (void*) android_net_wifi_toggle_interface}
+    { "toggleInterfaceNative",    "(I)Z",  (void*) android_net_wifi_toggle_interface},
+    { "getRttCapabilitiesNative", "(I)Landroid/net/wifi/RttManager$RttCapabilities;",
+            (void*) android_net_wifi_get_rtt_capabilities},
+    { "startLogging", "(I)Z", (void*) android_net_wifi_start_logging}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

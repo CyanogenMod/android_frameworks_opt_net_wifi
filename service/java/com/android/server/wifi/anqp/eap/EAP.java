@@ -1,6 +1,7 @@
 package com.android.server.wifi.anqp.eap;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 /**
@@ -138,6 +139,19 @@ public abstract class EAP {
     public static EAPMethodID mapEAPMethod(int methodID) {
         return sEapIds.get(methodID);
     }
+
+    public static Integer mapEAPMethod(EAPMethodID methodID) {
+        Iterator it = sEapIds.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry e = (Map.Entry) it.next();
+            if (e.getValue() == methodID) {
+                return (Integer) e.getKey();
+            }
+        }
+
+        return null;
+    }
+
     public static AuthInfoID mapAuthMethod(int methodID) {
         return sAuthIds.get(methodID);
     }
