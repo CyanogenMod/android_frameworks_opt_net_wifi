@@ -115,7 +115,6 @@ import com.android.server.net.NetlinkTracker;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
-import com.android.server.wifi.passpoint.WifiPasspointServiceImpl;
 
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -490,7 +489,6 @@ public class WifiStateMachine extends StateMachine {
     private AsyncChannel mReplyChannel = new AsyncChannel();
 
     private WifiP2pServiceImpl mWifiP2pServiceImpl;
-    private WifiPasspointServiceImpl mPasspointServiceImpl;
 
     // Used to initiate a connection with WifiP2pService
     private AsyncChannel mWifiP2pChannel;
@@ -996,8 +994,6 @@ public class WifiStateMachine extends StateMachine {
         mWifiP2pServiceImpl = (WifiP2pServiceImpl)IWifiP2pManager.Stub.asInterface(s1);
 
         IBinder s2 = ServiceManager.getService(Context.WIFI_PASSPOINT_SERVICE);
-        mPasspointServiceImpl =
-                (WifiPasspointServiceImpl)IWifiPasspointManager.Stub.asInterface(s2);
 
         mNetworkInfo.setIsAvailable(false);
         mLastBssid = null;

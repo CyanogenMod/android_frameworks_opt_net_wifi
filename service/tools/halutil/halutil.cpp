@@ -310,11 +310,9 @@ int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
       printMsg("Could not set interface %s flags \n", ifname);
       return ret;
     }else {
-      printMsg("set interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
+        printMsg("set interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
         printMsg("Could not set interface %s flags \n", ifname);
         return ret;
-    } else {
-        printMsg("set interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
     }
     printMsg("Done\n");
     return 0;
@@ -1901,7 +1899,9 @@ int main(int argc, char *argv[]) {
         char *country_code;
         if (argc > 2)
             country_code = argv[2];
-        wifi_set_country_code(wlan0Handle, country_code);
+        printf("Fix Setting wifi_set_country_code\n");
+        printf("***************************************\n");
+        //wifi_set_country_code(wlan0Handle, country_code);
     } else if (strcmp(argv[1], "-help") == 0) {
         printUsage();
     }
