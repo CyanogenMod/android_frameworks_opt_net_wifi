@@ -732,9 +732,10 @@ public class WifiNative {
         }
     }
 
-    public boolean simAuthResponse(int id, String response) {
+    public boolean simAuthResponse(int id, String type, String response) {
+        // with type = GSM-AUTH, UMTS-AUTH or UMTS-AUTS
         synchronized (mLock) {
-            return doBooleanCommand("CTRL-RSP-SIM-" + id + ":GSM-AUTH" + response);
+            return doBooleanCommand("CTRL-RSP-SIM-" + id + ":" + type + response);
         }
     }
 

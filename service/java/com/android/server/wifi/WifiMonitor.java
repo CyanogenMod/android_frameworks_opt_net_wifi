@@ -278,6 +278,19 @@ public class WifiMonitor {
             Pattern.compile("SIM-([0-9]*):GSM-AUTH((:[0-9a-f]+)+) needed for SSID (.+)");
 
     /**
+     * Regex pattern for extracting an external 3G sim authentication request from a string.
+     * Matches a strings like the following:<pre>
+     * CTRL-REQ-SIM-<network id>:UMTS-AUTH:<RAND>:<AUTN> needed for SSID <SSID>
+     * This pattern should find
+     *    1 - id
+     *    2 - Rand
+     *    3 - Autn
+     *    4 - SSID
+     */
+    private static Pattern mRequestUmtsAuthPattern =
+            Pattern.compile("SIM-([0-9]*):UMTS-AUTH:([0-9a-f]+):([0-9a-f]+) needed for SSID (.+)");
+
+    /**
      * Regex pattern for extracting SSIDs from request identity string.
      * Matches a strings like the following:<pre>
      * CTRL-REQ-IDENTITY-xx:Identity needed for SSID XXXX</pre>
@@ -1248,14 +1261,23 @@ public class WifiMonitor {
             }
             mStateMachine.sendMessage(SUP_REQUEST_IDENTITY, eventLogCounter, reason, SSID);
         } else if (requestName.startsWith(SIM_STR)) {
-            Matcher match = mRequestGsmAuthPattern.matcher(requestName);
-            if (match.find()) {
-                WifiStateMachine.SimAuthRequestData data =
-                        new WifiStateMachine.SimAuthRequestData();
-                data.networkId = Integer.parseInt(match.group(1));
+            Matcher matchGsm = mRequestGsmAuthPattern.matcher(requestName);
+            Matcher matchUmts = mRequestUmtsAuthPattern.matcher(requestName);
+            WifiStateMachine.SimAuthRequestData data =
+                    new WifiStateMachine.SimAuthRequestData();
+            if (matchGsm.find()) {
+                data.networkId = Integer.parseInt(matchGsm.group(1));
                 data.protocol = WifiEnterpriseConfig.Eap.SIM;
-                data.ssid = match.group(4);
-                data.challenges = match.group(2).split(":");
+                data.ssid = matchGsm.group(4);
+                data.data = matchGsm.group(2).split(":");
+                mStateMachine.sendMessage(SUP_REQUEST_SIM_AUTH, data);
+            } else if (matchUmts.find()) {
+                data.networkId = Integer.parseInt(matchUmts.group(1));
+                data.protocol = WifiEnterpriseConfig.Eap.AKA;
+                data.ssid = matchUmts.group(4);
+                data.data = new String[2];
+                data.data[0] = matchUmts.group(2);
+                data.data[1] = matchUmts.group(3);
                 mStateMachine.sendMessage(SUP_REQUEST_SIM_AUTH, data);
             } else {
                 Log.e(TAG, "couldn't parse SIM auth request - " + requestName);
