@@ -828,7 +828,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
                 int rxIdleCurrent =
                      mContext.getResources().getInteger(
-                             com.android.internal.R.integer.config_bluetooth_idle_cur_ma);
+                             com.android.internal.R.integer.config_wifi_idle_receive_cur_ma);
                 int rxCurrent =
                      mContext.getResources().getInteger(
                              com.android.internal.R.integer.config_wifi_active_rx_cur_ma);
