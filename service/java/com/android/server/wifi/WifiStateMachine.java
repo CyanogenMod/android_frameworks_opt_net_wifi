@@ -556,6 +556,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     // Used to filter out requests we couldn't possibly satisfy.
     private final NetworkCapabilities mNetworkCapabilitiesFilter = new NetworkCapabilities();
 
+    private static final int WIFI_AUTO_CONNECT_TYPE_AUTO = 0;
+
     /* The base for wifi message types */
     static final int BASE = Protocol.BASE_WIFI;
     /* Start the supplicant */
@@ -1227,6 +1229,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     public void onChange(boolean selfChange) {
                         mUserWantsSuspendOpt.set(Settings.Global.getInt(mContext.getContentResolver(),
                                 Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED, 1) == 1);
+                    }
+                });
+
+        mContext.getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                Settings.System.WIFI_AUTO_CONNECT_TYPE), false,
+                new ContentObserver(getHandler()) {
+                    @Override
+                    public void onChange(boolean selfChange) {
+                           checkAndSetAutoConnection();
                     }
                 });
 
@@ -2269,7 +2280,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     boolean enableBackgroundScan(boolean enable) {
         if (enable) {
-            mWifiConfigStore.enableAllNetworks();
+            if (mContext.getResources().getBoolean(R.bool.wifi_autocon)
+                && !shouldAutoConnect()) {
+                if (DBG) {
+                    logd("No auto connect, skip enable networks during pno");
+                }
+            } else {
+                mWifiConfigStore.enableAllNetworks();
+            }
         }
         boolean ret = mWifiNative.enableBackgroundScan(enable);
         if (ret) {
@@ -3456,7 +3474,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     + " suppState:" + mSupplicantStateTracker.getSupplicantStateName());
         }
         enableRssiPolling(screenOn);
-        if (screenOn) enableAllNetworks();
+        if (screenOn) {
+            if (mContext.getResources().getBoolean(R.bool.wifi_autocon)) {
+                if (!shouldAutoConnect()) {
+                    if (DBG) {
+                        logd("Don't auto connect skip enable networks if screen on");
+                    }
+                } else {
+                    if (!mWifiConfigStore.enableAutoJoinWhenAssociated.get()) {
+                        enableAllNetworks();
+                    }
+                }
+            } else {
+               enableAllNetworks();
+            }
+        }
         if (mUserWantsSuspendOpt.get()) {
             if (screenOn) {
                 sendMessage(CMD_SET_SUSPEND_OPT_ENABLED, 0, 0);
@@ -4096,6 +4128,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         if (attemptAutoJoin) {
             synchronized (mScanResultCache) {
+                if (mContext.getResources().getBoolean(R.bool.wifi_autocon)
+                        && !shouldAutoConnect()) {
+                    attemptAutoJoin = false;
+                }
                 // AutoJoincontroller will directly acces the scan result list and update it with
                 // ScanResult status
                 mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
@@ -5003,6 +5039,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
 
         clearCurrentConfigBSSID("handleNetworkDisconnect");
+        if (mContext.getResources().getBoolean(R.bool.wifi_autocon)
+                && !shouldAutoConnect()) {
+            /*
+             * The following logic shall address the requirement for the DUT to
+             * not reconnect to the last connected network when the Auto
+             * Connect is disabled. This asks for the user prompt for any
+             * connection attempt (as per the requirement)
+             */
+            disableLastNetwork();
+        }
 
         stopDhcp();
 
@@ -5915,6 +5961,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (mWifiConfigStore.enableVerboseLogging.get() > 0) {
                         enableVerboseLogging(mWifiConfigStore.enableVerboseLogging.get());
                     }
+                    if (mContext.getResources().getBoolean(R.bool.wifi_autocon)
+                        && !shouldAutoConnect()) {
+                        mWifiConfigStore.disableAllNetworks();
+                    }
                     initializeWpsDetails();
 
                     sendSupplicantConnectionChangedBroadcast(true);
@@ -6399,7 +6449,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mAlarmManager.cancel(mDriverStopIntent);
                         if (DBG) log("Delayed stop ignored due to start");
                         if (mOperationalMode == CONNECT_MODE) {
-                            mWifiConfigStore.enableAllNetworks();
+                             if (mContext.getResources().getBoolean(R.bool.wifi_autocon)
+                                    && !shouldAutoConnect()) {
+                                 if (DBG) {
+                                     logd("Auto connect disabled, skip enable networks");
+                                 }
+                             } else {
+                                 mWifiConfigStore.enableAllNetworks();
+                             }
                         }
                     }
                     break;
@@ -6621,7 +6678,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             mWifiConfigStore.loadAndEnableAllNetworks();
                             mWifiP2pChannel.sendMessage(CMD_ENABLE_P2P);
                         } else {
-                            mWifiConfigStore.enableAllNetworks();
+                            if (mContext.getResources().getBoolean(R.bool.wifi_autocon)
+                                   && !shouldAutoConnect()) {
+                                if (DBG) {
+                                    logd("No auto, skip enable networks on mode change");
+                                }
+                            } else {
+                                mWifiConfigStore.enableAllNetworks();
+                            }
                         }
 
                         // Try autojoining with recent network already present in the cache
@@ -8844,9 +8908,20 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sendMessageDelayed(obtainMessage(CMD_TEST_NETWORK_DISCONNECT,
                         testNetworkDisconnectCounter, 0), 15000);
             }
-
-            // Reenable all networks, allow for hidden networks to be scanned
-            mWifiConfigStore.enableAllNetworks();
+            if (!mWifiConfigStore.enableAutoJoinWhenAssociated.get()) {
+                if (mContext.getResources().getBoolean(R.bool.wifi_autocon)
+                        && !shouldAutoConnect()) {
+                    if (DBG) {
+                        logd("Auto connect disabled, skip enable networks");
+                    }
+                } else {
+                    // Reenable all networks, allow for hidden networks to be scanned
+                    mWifiConfigStore.enableAllNetworks();
+                }
+            } else {
+                 // Reenable all networks, allow for hidden networks to be scanned
+                 mWifiConfigStore.enableAllNetworks();
+            }
 
             mLastDriverRoamAttempt = 0;
 
@@ -10154,6 +10229,52 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             sendMessageDelayed(obtainMessage(CMD_PNO_PERIODIC_SCAN,
                                ++mPnoPeriodicScanToken, 0),
                                mDefaultFrameworkScanIntervalMs);
+        }
+    }
+
+    boolean shouldAutoConnect() {
+         int autoConnectPolicy = Settings.System.getInt(
+                 mContext.getContentResolver(),
+                 Settings.System.WIFI_AUTO_CONNECT_TYPE,
+                 WIFI_AUTO_CONNECT_TYPE_AUTO);
+         if (DBG) {
+             if (autoConnectPolicy == WIFI_AUTO_CONNECT_TYPE_AUTO) {
+                 Log.d(TAG, "Wlan connection type is auto, should auto connect");
+             } else {
+                 Log.d(TAG, "Shouldn't auto connect");
+             }
+         }
+         return (autoConnectPolicy == WIFI_AUTO_CONNECT_TYPE_AUTO);
+     }
+
+    void disableLastNetwork() {
+        if (getCurrentState() != mSupplicantStoppingState) {
+            mWifiConfigStore.disableNetwork(mLastNetworkId,
+                    WifiConfiguration.DISABLED_UNKNOWN_REASON);
+        }
+    }
+
+    void checkAndSetAutoConnection() {
+        if (mContext.getResources().getBoolean(R.bool.wifi_autocon)) {
+            if (shouldAutoConnect()){
+                if(!mWifiConfigStore.enableAutoJoinWhenAssociated.get()) {
+                   /*
+                    * This is AutoConnect-> Automatic, but auto join
+                    * is disabled , hence re enable supplicant auto
+                    * connection ability, also enable all networks
+                    * so that supplicant shall try for connection.
+                   */
+                   mWifiNative.enableAutoConnect(true);
+                   mWifiConfigStore.enableAllNetworks();
+                }
+            } else {
+                /*
+                 * This is AutoConnect -> Manual selection case
+                 * Device should not auto connect to network, hence
+                 * disable supplicants auto connection ability.
+                */
+                mWifiNative.enableAutoConnect(false);
+            }
         }
     }
 }
