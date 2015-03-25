@@ -3273,7 +3273,11 @@ public class WifiConfigStore extends IpConfigStore {
 
         for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
             WifiConfiguration config = getWifiConfigForHomeSP(entry.getKey());
-            cacheScanResultForConfig(config, scanDetail);
+            if (config != null) {
+                cacheScanResultForConfig(config, scanDetail);
+            } else {
+                /* perhaps the configuration was deleted?? */
+            }
         }
     }
 
