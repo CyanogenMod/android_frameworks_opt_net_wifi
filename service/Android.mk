@@ -45,9 +45,7 @@ LIB_WIFI_HAL := libwifi-hal
 ifeq ($(BOARD_WLAN_DEVICE), bcmdhd)
   LIB_WIFI_HAL := libwifi-hal-bcm
 else ifeq ($(BOARD_WLAN_DEVICE), qcwcn)
-  # this is commented because none of the nexus devices
-  # that sport Qualcomm's wifi have support for HAL
-  # LIB_WIFI_HAL := libwifi-hal-qcom
+  LIB_WIFI_HAL := libwifi-hal-qcom
 else ifeq ($(BOARD_WLAN_DEVICE), mrvl)
   # this is commented because none of the nexus devices
   # that sport Marvell's wifi have support for HAL
@@ -80,7 +78,8 @@ LOCAL_SHARED_LIBRARIES += \
 	libnl \
 	libandroid_runtime \
     	libstlport \
-	libutils
+	libutils \
+	libdl
 
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
@@ -114,7 +113,8 @@ LOCAL_SHARED_LIBRARIES += \
 	libhardware \
 	libhardware_legacy \
 	libandroid_runtime \
-    libnl
+	libnl \
+	libdl
 
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
