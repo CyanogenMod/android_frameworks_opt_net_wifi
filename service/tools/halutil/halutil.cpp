@@ -1275,7 +1275,7 @@ static void testPNO(){
     printMsg("configuring ePNO SSIDs num %u\n", num_epno_ssids);
     memset(&info, 0, sizeof(info));
     epnoCmdId = getNewCmdId();
-    int result = wifi_set_epno_list(epnoCmdId, wlan0Handle, num_epno_ssids, epno_ssid, handler);
+    int result = WIFI_SUCCESS+1;
      if (result == WIFI_SUCCESS) {
         bool startScanResult = startScan(&onScanResultsAvailable, stest_max_ap,
             stest_base_period, stest_threshold_percent, stest_threshold_num_scans);
