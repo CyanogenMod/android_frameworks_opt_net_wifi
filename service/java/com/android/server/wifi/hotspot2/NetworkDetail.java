@@ -162,9 +162,7 @@ public class NetworkDetail {
         int centerFreqIndex1 = 0;
         int centerFreqIndex2 = 0;
         boolean RTTResponder = false;
-
-        if (DBG) Log.e(TAG,"IE Length is %d" + data.remaining());
-	    RuntimeException exception = null;
+        RuntimeException exception = null;
 
 	    try {
 	        while (data.hasRemaining()) {
