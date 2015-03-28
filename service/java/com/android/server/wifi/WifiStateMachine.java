@@ -438,22 +438,6 @@ public class WifiStateMachine extends StateMachine {
             return true;
         }
 
-        // User initiated actions and system networks don't need to be queried
-        if ((allowOverride && mWifiConfigStore.checkConfigOverridePermission(message.sendingUid))
-            || (mWifiConfigStore.checkConfigOverridePermission(config.lastUpdateUid))) {
-            config.userApproved = WifiConfiguration.USER_APPROVED;
-
-            if (config.linkedConfigurations != null) {
-                for (String key : config.linkedConfigurations.keySet()) {
-                    WifiConfiguration linked =
-                        mWifiConfigStore.getWifiConfiguration(key);
-                    linked.userApproved = config.userApproved;
-                }
-            }
-
-            return false;
-        }
-
         switch (config.userApproved) {
             case WifiConfiguration.USER_APPROVED:
             case WifiConfiguration.USER_BANNED:
