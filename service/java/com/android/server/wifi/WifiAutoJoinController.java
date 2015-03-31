@@ -307,13 +307,13 @@ public class WifiAutoJoinController {
 
     void logDbg(String message, boolean stackTrace) {
         if (stackTrace) {
-            Log.e(TAG, message + " stack:"
+            Log.d(TAG, message + " stack:"
                     + Thread.currentThread().getStackTrace()[2].getMethodName() + " - "
                     + Thread.currentThread().getStackTrace()[3].getMethodName() + " - "
                     + Thread.currentThread().getStackTrace()[4].getMethodName() + " - "
                     + Thread.currentThread().getStackTrace()[5].getMethodName());
         } else {
-            Log.e(TAG, message);
+            Log.d(TAG, message);
         }
     }
 
@@ -539,7 +539,7 @@ public class WifiAutoJoinController {
                     Integer currentChoice = selected.connectChoices.get(config.configKey(true));
                     if (currentChoice != null) {
                         // User has made this choice multiple time in a row, so bump up a lot
-                        choice += currentChoice.intValue();
+                        choice += currentChoice;
                     }
                     // Add the visible config to the selected's connect choice list
                     selected.connectChoices.put(config.configKey(true), choice);
@@ -605,18 +605,21 @@ public class WifiAutoJoinController {
         }
 
         if (choice == null) {
-            //We didn't find the connect choice
-            return 0;
-        } else {
-            if (choice.intValue() < 0) {
-                choice = 20; // Compatibility with older files
-            }
-            return choice.intValue();
+            // We didn't find the connect choice; fallback to some default choices
+            int sourceScore = getSecurityScore(source);
+            int targetScore = getSecurityScore(target);
+            choice = targetScore - sourceScore;
         }
+
+        if (choice < 0) {
+            choice = 20; // Compatibility with older files
+        }
+
+        return choice;
     }
 
-    int compareWifiConfigurationsFromVisibility(WifiConfiguration a, int aRssiBoost,
-             WifiConfiguration b, int bRssiBoost) {
+    int compareWifiConfigurationsFromVisibility(WifiConfiguration.Visibility a, int aRssiBoost,
+             String dbgA, WifiConfiguration.Visibility b, int bRssiBoost, String dbgB) {
 
         int aRssiBoost5 = 0; // 5GHz RSSI boost to apply for purpose band selection (5GHz pref)
         int bRssiBoost5 = 0; // 5GHz RSSI boost to apply for purpose band selection (5GHz pref)
@@ -634,17 +637,17 @@ public class WifiAutoJoinController {
          * This implements band preference where we prefer 5GHz if RSSI5 is good enough, whereas
          * we prefer 2.4GHz otherwise.
          */
-        aRssiBoost5 = rssiBoostFrom5GHzRssi(a.visibility.rssi5, a.configKey() + "->");
-        bRssiBoost5 = rssiBoostFrom5GHzRssi(b.visibility.rssi5, b.configKey() + "->");
+        aRssiBoost5 = rssiBoostFrom5GHzRssi(a.rssi5, dbgA + "->");
+        bRssiBoost5 = rssiBoostFrom5GHzRssi(b.rssi5, dbgB + "->");
 
         // Select which band to use for a
-        if (a.visibility.rssi5 + aRssiBoost5 > a.visibility.rssi24) {
+        if (a.rssi5 + aRssiBoost5 > a.rssi24) {
             // Prefer a's 5GHz
             aPrefers5GHz = true;
         }
 
         // Select which band to use for b
-        if (b.visibility.rssi5 + bRssiBoost5 > b.visibility.rssi24) {
+        if (b.rssi5 + bRssiBoost5 > b.rssi24) {
             // Prefer b's 5GHz
             bPrefers5GHz = true;
         }
@@ -654,13 +657,13 @@ public class WifiAutoJoinController {
                 // If both a and b are on 5GHz then we don't apply the 5GHz RSSI boost to either
                 // one, but directly compare the RSSI values, this improves stability,
                 // since the 5GHz RSSI boost can introduce large fluctuations
-                aScore = a.visibility.rssi5 + aRssiBoost;
+                aScore = a.rssi5 + aRssiBoost;
             } else {
                 // If only a is on 5GHz, then apply the 5GHz preference boost to a
-                aScore = a.visibility.rssi5 + aRssiBoost + aRssiBoost5;
+                aScore = a.rssi5 + aRssiBoost + aRssiBoost5;
             }
         } else {
-            aScore = a.visibility.rssi24 + aRssiBoost;
+            aScore = a.rssi24 + aRssiBoost;
         }
 
         if (bPrefers5GHz) {
@@ -668,29 +671,30 @@ public class WifiAutoJoinController {
                 // If both a and b are on 5GHz then we don't apply the 5GHz RSSI boost to either
                 // one, but directly compare the RSSI values, this improves stability,
                 // since the 5GHz RSSI boost can introduce large fluctuations
-                bScore = b.visibility.rssi5 + bRssiBoost;
+                bScore = b.rssi5 + bRssiBoost;
             } else {
                 // If only b is on 5GHz, then apply the 5GHz preference boost to b
-                bScore = b.visibility.rssi5 + bRssiBoost + bRssiBoost5;
+                bScore = b.rssi5 + bRssiBoost + bRssiBoost5;
             }
         } else {
-            bScore = b.visibility.rssi24 + bRssiBoost;
+            bScore = b.rssi24 + bRssiBoost;
         }
+
         if (VDBG) {
-            logDbg("        " + a.configKey() + " is5=" + aPrefers5GHz + " score=" + aScore
-                    + " " + b.configKey() + " is5=" + bPrefers5GHz + " score=" + bScore);
+            logDbg("        " + dbgA + " is5=" + aPrefers5GHz + " score=" + aScore
+                    + " " + dbgB + " is5=" + bPrefers5GHz + " score=" + bScore);
         }
 
         // Debug only, record RSSI comparison parameters
-        if (a.visibility != null) {
-            a.visibility.score = aScore;
-            a.visibility.currentNetworkBoost = aRssiBoost;
-            a.visibility.bandPreferenceBoost = aRssiBoost5;
+        if (a != null) {
+            a.score = aScore;
+            a.currentNetworkBoost = aRssiBoost;
+            a.bandPreferenceBoost = aRssiBoost5;
         }
-        if (b.visibility != null) {
-            b.visibility.score = bScore;
-            b.visibility.currentNetworkBoost = bRssiBoost;
-            b.visibility.bandPreferenceBoost = bRssiBoost5;
+        if (b != null) {
+            b.score = bScore;
+            b.currentNetworkBoost = bRssiBoost;
+            b.bandPreferenceBoost = bRssiBoost5;
         }
 
         // Compare a and b
@@ -713,9 +717,6 @@ public class WifiAutoJoinController {
         // Boost used so as to favor current config
         int aRssiBoost = 0;
         int bRssiBoost = 0;
-
-        int scoreA;
-        int scoreB;
 
         // Retrieve the visibility
         WifiConfiguration.Visibility astatus = a.visibility;
@@ -747,7 +748,9 @@ public class WifiAutoJoinController {
             );
         }
 
-        order = compareWifiConfigurationsFromVisibility(a, aRssiBoost, b, bRssiBoost);
+        order = compareWifiConfigurationsFromVisibility(
+                a.visibility, aRssiBoost, a.configKey(),
+                b.visibility, bRssiBoost, b.configKey());
 
         // Normalize the order to [-50, +50]
         if (order > 50) order = 50;
@@ -883,15 +886,6 @@ public class WifiAutoJoinController {
                         + " over " + b.configKey());
             }
             return -1; // a is of higher priority - descending
-        }
-
-        int aSecurityScore = getSecurityScore(a);
-        int bSecurityScore = getSecurityScore(b);
-
-        if (aSecurityScore < bSecurityScore) {
-            order += 2;
-        } else if (bSecurityScore < aSecurityScore) {
-            order -= 2;
         }
 
         // Apply RSSI, in the range [-5, +5]
@@ -1564,7 +1558,6 @@ public class WifiAutoJoinController {
                 }
             }
 
-            // !!! JNo: This ought to be checked here rather than below...
             if (config.visibility == null) {
                 continue;
             }
@@ -1601,10 +1594,6 @@ public class WifiAutoJoinController {
             if (lastSelectedConfiguration != null &&
                     config.configKey().equals(lastSelectedConfiguration)) {
                 isLastSelected = true;
-            }
-
-            if (config.visibility == null) {
-                continue;
             }
 
             if (config.lastRoamingFailure != 0

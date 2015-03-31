@@ -173,8 +173,8 @@ public class WifiStateMachine extends StateMachine {
     protected void loge(String s) {
         Log.e(getName(), s);
     }
-    protected void log(String s) {;
-        Log.e(getName(), s);
+    protected void log(String s) {
+        Log.d(getName(), s);
     }
 
     private WifiMonitor mWifiMonitor;
