@@ -704,9 +704,12 @@ static void retrieveScanResults() {
 
     printScanHeader();
     for (int i = 0; i < num_results; i++) {
+        printMsg("ScanId = %d, Flags = %x, num results = %d\n",
+            results[i].scan_id, results[i].flags, results[i].num_results);
         for (int j = 0; j < results[i].num_results; j++) {
             printScanResult(results[i].results[j]);
         }
+        printMsg("\n");
     }
 }
 
