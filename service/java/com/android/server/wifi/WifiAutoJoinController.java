@@ -78,7 +78,7 @@ public class WifiAutoJoinController {
 
     private String mCurrentConfigurationKey = null; //used by autojoin
 
-    private final HashMap<String, ScanResult> scanResultCache = new HashMap<>();
+    private final HashMap<String, ScanDetail> scanResultCache = new HashMap<>();
 
     private WifiConnectionStatistics mWifiConnectionStatistics;
 
@@ -164,12 +164,11 @@ public class WifiAutoJoinController {
                     + Integer.valueOf(scanResultCache.size()) + " now " + Long.valueOf(milli));
         }
 
-        Iterator<HashMap.Entry<String,ScanResult>> iter = scanResultCache.entrySet().iterator();
+        Iterator<HashMap.Entry<String,ScanDetail>> iter = scanResultCache.entrySet().iterator();
         while (iter.hasNext()) {
-            HashMap.Entry<String,ScanResult> entry = iter.next();
-            ScanResult result = entry.getValue();
-
-            if ((result.seen + delay) < milli) {
+            HashMap.Entry<String,ScanDetail> entry = iter.next();
+            ScanDetail scanDetail = entry.getValue();
+            if ((scanDetail.getSeen() + delay) < milli) {
                 iter.remove();
             }
         }
@@ -178,8 +177,9 @@ public class WifiAutoJoinController {
 
     void averageRssiAndRemoveFromCache(ScanResult result) {
         // Fetch the previous instance for this result
-        ScanResult sr = scanResultCache.get(result.BSSID);
-        if (sr != null) {
+        ScanDetail sd = scanResultCache.get(result.BSSID);
+        if (sd != null) {
+            ScanResult sr = sd.getScanResult();
             if (mWifiConfigStore.scanResultRssiLevelPatchUp != 0
                     && result.level == 0
                     && sr.level < -20) {
@@ -237,7 +237,7 @@ public class WifiAutoJoinController {
             if (result.SSID == null) continue;
 
             // Make sure we record the last time we saw this result
-            result.seen = System.currentTimeMillis();
+            scanDetail.setSeen();
 
             averageRssiAndRemoveFromCache(result);
 
@@ -255,7 +255,7 @@ public class WifiAutoJoinController {
             }
 
             // scanResultCache.put(result.BSSID, new ScanResult(result));
-            scanResultCache.put(result.BSSID, result);
+            scanResultCache.put(result.BSSID, scanDetail);
             // Add this BSSID to the scanResultCache of a Saved WifiConfiguration
             didAssociate = mWifiConfigStore.updateSavedNetworkHistory(scanDetail);
 
@@ -264,7 +264,7 @@ public class WifiAutoJoinController {
                 // We couldn't associate the scan result to a Saved WifiConfiguration
                 // Hence it is untrusted
                 result.untrusted = true;
-                associatedConfig = mWifiConfigStore.associateWithConfiguration(result);
+                associatedConfig = mWifiConfigStore.associateWithConfiguration(scanDetail);
                 if (associatedConfig != null && associatedConfig.SSID != null) {
                     if (VDBG) {
                         logDbg("addToScanCache save associated config "
@@ -1047,16 +1047,20 @@ public class WifiAutoJoinController {
             }
             return a;
         }
-        if (current.scanResultCache == null) {
+
+        WifiConfigStore.ScanDetailCache scanDetailCache =
+                mWifiConfigStore.getScanDetailCache(current);
+
+        if (scanDetailCache == null) {
             if (VDBG)   {
                 logDbg("attemptRoam no scan cache");
             }
             return a;
         }
-        if (current.scanResultCache.size() > 6) {
+        if (scanDetailCache.size() > 6) {
             if (VDBG)   {
                 logDbg("attemptRoam scan cache size "
-                        + current.scanResultCache.size() + " --> bail");
+                        + scanDetailCache.size() + " --> bail");
             }
             // Implement same SSID roaming only for configurations
             // that have less than 4 BSSIDs
@@ -1075,13 +1079,14 @@ public class WifiAutoJoinController {
         // relative strength of 5 and 2.4 GHz BSSIDs
         long nowMs = System.currentTimeMillis();
 
-        for (ScanResult b : current.scanResultCache.values()) {
+        for (ScanDetail sd : scanDetailCache.values()) {
+            ScanResult b = sd.getScanResult();
             int bRssiBoost5 = 0;
             int aRssiBoost5 = 0;
             int bRssiBoost = 0;
             int aRssiBoost = 0;
-            if ((b.seen == 0) || (b.BSSID == null)
-                    || ((nowMs - b.seen) > age)
+            if ((sd.getSeen() == 0) || (b.BSSID == null)
+                    || ((nowMs - sd.getSeen()) > age)
                     || b.autoJoinStatus != ScanResult.ENABLED
                     || b.numIpConfigFailures > 8) {
                 continue;
@@ -1194,7 +1199,8 @@ public class WifiAutoJoinController {
             }
             return WifiNetworkScoreCache.INVALID_NETWORK_SCORE;
         }
-        if (config.scanResultCache == null) {
+
+        if (mWifiConfigStore.getScanDetailCache(config) == null) {
             if (VDBG) {
                 logDbg("       getConfigNetworkScore for " + config.configKey()
                         + " -> no scan cache");
@@ -1208,8 +1214,9 @@ public class WifiAutoJoinController {
         int startScore = -10000;
 
         // Run thru all cached scan results
-        for (ScanResult result : config.scanResultCache.values()) {
-            if ((nowMs - result.seen) < age) {
+        for (ScanDetail sd : mWifiConfigStore.getScanDetailCache(config).values()) {
+            ScanResult result = sd.getScanResult();
+            if ((nowMs - sd.getSeen()) < age) {
                 int sc = mNetworkScoreCache.getNetworkScore(result, isActive);
                 if (sc > startScore) {
                     startScore = sc;
@@ -1276,14 +1283,16 @@ public class WifiAutoJoinController {
             return currentNetworkHasScoreCurve;
         }
 
-        if (config.scanResultCache == null || config.scanResultCache.isEmpty()) {
+        if (mWifiConfigStore.getScanDetailCache(config) == null
+                || mWifiConfigStore.getScanDetailCache(config).isEmpty()) {
             return false;
         }
 
         long currentTimeMs = System.currentTimeMillis();
-        for (ScanResult result : config.scanResultCache.values()) {
-            if (currentTimeMs > result.seen
-                    && currentTimeMs - result.seen < ephemeralOutOfRangeTimeoutMs
+        for (ScanDetail sd : mWifiConfigStore.getScanDetailCache(config).values()) {
+            ScanResult result = sd.getScanResult();
+            if (currentTimeMs > sd.getSeen()
+                    && currentTimeMs - sd.getSeen() < ephemeralOutOfRangeTimeoutMs
                     && mNetworkScoreCache.hasScoreCurve(result)) {
                 if (DBG) {
                     logDbg("Found scored BSSID, keeping network: " + result.BSSID);
@@ -1487,7 +1496,7 @@ public class WifiAutoJoinController {
                 mWifiConfigStore.getRecentConfiguredNetworks(mScanResultAutoJoinAge, false);
         if (list == null) {
             if (VDBG)  logDbg("attemptAutoJoin nothing known=" +
-                    mWifiConfigStore.getconfiguredNetworkSize());
+                    mWifiConfigStore.getConfiguredNetworkSize());
             return false;
         }
 
@@ -1730,10 +1739,11 @@ public class WifiAutoJoinController {
             long nowMs = System.currentTimeMillis();
             int currentScore = -10000;
             // The untrusted network with highest score
-            ScanResult untrustedCandidate = null;
+            ScanDetail untrustedCandidate = null;
             // Look for untrusted scored network only if the current candidate is bad
             if (isBadCandidate(rssi24, rssi5)) {
-                for (ScanResult result : scanResultCache.values()) {
+                for (ScanDetail scanDetail : scanResultCache.values()) {
+                    ScanResult result = scanDetail.getScanResult();
                     // We look only at untrusted networks with a valid SSID
                     // A trusted result would have been looked at thru it's Wificonfiguration
                     if (TextUtils.isEmpty(result.SSID) || !result.untrusted ||
@@ -1756,7 +1766,7 @@ public class WifiAutoJoinController {
                                 && score > currentScore) {
                             // Highest score: Select this candidate
                             currentScore = score;
-                            untrustedCandidate = result;
+                            untrustedCandidate = scanDetail;
                             if (VDBG) {
                                 logDbg("AutoJoinController: found untrusted candidate "
                                         + result.SSID

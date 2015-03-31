@@ -175,7 +175,205 @@ public class WifiConfigStore extends IpConfigStore {
     private HashMap<Integer, HomeSP> mConfiguredHomeSPs = new HashMap<Integer, HomeSP>();
 
 
-    private HashMap<HomeSP, PasspointMatchInfo> mMatchInfoList;
+    static class ScanDetailCache {
+        private WifiConfiguration mConfig;
+        private HashMap<String, ScanDetail> mMap;
+
+        ScanDetailCache(WifiConfiguration config) {
+            mConfig = config;
+            mMap = new HashMap();
+        }
+
+        void put(ScanDetail scanDetail) {
+            mMap.put(scanDetail.getBSSIDString(), scanDetail);
+        }
+
+        ScanResult get(String bssid) {
+            ScanDetail scanDetail = getScanDetail(bssid);
+            return scanDetail == null ? null : scanDetail.getScanResult();
+        }
+
+        ScanDetail getScanDetail(String bssid) {
+            return mMap.get(bssid);
+        }
+
+        void remove(String bssid) {
+            mMap.remove(bssid);
+        }
+
+        int size() {
+            return mMap.size();
+        }
+
+        boolean isEmpty() {
+            return size() == 0;
+        }
+
+        ScanDetail getFirst() {
+            Iterator<ScanDetail> it = mMap.values().iterator();
+            return it.hasNext() ? it.next() : null;
+        }
+
+        Collection<String> keySet() {
+            return mMap.keySet();
+        }
+
+        Collection<ScanDetail> values() {
+            return mMap.values();
+        }
+
+        public void trim(int num) {
+            int currentSize = mMap.size();
+            if (currentSize <= num) {
+                return; // Nothing to trim
+            }
+            ArrayList<ScanDetail> list = new ArrayList<ScanDetail>(mMap.values());
+            if (list.size() != 0) {
+                // Sort by descending timestamp
+                Collections.sort(list, new Comparator() {
+                    public int compare(Object o1, Object o2) {
+                        ScanDetail a = (ScanDetail)o1;
+                        ScanDetail b = (ScanDetail)o2;
+                        if (a.getSeen() > b.getSeen()) {
+                            return 1;
+                        }
+                        if (a.getSeen() < b.getSeen()) {
+                            return -1;
+                        }
+                        return a.getBSSIDString().compareTo(b.getBSSIDString());
+                    }
+                });
+            }
+            for (int i = 0; i < currentSize - num ; i++) {
+                // Remove oldest results from scan cache
+                ScanDetail result = list.get(i);
+                mMap.remove(result.getBSSIDString());
+            }
+        }
+
+        /* @hide */
+        private ArrayList<ScanDetail> sort() {
+            ArrayList<ScanDetail> list = new ArrayList<ScanDetail>(mMap.values());
+            if (list.size() != 0) {
+                Collections.sort(list, new Comparator() {
+                    public int compare(Object o1, Object o2) {
+                        ScanResult a = ((ScanDetail)o1).getScanResult();
+                        ScanResult b = ((ScanDetail)o2).getScanResult();
+                        if (a.numIpConfigFailures > b.numIpConfigFailures) {
+                            return 1;
+                        }
+                        if (a.numIpConfigFailures < b.numIpConfigFailures) {
+                            return -1;
+                        }
+                        if (a.seen > b.seen) {
+                            return -1;
+                        }
+                        if (a.seen < b.seen) {
+                            return 1;
+                        }
+                        if (a.level > b.level) {
+                            return -1;
+                        }
+                        if (a.level < b.level) {
+                            return 1;
+                        }
+                        return a.BSSID.compareTo(b.BSSID);
+                    }
+                });
+            }
+            return list;
+        }
+
+        public WifiConfiguration.Visibility getVisibility(long age) {
+            WifiConfiguration.Visibility status = new WifiConfiguration.Visibility();
+
+            long now_ms = System.currentTimeMillis();
+            for(ScanDetail scanDetail : values()) {
+                ScanResult result = scanDetail.getScanResult();
+                if (scanDetail.getSeen() == 0)
+                    continue;
+
+                if (result.is5GHz()) {
+                    //strictly speaking: [4915, 5825]
+                    //number of known BSSID on 5GHz band
+                    status.num5 = status.num5 + 1;
+                } else if (result.is24GHz()) {
+                    //strictly speaking: [2412, 2482]
+                    //number of known BSSID on 2.4Ghz band
+                    status.num24 = status.num24 + 1;
+                }
+
+                if ((now_ms - result.seen) > age) continue;
+
+                if (result.is5GHz()) {
+                    if (result.level > status.rssi5) {
+                        status.rssi5 = result.level;
+                        status.age5 = result.seen;
+                        status.BSSID5 = result.BSSID;
+                    }
+                } else if (result.is24GHz()) {
+                    if (result.level > status.rssi24) {
+                        status.rssi24 = result.level;
+                        status.age24 = result.seen;
+                        status.BSSID24 = result.BSSID;
+                    }
+                }
+            }
+
+            return status;
+        }
+
+
+
+        @Override
+        public String toString() {
+            StringBuilder sbuf = new StringBuilder();
+            sbuf.append("Scan Cache:  ").append('\n');
+
+            ArrayList<ScanDetail> list = sort();
+            long now_ms = System.currentTimeMillis();
+            if (list.size() > 0) {
+                for (ScanDetail scanDetail : list) {
+                    ScanResult result = scanDetail.getScanResult();
+                    long milli = now_ms - scanDetail.getSeen();
+                    long ageSec = 0;
+                    long ageMin = 0;
+                    long ageHour = 0;
+                    long ageMilli = 0;
+                    long ageDay = 0;
+                    if (now_ms > scanDetail.getSeen() && scanDetail.getSeen() > 0) {
+                        ageMilli = milli % 1000;
+                        ageSec   = (milli / 1000) % 60;
+                        ageMin   = (milli / (60*1000)) % 60;
+                        ageHour  = (milli / (60*60*1000)) % 24;
+                        ageDay   = (milli / (24*60*60*1000));
+                    }
+                    sbuf.append("{").append(result.BSSID).append(",").append(result.frequency);
+                    sbuf.append(",").append(String.format("%3d", result.level));
+                    if (result.autoJoinStatus > 0) {
+                        sbuf.append(",st=").append(result.autoJoinStatus);
+                    }
+                    if (ageSec > 0 || ageMilli > 0) {
+                        sbuf.append(String.format(",%4d.%02d.%02d.%02d.%03dms", ageDay,
+                                ageHour, ageMin, ageSec, ageMilli));
+                    }
+                    if (result.numIpConfigFailures > 0) {
+                        sbuf.append(",ipfail=");
+                        sbuf.append(result.numIpConfigFailures);
+                    }
+                    sbuf.append("} ");
+                }
+                sbuf.append('\n');
+            }
+
+            return sbuf.toString();
+        }
+
+    }
+
+
+    /* Stores a map of NetworkId to ScanCache */
+    private HashMap<Integer, ScanDetailCache> mScanDetailCaches;
 
     /**
      * Framework keeps a list of (the CRC32 hashes of) all SSIDs that where deleted by user,
@@ -612,6 +810,7 @@ public class WifiConfigStore extends IpConfigStore {
         Chronograph chronograph = new Chronograph();
         mAnqpCache = new AnqpCache(chronograph);
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
+        mScanDetailCaches = new HashMap();
     }
 
     void enableVerboseLogging(int verbose) {
@@ -708,7 +907,7 @@ public class WifiConfigStore extends IpConfigStore {
         return readNetworkVariablesFromSupplicantFile("psk");
     }
 
-    int getconfiguredNetworkSize() {
+    int getConfiguredNetworkSize() {
         if (mConfiguredNetworks == null)
             return 0;
         return mConfiguredNetworks.size();
@@ -731,7 +930,11 @@ public class WifiConfigStore extends IpConfigStore {
             }
 
             // Calculate the RSSI for scan results that are more recent than milli
-            config.setVisibility(milli);
+            ScanDetailCache cache = getScanDetailCache(config);
+            if (cache == null) {
+                continue;
+            }
+            config.setVisibility(cache.getVisibility(milli));
             if (config.visibility == null) {
                 continue;
             }
@@ -753,14 +956,15 @@ public class WifiConfigStore extends IpConfigStore {
      */
     void updateConfiguration(WifiInfo info) {
         WifiConfiguration config = getWifiConfiguration(info.getNetworkId());
-        if (config != null && config.scanResultCache != null) {
-            ScanResult result = config.scanResultCache.get(info.getBSSID());
-            if (result != null) {
+        if (config != null && getScanDetailCache(config) != null) {
+            ScanDetail scanDetail = getScanDetailCache(config).getScanDetail(info.getBSSID());
+            if (scanDetail != null) {
+                ScanResult result = scanDetail.getScanResult();
                 long previousSeen = result.seen;
                 int previousRssi = result.level;
 
                 // Update the scan result
-                result.seen = System.currentTimeMillis();
+                scanDetail.setSeen();
                 result.level = info.getRssi();
 
                 // Average the RSSI value
@@ -904,15 +1108,13 @@ public class WifiConfigStore extends IpConfigStore {
 
         if (config.isPasspoint()) {
             /* need to slap on the SSID of selected bssid to work */
-            if (config.scanResultCache.size() != 0) {
-                HashMap<String, ScanResult> scanResultHashMap = config.scanResultCache;
-                Iterator<ScanResult> it = scanResultHashMap.values().iterator();
-                ScanResult result = it.next();
+            if (getScanDetailCache(config).size() != 0) {
+                ScanDetail result = getScanDetailCache(config).getFirst();
                 if (result == null) {
                     loge("Could not find scan result for " + config.BSSID);
                 } else {
-                    log("Setting SSID for " + config.networkId + " to" + result.SSID);
-                    setSSIDNative(config.networkId, result.SSID);
+                    log("Setting SSID for " + config.networkId + " to" + result.getSSID());
+                    setSSIDNative(config.networkId, result.getSSID());
                 }
 
             } else {
@@ -1024,8 +1226,8 @@ public class WifiConfigStore extends IpConfigStore {
             && info.getRssi() > (bandPreferenceBoostThreshold5.get() + 3)) {
             WifiConfiguration config = getWifiConfiguration(info.getNetworkId());
             if (config != null) {
-                if (config.scanResultCache != null) {
-                    ScanResult result = config.scanResultCache.get(info.getBSSID());
+                if (getScanDetailCache(config) != null) {
+                    ScanResult result = getScanDetailCache(config).get(info.getBSSID());
                     if (result != null) {
                         result.setAutoJoinStatus(ScanResult.AUTO_ROAM_DISABLED + 1);
                     }
@@ -1257,6 +1459,7 @@ public class WifiConfigStore extends IpConfigStore {
 
             mConfiguredNetworks.remove(netId);
             mNetworkIds.remove(configKey(config));
+            mScanDetailCaches.remove(netId);
 
             writeIpAndProxyConfigurations();
             sendConfiguredNetworksChangedBroadcast(config, WifiManager.CHANGE_REASON_REMOVED);
@@ -1955,8 +2158,9 @@ public class WifiConfigStore extends IpConfigStore {
                         out.writeUTF(DEFAULT_GW_KEY + macAddress + SEPARATOR_KEY);
                     }
 
-                    if (config.scanResultCache != null) {
-                        for (ScanResult result : config.scanResultCache.values()) {
+                    if (getScanDetailCache(config) != null) {
+                        for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
+                            ScanResult result = scanDetail.getScanResult();
                             out.writeUTF(BSSID_KEY + result.BSSID + SEPARATOR_KEY);
 
                             out.writeUTF(FREQ_KEY + Integer.toString(result.frequency)
@@ -2310,15 +2514,13 @@ public class WifiConfigStore extends IpConfigStore {
                         if (key.startsWith(BSSID_KEY_END)) {
                             if ((bssid != null) && (ssid != null)) {
 
-                                if (config.scanResultCache == null) {
-                                    config.scanResultCache = new HashMap<String, ScanResult>();
+                                if (getScanDetailCache(config) != null) {
+                                    WifiSsid wssid = WifiSsid.createFromAsciiEncoded(ssid);
+                                    ScanDetail scanDetail = new ScanDetail(wssid, bssid,
+                                            caps, rssi, freq, (long) 0, seen);
+                                    getScanDetailCache(config).put(scanDetail);
+                                    scanDetail.getScanResult().autoJoinStatus = status;
                                 }
-                                WifiSsid wssid = WifiSsid.createFromAsciiEncoded(ssid);
-                                ScanResult result = new ScanResult(wssid, bssid,
-                                        caps, rssi, freq, (long) 0);
-                                result.seen = seen;
-                                config.scanResultCache.put(bssid, result);
-                                result.autoJoinStatus = status;
                             }
                         }
 
@@ -2850,13 +3052,23 @@ public class WifiConfigStore extends IpConfigStore {
         return null;
     }
 
+    public ScanDetailCache getScanDetailCache(WifiConfiguration config) {
+        if (config == null) return null;
+        ScanDetailCache cache = mScanDetailCaches.get(config.networkId);
+        if (cache == null && config.networkId != WifiConfiguration.INVALID_NETWORK_ID) {
+            cache = new ScanDetailCache(config);
+            mScanDetailCaches.put(config.networkId, cache);
+        }
+        return cache;
+    }
+
     /**
      * This function run thru the Saved WifiConfigurations and check if some should be linked.
      * @param config
      */
     public void linkConfiguration(WifiConfiguration config) {
 
-        if (config.scanResultCache != null && config.scanResultCache.size() > 6) {
+        if (getScanDetailCache(config) != null && getScanDetailCache(config).size() > 6) {
             // Ignore configurations with large number of BSSIDs
             return;
         }
@@ -2881,7 +3093,8 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            if (link.scanResultCache != null && link.scanResultCache.size() > 6) {
+            ScanDetailCache linkedScanDetailCache = getScanDetailCache(link);
+            if (linkedScanDetailCache != null && linkedScanDetailCache.size() > 6) {
                 // Ignore configurations with large number of BSSIDs
                 continue;
             }
@@ -2900,10 +3113,11 @@ public class WifiConfigStore extends IpConfigStore {
                 // hoping that WifiConfigurations are indeed behind the same gateway.
                 // once both WifiConfiguration have been tried and thus once both efault gateways
                 // are known we will revisit the choice of linking them
-                if ((config.scanResultCache != null) && (config.scanResultCache.size() <= 6)
-                        && (link.scanResultCache != null) && (link.scanResultCache.size() <= 6)) {
-                    for (String abssid : config.scanResultCache.keySet()) {
-                        for (String bbssid : link.scanResultCache.keySet()) {
+                if ((getScanDetailCache(config) != null)
+                        && (getScanDetailCache(config).size() <= 6)) {
+
+                    for (String abssid : getScanDetailCache(config).keySet()) {
+                        for (String bbssid : linkedScanDetailCache.keySet()) {
                             if (VVDBG) {
                                 loge("linkConfiguration try to link due to DBDC BSSID match "
                                         + link.SSID +
@@ -2986,7 +3200,9 @@ public class WifiConfigStore extends IpConfigStore {
      * so as to speed this up. Also to prevent the tiny probability of hash collision.
      *
      */
-    public WifiConfiguration associateWithConfiguration(ScanResult result) {
+    public WifiConfiguration associateWithConfiguration(ScanDetail scanDetail) {
+
+        ScanResult result = scanDetail.getScanResult();
         boolean doNotAdd = false;
         String configKey = WifiConfiguration.configKey(result);
         if (configKey == null) {
@@ -3029,8 +3245,10 @@ public class WifiConfigStore extends IpConfigStore {
                 return link; // Found it exactly
             }
 
-            if (!doNotAdd && (link.scanResultCache != null) && (link.scanResultCache.size() <= 6)) {
-                for (String bssid : link.scanResultCache.keySet()) {
+            ScanDetailCache linkedScanDetailCache = getScanDetailCache(link);
+            if (!doNotAdd
+                    && (linkedScanDetailCache != null) && (linkedScanDetailCache.size() <= 6)) {
+                for (String bssid : linkedScanDetailCache.keySet()) {
                     if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
                             && SSID.regionMatches(false, 0, link.SSID, 0, 4)) {
                         // If first 16 ascii characters of BSSID matches, and first 3
@@ -3054,7 +3272,7 @@ public class WifiConfigStore extends IpConfigStore {
                             result.SSID + " and associate it with: " + link.SSID
                             + " key " + link.configKey());
                 }
-                config = wifiConfigurationFromScanResult(result);
+                config = wifiConfigurationFromScanResult(scanDetail);
                 if (config != null) {
                     config.selfAdded = true;
                     config.didSelfAdd = true;
@@ -3114,7 +3332,7 @@ public class WifiConfigStore extends IpConfigStore {
         HashSet<Integer> channels = new HashSet<Integer>();
 
         //get channels for this configuration, if there are at least 2 BSSIDs
-        if (config.scanResultCache == null && config.linkedConfigurations == null) {
+        if (getScanDetailCache(config) == null && config.linkedConfigurations == null) {
             return null;
         }
 
@@ -3123,8 +3341,8 @@ public class WifiConfigStore extends IpConfigStore {
             dbg.append("makeChannelList age=" + Integer.toString(age)
                     + " for " + config.configKey()
                     + " max=" + maxNumActiveChannelsForPartialScans);
-            if (config.scanResultCache != null) {
-                dbg.append(" bssids=" + config.scanResultCache.size());
+            if (getScanDetailCache(config) != null) {
+                dbg.append(" bssids=" + getScanDetailCache(config).size());
             }
             if (config.linkedConfigurations != null) {
                 dbg.append(" linked=" + config.linkedConfigurations.size());
@@ -3133,8 +3351,9 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         int numChannels = 0;
-        if (config.scanResultCache != null && config.scanResultCache.size() > 0) {
-            for (ScanResult result : config.scanResultCache.values()) {
+        if (getScanDetailCache(config) != null && getScanDetailCache(config).size() > 0) {
+            for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
+                ScanResult result = scanDetail.getScanResult();
                 //TODO : cout active and passive channels separately
                 if (numChannels > maxNumActiveChannelsForPartialScans.get()) {
                     break;
@@ -3157,10 +3376,11 @@ public class WifiConfigStore extends IpConfigStore {
                 WifiConfiguration linked = getWifiConfiguration(key);
                 if (linked == null)
                     continue;
-                if (linked.scanResultCache == null) {
+                if (getScanDetailCache(linked) == null) {
                     continue;
                 }
-                for (ScanResult result : linked.scanResultCache.values()) {
+                for (ScanDetail scanDetail : getScanDetailCache(linked).values()) {
+                    ScanResult result = scanDetail.getScanResult();
                     if (VDBG) {
                         loge("has link: " + result.BSSID
                                 + " freq=" + Integer.toString(result.frequency)
@@ -3297,12 +3517,14 @@ public class WifiConfigStore extends IpConfigStore {
             return;
         }
 
-        if (config.scanResultCache == null) {
-            config.scanResultCache = new HashMap<String, ScanResult>();
+        ScanDetailCache scanDetailCache = getScanDetailCache(config);
+        if (scanDetailCache == null) {
+            Log.w(TAG, "Could not allocate scan cache for " + config.SSID);
+            return;
         }
 
         // Adding a new BSSID
-        ScanResult result = config.scanResultCache.get(scanResult.BSSID);
+        ScanResult result = scanDetailCache.get(scanResult.BSSID);
         if (result != null) {
             // transfer the black list status
             scanResult.autoJoinStatus = result.autoJoinStatus;
@@ -3318,35 +3540,34 @@ public class WifiConfigStore extends IpConfigStore {
             scanResult.untrusted = true;
         }
 
-        if (config.scanResultCache.size() > (maxNumScanCacheEntries + 64)) {
+        if (scanDetailCache.size() > (maxNumScanCacheEntries + 64)) {
             long now_dbg = 0;
             if (VVDBG) {
                 loge(" Will trim config " + config.configKey()
-                        + " size " + config.scanResultCache.size());
+                        + " size " + scanDetailCache.size());
 
-                for (ScanResult r : config.scanResultCache.values()) {
-                    loge("     " + result.BSSID + " " + result.seen);
+                for (ScanDetail sd : scanDetailCache.values()) {
+                    loge("     " + sd.getBSSIDString() + " " + sd.getSeen());
                 }
                 now_dbg = SystemClock.elapsedRealtimeNanos();
             }
             // Trim the scan result cache to maxNumScanCacheEntries entries max
             // Since this operation is expensive, make sure it is not performed
             // until the cache has grown significantly above the trim treshold
-            config.trimScanResultsCache(maxNumScanCacheEntries);
+            scanDetailCache.trim(maxNumScanCacheEntries);
             if (VVDBG) {
                 long diff = SystemClock.elapsedRealtimeNanos() - now_dbg;
                 loge(" Finished trimming config, time(ns) " + diff);
-                for (ScanResult r : config.scanResultCache.values()) {
-                    loge("     " + r.BSSID + " " + r.seen);
+                for (ScanDetail sd : scanDetailCache.values()) {
+                    loge("     " + sd.getBSSIDString() + " " + sd.getSeen());
                 }
             }
         }
 
         // Add the scan result to this WifiConfiguration
-        config.scanResultCache.put(scanResult.BSSID, scanResult);
+        scanDetailCache.put(scanDetail);
         // Since we added a scan result to this configuration, re-attempt linking
         linkConfiguration(config);
-
     }
 
 
@@ -3417,7 +3638,7 @@ public class WifiConfigStore extends IpConfigStore {
                 loge("        got known scan result " +
                         scanResult.BSSID + " key : "
                         + config.configKey() + " num: " +
-                        Integer.toString(config.scanResultCache.size())
+                        Integer.toString(getScanDetailCache(config).size())
                         + " rssi=" + Integer.toString(scanResult.level)
                         + " freq=" + Integer.toString(scanResult.frequency)
                         + status);
@@ -3745,7 +3966,9 @@ public class WifiConfigStore extends IpConfigStore {
 
     /* return the allowed key management based on a scan result */
 
-    public WifiConfiguration wifiConfigurationFromScanResult(ScanResult result) {
+    public WifiConfiguration wifiConfigurationFromScanResult(ScanDetail scanDetail) {
+
+        ScanResult result = scanDetail.getScanResult();
         WifiConfiguration config = new WifiConfiguration();
 
         config.SSID = "\"" + result.SSID + "\"";
@@ -3770,10 +3993,7 @@ public class WifiConfigStore extends IpConfigStore {
             config.allowedKeyManagement.set(KeyMgmt.IEEE8021X);
         }
 
-        config.scanResultCache = new HashMap<String, ScanResult>();
-        if (config.scanResultCache == null)
-            return null;
-        config.scanResultCache.put(result.BSSID, result);
+        getScanDetailCache(config).put(scanDetail);
 
         return config;
     }
@@ -3961,16 +4181,17 @@ public class WifiConfigStore extends IpConfigStore {
 
         // Look for the BSSID in our config store
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
-            if (config.scanResultCache != null) {
-                for (ScanResult result: config.scanResultCache.values()) {
-                    if (result.BSSID.equals(BSSID)) {
+            if (getScanDetailCache(config) != null) {
+                for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
+                    if (scanDetail.getBSSIDString().equals(BSSID)) {
                         if (enable) {
-                            result.setAutoJoinStatus(ScanResult.ENABLED);
+                            scanDetail.getScanResult().setAutoJoinStatus(ScanResult.ENABLED);
                         } else {
                             // Black list the BSSID we were trying to join
                             // so as the Roam state machine
                             // doesn't pick it up over and over
-                            result.setAutoJoinStatus(ScanResult.AUTO_ROAM_DISABLED);
+                            scanDetail.getScanResult().setAutoJoinStatus(
+                                    ScanResult.AUTO_ROAM_DISABLED);
                             found = true;
                         }
                     }
@@ -4058,8 +4279,8 @@ public class WifiConfigStore extends IpConfigStore {
                             // Also blacklist the BSSId if we find it
                             ScanResult result = null;
                             String bssidDbg = "";
-                            if (config.scanResultCache != null && BSSID != null) {
-                                result = config.scanResultCache.get(BSSID);
+                            if (getScanDetailCache(config) != null && BSSID != null) {
+                                result = getScanDetailCache(config).get(BSSID);
                             }
                             if (result != null) {
                                 result.numIpConfigFailures ++;
