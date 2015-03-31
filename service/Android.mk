@@ -16,7 +16,7 @@ LOCAL_PATH := $(call my-dir)
 
 ifneq ($(TARGET_BUILD_PDK), true)
 
-# Make HAL stub library
+# Make HAL stub library 1
 # ============================================================
 
 include $(CLEAR_VARS)
@@ -33,6 +33,27 @@ LOCAL_SRC_FILES := \
 	lib/wifi_hal.cpp
 
 LOCAL_MODULE := libwifi-hal
+
+include $(BUILD_STATIC_LIBRARY)
+
+# Make HAL stub library 2
+# ============================================================
+
+include $(CLEAR_VARS)
+
+LOCAL_REQUIRED_MODULES :=
+
+LOCAL_CFLAGS += -Wno-unused-parameter
+
+LOCAL_C_INCLUDES += \
+	$(LOCAL_PATH)/jni \
+	external/libnl-headers \
+	$(call include-path-for, libhardware_legacy)/hardware_legacy
+
+LOCAL_SRC_FILES := \
+	lib/wifi_hal_stub.cpp
+
+LOCAL_MODULE := libwifi-hal-stub
 
 include $(BUILD_STATIC_LIBRARY)
 
@@ -77,7 +98,7 @@ LOCAL_SHARED_LIBRARIES += \
 	libandroid_runtime \
     	libstlport \
 	libutils
-
+LOCAL_STATIC_LIBRARIES += libwifi-hal-stub
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
 LOCAL_SRC_FILES := \
@@ -109,7 +130,7 @@ LOCAL_SHARED_LIBRARIES += \
 	libhardware_legacy \
 	libandroid_runtime \
     libnl
-
+LOCAL_STATIC_LIBRARIES += libwifi-hal-stub
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
 LOCAL_SRC_FILES := \

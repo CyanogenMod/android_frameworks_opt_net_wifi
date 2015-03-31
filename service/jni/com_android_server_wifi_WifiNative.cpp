@@ -30,13 +30,53 @@
 #include "wifi_hal.h"
 #include "jni_helper.h"
 #include "rtt.h"
-
+#include "wifi_hal_stub.h"
 #define REPLY_BUF_SIZE 4096 // wpa_supplicant's maximum size.
 #define EVENT_BUF_SIZE 2048
 
 namespace android {
 
 static jint DBG = false;
+
+//Please put all HAL function call here and call from the function table instead of directly call
+static wifi_hal_fn hal_fn;
+int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
+    if (hal_fn == NULL) {
+        return -1;
+    }
+    hal_fn->wifi_initialize = wifi_initialize_stub;
+    hal_fn->wifi_cleanup = wifi_cleanup_stub;
+    hal_fn->wifi_event_loop = wifi_event_loop_stub;
+    hal_fn->wifi_get_error_info = wifi_get_error_info_stub;
+    hal_fn->wifi_get_supported_feature_set = wifi_get_supported_feature_set_stub;
+    hal_fn->wifi_get_concurrency_matrix = wifi_get_concurrency_matrix_stub;
+    hal_fn->wifi_set_scanning_mac_oui =  wifi_set_scanning_mac_oui_stub;
+    hal_fn->wifi_get_supported_channels = wifi_get_supported_channels_stub;
+    hal_fn->wifi_is_epr_supported = wifi_is_epr_supported_stub;
+    hal_fn->wifi_get_ifaces = wifi_get_ifaces_stub;
+    hal_fn->wifi_get_iface_name = wifi_get_iface_name_stub;
+    hal_fn->wifi_reset_iface_event_handler = wifi_reset_iface_event_handler_stub;
+    hal_fn->wifi_start_gscan = wifi_start_gscan_stub;
+    hal_fn->wifi_stop_gscan = wifi_stop_gscan_stub;
+    hal_fn->wifi_set_bssid_hotlist = wifi_set_bssid_hotlist_stub;
+    hal_fn->wifi_reset_bssid_hotlist = wifi_reset_bssid_hotlist_stub;
+    hal_fn->wifi_set_significant_change_handler = wifi_set_significant_change_handler_stub;
+    hal_fn->wifi_reset_significant_change_handler = wifi_reset_significant_change_handler_stub;
+    hal_fn->wifi_get_gscan_capabilities = wifi_get_gscan_capabilities_stub;
+    hal_fn->wifi_set_link_stats = wifi_set_link_stats_stub;
+    hal_fn->wifi_get_link_stats = wifi_get_link_stats_stub;
+    hal_fn->wifi_clear_link_stats = wifi_clear_link_stats_stub;
+    hal_fn->wifi_get_valid_channels = wifi_get_valid_channels_stub;
+    hal_fn->wifi_rtt_range_request = wifi_rtt_range_request_stub;
+    hal_fn->wifi_rtt_range_cancel = wifi_rtt_range_cancel_stub;
+    hal_fn->wifi_get_rtt_capabilities = wifi_get_rtt_capabilities_stub;
+    hal_fn->wifi_set_nodfs_flag = wifi_set_nodfs_flag_stub;
+    hal_fn->wifi_start_logging = wifi_start_logging_stub;
+    hal_fn->wifi_set_epno_list = wifi_set_epno_list_stub;
+    hal_fn->wifi_set_country_code = wifi_set_country_code_stub;
+
+    return 0;
+}
 
 static bool doCommand(JNIEnv* env, jstring javaCommand,
                       char* reply, size_t reply_len) {
@@ -254,11 +294,24 @@ static jboolean android_net_wifi_toggle_interface(JNIEnv* env, jclass cls, int t
 static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
     wifi_handle halHandle = getWifiHandle(env, cls);
     if (halHandle == NULL) {
+
+        if(init_wifi_hal_func_table(&hal_fn) != 0 ) {
+            ALOGD("Can not initialize the basic function pointer table");
+            return false;
+        }
+
+        wifi_error res = init_wifi_vendor_hal_func_table(&hal_fn);
+        if (res != WIFI_SUCCESS) {
+            ALOGD("Can not initialize the vendor function pointer table");
+	    return false;
+        }
+
         int ret = set_iface_flags("wlan0", 1);
         if(ret != 0) {
             return false;
         }
-        wifi_error res = wifi_initialize(&halHandle);
+
+        res = hal_fn.wifi_initialize(&halHandle);
         if (res == WIFI_SUCCESS) {
             setStaticLongField(env, cls, WifiHandleVarName, (jlong)halHandle);
             ALOGD("Did set static halHandle = %p", halHandle);
@@ -286,7 +339,7 @@ static void android_net_wifi_stopHal(JNIEnv* env, jclass cls) {
     ALOGD("In wifi stop Hal");
 
     wifi_handle halHandle = getWifiHandle(env, cls);
-    wifi_cleanup(halHandle, android_net_wifi_hal_cleaned_up_handler);
+    hal_fn.wifi_cleanup(halHandle, android_net_wifi_hal_cleaned_up_handler);
     set_iface_flags("wlan0", 0);
 }
 
@@ -295,14 +348,14 @@ static void android_net_wifi_waitForHalEvents(JNIEnv* env, jclass cls) {
     ALOGD("waitForHalEvents called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
     wifi_handle halHandle = getWifiHandle(env, cls);
-    wifi_event_loop(halHandle);
+    hal_fn.wifi_event_loop(halHandle);
 }
 
 static int android_net_wifi_getInterfaces(JNIEnv *env, jclass cls) {
     int n = 0;
     wifi_handle halHandle = getWifiHandle(env, cls);
     wifi_interface_handle *ifaceHandles = NULL;
-    int result = wifi_get_ifaces(halHandle, &n, &ifaceHandles);
+    int result = hal_fn.wifi_get_ifaces(halHandle, &n, &ifaceHandles);
     if (result < 0) {
         return result;
     }
@@ -343,7 +396,7 @@ static jstring android_net_wifi_getInterfaceName(JNIEnv *env, jclass cls, jint i
 
     jlong value = getStaticLongArrayField(env, cls, WifiIfaceHandleVarName, i);
     wifi_interface_handle handle = (wifi_interface_handle) value;
-    int result = ::wifi_get_iface_name(handle, buf, sizeof(buf));
+    int result = hal_fn.wifi_get_iface_name(handle, buf, sizeof(buf));
     if (result < 0) {
         return NULL;
     } else {
@@ -469,14 +522,14 @@ static jboolean android_net_wifi_startScan(
     handler.on_full_scan_result = &onFullScanResult;
     handler.on_scan_event = &onScanEvent;
 
-    return wifi_start_gscan(id, handle, params, handler) == WIFI_SUCCESS;
+    return hal_fn.wifi_start_gscan(id, handle, params, handler) == WIFI_SUCCESS;
 }
 
 static jboolean android_net_wifi_stopScan(JNIEnv *env, jclass cls, jint iface, jint id) {
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("stopping scan on interface[%d] = %p", iface, handle);
 
-    return wifi_stop_gscan(id, handle)  == WIFI_SUCCESS;
+    return hal_fn.wifi_stop_gscan(id, handle)  == WIFI_SUCCESS;
 }
 
 static int compare_scan_result_timestamp(const void *v1, const void *v2) {
@@ -495,7 +548,7 @@ static jobject android_net_wifi_getScanResults(
     ALOGD("getting scan results on interface[%d] = %p", iface, handle);
 
     byte b = flush ? 0 : 0xFF;
-    int result = wifi_get_cached_gscan_results(handle, b, num_scan_data, scan_data, &num_scan_data);
+    int result = hal_fn.wifi_get_cached_gscan_results(handle, b, num_scan_data, scan_data, &num_scan_data);
     if (result == WIFI_SUCCESS) {
         jobjectArray scanData = createObjectArray(env,
                 "android/net/wifi/WifiScanner$ScanData", num_scan_data);
@@ -571,7 +624,7 @@ static jboolean android_net_wifi_getScanCapabilities(
 
     wifi_gscan_capabilities c;
     memset(&c, 0, sizeof(c));
-    int result = wifi_get_gscan_capabilities(handle, &c);
+    int result = hal_fn.wifi_get_gscan_capabilities(handle, &c);
     if (result != WIFI_SUCCESS) {
         ALOGD("failed to get capabilities : %d", result);
         return JNI_FALSE;
@@ -799,7 +852,7 @@ static jboolean android_net_wifi_setHotlist(
 
     handler.on_hotlist_ap_found = &onHotlistApFound;
     handler.on_hotlist_ap_lost  = &onHotlistApLost;
-    return wifi_set_bssid_hotlist(id, handle, params, handler) == WIFI_SUCCESS;
+    return hal_fn.wifi_set_bssid_hotlist(id, handle, params, handler) == WIFI_SUCCESS;
 }
 
 static jboolean android_net_wifi_resetHotlist(
@@ -808,7 +861,7 @@ static jboolean android_net_wifi_resetHotlist(
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("resetting hotlist on interface[%d] = %p", iface, handle);
 
-    return wifi_reset_bssid_hotlist(id, handle) == WIFI_SUCCESS;
+    return hal_fn.wifi_reset_bssid_hotlist(id, handle) == WIFI_SUCCESS;
 }
 
 void onSignificantWifiChange(wifi_request_id id,
@@ -922,7 +975,7 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
     memset(&handler, 0, sizeof(handler));
 
     handler.on_significant_change = &onSignificantWifiChange;
-    return wifi_set_significant_change_handler(id, handle, params, handler) == WIFI_SUCCESS;
+    return hal_fn.wifi_set_significant_change_handler(id, handle, params, handler) == WIFI_SUCCESS;
 }
 
 static jboolean android_net_wifi_untrackSignificantWifiChange(
@@ -931,7 +984,7 @@ static jboolean android_net_wifi_untrackSignificantWifiChange(
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("resetting significant wifi change on interface[%d] = %p", iface, handle);
 
-    return wifi_reset_significant_change_handler(id, handle) == WIFI_SUCCESS;
+    return hal_fn.wifi_reset_significant_change_handler(id, handle) == WIFI_SUCCESS;
 }
 
 wifi_iface_stat link_stat;
@@ -959,7 +1012,7 @@ static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint
     memset(&handler, 0, sizeof(handler));
     handler.on_link_stats_results = &onLinkStatsResults;
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    int result = wifi_get_link_stats(0, handle, handler);
+    int result = hal_fn.wifi_get_link_stats(0, handle, handler);
     if (result < 0) {
         ALOGE("android_net_wifi_getLinkLayerStats: failed to get link statistics\n");
         return NULL;
@@ -1016,7 +1069,7 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls, jint 
         | WIFI_FEATURE_EPR;
     */
 
-    result = wifi_get_supported_feature_set(handle, &set);
+    result = hal_fn.wifi_get_supported_feature_set(handle, &set);
     if (result == WIFI_SUCCESS) {
         ALOGD("wifi_get_supported_feature_set returned set = 0x%x", set);
         return set;
@@ -1164,7 +1217,7 @@ static jboolean android_net_wifi_requestRange(
     wifi_rtt_event_handler handler;
     handler.on_rtt_results = &onRttResults;
 
-    return wifi_rtt_range_request(id, handle, len, configs, handler) == WIFI_SUCCESS;
+    return hal_fn.wifi_rtt_range_request(id, handle, len, configs, handler) == WIFI_SUCCESS;
 }
 
 static jboolean android_net_wifi_cancelRange(
@@ -1192,7 +1245,7 @@ static jboolean android_net_wifi_cancelRange(
         parseMacAddress(env, param, addrs[i]);
     }
 
-    return wifi_rtt_range_cancel(id, handle, len, addrs) == WIFI_SUCCESS;
+    return hal_fn.wifi_rtt_range_cancel(id, handle, len, addrs) == WIFI_SUCCESS;
 }
 
 static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
@@ -1214,7 +1267,7 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
         return false;
     }
 
-    return wifi_set_scanning_mac_oui(handle, (byte *)bytes) == WIFI_SUCCESS;
+    return hal_fn.wifi_set_scanning_mac_oui(handle, (byte *)bytes) == WIFI_SUCCESS;
 }
 
 static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
@@ -1226,7 +1279,7 @@ static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
     static const int MaxChannels = 64;
     wifi_channel channels[64];
     int num_channels = 0;
-    wifi_error result = wifi_get_valid_channels(handle, band, MaxChannels,
+    wifi_error result = hal_fn.wifi_get_valid_channels(handle, band, MaxChannels,
             channels, &num_channels);
 
     if (result == WIFI_SUCCESS) {
@@ -1249,14 +1302,14 @@ static jboolean android_net_wifi_setDfsFlag(JNIEnv *env, jclass cls, jint iface,
     ALOGD("setting dfs flag to %s, %p", dfs ? "true" : "false", handle);
 
     u32 nodfs = dfs ? 0 : 1;
-    wifi_error result = wifi_set_nodfs_flag(handle, nodfs);
+    wifi_error result = hal_fn.wifi_set_nodfs_flag(handle, nodfs);
     return result == WIFI_SUCCESS;
 }
 
 static jobject android_net_wifi_get_rtt_capabilities(JNIEnv *env, jclass cls, jint iface) {
     wifi_rtt_capabilities rtt_capabilities;
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    wifi_error ret = wifi_get_rtt_capabilities(handle, &rtt_capabilities);
+    wifi_error ret = hal_fn.wifi_get_rtt_capabilities(handle, &rtt_capabilities);
 
     if(WIFI_SUCCESS == ret) {
          jobject capabilities = createObject(env, "android/net/wifi/RttManager$RttCapabilities");
