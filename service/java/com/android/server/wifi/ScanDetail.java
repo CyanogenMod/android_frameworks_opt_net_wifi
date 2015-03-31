@@ -20,16 +20,31 @@ public class ScanDetail {
     private final ScanResult mScanResult;
     private volatile NetworkDetail mNetworkDetail;
     private final Map<HomeSP, PasspointMatch> mMatches;
+    private long mSeen = 0;
 
     public ScanDetail(NetworkDetail networkDetail, WifiSsid wifiSsid, String BSSID,
                       String caps, int level, int frequency, long tsf) {
         mNetworkDetail = networkDetail;
         mScanResult = new ScanResult(wifiSsid, BSSID, caps, level, frequency, tsf );
-        mScanResult.seen = System.currentTimeMillis();
+        mSeen = System.currentTimeMillis();
+        mScanResult.seen = mSeen;
         mScanResult.channelWidth = networkDetail.getChannelWidth();
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
         mScanResult.is80211McRTTResponder = networkDetail.is80211McResponderSupport();
+        mMatches = null;
+    }
+
+    public ScanDetail(WifiSsid wifiSsid, String BSSID, String caps, int level, int frequency,
+                      long tsf, long seen) {
+        mNetworkDetail = null;
+        mScanResult = new ScanResult(wifiSsid, BSSID, caps, level, frequency, tsf );
+        mSeen = seen;
+        mScanResult.seen = mSeen;
+        mScanResult.channelWidth = 0;
+        mScanResult.centerFreq0 = 0;
+        mScanResult.centerFreq1 = 0;
+        mScanResult.is80211McRTTResponder = false;
         mMatches = null;
     }
 
@@ -53,7 +68,8 @@ public class ScanDetail {
         mScanResult.capabilities = flags;
         mScanResult.frequency = freq;
         mScanResult.timestamp = tsf;
-        mScanResult.seen = System.currentTimeMillis();
+        mSeen = System.currentTimeMillis();
+        mScanResult.seen = mSeen;
         mScanResult.channelWidth = networkDetail.getChannelWidth();
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
@@ -86,11 +102,21 @@ public class ScanDetail {
     }
 
     public String getSSID() {
-        return mNetworkDetail.getSSID();
+        return mNetworkDetail == null ? mScanResult.SSID : mNetworkDetail.getSSID();
     }
 
     public String getBSSIDString() {
-        return mNetworkDetail.getBSSIDString();
+        return  mNetworkDetail == null ? mScanResult.BSSID : mNetworkDetail.getBSSIDString();
+    }
+
+    public long getSeen() {
+        return mSeen;
+    }
+
+    public long setSeen() {
+        mSeen = System.currentTimeMillis();
+        mScanResult.seen = mSeen;
+        return mSeen;
     }
 
     public List<PasspointMatchInfo> getMatchList() {

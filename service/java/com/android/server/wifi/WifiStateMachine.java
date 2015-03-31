@@ -2964,8 +2964,11 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" ").append(mWifiInfo.getBSSID());
                 }
                 if (c != null) {
-                    if (c.scanResultCache != null) {
-                        for (ScanResult r : c.scanResultCache.values()) {
+                    WifiConfigStore.ScanDetailCache scanDetailCache =
+                            mWifiConfigStore.getScanDetailCache(c);
+                    if (scanDetailCache != null) {
+                        for (ScanDetail sd : scanDetailCache.values()) {
+                            ScanResult r = sd.getScanResult();
                             if (r.BSSID.equals(mWifiInfo.getBSSID())) {
                                 sb.append(" ipfail=").append(r.numIpConfigFailures);
                                 sb.append(",st=").append(r.autoJoinStatus);
@@ -3718,9 +3721,10 @@ public class WifiStateMachine extends StateMachine {
         boolean use24Thresholds = false;
         boolean homeNetworkBoost = false;
         WifiConfiguration currentConfiguration = getCurrentWifiConfiguration();
-        if (currentConfiguration != null
-                && currentConfiguration.scanResultCache != null) {
-            currentConfiguration.setVisibility(12000);
+        WifiConfigStore.ScanDetailCache scanDetailCache =
+                mWifiConfigStore.getScanDetailCache(currentConfiguration);
+        if (currentConfiguration != null && scanDetailCache != null) {
+            currentConfiguration.setVisibility(scanDetailCache.getVisibility(12000));
             if (currentConfiguration.visibility != null) {
                 if (currentConfiguration.visibility.rssi24 != WifiConfiguration.INVALID_RSSI
                         && currentConfiguration.visibility.rssi24
@@ -3728,7 +3732,7 @@ public class WifiStateMachine extends StateMachine {
                     use24Thresholds = true;
                 }
             }
-            if (currentConfiguration.scanResultCache.size() <= 6
+            if (scanDetailCache.size() <= 6
                 && currentConfiguration.allowedKeyManagement.cardinality() == 1
                 && currentConfiguration.allowedKeyManagement.
                     get(WifiConfiguration.KeyMgmt.WPA_PSK) == true) {
@@ -6335,10 +6339,14 @@ public class WifiStateMachine extends StateMachine {
         if (BSSID == null) {
             BSSID = mTargetRoamBSSID;
         }
-        if (config.scanResultCache == null) {
+        WifiConfigStore.ScanDetailCache scanDetailCache =
+                mWifiConfigStore.getScanDetailCache(config);
+
+        if (scanDetailCache == null) {
             return null;
         }
-        return config.scanResultCache.get(BSSID);
+
+        return scanDetailCache.get(BSSID);
     }
 
     String getCurrentBSSID() {
@@ -7068,9 +7076,11 @@ public class WifiStateMachine extends StateMachine {
         // primary purpose of the partial scans is roaming.
         // Full badn scans with exponential backoff for the purpose or extended roaming and
         // network switching are performed unconditionally.
-        if (config.scanResultCache == null
+        WifiConfigStore.ScanDetailCache scanDetailCache =
+                mWifiConfigStore.getScanDetailCache(config);
+        if (scanDetailCache == null
                 || !config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK)
-                || config.scanResultCache.size() > 6) {
+                || scanDetailCache.size() > 6) {
             //return true but to not trigger the scan
             return true;
         }
