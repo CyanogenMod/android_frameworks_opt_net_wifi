@@ -3993,7 +3993,7 @@ public class WifiConfigStore extends IpConfigStore {
             config.allowedKeyManagement.set(KeyMgmt.IEEE8021X);
         }
 
-        getScanDetailCache(config).put(scanDetail);
+        /* getScanDetailCache(config).put(scanDetail); */
 
         return config;
     }
