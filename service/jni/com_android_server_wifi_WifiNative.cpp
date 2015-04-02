@@ -1130,27 +1130,40 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
         setIntField(env,  rttResult, "rxRate",                   result->rx_rate.bitrate);
         setLongField(env, rttResult, "rtt",                      result->rtt);
         setLongField(env, rttResult, "rttStandardDeviation",     result->rtt_sd);
-        setLongField(env, rttResult, "rttSpread",                result->rtt_spread);
         setIntField(env,  rttResult, "distance",                 result->distance);
         setIntField(env,  rttResult, "distanceStandardDeviation", result->distance_sd);
         setIntField(env,  rttResult, "distanceSpread",           result->distance_spread);
         setIntField(env,  rttResult, "burstDuration",             result->burst_duration);
+        setIntField(env,  rttResult, "negotiatedBurstNum",      result->negotiated_burst_num);
+       jobject LCI = createObject(env, "android/net/wifi/RttManager$WifiInformationElement");
+       if (result->LCI != NULL && result->LCI->len > 0) {
+           ALOGD("Add LCI in result");
+           setByteField(env, LCI, "id",           result->LCI->id);
+           jbyteArray elements = env->NewByteArray(result->LCI->len);
+           jbyte *bytes = (jbyte *)&(result->LCI->data[0]);
+           env->SetByteArrayRegion(elements, 0, result->LCI->len, bytes);
+           setObjectField(env, LCI, "data", "[B", elements);
+       } else {
+           ALOGD("No LCI in result");
+           setByteField(env, LCI, "id",           (byte)(0xff));
+         }
+       setObjectField(env, rttResult, "LCI",
+           "Landroid/net/wifi/RttManager$WifiInformationElement;", LCI);
 
-        /*if (result->LCI.len != 0) {
-            jobject LCI = createObject(env, "android/net/wifi/RttManager$wifiInformationElement");
-            setIntField(env, LCI, "id",           (int) result.LCI.id);
-            //setStringField(env, LCI,"data",        result.LCI.data);
-            setObjectField(env, rttResult, "LCI",
-                    "android/net/wifi/RttManager$WifiInformationElement;", LCI);
-        }
-
-        if (result.LCR.len != 0) {
-            jobject LCR = createObject(env, "android/net/wifi/RttManager$wifiInformationElement");
-            setIntField(env, LCR, "id",           result.LCI.id);
-            //setStringField(env, LCR,"data",        result.LCI.data);
-            setObjectField(env, rttResult, "LCR",
-                    "android/net/wifi/RttManager$WifiInformationElement;", LCR);
-        }*/
+       jobject LCR = createObject(env, "android/net/wifi/RttManager$WifiInformationElement");
+       if (result->LCR != NULL && result->LCR->len > 0) {
+           ALOGD("Add LCR in result");
+           setByteField(env, LCR, "id",           result->LCR->id);
+           jbyteArray elements = env->NewByteArray(result->LCI->len);
+           jbyte *bytes = (jbyte *)&(result->LCR->data[0]);
+           env->SetByteArrayRegion(elements, 0, result->LCI->len, bytes);
+           setObjectField(env, LCR, "data", "[B", elements);
+       } else {
+            ALOGD("No LCR in result");
+           setByteField(env, LCR, "id",           (byte)(0xff));
+       }
+       setObjectField(env, rttResult, "LCR",
+           "Landroid/net/wifi/RttManager$WifiInformationElement;", LCR);
 
         env->SetObjectArrayElement(rttResults, i, rttResult);
     }
@@ -1187,34 +1200,34 @@ static jboolean android_net_wifi_requestRange(
 
         parseMacAddress(env, param, config.addr);
         config.type = (wifi_rtt_type)getIntField(env, param, "requestType");
-        config.peer = (wifi_peer_type)getIntField(env, param, "deviceType");
+        config.peer = (rtt_peer_type)getIntField(env, param, "deviceType");
         config.channel.center_freq = getIntField(env, param, "frequency");
         config.channel.width = (wifi_channel_width) getIntField(env, param, "channelWidth");
         config.channel.center_freq0 = getIntField(env, param, "centerFreq0");
         config.channel.center_freq1 = getIntField(env, param, "centerFreq1");
 
         config.num_burst = getIntField(env, param, "numberBurst");
-        config.interval = (unsigned) getIntField(env, param, "interval");
+        config.burst_period = (unsigned) getIntField(env, param, "interval");
         config.num_frames_per_burst = (unsigned) getIntField(env, param, "numSamplesPerBurst");
-        config.num_retries_per_measurement_frame = (unsigned) getIntField(env, param,
+        config.num_retries_per_rtt_frame = (unsigned) getIntField(env, param,
                 "numRetriesPerMeasurementFrame");
         config.num_retries_per_ftmr = (unsigned) getIntField(env, param, "numRetriesPerFTMR");
         config.LCI_request = getBoolField(env, param, "LCIRequest") ? 1 : 0;
         config.LCR_request = getBoolField(env, param, "LCRRequest") ? 1 : 0;
-        config.burst_timeout = (unsigned) getIntField(env, param, "burstTimeout");
-        config.preamble = getIntField(env, param, "preamble");
-        config.bw = getIntField(env, param, "bandwidth");
+        config.burst_duration = (unsigned) getIntField(env, param, "burstTimeout");
+        config.preamble = (wifi_rtt_preamble) getIntField(env, param, "preamble");
+        config.bw = (wifi_rtt_bw) getIntField(env, param, "bandwidth");
 
         ALOGD("RTT request destination %d: type is %d, peer is %d, bw is %d, center_freq is %d ", i,
                 config.type,config.peer, config.channel.width,  config.channel.center_freq0);
         ALOGD("center_freq0 is %d, center_freq1 is %d, num_burst is %d,interval is %d",
                 config.channel.center_freq0, config.channel.center_freq1, config.num_burst,
-                config.interval);
+                config.burst_period);
         ALOGD("frames_per_burst is %d, retries of measurement frame is %d, retries_per_ftmr is %d",
-                config.num_frames_per_burst, config.num_retries_per_measurement_frame,
+                config.num_frames_per_burst, config.num_retries_per_rtt_frame,
                 config.num_retries_per_ftmr);
         ALOGD("LCI_requestis %d, LCR_request is %d,  burst_timeout is %d, preamble is %d, bw is %d",
-                config.LCI_request, config.LCR_request, config.burst_timeout, config.preamble,
+                config.LCI_request, config.LCR_request, config.burst_duration, config.preamble,
                 config.bw);
     }
 
