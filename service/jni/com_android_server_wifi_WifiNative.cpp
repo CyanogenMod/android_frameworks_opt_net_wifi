@@ -58,6 +58,7 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_reset_iface_event_handler = wifi_reset_iface_event_handler_stub;
     hal_fn->wifi_start_gscan = wifi_start_gscan_stub;
     hal_fn->wifi_stop_gscan = wifi_stop_gscan_stub;
+    hal_fn->wifi_get_cached_gscan_results = wifi_get_cached_gscan_results_stub;
     hal_fn->wifi_set_bssid_hotlist = wifi_set_bssid_hotlist_stub;
     hal_fn->wifi_reset_bssid_hotlist = wifi_reset_bssid_hotlist_stub;
     hal_fn->wifi_set_significant_change_handler = wifi_set_significant_change_handler_stub;

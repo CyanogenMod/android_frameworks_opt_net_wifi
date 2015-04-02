@@ -93,6 +93,7 @@ LOCAL_C_INCLUDES += \
 	libcore/include
 
 LOCAL_SHARED_LIBRARIES += \
+	$(LOCAL_PATH)/jni \
 	libcutils \
 	libnl \
 	libandroid_runtime \
