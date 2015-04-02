@@ -86,6 +86,7 @@ LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
 LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_C_INCLUDES += \
+	$(LOCAL_PATH)/jni \
 	external/stlport/stlport \
     	bionic \
 	$(call include-path-for, libhardware)/hardware \
