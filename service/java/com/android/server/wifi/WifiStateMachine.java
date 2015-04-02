@@ -4735,7 +4735,25 @@ public class WifiStateMachine extends StateMachine {
         if (DBG) {
             Log.d(TAG, "SoftAp config channel is: " + config.apChannel);
         }
-        //fix me -- set country code through HAL Here
+        //set country code through HAL Here
+        if (mSetCountryCode != null) {
+            if(!mWifiNative.setCountryCodeHal(mSetCountryCode.toUpperCase(Locale.ROOT))) {
+                if (config.apBand != 0) {
+                    Log.e(TAG, "Fail to set country code. Can not setup Softap on 5GHz");
+                    //countrycode is mandatory for 5GHz
+                    sendMessage(CMD_START_AP_FAILURE);
+                    return;
+                }
+            }
+        } else {
+            if (config.apBand != 0) {
+                //countrycode is mandatory for 5GHz
+                Log.e(TAG, "Can not setup softAp on 5GHz without country code!");
+                sendMessage(CMD_START_AP_FAILURE);
+                return;
+            }
+        }
+
         if (config.apChannel == 0) {
             config.apChannel = chooseApChannel(config.apBand);
             if (config.apChannel == 0) {
@@ -6123,7 +6141,7 @@ public class WifiStateMachine extends StateMachine {
                 s = "CMD_GET_CONFIGURED_NETWORKS";
                 break;
             case CMD_GET_SUPPORTED_FEATURES:
-                s = "CMD_GET_ADAPTORS";
+                s = "CMD_GET_SUPPORTED_FEATURES";
                 break;
             case CMD_UNWANTED_NETWORK:
                 s = "CMD_UNWANTED_NETWORK";

@@ -1628,16 +1628,20 @@ void readRTTOptions(int argc, char *argv[]) {
 
 wifi_iface_stat link_stat;
 wifi_radio_stat trx_stat;
-wifi_peer_info peer_info;
+wifi_peer_info peer_info[32];
 wifi_rate_stat rate_stat[32];
 void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
         int num_radios, wifi_radio_stat *radio_stat)
 {
     int num_peer = iface_stat->num_peers;
+    printf("onLinkStatsResults num_peers = %d radio_stats %p \n", num_peer, radio_stat);
     memcpy(&trx_stat, radio_stat, sizeof(wifi_radio_stat));
     memcpy(&link_stat, iface_stat, sizeof(wifi_iface_stat));
-    memcpy(&peer_info, iface_stat->peer_info, num_peer*sizeof(wifi_peer_info));
-    int num_rate = peer_info.num_rate;
+
+    memcpy(peer_info, iface_stat->peer_info, num_peer*sizeof(wifi_peer_info));
+    int num_rate = peer_info[0].num_rate;
+    printMsg("onLinkStatsResults num_rate = %d \n", num_rate);
+
     memcpy(&rate_stat, iface_stat->peer_info->rate_stats, num_rate*sizeof(wifi_rate_stat));
 }
 
@@ -1740,6 +1744,7 @@ void getLinkStats(void)
 {
     wifi_stats_result_handler handler;
     memset(&handler, 0, sizeof(handler));
+
     handler.on_link_stats_results = &onLinkStatsResults;
 
     int result = wifi_get_link_stats(0, wlan0Handle, handler);

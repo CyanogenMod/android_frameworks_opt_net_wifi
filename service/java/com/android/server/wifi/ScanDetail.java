@@ -58,6 +58,7 @@ public class ScanDetail {
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
         mScanResult.is80211McRTTResponder = networkDetail.is80211McResponderSupport();
+        mScanResult.passpointNetwork = networkDetail.isInterworking();
     }
 
     public void propagateANQPInfo(Map<Constants.ANQPElementType, ANQPElement> anqpElements) {

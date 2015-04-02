@@ -1769,6 +1769,18 @@ public class WifiNative {
             }
         }
     }
+
+    private static native boolean setCountryCodeHalNative(int iface, String CountryCode);
+    synchronized public static boolean setCountryCodeHal( String CountryCode) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return setCountryCodeHalNative(sWlan0Index, CountryCode);
+            } else {
+                return false;
+            }
+        }
+    }
+
     //---------------------------------------------------------------------------------
 
     /* Wifi Logger commands/events */

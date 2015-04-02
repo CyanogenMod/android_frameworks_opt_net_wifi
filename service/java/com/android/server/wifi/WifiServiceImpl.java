@@ -818,11 +818,28 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         if (mWifiStateMachineChannel != null) {
             stats = mWifiStateMachine.syncGetLinkLayerStats(mWifiStateMachineChannel);
             if (stats != null) {
+
+                int rxIdleCurrent =
+                     mContext.getResources().getInteger(
+                             com.android.internal.R.integer.config_wifi_idle_receive_cur_ma);
+                int rxCurrent =
+                     mContext.getResources().getInteger(
+                             com.android.internal.R.integer.config_wifi_active_rx_cur_ma);
+                int txCurrent =
+                     mContext.getResources().getInteger(
+                             com.android.internal.R.integer.config_wifi_tx_cur_ma);
+                int voltage =
+                     mContext.getResources().getInteger(
+                             com.android.internal.R.integer.config_wifi_operating_voltage_mv);
+                int rxIdleTime = stats.on_time - stats.tx_time - stats.rx_time;
+
+                int energyUsed = (stats.tx_time * txCurrent + stats.rx_time * rxCurrent
+                        + rxIdleTime * rxIdleCurrent ) * voltage / 1000;
+
                 // Convert the LinkLayerStats into EnergyActivity
                 energyInfo = new WifiActivityEnergyInfo(SystemClock.elapsedRealtime(),
                         WifiActivityEnergyInfo.STACK_STATE_STATE_IDLE, stats.tx_time,
-                        stats.rx_time, stats.on_time - stats.tx_time - stats.rx_time,
-                        0 /* TBD */);
+                        stats.rx_time, rxIdleTime, energyUsed);
             }
             return energyInfo;
         } else {
