@@ -13,49 +13,8 @@
 #include <linux/if.h>
 #include <ctype.h>
 #include <stdarg.h>
-#include "wifi_hal_stub.h"
+
 pthread_mutex_t printMutex;
-
-static wifi_hal_fn hal_fn;
-int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
-    if (hal_fn == NULL) {
-        return -1;
-    }
-    hal_fn->wifi_initialize = wifi_initialize_stub;
-    hal_fn->wifi_cleanup = wifi_cleanup_stub;
-    hal_fn->wifi_event_loop = wifi_event_loop_stub;
-    hal_fn->wifi_get_error_info = wifi_get_error_info_stub;
-    hal_fn->wifi_get_supported_feature_set = wifi_get_supported_feature_set_stub;
-    hal_fn->wifi_get_concurrency_matrix = wifi_get_concurrency_matrix_stub;
-    hal_fn->wifi_set_scanning_mac_oui =  wifi_set_scanning_mac_oui_stub;
-    hal_fn->wifi_get_supported_channels = wifi_get_supported_channels_stub;
-    hal_fn->wifi_is_epr_supported = wifi_is_epr_supported_stub;
-    hal_fn->wifi_get_ifaces = wifi_get_ifaces_stub;
-    hal_fn->wifi_get_iface_name = wifi_get_iface_name_stub;
-    hal_fn->wifi_reset_iface_event_handler = wifi_reset_iface_event_handler_stub;
-    hal_fn->wifi_start_gscan = wifi_start_gscan_stub;
-    hal_fn->wifi_stop_gscan = wifi_stop_gscan_stub;
-    hal_fn->wifi_get_cached_gscan_results = wifi_get_cached_gscan_results_stub;
-    hal_fn->wifi_set_bssid_hotlist = wifi_set_bssid_hotlist_stub;
-    hal_fn->wifi_reset_bssid_hotlist = wifi_reset_bssid_hotlist_stub;
-    hal_fn->wifi_set_significant_change_handler = wifi_set_significant_change_handler_stub;
-    hal_fn->wifi_reset_significant_change_handler = wifi_reset_significant_change_handler_stub;
-    hal_fn->wifi_get_gscan_capabilities = wifi_get_gscan_capabilities_stub;
-    hal_fn->wifi_set_link_stats = wifi_set_link_stats_stub;
-    hal_fn->wifi_get_link_stats = wifi_get_link_stats_stub;
-    hal_fn->wifi_clear_link_stats = wifi_clear_link_stats_stub;
-    hal_fn->wifi_get_valid_channels = wifi_get_valid_channels_stub;
-    hal_fn->wifi_rtt_range_request = wifi_rtt_range_request_stub;
-    hal_fn->wifi_rtt_range_cancel = wifi_rtt_range_cancel_stub;
-    hal_fn->wifi_get_rtt_capabilities = wifi_get_rtt_capabilities_stub;
-    hal_fn->wifi_set_nodfs_flag = wifi_set_nodfs_flag_stub;
-    hal_fn->wifi_start_logging = wifi_start_logging_stub;
-    hal_fn->wifi_set_epno_list = wifi_set_epno_list_stub;
-    hal_fn->wifi_set_country_code = wifi_set_country_code_stub;
-
-    return 0;
-}
-
 void printMsg(const char *fmt, ...)
 {
     pthread_mutex_lock(&printMutex);
@@ -361,16 +320,6 @@ int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
 
 
 static int init() {
-    if(init_wifi_hal_func_table(&hal_fn) != 0 ) {
-        ALOGD("Can not initialize the basic function pointer table");
-        return -1;
-    }
-
-    wifi_error res = init_wifi_vendor_hal_func_table(&hal_fn);
-    if (res != WIFI_SUCCESS) {
-        ALOGD("Can not initialize the vendor function pointer table");
-        return -1;
-    }
 
     ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
     if (ioctl_sock < 0) {
@@ -385,19 +334,19 @@ static int init() {
         return ret;
     }
 
-    res = hal_fn.wifi_initialize(&halHandle);
+    wifi_error res = wifi_initialize(&halHandle);
     if (res < 0) {
         return res;
     }
 
-    res = hal_fn.wifi_get_ifaces(halHandle, &numIfaceHandles, &ifaceHandles);
+    res = wifi_get_ifaces(halHandle, &numIfaceHandles, &ifaceHandles);
     if (res < 0) {
         return res;
     }
 
     char buf[EVENT_BUF_SIZE];
     for (int i = 0; i < numIfaceHandles; i++) {
-        if (hal_fn.wifi_get_iface_name(ifaceHandles[i], buf, sizeof(buf)) == WIFI_SUCCESS) {
+        if (wifi_get_iface_name(ifaceHandles[i], buf, sizeof(buf)) == WIFI_SUCCESS) {
             if (strcmp(buf, "wlan0") == 0) {
                 printMsg("found interface %s\n", buf);
                 wlan0Handle = ifaceHandles[i];
@@ -419,13 +368,13 @@ static void cleaned_up_handler(wifi_handle handle) {
 
 static void cleanup() {
     printMsg("cleaning up HAL\n");
-    hal_fn.wifi_cleanup(halHandle, cleaned_up_handler);
+    wifi_cleanup(halHandle, cleaned_up_handler);
 }
 
 static void *eventThreadFunc(void *context) {
 
     printMsg("starting wifi event loop\n");
-    hal_fn.wifi_event_loop(halHandle);
+    wifi_event_loop(halHandle);
     printMsg("out of wifi event loop\n");
 
     return NULL;
@@ -571,7 +520,7 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
 
     /* Get capabilties */
     wifi_gscan_capabilities capabilities;
-    int result = hal_fn.wifi_get_gscan_capabilities(wlan0Handle, &capabilities);
+    int result = wifi_get_gscan_capabilities(wlan0Handle, &capabilities);
     if (result < 0) {
         printMsg("failed to get scan capabilities - %d\n", result);
         printMsg("trying scan anyway ..\n");
@@ -651,7 +600,7 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
 
     scanCmdId = getNewCmdId();
     printMsg("Starting scan --->\n");
-    return hal_fn.wifi_start_gscan(scanCmdId, wlan0Handle, params, handler) == WIFI_SUCCESS;
+    return wifi_start_gscan(scanCmdId, wlan0Handle, params, handler) == WIFI_SUCCESS;
 }
 
 static void stopScan() {
@@ -659,7 +608,7 @@ static void stopScan() {
     if (id == 0)
         id = -1;
 
-    hal_fn.wifi_stop_gscan(id, wlan0Handle);
+    wifi_stop_gscan(id, wlan0Handle);
     scanCmdId = 0;
 }
 
@@ -715,7 +664,7 @@ static int scanOnce(wifi_band band, wifi_scan_result **results, int num_results)
 
     int scanCmdId = getNewCmdId();
     printMsg("Starting scan --->\n");
-    if (hal_fn.wifi_start_gscan(scanCmdId, wlan0Handle, params, handler) == WIFI_SUCCESS) {
+    if (wifi_start_gscan(scanCmdId, wlan0Handle, params, handler) == WIFI_SUCCESS) {
         int events = 0;
         while (true) {
             EventInfo info;
@@ -731,7 +680,7 @@ static int scanOnce(wifi_band band, wifi_scan_result **results, int num_results)
                     printMsg("fetched %d scan results\n", retrieved_num_results);
 
                     printMsg("Scan once completed, stopping scan\n");
-                    hal_fn.wifi_stop_gscan(scanCmdId, wlan0Handle);
+                    wifi_stop_gscan(scanCmdId, wlan0Handle);
                     saved_scan_results = NULL;
                     max_saved_scan_results = 0;
                     num_saved_scan_results = 0;
@@ -750,7 +699,7 @@ static void retrieveScanResults() {
     wifi_cached_scan_results results[64];
     memset(results, 0, sizeof(wifi_cached_scan_results) * num_results);
     printMsg("Retrieve Scan results available -->\n");
-    int result = hal_fn.wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
+    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
         return;
@@ -1128,7 +1077,7 @@ static void testRTT()
     if (!rtt_to_file) {
         if (num_ap) {
             printMsg("Configuring RTT for %d APs\n", num_ap);
-            int result = hal_fn.wifi_rtt_range_request(rttCmdId, wlan0Handle, num_ap, params, handler);
+            int result = wifi_rtt_range_request(rttCmdId, wlan0Handle, num_ap, params, handler);
             if (result == WIFI_SUCCESS) {
                 printMsg("\nWaiting for RTT results\n");
                 while (true) {
@@ -1153,7 +1102,7 @@ static void getRTTCapability()
 {
 	int ret;
 	wifi_rtt_capabilities rtt_capability;
-	ret = hal_fn.wifi_get_rtt_capabilities(wlan0Handle, &rtt_capability);
+	ret = wifi_get_rtt_capabilities(wlan0Handle, &rtt_capability);
 	if (ret == WIFI_SUCCESS) {
 		printMsg("Supported Capabilites of RTT :\n");
 		if (rtt_capability.rtt_one_sided_supported)
@@ -1189,7 +1138,7 @@ static int GetCachedGScanResults(int max, wifi_scan_result *results, int *num)
     int num_results = 64;
     wifi_cached_scan_results results2[64];
     memset(results2, 0, sizeof(wifi_cached_scan_results) * num_results);
-    int result =hal_fn.wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results2, &num_results);
+    int result = wifi_get_cached_gscan_results(wlan0Handle, 1, num_results, results2, &num_results);
     if (result < 0) {
         printMsg("failed to fetch scan results : %d\n", result);
         return result;
@@ -1269,16 +1218,16 @@ static wifi_error setHotlistAPs() {
     handler.on_hotlist_ap_lost = &onHotlistAPLost;
     hotlistCmdId = getNewCmdId();
     printMsg("Setting hotlist APs threshold\n");
-    return hal_fn.wifi_set_bssid_hotlist(hotlistCmdId, wlan0Handle, params, handler);
+    return wifi_set_bssid_hotlist(hotlistCmdId, wlan0Handle, params, handler);
 }
 
 static void resetHotlistAPs() {
     printMsg(", stoping Hotlist AP scanning\n");
-    hal_fn.wifi_reset_bssid_hotlist(hotlistCmdId, wlan0Handle);
+    wifi_reset_bssid_hotlist(hotlistCmdId, wlan0Handle);
 }
 
 static void setPnoMacOui() {
-    hal_fn.wifi_set_scanning_mac_oui(wlan0Handle, mac_oui);
+    wifi_set_scanning_mac_oui(wlan0Handle, mac_oui);
 }
 
 static void testHotlistAPs(){
@@ -1411,13 +1360,13 @@ static int SelectSignificantAPsFromScanResults() {
     handler.on_significant_change = &onSignificantWifiChange;
 
     int id = getNewCmdId();
-    return hal_fn.wifi_set_significant_change_handler(id, wlan0Handle, params, handler);
+    return wifi_set_significant_change_handler(id, wlan0Handle, params, handler);
 
 }
 
 static void untrackSignificantChange() {
     printMsg(", Stop tracking SignificantChange\n");
-    hal_fn.wifi_reset_bssid_hotlist(hotlistCmdId, wlan0Handle);
+    wifi_reset_bssid_hotlist(hotlistCmdId, wlan0Handle);
 }
 
 static void trackSignificantChange() {
@@ -1798,7 +1747,7 @@ void getLinkStats(void)
 
     handler.on_link_stats_results = &onLinkStatsResults;
 
-    int result = hal_fn.wifi_get_link_stats(0, wlan0Handle, handler);
+    int result = wifi_get_link_stats(0, wlan0Handle, handler);
     if (result < 0) {
         printMsg("failed to get link statistics - %d\n", result);
     } else {
@@ -1811,7 +1760,7 @@ void getChannelList(void)
     wifi_channel channel[MAX_CH_BUF_SIZE];
     int num_channels = 0, i;
 
-    int result = hal_fn.wifi_get_valid_channels(wlan0Handle, band, MAX_CH_BUF_SIZE,
+    int result = wifi_get_valid_channels(wlan0Handle, band, MAX_CH_BUF_SIZE,
             channel, &num_channels);
     printMsg("Number of channels - %d\nChannel List:\n",num_channels);
     for (i = 0; i < num_channels; i++) {
@@ -1822,7 +1771,7 @@ void getChannelList(void)
 void getFeatureSet(void)
 {
     feature_set set;
-    int result = hal_fn.wifi_get_supported_feature_set(wlan0Handle, &set);
+    int result = wifi_get_supported_feature_set(wlan0Handle, &set);
 
     if (result < 0) {
         printMsg("Error %d\n",result);
@@ -1838,7 +1787,7 @@ void getFeatureSetMatrix(void)
     feature_set set[MAX_FEATURE_SET];
     int size;
 
-    int result = hal_fn.wifi_get_concurrency_matrix(wlan0Handle, MAX_FEATURE_SET, set, &size);
+    int result = wifi_get_concurrency_matrix(wlan0Handle, MAX_FEATURE_SET, set, &size);
 
     if (result < 0) {
         printMsg("Error %d\n",result);
@@ -1944,7 +1893,7 @@ int main(int argc, char *argv[]) {
         u32 nodfs = 0;
         if (argc > 2)
             nodfs = (u32)atoi(argv[2]);
-        hal_fn.wifi_set_nodfs_flag(wlan0Handle, nodfs);
+        wifi_set_nodfs_flag(wlan0Handle, nodfs);
     } else if ((strcmp(argv[1], "-ePNO") == 0)) {
         memset(epno_ssid, 0, 16 * sizeof(epno_ssid[0]));
         num_epno_ssids = -1;
@@ -1957,7 +1906,7 @@ int main(int argc, char *argv[]) {
             country_code = argv[2];
         printf("Fix Setting wifi_set_country_code\n");
         printf("***************************************\n");
-        hal_fn.wifi_set_country_code(wlan0Handle, country_code);
+        //wifi_set_country_code(wlan0Handle, country_code);
     } else if (strcmp(argv[1], "-help") == 0) {
         printUsage();
     }
