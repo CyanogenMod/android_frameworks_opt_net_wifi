@@ -1660,15 +1660,25 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
+    private static boolean isDfs(int channel) {
+        int[] dfsChannels = WifiNative.getChannelsForBand(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY);
+        for (int i = 0; i < dfsChannels.length; i++) {
+            if (channel == dfsChannels[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static int getBandFromChannels(WifiScanner.ChannelSpec[] channels) {
         int band = WifiScanner.WIFI_BAND_UNSPECIFIED;
         for (WifiScanner.ChannelSpec channel : channels) {
             if (2400 <= channel.frequency && channel.frequency < 2500) {
                 band |= WifiScanner.WIFI_BAND_24_GHZ;
+            } else if ( isDfs(channel.frequency)) {
+                band |= WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY;
             } else if (5100 <= channel.frequency && channel.frequency < 6000) {
                 band |= WifiScanner.WIFI_BAND_5_GHZ;
-            } else {
-                /* TODO: Add DFS Range */
             }
         }
         return band;
@@ -1678,10 +1688,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         for (WifiNative.ChannelSettings channel : channels) {
             if (2400 <= channel.frequency && channel.frequency < 2500) {
                 band |= WifiScanner.WIFI_BAND_24_GHZ;
+            } else if ( isDfs(channel.frequency)) {
+                band |= WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY;
             } else if (5100 <= channel.frequency && channel.frequency < 6000) {
                 band |= WifiScanner.WIFI_BAND_5_GHZ;
-            } else {
-                /* TODO: Add DFS Range */
             }
         }
         return band;
