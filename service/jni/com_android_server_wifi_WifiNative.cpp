@@ -1348,7 +1348,7 @@ static jboolean android_net_wifi_set_Country_Code_Hal(JNIEnv *env,jclass cls, ji
     const char *country = env->GetStringUTFChars(country_code, NULL);
 
     ALOGD("set country code: %s", country);
-    wifi_error res = wifi_set_country_code(handle, country);
+    wifi_error res = hal_fn.wifi_set_country_code(handle, country);
     env->ReleaseStringUTFChars(country_code, country);
 
     return res == WIFI_SUCCESS;
