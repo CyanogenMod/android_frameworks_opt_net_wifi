@@ -3576,6 +3576,17 @@ public class WifiStateMachine extends StateMachine {
                             scanResult.seen = System.currentTimeMillis();
                             mScanResultCache.put(key, scanResult);
                         }
+                        if (mFrequencyBand.get()
+                                == WifiManager.WIFI_FREQUENCY_BAND_2GHZ) {
+                            if (ScanResult.is5GHz(freq)) {
+                                continue;
+                            }
+                        } else if (mFrequencyBand.get()
+                                     == WifiManager.WIFI_FREQUENCY_BAND_5GHZ) {
+                            if (ScanResult.is24GHz(freq)) {
+                                continue;
+                            }
+                        }
                         mNumScanResultsReturned ++; // Keep track of how many scan results we got
                                                     // as part of this scan's processing
                         mScanResults.add(scanResult);
@@ -3816,7 +3827,7 @@ public class WifiStateMachine extends StateMachine {
         WifiConfiguration currentConfiguration = getCurrentWifiConfiguration();
         if (currentConfiguration != null
                 && currentConfiguration.scanResultCache != null) {
-            currentConfiguration.setVisibility(12000);
+            currentConfiguration.setVisibility(12000, mFrequencyBand.get());
             if (currentConfiguration.visibility != null) {
                 if (currentConfiguration.visibility.rssi24 != WifiConfiguration.INVALID_RSSI
                         && currentConfiguration.visibility.rssi24
@@ -5636,6 +5647,7 @@ public class WifiStateMachine extends StateMachine {
                         if (PDBG)  loge("did set frequency band " + band);
 
                         mFrequencyBand.set(band);
+                        mWifiConfigStore.setConfiguredBand(band);
                         // Flush old data - like scan results
                         mWifiNative.bssFlush();
                         if (mFrequencyBand.get() == WifiManager.WIFI_FREQUENCY_BAND_2GHZ) {
