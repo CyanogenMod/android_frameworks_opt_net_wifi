@@ -38,6 +38,27 @@ LOCAL_MODULE := libwifi-hal
 
 include $(BUILD_STATIC_LIBRARY)
 
+# Make HAL stub library 2
+# ============================================================
+
+include $(CLEAR_VARS)
+
+LOCAL_REQUIRED_MODULES :=
+
+LOCAL_CFLAGS += -Wno-unused-parameter
+
+LOCAL_C_INCLUDES += \
+	$(LOCAL_PATH)/jni \
+	external/libnl-headers \
+	$(call include-path-for, libhardware_legacy)/hardware_legacy
+
+LOCAL_SRC_FILES := \
+	lib/wifi_hal_stub.cpp
+
+LOCAL_MODULE := libwifi-hal-stub
+
+include $(BUILD_STATIC_LIBRARY)
+
 # set correct hal library path
 # ============================================================
 LIB_WIFI_HAL := libwifi-hal
@@ -67,6 +88,7 @@ LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
 LOCAL_CPPFLAGS += -Wno-conversion-null
 
 LOCAL_C_INCLUDES += \
+	$(LOCAL_PATH)/jni \
 	external/stlport/stlport \
     	bionic \
 	$(call include-path-for, libhardware)/hardware \
@@ -81,6 +103,7 @@ LOCAL_SHARED_LIBRARIES += \
 	libutils \
 	libdl
 
+LOCAL_STATIC_LIBRARIES += libwifi-hal-stub
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
 LOCAL_SRC_FILES := \
@@ -116,6 +139,7 @@ LOCAL_SHARED_LIBRARIES += \
 	libnl \
 	libdl
 
+LOCAL_STATIC_LIBRARIES += libwifi-hal-stub
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
 
 LOCAL_SRC_FILES := \
