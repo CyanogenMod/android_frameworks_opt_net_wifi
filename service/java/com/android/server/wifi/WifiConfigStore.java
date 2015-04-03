@@ -900,6 +900,25 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
+     * Find matching network for this scanResult
+     */
+    WifiConfiguration getMatchingConfig(ScanResult scanResult) {
+
+        for (Map.Entry entry : mScanDetailCaches.entrySet()) {
+            Integer netId = (Integer) entry.getKey();
+            ScanDetailCache cache = (ScanDetailCache) entry.getValue();
+            WifiConfiguration config = getWifiConfiguration(netId);
+            if (config == null)
+                continue;
+            if (cache.get(scanResult.BSSID) != null) {
+                return config;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Fetch the preSharedKeys for all networks.
      * @return a map from Ssid to preSharedKey.
      */
