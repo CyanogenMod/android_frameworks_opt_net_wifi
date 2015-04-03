@@ -312,33 +312,38 @@ public class NetworkDetail {
         catch (IllegalArgumentException | BufferUnderflowException e) {
             Log.d("HS2J", "Caught " + e);
             if (ssidOctets == null) {
-                throw e.getClass() == IllegalArgumentException.class ?
-                        e : new IllegalArgumentException(e);
+                throw new IllegalArgumentException("Malformed IE string (no SSID)", e);
             }
             exception = e;
         }
 
         if (ssidOctets != null) {
-            Charset encoding;
-            if (extendedCapabilities != null && (extendedCapabilities & SSID_UTF8_BIT) != 0) {
-                encoding = StandardCharsets.UTF_8;
+            boolean strictUTF8 = extendedCapabilities != null &&
+                    ( extendedCapabilities & SSID_UTF8_BIT ) != 0;
+
+            /*
+             * Strict use of the "UTF-8 SSID" bit by APs appears to be spotty at best even if the
+             * encoding truly is in UTF-8. An unconditional attempt to decode the SSID as UTF-8 is
+             * therefore always made with a fall back to 8859-1 under normal circumstances.
+             * If, however, a previous exception was detected and the UTF-8 bit is set, failure to
+             * decode the SSID will be used as an indication that the whole frame is malformed and
+             * an exception will be triggered.
+             */
+            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+            try {
+                CharBuffer decoded = decoder.decode(ByteBuffer.wrap(ssidOctets));
+                ssid = decoded.toString();
             }
-            else {
-                encoding = StandardCharsets.ISO_8859_1;
+            catch (CharacterCodingException cce) {
+                ssid = null;
             }
 
-            if (exception == null) {
-                ssid = new String(ssidOctets, encoding);
-            }
-            else {
-                // Apply strict checking if there were previous errors:
-                CharsetDecoder decoder = encoding.newDecoder();
-                try {
-                    CharBuffer decoded = decoder.decode(ByteBuffer.wrap(ssidOctets));
-                    ssid = decoded.toString();
+            if (ssid == null) {
+                if (strictUTF8 && exception != null) {
+                    throw new IllegalArgumentException("Failed to decode SSID in dubious IE string");
                 }
-                catch (CharacterCodingException cce) {
-                    throw exception;
+                else {
+                    ssid = new String(ssidOctets, StandardCharsets.ISO_8859_1);
                 }
             }
         }

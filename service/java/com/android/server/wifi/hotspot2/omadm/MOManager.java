@@ -422,7 +422,7 @@ public class MOManager {
 
             EAP.EAPMethodID eapMethodID = EAP.mapEAPMethod(eapID);
             if (eapMethodID == null) {
-                throw new OMAException("Unknown EAP method: " + eapMethodID);
+                throw new OMAException("Unknown EAP method: " + eapID);
             }
 
             Long vid = getOptionalInteger(eapMethodNode.getChild(TAG_VendorId));
