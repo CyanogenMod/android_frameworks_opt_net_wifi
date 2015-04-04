@@ -886,6 +886,17 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
+     * Returns a WifiConfiguration matching this ScanResult
+     * @param scanResult scanResult that represents the BSSID
+     * @return {@link WifiConfiguration} that matches this BSSID or null
+     */
+    public WifiConfiguration getMatchingWifiConfig(ScanResult scanResult) {
+        enforceAccessPermission();
+        return mWifiStateMachine.syncGetMatchingWifiConfig(scanResult, mWifiStateMachineChannel);
+    }
+
+
+    /**
      * see {@link android.net.wifi.WifiManager#addOrUpdateNetwork(WifiConfiguration)}
      * @return the supplicant-assigned identifier for the new or updated
      * network if the operation succeeds, or {@code -1} if it fails

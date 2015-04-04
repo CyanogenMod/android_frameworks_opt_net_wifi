@@ -595,6 +595,9 @@ public class WifiStateMachine extends StateMachine {
     /* Disable an ephemeral network */
     static final int CMD_DISABLE_EPHEMERAL_NETWORK = BASE + 98;
 
+    /* Get matching network */
+    static final int CMD_GET_MATCHING_CONFIG              = BASE + 99;
+
     /* P2p commands */
     /* We are ok with no response here since we wont do much with it anyway */
     public static final int CMD_ENABLE_P2P                = BASE + 131;
@@ -2170,6 +2173,10 @@ public class WifiStateMachine extends StateMachine {
         return result;
     }
 
+    public WifiConfiguration syncGetMatchingWifiConfig(ScanResult scanResult, AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_MATCHING_CONFIG, scanResult);
+        return (WifiConfiguration) resultMsg.obj;
+    }
 
     /**
      * Get connection statistics synchronously
@@ -4967,6 +4974,7 @@ public class WifiStateMachine extends StateMachine {
                 case CMD_DISCONNECTING_WATCHDOG_TIMER:
                 case CMD_ROAM_WATCHDOG_TIMER:
                 case CMD_DISABLE_EPHEMERAL_NETWORK:
+                case CMD_GET_MATCHING_CONFIG:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
@@ -6617,7 +6625,11 @@ public class WifiStateMachine extends StateMachine {
                     replyToMessage(message, message.what,
                             mWifiConfigStore.getPrivilegedConfiguredNetworks());
                     break;
-                    /* Do a redundant disconnect without transition */
+                case CMD_GET_MATCHING_CONFIG:
+                    replyToMessage(message, message.what,
+                            mWifiConfigStore.getMatchingConfig((ScanResult)message.obj));
+                    break;
+                /* Do a redundant disconnect without transition */
                 case CMD_DISCONNECT:
                     mWifiConfigStore.setLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
