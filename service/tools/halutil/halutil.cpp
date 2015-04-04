@@ -358,6 +358,16 @@ int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
 
 
 static int init() {
+    if(init_wifi_hal_func_table(&hal_fn) != 0 ) {
+        ALOGD("Can not initialize the basic function pointer table");
+        return -1;
+    }
+
+    wifi_error res = init_wifi_vendor_hal_func_table(&hal_fn);
+    if (res != WIFI_SUCCESS) {
+        ALOGD("Can not initialize the vendor function pointer table");
+        return -1;
+    }
 
     ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
     if (ioctl_sock < 0) {
@@ -372,7 +382,7 @@ static int init() {
         return ret;
     }
 
-    wifi_error res = hal_fn.wifi_initialize(&halHandle);
+    res = hal_fn.wifi_initialize(&halHandle);
     if (res < 0) {
         return res;
     }
