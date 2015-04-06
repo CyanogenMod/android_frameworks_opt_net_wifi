@@ -125,6 +125,7 @@ import java.io.PrintWriter;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.SocketException;
+import java.nio.BufferUnderflowException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
@@ -3568,6 +3569,8 @@ public class WifiStateMachine extends StateMachine {
                         }
                         catch (IllegalArgumentException iae) {
                             Log.d("HS2J", "Failed to parse information elements: " + iae);
+                        } catch (BufferUnderflowException bue) {
+                            Log.d("HS2J", "Failed to parse information elements: " + bue);
                         }
                     }
                     bssid = null;
