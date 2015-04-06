@@ -1108,6 +1108,17 @@ public class WifiConfigStore extends IpConfigStore {
                 encodeSSID(ssid));
     }
 
+    private boolean updateLastConnectUid(WifiConfiguration config, int uid) {
+        if (config != null) {
+            if (config.lastConnectUid != uid) {
+                config.lastConnectUid = uid;
+                config.dirty = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Selects the specified network for connection. This involves
      * updating the priority of all the networks and enabling the given
@@ -1118,14 +1129,14 @@ public class WifiConfigStore extends IpConfigStore {
      * or a failure event from supplicant
      *
      * @param netId network to select for connection
+     * @param uid the UID that is requesting this connection
      * @return false if the network id is invalid
      */
-    boolean selectNetwork(WifiConfiguration config, boolean updatePriorities) {
+    boolean selectNetwork(WifiConfiguration config, boolean updatePriorities, int uid) {
         if (VDBG) localLog("selectNetwork", config.networkId);
         if (config.networkId == INVALID_NETWORK_ID) return false;
 
         // Reset the priority of each network at start or if it goes too high.
-        boolean saveNetworkHistory = updatePriorities;
         if (mLastPriority == -1 || mLastPriority > 1000000) {
             for(WifiConfiguration config2 : mConfiguredNetworks.values()) {
                 if (updatePriorities) {
@@ -1133,9 +1144,6 @@ public class WifiConfigStore extends IpConfigStore {
                         config2.priority = 0;
                         setNetworkPriorityNative(config2.networkId, config.priority);
                     }
-                }
-                if (config2.dirty) {
-                    saveNetworkHistory = true;
                 }
             }
             mLastPriority = 0;
@@ -1168,11 +1176,8 @@ public class WifiConfigStore extends IpConfigStore {
         else
             mWifiNative.selectNetwork(config.networkId);
 
-        if (saveNetworkHistory) {
-            /* TODO: we should remove this from here; selectNetwork *
-             * shouldn't have this side effect of saving data       */
-            writeKnownNetworkHistory(false);
-        }
+        updateLastConnectUid(config, uid);
+        writeKnownNetworkHistory(false);
 
         /* Enable the given network while disabling all other networks */
         enableNetworkWithoutBroadcast(config.networkId, true);
@@ -1569,10 +1574,12 @@ public class WifiConfigStore extends IpConfigStore {
      * @param netId network to be enabled
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
-    boolean enableNetwork(int netId, boolean disableOthers) {
+    boolean enableNetwork(int netId, boolean disableOthers, int uid) {
         boolean ret = enableNetworkWithoutBroadcast(netId, disableOthers);
         if (disableOthers) {
-            if (VDBG) localLog("enableNetwork(disableOthers=true) ", netId);
+            if (VDBG) localLog("enableNetwork(disableOthers=true, uid=" + uid + ") ", netId);
+            updateLastConnectUid(getWifiConfiguration(netId), uid);
+            writeKnownNetworkHistory(false);
             sendConfiguredNetworksChangedBroadcast();
         } else {
             if (VDBG) localLog("enableNetwork(disableOthers=false) ", netId);
@@ -3108,7 +3115,7 @@ public class WifiConfigStore extends IpConfigStore {
             currentConfig.enterpriseConfig.setPlmn(config.enterpriseConfig.getPlmn());
         }
 
-        if (uid >= 0) {
+        if (uid != WifiConfiguration.UNKNOWN_UID) {
             if (newNetwork) {
                 currentConfig.creatorUid = uid;
             } else {
@@ -3153,7 +3160,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (config.lastUpdateName != null) {
             currentConfig.lastUpdateName = config.lastUpdateName;
         }
-        if (config.lastUpdateUid != -1) {
+        if (config.lastUpdateUid != WifiConfiguration.UNKNOWN_UID) {
             currentConfig.lastUpdateUid = config.lastUpdateUid;
         }
 

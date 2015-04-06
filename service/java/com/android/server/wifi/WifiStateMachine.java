@@ -6613,7 +6613,8 @@ public class WifiStateMachine extends StateMachine {
                     // Cancel auto roam requests
                     autoRoamSetBSSID(message.arg1, "any");
 
-                    ok = mWifiConfigStore.enableNetwork(message.arg1, message.arg2 == 1);
+                    int uid = message.sendingUid;
+                    ok = mWifiConfigStore.enableNetwork(message.arg1, message.arg2 == 1, uid);
                     if (!ok) {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                     }
@@ -6808,7 +6809,7 @@ public class WifiStateMachine extends StateMachine {
                     /* Save the network config */
                     loge("CMD_AUTO_CONNECT will save config -> " + config.SSID
                             + " nid=" + Integer.toString(netId));
-                    result = mWifiConfigStore.saveNetwork(config, -1);
+                    result = mWifiConfigStore.saveNetwork(config, WifiConfiguration.UNKNOWN_UID);
                     netId = result.getNetworkId();
                     loge("CMD_AUTO_CONNECT did save config -> "
                             + " nid=" + Integer.toString(netId));
@@ -6825,8 +6826,8 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false) &&
-                            mWifiNative.reconnect()) {
+                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
+                            WifiConfiguration.UNKNOWN_UID) && mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
                         config = mWifiConfigStore.getWifiConfiguration(netId);
@@ -6974,8 +6975,8 @@ public class WifiStateMachine extends StateMachine {
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
-                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ true) &&
-                            mWifiNative.reconnect()) {
+                    if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ true,
+                            message.sendingUid) && mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
@@ -7039,7 +7040,7 @@ public class WifiStateMachine extends StateMachine {
                         break;
                     }
 
-                    result = mWifiConfigStore.saveNetwork(config, -1);
+                    result = mWifiConfigStore.saveNetwork(config, WifiConfiguration.UNKNOWN_UID);
                     if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                         if (mWifiInfo.getNetworkId() == result.getNetworkId()) {
                             if (result.hasIpChanged()) {
@@ -8201,8 +8202,8 @@ public class WifiStateMachine extends StateMachine {
 
                     boolean ret = false;
                     if (mLastNetworkId != netId) {
-                       if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false) &&
-                           mWifiNative.reconnect()) {
+                       if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
+                               WifiConfiguration.UNKNOWN_UID) && mWifiNative.reconnect()) {
                            ret = true;
                        }
                     } else {
