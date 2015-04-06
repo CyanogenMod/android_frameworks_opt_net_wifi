@@ -706,9 +706,11 @@ public class WifiStateMachine extends StateMachine {
 
     static final int CMD_AUTO_SAVE_NETWORK                = BASE + 146;
 
-    static final int CMD_ASSOCIATED_BSSID                = BASE + 147;
+    static final int CMD_ASSOCIATED_BSSID                 = BASE + 147;
 
-    static final int CMD_NETWORK_STATUS                  = BASE + 148;
+    static final int CMD_NETWORK_STATUS                   = BASE + 148;
+
+    static final int CMD_ACCEPT_UNVALIDATED               = BASE + 149;
 
     /* Wifi state machine modes of operation */
     /* CONNECT_MODE - connect to any 'known' AP when it becomes available */
@@ -7208,7 +7210,9 @@ public class WifiStateMachine extends StateMachine {
             unwantedNetwork(network_status_unwanted_disconnect);
         }
 
+        @Override
         protected void networkStatus(int status) {
+            if (this != mNetworkAgent) return;
             if (status == NetworkAgent.INVALID_NETWORK) {
                 if (DBG) log("WifiNetworkAgent -> Wifi networkStatus invalid, score="
                         + Integer.toString(mWifiInfo.score));
@@ -7218,6 +7222,12 @@ public class WifiStateMachine extends StateMachine {
                         + Integer.toString(mWifiInfo.score));
                 doNetworkStatus(status);
             }
+        }
+
+        @Override
+        protected void saveAcceptUnvalidated(boolean accept) {
+            if (this != mNetworkAgent) return;
+            WifiStateMachine.this.sendMessage(CMD_ACCEPT_UNVALIDATED, accept ? 1 : 0);
         }
     }
 
@@ -7862,8 +7872,22 @@ public class WifiStateMachine extends StateMachine {
         DetailedState.CAPTIVE_PORTAL_CHECK);
         sendNetworkStateChangeBroadcast(mLastBssid);
 
-        if (mWifiConfigStore.getLastSelectedConfiguration() != null) {
-            if (mNetworkAgent != null) mNetworkAgent.explicitlySelected();
+        // If this network was explicitly selected by the user or by an app, evaluate whether to
+        // call explicitlySelected() so the system can treat it appropriately.
+        WifiConfiguration config = getCurrentWifiConfiguration();
+        if (mWifiConfigStore.isLastSelectedConfiguration(config) && mNetworkAgent != null) {
+            if (mWifiConfigStore.checkConfigOverridePermission(config.lastConnectUid)) {
+                // Selected by the user via Settings or QuickSettings. If this network has Internet
+                // access, switch to it. Otherwise, switch to it only if the user confirms that they
+                // really want to switch, or has already confirmed and selected "Don't ask again".
+                mNetworkAgent.explicitlySelected(config.noInternetAccessExpected);
+            } else {
+                // Selected by an app. Hard switch to this network regardless of whether it has
+                // Internet access or not.
+                // TODO: stop doing this, either by requiring apps to update or by putting a
+                // compatibility hack in place.
+                mNetworkAgent.explicitlySelected(true);
+            }
         }
 
         setNetworkDetailedState(DetailedState.CONNECTED);
@@ -8079,6 +8103,13 @@ public class WifiStateMachine extends StateMachine {
                             config.numNoInternetAccessReports = 0;
                             config.validatedInternetAccess = true;
                         }
+                    }
+                    return HANDLED;
+                case CMD_ACCEPT_UNVALIDATED:
+                    boolean accept = (message.arg1 != 0);
+                    config = getCurrentWifiConfiguration();
+                    if (config != null) {
+                        config.noInternetAccessExpected = accept;
                     }
                     return HANDLED;
                 case CMD_TEST_NETWORK_DISCONNECT:
