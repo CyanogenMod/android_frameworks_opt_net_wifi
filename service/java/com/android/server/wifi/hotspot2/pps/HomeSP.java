@@ -27,7 +27,7 @@ public class HomeSP {
     private final Map<String, Long> mSSIDs;        // SSID, HESSID, [0,N]
     private final String mFQDN;
     private final DomainMatcher mDomainMatcher;
-    private final Set<Long> mRoamingConsortiums;    // [0,N]
+    private final HashSet<Long> mRoamingConsortiums;    // [0,N]
     private final Set<Long> mMatchAnyOIs;           // [0,N]
     private final List<Long> mMatchAllOIs;          // [0,N]
 
@@ -39,7 +39,7 @@ public class HomeSP {
 
     public HomeSP(Map<String, Long> ssidMap,
                    /*@NotNull*/ String fqdn,
-                   /*@NotNull*/ Set<Long> roamingConsortiums,
+                   /*@NotNull*/ HashSet<Long> roamingConsortiums,
                    /*@NotNull*/ Set<String> otherHomePartners,
                    /*@NotNull*/ Set<Long> matchAnyOIs,
                    /*@NotNull*/ List<Long> matchAllOIs,
@@ -63,7 +63,8 @@ public class HomeSP {
     }
 
     public PasspointMatch match(NetworkDetail networkDetail,
-                                Map<ANQPElementType, ANQPElement> anqpElementMap) {
+                                Map<ANQPElementType, ANQPElement> anqpElementMap,
+                                List<String> imsis) {
 
         if (mSSIDs.containsKey(networkDetail.getSSID())) {
             Long hessid = mSSIDs.get(networkDetail.getSSID());
@@ -135,12 +136,15 @@ public class HomeSP {
                 if (match != DomainMatcher.Match.None) {
                     return PasspointMatch.HomeProvider;
                 }
-                /* !!! Compare with MCC and MNC from SIM card.
-                int[] mccMnc = Utils.getMccMnc(anLabels);
+
+                String mccMnc = Utils.getMccMnc(anLabels);
                 if (mccMnc != null) {
-                    --- check with SIM
+                    for (String imsi : imsis) {
+                        if (imsi.startsWith(mccMnc)) {
+                            return PasspointMatch.HomeProvider;
+                        }
+                    }
                 }
-                */
             }
         }
 
@@ -150,18 +154,6 @@ public class HomeSP {
                 return PasspointMatch.RoamingProvider;
             }
         }
-
-        // For future policy decisions:
-        /*
-        IPAddressTypeAvailabilityElement ipAddressAvailabilityElement =
-                (IPAddressTypeAvailabilityElement) anqpElementMap.get(
-                        ANQPElementType.ANQPIPAddrAvailability);
-        HSConnectionCapabilityElement hsConnCapElement =
-                (HSConnectionCapabilityElement) anqpElementMap.get(
-                        ANQPElementType.HSConnCapability);
-        HSWanMetricsElement hsWanMetricsElement =
-                (HSWanMetricsElement) anqpElementMap.get(ANQPElementType.HSWANMetrics);
-        */
 
         return PasspointMatch.None;
     }
@@ -217,7 +209,7 @@ public class HomeSP {
 
     public String getFQDN() { return mFQDN; }
     public String getFriendlyName() { return mFriendlyName; }
-    public Set<Long> getRoamingConsortiums() { return mRoamingConsortiums; }
+    public HashSet<Long> getRoamingConsortiums() { return mRoamingConsortiums; }
     public Credential getCredential() { return mCredential; }
 
     @Override

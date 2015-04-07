@@ -8,6 +8,7 @@ import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.VenueNameElement;
 
 import java.net.ProtocolException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.CharBuffer;
@@ -308,12 +309,13 @@ public class NetworkDetail {
                 }
             }
         }
-        catch (IllegalArgumentException iae) {
-            Log.d("HS2J", "Caught " + iae);
+        catch (IllegalArgumentException | BufferUnderflowException e) {
+            Log.d("HS2J", "Caught " + e);
             if (ssidOctets == null) {
-                throw iae;
+                throw e.getClass() == IllegalArgumentException.class ?
+                        e : new IllegalArgumentException(e);
             }
-            exception = iae;
+            exception = e;
         }
 
         if (ssidOctets != null) {
@@ -446,10 +448,6 @@ public class NetworkDetail {
         return mac;
     }
 
-    public boolean has80211uInfo() {
-        return mAnt != null || mRoamingConsortiums != null || mHSRelease != null;
-    }
-
     public boolean hasInterworking() {
         return mAnt != null;
     }
@@ -574,7 +572,9 @@ public class NetworkDetail {
     }
 
     public String toKeyString() {
-        return String.format("'%s':%s", mSSID, getBSSIDString());
+        return mHESSID != 0 ?
+            String.format("'%s':%s (%012x)", mSSID, getBSSIDString(), mHESSID) :
+            String.format("'%s':%s", mSSID, getBSSIDString());
     }
 
     public String getBSSIDString() {
