@@ -3493,8 +3493,8 @@ public class WifiStateMachine extends StateMachine {
                             // as part of this scan's processing
                             mScanResults.add(scanDetail);
                         }
-                        catch (IllegalArgumentException | BufferUnderflowException e) {
-                            Log.d("HS2J", "Failed to parse information elements: " + e);
+                        catch (IllegalArgumentException iae) {
+                            Log.d("HS2J", "Failed to parse information elements: " + iae);
                         }
                     }
                     bssid = null;
