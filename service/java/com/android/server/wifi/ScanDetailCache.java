@@ -3,6 +3,7 @@ package com.android.server.wifi;
 
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
+import android.util.Log;
 
 import com.android.server.wifi.ScanDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
@@ -18,6 +19,9 @@ import java.util.Iterator;
 import java.util.List;
 
 class ScanDetailCache {
+
+    private static final String TAG = "ScanDetailCache";
+
     private WifiConfiguration mConfig;
     private HashMap<String, ScanDetail> mMap;
     private HashMap<String, PasspointMatchInfo> mPasspointMatches;
@@ -175,40 +179,50 @@ class ScanDetailCache {
     }
 
     public WifiConfiguration.Visibility getVisibilityByPasspointMatch(long age) {
-        WifiConfiguration.Visibility status = new WifiConfiguration.Visibility();
 
         long now_ms = System.currentTimeMillis();
-        for(ScanDetail scanDetail : values()) {
+        PasspointMatchInfo pmiBest24 = null, pmiBest5 = null;
+
+        for(PasspointMatchInfo pmi : mPasspointMatches.values()) {
+            ScanDetail scanDetail = pmi.getScanDetail();
+            if (scanDetail == null) continue;
             ScanResult result = scanDetail.getScanResult();
+            if (result == null) continue;
+
             if (scanDetail.getSeen() == 0)
                 continue;
-
-            if (result.is5GHz()) {
-                //strictly speaking: [4915, 5825]
-                //number of known BSSID on 5GHz band
-                status.num5 = status.num5 + 1;
-            } else if (result.is24GHz()) {
-                //strictly speaking: [2412, 2482]
-                //number of known BSSID on 2.4Ghz band
-                status.num24 = status.num24 + 1;
-            }
 
             if ((now_ms - result.seen) > age) continue;
 
             if (result.is5GHz()) {
-                if (result.level > status.rssi5) {
-                    status.rssi5 = result.level;
-                    status.age5 = result.seen;
-                    status.BSSID5 = result.BSSID;
+                if (pmiBest5 == null || pmiBest5.compareTo(pmi) < 0) {
+                    pmiBest5 = pmi;
                 }
             } else if (result.is24GHz()) {
-                if (result.level > status.rssi24) {
-                    status.rssi24 = result.level;
-                    status.age24 = result.seen;
-                    status.BSSID24 = result.BSSID;
+                if (pmiBest24 == null || pmiBest24.compareTo(pmi) < 0) {
+                    pmiBest24 = pmi;
                 }
             }
         }
+
+        WifiConfiguration.Visibility status = new WifiConfiguration.Visibility();
+        String logMsg = "Visiblity by passpoint match returned ";
+        if (pmiBest5 != null) {
+            ScanResult result = pmiBest5.getScanDetail().getScanResult();
+            status.rssi5 = result.level;
+            status.age5 = result.seen;
+            status.BSSID5 = result.BSSID;
+            logMsg += "5 GHz BSSID of " + result.BSSID;
+        }
+        if (pmiBest24 != null) {
+            ScanResult result = pmiBest24.getScanDetail().getScanResult();
+            status.rssi24 = result.level;
+            status.age24 = result.seen;
+            status.BSSID24 = result.BSSID;
+            logMsg += "2.4 GHz BSSID of " + result.BSSID;
+        }
+
+        Log.d(TAG, logMsg);
 
         return status;
     }
