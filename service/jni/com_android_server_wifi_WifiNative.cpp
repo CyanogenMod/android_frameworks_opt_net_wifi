@@ -77,7 +77,6 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_start_logging = wifi_start_logging_stub;
     hal_fn->wifi_set_epno_list = wifi_set_epno_list_stub;
     hal_fn->wifi_set_country_code = wifi_set_country_code_stub;
-
     return 0;
 }
 
@@ -1143,6 +1142,7 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
            jbyte *bytes = (jbyte *)&(result->LCI->data[0]);
            env->SetByteArrayRegion(elements, 0, result->LCI->len, bytes);
            setObjectField(env, LCI, "data", "[B", elements);
+           env->DeleteLocalRef(elements);
        } else {
            ALOGD("No LCI in result");
            setByteField(env, LCI, "id",           (byte)(0xff));
@@ -1158,18 +1158,27 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
            jbyte *bytes = (jbyte *)&(result->LCR->data[0]);
            env->SetByteArrayRegion(elements, 0, result->LCI->len, bytes);
            setObjectField(env, LCR, "data", "[B", elements);
+           env->DeleteLocalRef(elements);
        } else {
-            ALOGD("No LCR in result");
+           ALOGD("No LCR in result");
            setByteField(env, LCR, "id",           (byte)(0xff));
        }
        setObjectField(env, rttResult, "LCR",
            "Landroid/net/wifi/RttManager$WifiInformationElement;", LCR);
 
         env->SetObjectArrayElement(rttResults, i, rttResult);
+        env->DeleteLocalRef(LCI);
+        env->DeleteLocalRef(LCR);
+        env->DeleteLocalRef(rttResult);
     }
 
     reportEvent(env, mCls, "onRttResults", "(I[Landroid/net/wifi/RttManager$RttResult;)V",
         id, rttResults);
+
+    //clean the local reference
+    env->DeleteLocalRef(rttResults);
+    env->DeleteLocalRef(clsRttResult);
+
 }
 
 const int MaxRttConfigs = 16;
