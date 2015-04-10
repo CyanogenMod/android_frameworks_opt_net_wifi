@@ -608,7 +608,7 @@ public class WifiAutoJoinController {
             // We didn't find the connect choice; fallback to some default choices
             int sourceScore = getSecurityScore(source);
             int targetScore = getSecurityScore(target);
-            choice = targetScore - sourceScore;
+            choice = sourceScore - targetScore;
         }
 
         if (choice < 0) {
