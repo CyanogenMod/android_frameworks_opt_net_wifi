@@ -7873,8 +7873,8 @@ public class WifiStateMachine extends StateMachine {
         DetailedState.CAPTIVE_PORTAL_CHECK);
         sendNetworkStateChangeBroadcast(mLastBssid);
 
-        // If this network was explicitly selected by the user or by an app, evaluate whether to
-        // call explicitlySelected() so the system can treat it appropriately.
+        // If this network was explicitly selected by the user, evaluate whether to call
+        // explicitlySelected() so the system can treat it appropriately.
         WifiConfiguration config = getCurrentWifiConfiguration();
         if (mWifiConfigStore.isLastSelectedConfiguration(config) && mNetworkAgent != null) {
             if (mWifiConfigStore.checkConfigOverridePermission(config.lastConnectUid)) {
@@ -7882,12 +7882,6 @@ public class WifiStateMachine extends StateMachine {
                 // access, switch to it. Otherwise, switch to it only if the user confirms that they
                 // really want to switch, or has already confirmed and selected "Don't ask again".
                 mNetworkAgent.explicitlySelected(config.noInternetAccessExpected);
-            } else {
-                // Selected by an app. Hard switch to this network regardless of whether it has
-                // Internet access or not.
-                // TODO: stop doing this, either by requiring apps to update or by putting a
-                // compatibility hack in place.
-                mNetworkAgent.explicitlySelected(true);
             }
         }
 
