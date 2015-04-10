@@ -1374,7 +1374,7 @@ static jboolean android_net_wifi_set_Country_Code_Hal(JNIEnv *env,jclass cls, ji
 // Debug framework
 // ----------------------------------------------------------------------------
 
-static void onRingBufferData(wifi_request_id id, wifi_ring_buffer_id ring_id, char * buffer,
+static void onRingBufferData(char * ring_name, char * buffer,
 int buffer_size, wifi_ring_buffer_status *status) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
