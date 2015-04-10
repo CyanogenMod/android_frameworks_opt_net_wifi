@@ -14,6 +14,8 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include "wifi_hal_stub.h"
+#include <semaphore.h>
+
 pthread_mutex_t printMutex;
 
 static wifi_hal_fn hal_fn;
@@ -422,9 +424,12 @@ static void cleanup() {
     hal_fn.wifi_cleanup(halHandle, cleaned_up_handler);
 }
 
+sem_t event_thread_mutex;
+
 static void *eventThreadFunc(void *context) {
 
     printMsg("starting wifi event loop\n");
+    sem_post( &event_thread_mutex );
     hal_fn.wifi_event_loop(halHandle);
     printMsg("out of wifi event loop\n");
 
@@ -760,9 +765,12 @@ static void retrieveScanResults() {
 
     printScanHeader();
     for (int i = 0; i < num_results; i++) {
+        printMsg("ScanId = %d, Flags = %x, num results = %d\n",
+            results[i].scan_id, results[i].flags, results[i].num_results);
         for (int j = 0; j < results[i].num_results; j++) {
             printScanResult(results[i].results[j]);
         }
+        printMsg("\n");
     }
 }
 
@@ -1890,6 +1898,7 @@ int main(int argc, char *argv[]) {
     } else {
         printMsg("successfully initialized HAL; wlan0 = %p\n", wlan0Handle);
     }
+    sem_init(&event_thread_mutex,0,0);
 
     pthread_cond_init(&eventCacheCondition, NULL);
     pthread_mutex_init(&eventCacheMutex, NULL);
@@ -1897,7 +1906,8 @@ int main(int argc, char *argv[]) {
     pthread_t tidEvent;
     pthread_create(&tidEvent, NULL, &eventThreadFunc, NULL);
 
-    sleep(2);     // let the thread start
+    sem_wait(&event_thread_mutex);
+    //sleep(2);     // let the thread start
 
     if (argc < 2 || argv[1][0] != '-') {
         printUsage();
