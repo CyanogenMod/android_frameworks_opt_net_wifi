@@ -19,7 +19,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -111,9 +110,19 @@ public class MOManager {
         return sps;
     }
 
-    public HomeSP addSP(InputStream xmlIn) throws IOException, SAXException {
+    public static HomeSP buildSP(String xml) throws IOException, SAXException {
         OMAParser omaParser = new OMAParser();
-        MOTree tree = omaParser.parse(xmlIn, OMAConstants.LOC_PPS + ":1.0");
+        MOTree tree = omaParser.parse(xml, OMAConstants.LOC_PPS + ":1.0");
+        List<HomeSP> spList = buildSPs(tree);
+        if (spList.size() != 1) {
+            throw new OMAException("Expected exactly one HomeSP, got " + spList.size());
+        }
+        return spList.iterator().next();
+    }
+
+    public HomeSP addSP(String xml) throws IOException, SAXException {
+        OMAParser omaParser = new OMAParser();
+        MOTree tree = omaParser.parse(xml, OMAConstants.LOC_PPS + ":1.0");
         List<HomeSP> spList = buildSPs(tree);
         if (spList.size() != 1) {
             throw new OMAException("Expected exactly one HomeSP, got " + spList.size());
@@ -334,7 +343,7 @@ public class MOManager {
         System.out.println("FQDN: " + fqdn + ", friendly: " + friendlyName);
         String iconURL = spRoot.getScalarValue(Arrays.asList(TAG_IconURL).iterator());
 
-        Set<Long> roamingConsortiums = new HashSet<Long>();
+        HashSet<Long> roamingConsortiums = new HashSet<Long>();
         String oiString = spRoot.getScalarValue(Arrays.asList(TAG_RoamingConsortiumOI).iterator());
         if (oiString != null) {
             for (String oi : oiString.split(",")) {
@@ -409,10 +418,11 @@ public class MOManager {
             boolean ableToShare = getBoolean(unNode.getChild(TAG_AbleToShare));
 
             OMANode eapMethodNode = unNode.getChild(TAG_EAPMethod);
-            EAP.EAPMethodID eapMethodID =
-                    EAP.mapEAPMethod(getInteger(eapMethodNode.getChild(TAG_EAPType)));
+            int eapID = getInteger(eapMethodNode.getChild(TAG_EAPType));
+
+            EAP.EAPMethodID eapMethodID = EAP.mapEAPMethod(eapID);
             if (eapMethodID == null) {
-                throw new OMAException("Unknown EAP method");
+                throw new OMAException("Unknown EAP method: " + eapID);
             }
 
             Long vid = getOptionalInteger(eapMethodNode.getChild(TAG_VendorId));
@@ -532,8 +542,7 @@ public class MOManager {
 
     private static byte[] getOctets(OMANode octetNode) throws OMAException {
         if (octetNode == null) {
-            // throw new OMAException("Missing byte value");
-            return null;
+            throw new OMAException("Missing byte value");
         }
         return Utils.hexToBytes(octetNode.getValue());
     }

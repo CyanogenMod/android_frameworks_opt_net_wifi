@@ -9,8 +9,9 @@ import java.util.Map;
  */
 public abstract class EAP {
 
-    private static final Map<Integer, EAPMethodID> sEapIds = new HashMap<Integer, EAPMethodID>();
-    private static final Map<Integer, AuthInfoID> sAuthIds = new HashMap<Integer, AuthInfoID>();
+    private static final Map<Integer, EAPMethodID> sEapIds = new HashMap<>();
+    private static final Map<EAPMethodID, Integer> sRevEapIds = new HashMap<>();
+    private static final Map<Integer, AuthInfoID> sAuthIds = new HashMap<>();
 
     public static final int EAP_MD5 = 4;
     public static final int EAP_OTP = 5;
@@ -127,6 +128,10 @@ public abstract class EAP {
         sEapIds.put(EAP_EKE, EAPMethodID.EAP_EKE);
         sEapIds.put(EAP_TEAP, EAPMethodID.EAP_TEAP);
 
+        for (Map.Entry<Integer, EAPMethodID> entry : sEapIds.entrySet()) {
+            sRevEapIds.put(entry.getValue(), entry.getKey());
+        }
+
         sAuthIds.put(ExpandedEAPMethod, AuthInfoID.ExpandedEAPMethod);
         sAuthIds.put(NonEAPInnerAuthType, AuthInfoID.NonEAPInnerAuthType);
         sAuthIds.put(InnerAuthEAPMethodType, AuthInfoID.InnerAuthEAPMethodType);
@@ -141,15 +146,7 @@ public abstract class EAP {
     }
 
     public static Integer mapEAPMethod(EAPMethodID methodID) {
-        Iterator it = sEapIds.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry e = (Map.Entry) it.next();
-            if (e.getValue() == methodID) {
-                return (Integer) e.getKey();
-            }
-        }
-
-        return null;
+        return sRevEapIds.get(methodID);
     }
 
     public static AuthInfoID mapAuthMethod(int methodID) {

@@ -49,7 +49,7 @@ public abstract class Utils {
         return mac;
     }
 
-    public static int[] getMccMnc(List<String> domain) {
+    public static String getMccMnc(List<String> domain) {
         if (domain.size() != 5) {
             return null;
         }
@@ -61,15 +61,15 @@ public abstract class Utils {
                 return null;
             }
         }
-        try {
-            int[] mccMnc = new int[2];
-            mccMnc[0] = Integer.parseInt(domain.get(1).substring(3));
-            mccMnc[1] = Integer.parseInt(domain.get(2).substring(3));
-            return mccMnc;
+
+        String prefix = domain.get(1).substring(3) + domain.get(2).substring(3);
+        for (int n = 0; n < prefix.length(); n++) {
+            char ch = prefix.charAt(n);
+            if (ch < '0' || ch > '9') {
+                return null;
+            }
         }
-        catch (NumberFormatException nfe) {
-            return null;
-        }
+        return prefix;
     }
 
     public static String roamingConsortiumsToString(long[] ois) {
@@ -129,6 +129,14 @@ public abstract class Utils {
                 sb.append(' ');
             }
             sb.append(String.format("%02x", b & BYTE_MASK));
+        }
+        return sb.toString();
+    }
+
+    public static String toHex(byte[] octets) {
+        StringBuilder sb = new StringBuilder(octets.length * 2);
+        for (byte o : octets) {
+            sb.append(String.format("%02x", o & BYTE_MASK));
         }
         return sb.toString();
     }
@@ -206,6 +214,22 @@ public abstract class Utils {
             sbx.append(String.format("%c", toAscii(dup.get() & BYTE_MASK)));
         }
         return sbx.toString();
+    }
+
+    public static String toHMS(long millis) {
+        long time = millis >= 0 ? millis : -millis;
+        long tmp = time / 1000L;
+        long ms = time - tmp * 1000L;
+
+        time = tmp;
+        tmp /= 60L;
+        long s = time - tmp * 60L;
+
+        time = tmp;
+        tmp /= 60L;
+        long m = time - tmp * 60L;
+
+        return String.format("%s%d:%02d:%02d.%03d", millis < 0 ? "-" : "", tmp, m, s, ms);
     }
 
     public static String toUTCString(long ms) {

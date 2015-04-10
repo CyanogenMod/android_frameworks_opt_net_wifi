@@ -1035,14 +1035,14 @@ static void testRTT()
                 params[num_ap].type = RTT_TYPE_2_SIDED;
                 params[num_ap].channel = get_channel_of_ie(&scan_param->ie_data[0],
                         scan_param->ie_length);
-                params[num_ap].peer = WIFI_PEER_AP;
+                params[num_ap].peer = RTT_PEER_AP;
                 params[num_ap].num_burst = default_rtt_param.num_burst;
                 params[num_ap].num_frames_per_burst = default_rtt_param.num_frames_per_burst;
-                params[num_ap].num_retries_per_measurement_frame =
+                params[num_ap].num_retries_per_rtt_frame =
                     default_rtt_param.num_retries_per_ftm;
                 params[num_ap].num_retries_per_ftmr = default_rtt_param.num_retries_per_ftmr;
-                params[num_ap].interval = default_rtt_param.interval;
-                params[num_ap].burst_timeout = default_rtt_param.burst_timeout;
+                params[num_ap].burst_period = default_rtt_param.interval;
+                params[num_ap].burst_duration = default_rtt_param.burst_timeout;
                 params[num_ap].LCI_request = default_rtt_param.LCI_request;
                 params[num_ap].LCR_request = default_rtt_param.LCR_request;
                 if (rtt_to_file) {
@@ -1050,9 +1050,9 @@ static void testRTT()
                             params[num_ap].addr[0], params[num_ap].addr[1], params[num_ap].addr[2], params[num_ap].addr[3],
                             params[num_ap].addr[4], params[num_ap].addr[5],params[num_ap].channel.center_freq,
                             params[num_ap].channel.center_freq0, params[num_ap].channel.width, params[num_ap].type,params[num_ap].peer,
-                            params[num_ap].interval, params[num_ap].num_burst, params[num_ap].num_frames_per_burst,
-                            params[num_ap].num_retries_per_measurement_frame, params[num_ap].num_retries_per_ftmr,
-                            params[num_ap].LCI_request, params[num_ap].LCR_request, params[num_ap].burst_timeout);
+                            params[num_ap].burst_period, params[num_ap].num_burst, params[num_ap].num_frames_per_burst,
+                            params[num_ap].num_retries_per_rtt_frame, params[num_ap].num_retries_per_ftmr,
+                            params[num_ap].LCI_request, params[num_ap].LCR_request, params[num_ap].burst_duration);
                 }
                 num_ap++;
             } else {
@@ -1100,24 +1100,24 @@ static void testRTT()
                         (unsigned int*)&params[i].channel.center_freq0,
                         (unsigned int*)&params[i].channel.width,
                         (unsigned int*)&params[i].type, (unsigned int*)&params[i].peer,
-                        &params[i].interval, &params[i].num_burst,
+                        &params[i].burst_period, &params[i].num_burst,
                         &params[i].num_frames_per_burst,
-                        &params[i].num_retries_per_measurement_frame,
+                        &params[i].num_retries_per_rtt_frame,
                         &params[i].num_retries_per_ftmr,
                         (unsigned char*)&params[i].LCI_request,
                         (unsigned char*)&params[i].LCR_request,
-                        (unsigned int*)&params[i].burst_timeout);
+                        (unsigned int*)&params[i].burst_duration);
 
                 parseMacAddress(bssid, params[i].addr);
 
                 printMsg("[%d] %-16s%-20s%-8u%-14u%-12d%-10d%-10u%-16u%-10u%-14u%-11u%-12u%-5hhu%-5hhu%-15u%-10hhu\n",
                         i+1, ssid, bssid, params[i].channel.center_freq,
                         params[i].channel.center_freq0, params[i].channel.width,
-                        params[i].type, params[i].peer, params[i].interval,
+                        params[i].type, params[i].peer, params[i].burst_period,
                         params[i].num_burst, params[i].num_frames_per_burst,
-                        params[i].num_retries_per_measurement_frame,
+                        params[i].num_retries_per_rtt_frame,
                         params[i].num_retries_per_ftmr, params[i].LCI_request,
-                        params[i].LCR_request, params[i].burst_timeout, params[i].preamble);
+                        params[i].LCR_request, params[i].burst_duration, params[i].preamble);
 
                 i++;
             } else {

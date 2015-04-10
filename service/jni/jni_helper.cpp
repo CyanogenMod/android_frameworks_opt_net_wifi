@@ -75,6 +75,20 @@ jint getIntField(JNIEnv *env, jobject obj, const char *name)
     return value;
 }
 
+jbyte getByteField(JNIEnv *env, jobject obj, const char *name)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    jfieldID field = (env)->GetFieldID(cls, name, "B");
+    if (field == 0) {
+        THROW(env, "Error in accessing field");
+        return 0;
+    }
+
+    jbyte value = (env)->GetByteField(obj, field);
+    env->DeleteLocalRef(cls);
+    return value;
+}
+
 jlong getLongField(JNIEnv *env, jobject obj, const char *name)
 {
     jclass cls = (env)->GetObjectClass(obj);
@@ -219,6 +233,24 @@ void setIntField(JNIEnv *env, jobject obj, const char *name, jint value)
     }
 
     (env)->SetIntField(obj, field, value);
+    env->DeleteLocalRef(cls);
+}
+
+void setByteField(JNIEnv *env, jobject obj, const char *name, jbyte value)
+{
+    jclass cls = (env)->GetObjectClass(obj);
+    if (cls == NULL) {
+        THROW(env, "Error in accessing class");
+        return;
+    }
+
+    jfieldID field = (env)->GetFieldID(cls, name, "B");
+    if (field == NULL) {
+        THROW(env, "Error in accessing field");
+        return;
+    }
+
+    (env)->SetByteField(obj, field, value);
     env->DeleteLocalRef(cls);
 }
 

@@ -3,7 +3,6 @@ package com.android.server.wifi.hotspot2;
 import android.util.Log;
 
 import com.android.server.wifi.ScanDetail;
-import com.android.server.wifi.WifiAutoJoinController;
 import com.android.server.wifi.WifiConfigStore;
 import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.anqp.ANQPElement;

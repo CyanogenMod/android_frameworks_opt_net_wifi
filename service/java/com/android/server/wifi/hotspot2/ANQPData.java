@@ -27,9 +27,9 @@ public class ANQPData {
         mANQPElements = anqpElements != null ? Collections.unmodifiableMap(anqpElements) : null;
         mCtime = System.currentTimeMillis();
         mExpiry = mCtime +
-                network.getAnqpDomainID() == 0 ?
+                ( network.getAnqpDomainID() == 0 ?
                 ANQP_UNQUALIFIED_CACHE_TIMEOUT :
-                ANQP_QUALIFIED_CACHE_TIMEOUT;
+                ANQP_QUALIFIED_CACHE_TIMEOUT );
         mAtime = mCtime;
     }
 
@@ -55,11 +55,11 @@ public class ANQPData {
     }
 
     public boolean expired(long at) {
-        return mExpiry >= at;
+        return mExpiry < at;
     }
 
     public boolean recacheable(long at) {
-        return mNetwork.getAnqpDomainID() == 0 || mCtime + ANQP_RECACHE_TIME >= at;
+        return mNetwork.getAnqpDomainID() == 0 || mCtime + ANQP_RECACHE_TIME < at;
     }
 
     public boolean isResolved() {
@@ -75,5 +75,24 @@ public class ANQPData {
             return -1;
         }
         return ++mRetry;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(mNetwork.toKeyString()).append(", domid ").append(mNetwork.getAnqpDomainID());
+        if (mANQPElements == null) {
+            sb.append(", unresolved, ");
+        }
+        else {
+            sb.append(", ").append(mANQPElements.size()).append(" elements, ");
+        }
+        long now = System.currentTimeMillis();
+        sb.append(Utils.toHMS(now-mCtime)).append(" old, expires in ").
+                append(Utils.toHMS(mExpiry-now)).append(' ');
+        sb.append(expired(now) ? 'x' : '-');
+        sb.append(recacheable(now) ? 'c' : '-');
+        sb.append(isResolved() ? '-' : 'u');
+        return sb.toString();
     }
 }

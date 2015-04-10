@@ -8,6 +8,7 @@ import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.VenueNameElement;
 
 import java.net.ProtocolException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.CharBuffer;
@@ -162,235 +163,242 @@ public class NetworkDetail {
         int centerFreqIndex1 = 0;
         int centerFreqIndex2 = 0;
         boolean RTTResponder = false;
+
         RuntimeException exception = null;
 
-	    try {
-	        while (data.hasRemaining()) {
-	            int eid = data.get() & Constants.BYTE_MASK;
-	            int elementLength = data.get() & Constants.BYTE_MASK;
+        try {
+            while (data.hasRemaining()) {
+                int eid = data.get() & Constants.BYTE_MASK;
+                int elementLength = data.get() & Constants.BYTE_MASK;
 
-	            if (elementLength > data.remaining()) {
-	                throw new IllegalArgumentException("Element length " + elementLength +
-	                        " exceeds payload length " + data.remaining() +
-	                        " @ " + data.position());
-	            }
+                if (elementLength > data.remaining()) {
+                    throw new IllegalArgumentException("Element length " + elementLength +
+                            " exceeds payload length " + data.remaining() +
+                            " @ " + data.position());
+                }
 
-	            ByteBuffer element;
+                ByteBuffer element;
 
-	            switch (eid) {
-	                case EID_SSID:
-	                    ssidOctets = new byte[elementLength];
-	                    data.get(ssidOctets);
-	                    break;
-	                case EID_BSSLoad:
-	                    if (elementLength != 5) {
-	                        throw new IllegalArgumentException("BSS Load element length is not 5: " +
-	                                elementLength);
-	                    }
-	                    stationCount = data.getShort() & Constants.SHORT_MASK;
-	                    channelUtilization = data.get() & Constants.BYTE_MASK;
-	                    capacity = data.getShort() & Constants.SHORT_MASK;
-	                    break;
-	                case EID_HT_OPERATION:
-	                    element = getAndAdvancePayload(data, elementLength);
-	                    int primary_channel = element.get();
-	                    secondChanelOffset = element.get() & 0x3;
-	                    break;
-	                case EID_VHT_OPERATION:
-	                    element = getAndAdvancePayload(data, elementLength);
-	                    channelMode = element.get() & Constants.BYTE_MASK;
-	                    centerFreqIndex1 = element.get() & Constants.BYTE_MASK;
-	                    centerFreqIndex2 = element.get() & Constants.BYTE_MASK;
-	                    break;
-	                case EID_Interworking:
-	                    int anOptions = data.get() & Constants.BYTE_MASK;
-	                    ant = Ant.values()[anOptions & 0x0f];
-	                    internet = (anOptions & 0x10) != 0;
-	                    // Len 1 none, 3 venue-info, 7 HESSID, 9 venue-info & HESSID
-	                    if (elementLength == 3 || elementLength == 9) {
-	                        try {
-	                            ByteBuffer vinfo = data.duplicate();
-	                            vinfo.limit(vinfo.position() + 2);
-	                            VenueNameElement vne =
-	                                    new VenueNameElement(Constants.ANQPElementType.ANQPVenueName,
-	                                            vinfo);
-	                            venueGroup = vne.getGroup();
-	                            venueType = vne.getType();
-	                            data.getShort();
-	                        } catch (ProtocolException pe) {
-	                            /*Cannot happen*/
-	                        }
-	                    } else if (elementLength != 1 && elementLength != 7) {
-	                        throw new IllegalArgumentException("Bad Interworking element length: " +
-	                                elementLength);
-	                    }
-	                    if (elementLength == 7 || elementLength == 9) {
-	                        hessid = getInteger(data, ByteOrder.BIG_ENDIAN, 6);
-	                    }
-	                    break;
-	                case EID_RoamingConsortium:
-	                    anqpOICount = data.get() & Constants.BYTE_MASK;
+                switch (eid) {
+                    case EID_SSID:
+                        ssidOctets = new byte[elementLength];
+                        data.get(ssidOctets);
+                        break;
+                    case EID_BSSLoad:
+                        if (elementLength != 5) {
+                            throw new IllegalArgumentException("BSS Load element length is not 5: " +
+                                    elementLength);
+                        }
+                        stationCount = data.getShort() & Constants.SHORT_MASK;
+                        channelUtilization = data.get() & Constants.BYTE_MASK;
+                        capacity = data.getShort() & Constants.SHORT_MASK;
+                        break;
+                    case EID_HT_OPERATION:
+                        element = getAndAdvancePayload(data, elementLength);
+                        int primary_channel = element.get();
+                        secondChanelOffset = element.get() & 0x3;
+                        break;
+                    case EID_VHT_OPERATION:
+                        element = getAndAdvancePayload(data, elementLength);
+                        channelMode = element.get() & Constants.BYTE_MASK;
+                        centerFreqIndex1 = element.get() & Constants.BYTE_MASK;
+                        centerFreqIndex2 = element.get() & Constants.BYTE_MASK;
+                        break;
+                    case EID_Interworking:
+                        int anOptions = data.get() & Constants.BYTE_MASK;
+                        ant = Ant.values()[anOptions & 0x0f];
+                        internet = (anOptions & 0x10) != 0;
+                        // Len 1 none, 3 venue-info, 7 HESSID, 9 venue-info & HESSID
+                        if (elementLength == 3 || elementLength == 9) {
+                            try {
+                                ByteBuffer vinfo = data.duplicate();
+                                vinfo.limit(vinfo.position() + 2);
+                                VenueNameElement vne =
+                                        new VenueNameElement(Constants.ANQPElementType.ANQPVenueName,
+                                                vinfo);
+                                venueGroup = vne.getGroup();
+                                venueType = vne.getType();
+                                data.getShort();
+                            } catch (ProtocolException pe) {
+                                /*Cannot happen*/
+                            }
+                        } else if (elementLength != 1 && elementLength != 7) {
+                            throw new IllegalArgumentException("Bad Interworking element length: " +
+                                    elementLength);
+                        }
+                        if (elementLength == 7 || elementLength == 9) {
+                            hessid = getInteger(data, ByteOrder.BIG_ENDIAN, 6);
+                        }
+                        break;
+                    case EID_RoamingConsortium:
+                        anqpOICount = data.get() & Constants.BYTE_MASK;
 
-	                    int oi12Length = data.get() & Constants.BYTE_MASK;
-	                    int oi1Length = oi12Length & Constants.NIBBLE_MASK;
-	                    int oi2Length = (oi12Length >>> 4) & Constants.NIBBLE_MASK;
-	                    int oi3Length = elementLength - 2 - oi1Length - oi2Length;
-	                    int oiCount = 0;
-	                    if (oi1Length > 0) {
-	                        oiCount++;
-	                        if (oi2Length > 0) {
-	                            oiCount++;
-	                            if (oi3Length > 0) {
-	                                oiCount++;
-	                            }
-	                        }
-	                    }
-	                    roamingConsortiums = new long[oiCount];
-	                    if (oi1Length > 0) {
-	                        roamingConsortiums[0] =
-	                                getInteger(data, ByteOrder.BIG_ENDIAN, oi1Length);
-	                    }
-	                    if (oi2Length > 0) {
-	                        roamingConsortiums[1] =
-	                                getInteger(data, ByteOrder.BIG_ENDIAN, oi2Length);
-	                    }
-	                    if (oi3Length > 0) {
-	                        roamingConsortiums[2] =
-	                                getInteger(data, ByteOrder.BIG_ENDIAN, oi3Length);
-	                    }
-	                    break;
-	                case EID_VSA:
-	                    element = getAndAdvancePayload(data, elementLength);
-	                    if (elementLength >= 5 && element.getInt() == Constants.HS20_FRAME_PREFIX) {
-	                        int hsConf = element.get() & Constants.BYTE_MASK;
-	                        switch ((hsConf >> 4) & Constants.NIBBLE_MASK) {
-	                            case 0:
-	                                hsRelease = HSRelease.R1;
-	                                break;
-	                            case 1:
-	                                hsRelease = HSRelease.R2;
-	                                break;
-	                            default:
-	                                hsRelease = HSRelease.Unknown;
-	                                break;
-	                        }
-	                        if ((hsConf & ANQP_DOMID_BIT) != 0) {
-	                            if (elementLength < 7) {
-	                                throw new IllegalArgumentException(
-	                                        "HS20 indication element too short: " + elementLength);
-	                            }
-	                            anqpDomainID = element.getShort() & Constants.SHORT_MASK;
-	                        }
-	                    }
-	                    break;
-	                case EID_ExtendedCaps:
-	                    element = data.duplicate();
-	                    extendedCapabilities =
-	                            Constants.getInteger(data, ByteOrder.LITTLE_ENDIAN, elementLength);
+                        int oi12Length = data.get() & Constants.BYTE_MASK;
+                        int oi1Length = oi12Length & Constants.NIBBLE_MASK;
+                        int oi2Length = (oi12Length >>> 4) & Constants.NIBBLE_MASK;
+                        int oi3Length = elementLength - 2 - oi1Length - oi2Length;
+                        int oiCount = 0;
+                        if (oi1Length > 0) {
+                            oiCount++;
+                            if (oi2Length > 0) {
+                                oiCount++;
+                                if (oi3Length > 0) {
+                                    oiCount++;
+                                }
+                            }
+                        }
+                        roamingConsortiums = new long[oiCount];
+                        if (oi1Length > 0) {
+                            roamingConsortiums[0] =
+                                    getInteger(data, ByteOrder.BIG_ENDIAN, oi1Length);
+                        }
+                        if (oi2Length > 0) {
+                            roamingConsortiums[1] =
+                                    getInteger(data, ByteOrder.BIG_ENDIAN, oi2Length);
+                        }
+                        if (oi3Length > 0) {
+                            roamingConsortiums[2] =
+                                    getInteger(data, ByteOrder.BIG_ENDIAN, oi3Length);
+                        }
+                        break;
+                    case EID_VSA:
+                        element = getAndAdvancePayload(data, elementLength);
+                        if (elementLength >= 5 && element.getInt() == Constants.HS20_FRAME_PREFIX) {
+                            int hsConf = element.get() & Constants.BYTE_MASK;
+                            switch ((hsConf >> 4) & Constants.NIBBLE_MASK) {
+                                case 0:
+                                    hsRelease = HSRelease.R1;
+                                    break;
+                                case 1:
+                                    hsRelease = HSRelease.R2;
+                                    break;
+                                default:
+                                    hsRelease = HSRelease.Unknown;
+                                    break;
+                            }
+                            if ((hsConf & ANQP_DOMID_BIT) != 0) {
+                                if (elementLength < 7) {
+                                    throw new IllegalArgumentException(
+                                            "HS20 indication element too short: " + elementLength);
+                                }
+                                anqpDomainID = element.getShort() & Constants.SHORT_MASK;
+                            }
+                        }
+                        break;
+                    case EID_ExtendedCaps:
+                        element = data.duplicate();
+                        extendedCapabilities =
+                                Constants.getInteger(data, ByteOrder.LITTLE_ENDIAN, elementLength);
 
-	                    int index = RTT_RESP_ENABLE_BIT / 8;
-	                    byte offset = RTT_RESP_ENABLE_BIT % 8;
+                        int index = RTT_RESP_ENABLE_BIT / 8;
+                        byte offset = RTT_RESP_ENABLE_BIT % 8;
 
-	                    if (elementLength < index + 1) {
-	                        RTTResponder = false;
-	                        element.position(element.position() + elementLength);
-	                        break;
-	                    }
+                        if (elementLength < index + 1) {
+                            RTTResponder = false;
+                            element.position(element.position() + elementLength);
+                            break;
+                        }
 
-	                    element.position(element.position() + index);
+                        element.position(element.position() + index);
 
-	                    RTTResponder = (element.get() & (0x1 << offset)) != 0;
-	                    break;
-	                default:
-	                    data.position(data.position() + elementLength);
-	                    break;
-	            }
-	        }
-	    }
-	    catch (IllegalArgumentException iae) {
-	        Log.d("HS2J", "Caught " + iae);
-	        if (ssidOctets == null) {
-	            throw iae;
-	        }
-	        exception = iae;
-	    }
+                        RTTResponder = (element.get() & (0x1 << offset)) != 0;
+                        break;
+                    default:
+                        data.position(data.position() + elementLength);
+                        break;
+                }
+            }
+        }
+        catch (IllegalArgumentException | BufferUnderflowException e) {
+            Log.d("HS2J", "Caught " + e);
+            if (ssidOctets == null) {
+                throw new IllegalArgumentException("Malformed IE string (no SSID)", e);
+            }
+            exception = e;
+        }
 
-	    if (ssidOctets != null) {
-	        Charset encoding;
-	        if (extendedCapabilities != null && (extendedCapabilities & SSID_UTF8_BIT) != 0) {
-	            encoding = StandardCharsets.UTF_8;
-	        }
-	        else {
-	            encoding = StandardCharsets.ISO_8859_1;
-	        }
+        if (ssidOctets != null) {
+            boolean strictUTF8 = extendedCapabilities != null &&
+                    ( extendedCapabilities & SSID_UTF8_BIT ) != 0;
 
-	        if (exception == null) {
-	            ssid = new String(ssidOctets, encoding);
-	        }
-	        else {
-	            // Apply strict checking if there were previous errors:
-	            CharsetDecoder decoder = encoding.newDecoder();
-	            try {
-	                CharBuffer decoded = decoder.decode(ByteBuffer.wrap(ssidOctets));
-	                ssid = decoded.toString();
-	            }
-	            catch (CharacterCodingException cce) {
-	                throw exception;
-	            }
-	        }
-	    }
+            /*
+             * Strict use of the "UTF-8 SSID" bit by APs appears to be spotty at best even if the
+             * encoding truly is in UTF-8. An unconditional attempt to decode the SSID as UTF-8 is
+             * therefore always made with a fall back to 8859-1 under normal circumstances.
+             * If, however, a previous exception was detected and the UTF-8 bit is set, failure to
+             * decode the SSID will be used as an indication that the whole frame is malformed and
+             * an exception will be triggered.
+             */
+            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+            try {
+                CharBuffer decoded = decoder.decode(ByteBuffer.wrap(ssidOctets));
+                ssid = decoded.toString();
+            }
+            catch (CharacterCodingException cce) {
+                ssid = null;
+            }
 
-	    mSSID = ssid;
-	    mHESSID = hessid;
-	    mStationCount = stationCount;
-	    mChannelUtilization = channelUtilization;
-	    mCapacity = capacity;
-	    mAnt = ant;
-	    mInternet = internet;
-	    mVenueGroup = venueGroup;
-	    mVenueType = venueType;
-	    mHSRelease = hsRelease;
-	    mAnqpDomainID = anqpDomainID;
-	    mAnqpOICount = anqpOICount;
-	    mRoamingConsortiums = roamingConsortiums;
-	    mExtendedCapabilities = extendedCapabilities;
-	    mANQPElements = SupplicantBridge.parseANQPLines(anqpLines);
-	    //set up channel info
-	    mPrimaryFreq = freq;
+            if (ssid == null) {
+                if (strictUTF8 && exception != null) {
+                    throw new IllegalArgumentException("Failed to decode SSID in dubious IE string");
+                }
+                else {
+                    ssid = new String(ssidOctets, StandardCharsets.ISO_8859_1);
+                }
+            }
+        }
 
-	    if (channelMode != 0) {
-	        // 80 or 160 MHz
-	        mChannelWidth = channelMode + 1;
-	        mCenterfreq0 = (centerFreqIndex1 - 36) * 5 + 5180;
-	        if(channelMode > 1) { //160MHz
-	            mCenterfreq1 = (centerFreqIndex2 - 36) * 5 + 5180;
-	        } else {
-	            mCenterfreq1 = 0;
-	        }
-	    } else {
-	        //20 or 40 MHz
-	        if (secondChanelOffset != 0) {//40MHz
-	            mChannelWidth = 1;
-	            if (secondChanelOffset == 1) {
-	                mCenterfreq0 = mPrimaryFreq + 20;
-	            } else if (secondChanelOffset == 3) {
-	                mCenterfreq0 = mPrimaryFreq - 20;
-	            } else {
-	                mCenterfreq0 = 0;
-	                Log.e(TAG,"Error on secondChanelOffset");
-	            }
-	        } else {
-	            mCenterfreq0 = 0;
-	            mChannelWidth = 0;
-	        }
-	        mCenterfreq1 = 0;
-	    }
-	    m80211McRTTResponder = RTTResponder;
-	    if (VDBG) {
-	        Log.d(TAG, mSSID + "ChannelWidth is: " + mChannelWidth + " PrimaryFreq: " + mPrimaryFreq +
-	                " mCenterfreq0: " + mCenterfreq0 + " mCenterfreq1: " + mCenterfreq1 +
-	                (m80211McRTTResponder ? "Support RTT reponder" : "Do not support RTT responder"));
-	    }
+        mSSID = ssid;
+        mHESSID = hessid;
+        mStationCount = stationCount;
+        mChannelUtilization = channelUtilization;
+        mCapacity = capacity;
+        mAnt = ant;
+        mInternet = internet;
+        mVenueGroup = venueGroup;
+        mVenueType = venueType;
+        mHSRelease = hsRelease;
+        mAnqpDomainID = anqpDomainID;
+        mAnqpOICount = anqpOICount;
+        mRoamingConsortiums = roamingConsortiums;
+        mExtendedCapabilities = extendedCapabilities;
+        mANQPElements = SupplicantBridge.parseANQPLines(anqpLines);
+        //set up channel info
+        mPrimaryFreq = freq;
+
+        if (channelMode != 0) {
+            // 80 or 160 MHz
+            mChannelWidth = channelMode + 1;
+            mCenterfreq0 = (centerFreqIndex1 - 36) * 5 + 5180;
+            if(channelMode > 1) { //160MHz
+                mCenterfreq1 = (centerFreqIndex2 - 36) * 5 + 5180;
+            } else {
+                mCenterfreq1 = 0;
+            }
+        } else {
+            //20 or 40 MHz
+            if (secondChanelOffset != 0) {//40MHz
+                mChannelWidth = 1;
+                if (secondChanelOffset == 1) {
+                    mCenterfreq0 = mPrimaryFreq + 20;
+                } else if (secondChanelOffset == 3) {
+                    mCenterfreq0 = mPrimaryFreq - 20;
+                } else {
+                    mCenterfreq0 = 0;
+                    Log.e(TAG,"Error on secondChanelOffset");
+                }
+            } else {
+                mCenterfreq0 = 0;
+                mChannelWidth = 0;
+            }
+            mCenterfreq1 = 0;
+        }
+        m80211McRTTResponder = RTTResponder;
+        if (VDBG) {
+            Log.d(TAG, mSSID + "ChannelWidth is: " + mChannelWidth + " PrimaryFreq: " + mPrimaryFreq +
+                    " mCenterfreq0: " + mCenterfreq0 + " mCenterfreq1: " + mCenterfreq1 +
+                    (m80211McRTTResponder ? "Support RTT reponder" : "Do not support RTT responder"));
+        }
     }
 
     private static ByteBuffer getAndAdvancePayload(ByteBuffer data, int plLength) {
@@ -573,7 +581,9 @@ public class NetworkDetail {
     }
 
     public String toKeyString() {
-        return String.format("'%s':%s", mSSID, getBSSIDString());
+        return mHESSID != 0 ?
+            String.format("'%s':%s (%012x)", mSSID, getBSSIDString(), mHESSID) :
+            String.format("'%s':%s", mSSID, getBSSIDString());
     }
 
     public String getBSSIDString() {

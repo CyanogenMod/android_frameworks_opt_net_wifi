@@ -53,6 +53,8 @@ import android.provider.Settings;
 import android.security.Credentials;
 import android.security.KeyChain;
 import android.security.KeyStore;
+import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
@@ -70,6 +72,7 @@ import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.PasspointMatchInfo;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
+import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
@@ -88,6 +91,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.math.BigInteger;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
@@ -685,6 +689,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
+    private final List<String> mImsis;
 
     WifiConfigStore(Context c, WifiNative wn) {
         mContext = c;
@@ -819,6 +824,15 @@ public class WifiConfigStore extends IpConfigStore {
         mAnqpCache = new AnqpCache(chronograph);
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap();
+
+        TelephonyManager tm = TelephonyManager.from(mContext);
+        SubscriptionManager sub = SubscriptionManager.from(mContext);
+
+        mImsis = new ArrayList<>();
+        for (int subId : sub.getActiveSubscriptionIdList()) {
+            mImsis.add(tm.getSubscriberId(subId));
+        }
+        Log.d("HS2J", "Active IMSIs " + mImsis);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -905,6 +919,25 @@ public class WifiConfigStore extends IpConfigStore {
     List<WifiConfiguration> getPrivilegedConfiguredNetworks() {
         Map<String, String> pskMap = getCredentialsBySsidMap();
         return getConfiguredNetworks(pskMap);
+    }
+
+    /**
+     * Find matching network for this scanResult
+     */
+    WifiConfiguration getMatchingConfig(ScanResult scanResult) {
+
+        for (Map.Entry entry : mScanDetailCaches.entrySet()) {
+            Integer netId = (Integer) entry.getKey();
+            ScanDetailCache cache = (ScanDetailCache) entry.getValue();
+            WifiConfiguration config = getWifiConfiguration(netId);
+            if (config == null)
+                continue;
+            if (cache.get(scanResult.BSSID) != null) {
+                return config;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -2729,8 +2762,7 @@ public class WifiConfigStore extends IpConfigStore {
      */
 
     public static String encodeSSID(String str){
-        String tmp = removeDoubleQuotes(str);
-        return String.format("%x", new BigInteger(1, tmp.getBytes(Charset.forName("UTF-8"))));
+        return Utils.toHex(removeDoubleQuotes(str).getBytes(StandardCharsets.UTF_8));
     }
 
     private NetworkUpdateResult addOrUpdateNetworkNative(WifiConfiguration config, int uid) {
@@ -3512,13 +3544,14 @@ public class WifiConfigStore extends IpConfigStore {
     // !!! Call from addToScanCache
     private Map<HomeSP, PasspointMatch> matchPasspointNetworks(ScanDetail scanDetail) {
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();
-        if (!networkDetail.has80211uInfo()) {
+        if (!networkDetail.hasInterworking()) {
             return null;
         }
         updateAnqpCache(scanDetail, networkDetail.getANQPElements());
 
         Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail,
                 networkDetail.getANQPElements() == null);
+        Log.d("HS2J", scanDetail.getSSID() + " pass 1 matches: " + toMatchString(matches));
         return matches;
     }
 
@@ -3533,8 +3566,11 @@ public class WifiConfigStore extends IpConfigStore {
         boolean queried = !query;
         Collection<HomeSP> homeSPs = getHomeSPs();
         Map<HomeSP, PasspointMatch> matches = new HashMap<>(homeSPs.size());
+        Log.d("HS2J", "match nwk " + scanDetail.getSSID() +
+                ", anqp " + ( anqpData != null ? "present" : "missing" ) +
+                ", query " + query + ", home sps: " + homeSPs.size());
         for (HomeSP homeSP : homeSPs) {
-            PasspointMatch match = homeSP.match(networkDetail, anqpElements);
+            PasspointMatch match = homeSP.match(networkDetail, anqpElements, mImsis);
 
             if (match == PasspointMatch.Incomplete && networkDetail.isInterworking() && !queried) {
                 if (mAnqpCache.initiate(networkDetail)) {
@@ -3560,7 +3596,7 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, false);
-        Log.d("HS2J", scanDetail.getSSID() + " 2nd Matches: " + toMatchString(matches));
+        Log.d("HS2J", scanDetail.getSSID() + " pass 2 matches: " + toMatchString(matches));
 
         cacheScanResultForPasspointConfig(scanDetail, matches);
     }
@@ -3581,8 +3617,6 @@ public class WifiConfigStore extends IpConfigStore {
 
         mAnqpCache.update(networkDetail, anqpElements);
 
-        Log.d("HS2J", "Cached " + networkDetail.getBSSIDString() +
-                "/" + networkDetail.getAnqpDomainID());
         scanDetail.propagateANQPInfo(anqpElements);
     }
 
@@ -3692,7 +3726,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         String SSID = "\"" + scanResult.SSID + "\"";
 
-        if (networkDetail.has80211uInfo()) {
+        if (networkDetail.hasInterworking()) {
             Map<HomeSP, PasspointMatch> matches = matchPasspointNetworks(scanDetail);
             cacheScanResultForPasspointConfig(scanDetail, matches);
             return matches.size() != 0;

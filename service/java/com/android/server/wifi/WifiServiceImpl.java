@@ -63,6 +63,8 @@ import java.io.PrintWriter;
 import java.lang.Override;
 import java.net.InetAddress;
 import java.net.Inet4Address;
+import java.net.URISyntaxException;
+import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -71,6 +73,9 @@ import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.configparse.ConfigBuilder;
+
+import org.xml.sax.SAXException;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -747,6 +752,25 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
+     * see {@link WifiManager#buildWifiConfig()}
+     * @return a WifiConfiguration.
+     */
+    public WifiConfiguration buildWifiConfig(String uriString, String mimeType, byte[] data) {
+        if (mimeType.equals("application/x-wifi-config")) {
+            try {
+                return ConfigBuilder.buildConfig(uriString, data, mContext);
+            }
+            catch (IOException | GeneralSecurityException | SAXException e) {
+                Log.e(TAG, "Failed to parse wi-fi configuration: " + e);
+            }
+        }
+        else {
+            Log.i(TAG, "Unknown wi-fi config type: " + mimeType);
+        }
+        return null;
+    }
+
+    /**
      * see {@link WifiManager#setWifiApConfiguration(WifiConfiguration)}
      * @param wifiConfig WifiConfiguration details for soft access point
      */
@@ -877,6 +901,17 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             return null;
         }
     }
+
+    /**
+     * Returns a WifiConfiguration matching this ScanResult
+     * @param scanResult scanResult that represents the BSSID
+     * @return {@link WifiConfiguration} that matches this BSSID or null
+     */
+    public WifiConfiguration getMatchingWifiConfig(ScanResult scanResult) {
+        enforceAccessPermission();
+        return mWifiStateMachine.syncGetMatchingWifiConfig(scanResult, mWifiStateMachineChannel);
+    }
+
 
     /**
      * see {@link android.net.wifi.WifiManager#addOrUpdateNetwork(WifiConfiguration)}

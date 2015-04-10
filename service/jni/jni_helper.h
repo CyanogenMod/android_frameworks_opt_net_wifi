@@ -11,6 +11,8 @@ jobject getObjectField(JNIEnv *env, jobject obj, const char *name, const char *t
 jlong getLongArrayField(JNIEnv *env, jobject obj, const char *name, int index);
 jobject getObjectArrayField(JNIEnv *env, jobject obj, const char *name, const char *type, int index);
 void setIntField(JNIEnv *env, jobject obj, const char *name, jint value);
+ void setByteField(JNIEnv *env, jobject obj, const char *name, jbyte value);
+ jbyte getByteField(JNIEnv *env, jobject obj, const char *name);
 void setBooleanField(JNIEnv *env, jobject obj, const char *name, jboolean value);
 void setLongField(JNIEnv *env, jobject obj, const char *name, jlong value);
 void setLongArrayField(JNIEnv *env, jobject obj, const char *name, jlongArray value);
