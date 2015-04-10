@@ -50,6 +50,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.WorkSource;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.Slog;
 
@@ -203,7 +204,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                                 + " nid=" + Integer.toString(networkId)
                                 + " uid=" + Binder.getCallingUid());
                     }
-                    if (config != null && config.isValid()) {
+                    if (config != null && isValid(config)) {
                         if (DBG) Slog.d(TAG, "Connect with config" + config);
                         mWifiStateMachine.sendMessage(Message.obtain(msg));
                     } else if (config == null
@@ -730,7 +731,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             throw new SecurityException("DISALLOW_CONFIG_TETHERING is enabled for this user.");
         }
         // null wifiConfig is a meaningful input for CMD_SET_AP
-        if (wifiConfig == null || wifiConfig.isValid()) {
+        if (wifiConfig == null || isValid(wifiConfig)) {
             mWifiController.obtainMessage(CMD_SET_AP, enabled ? 1 : 0, 0, wifiConfig).sendToTarget();
         } else {
             Slog.e(TAG, "Invalid WifiConfiguration");
@@ -786,7 +787,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceChangePermission();
         if (wifiConfig == null)
             return;
-        if (wifiConfig.isValid()) {
+        if (isValid(wifiConfig)) {
             mWifiStateMachine.setWifiApConfiguration(wifiConfig);
         } else {
             Slog.e(TAG, "Invalid WifiConfiguration");
@@ -928,7 +929,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
-        if (config.isValid()) {
+        if (isValid(config)) {
             //TODO: pass the Uid the WifiStateMachine as a message parameter
             Slog.e("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
                     + " SSID " + config.SSID
@@ -1922,5 +1923,56 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
             return null;
         }
+    }
+
+    /* private methods */
+    boolean logAndReturnFalse(String s) {
+        Log.d(TAG, s);
+        return false;
+    }
+
+    boolean isValid(WifiConfiguration config) {
+
+        if (config == null)
+            return logAndReturnFalse("invalid (null) configuration");
+
+        if (config.allowedKeyManagement == null) {
+            return logAndReturnFalse("invalid allowed kmgmt");
+        }
+
+        if (config.allowedKeyManagement.cardinality() > 1) {
+            if (config.allowedKeyManagement.cardinality() != 2) {
+                return logAndReturnFalse("cardinality != 2");
+            }
+            if (!config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_EAP)) {
+                return logAndReturnFalse("not WPA_EAP");
+            }
+            if ((!config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.IEEE8021X))
+                    && (!config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK))) {
+                return logAndReturnFalse("not PSK or 8021X");
+            }
+        }
+
+        if (!TextUtils.isEmpty(config.FQDN)) {
+            /* this is passpoint configuration; it must not have an SSID */
+            if (!TextUtils.isEmpty(config.SSID)) {
+                return logAndReturnFalse("no SSID");
+            }
+            /* this is passpoint configuration; it must have a providerFriendlyName */
+            if (TextUtils.isEmpty(config.providerFriendlyName)) {
+                return logAndReturnFalse("no provider friendly name");
+            }
+            /* this is passpoint configuration; it must have enterprise config */
+            if (config.enterpriseConfig == null
+                    || config.enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.NONE ) {
+                return logAndReturnFalse("no enterprise config");
+            }
+            /* this is passpoint configuration; it must have a CA certificate */
+            if (config.enterpriseConfig.getCaCertificate() == null) {
+                return logAndReturnFalse("no ca certificate");
+            }
+        }
+
+        return true;
     }
 }

@@ -65,7 +65,6 @@ import com.android.server.wifi.hotspot2.AnqpCache;
 import com.android.server.wifi.hotspot2.Chronograph;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
-import com.android.server.wifi.hotspot2.PasspointMatchInfo;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.MOManager;
@@ -179,201 +178,6 @@ public class WifiConfigStore extends IpConfigStore {
     private HashMap<Integer, HomeSP> mConfiguredHomeSPs = new HashMap<Integer, HomeSP>();
 
 
-    static class ScanDetailCache {
-        private WifiConfiguration mConfig;
-        private HashMap<String, ScanDetail> mMap;
-
-        ScanDetailCache(WifiConfiguration config) {
-            mConfig = config;
-            mMap = new HashMap();
-        }
-
-        void put(ScanDetail scanDetail) {
-            mMap.put(scanDetail.getBSSIDString(), scanDetail);
-        }
-
-        ScanResult get(String bssid) {
-            ScanDetail scanDetail = getScanDetail(bssid);
-            return scanDetail == null ? null : scanDetail.getScanResult();
-        }
-
-        ScanDetail getScanDetail(String bssid) {
-            return mMap.get(bssid);
-        }
-
-        void remove(String bssid) {
-            mMap.remove(bssid);
-        }
-
-        int size() {
-            return mMap.size();
-        }
-
-        boolean isEmpty() {
-            return size() == 0;
-        }
-
-        ScanDetail getFirst() {
-            Iterator<ScanDetail> it = mMap.values().iterator();
-            return it.hasNext() ? it.next() : null;
-        }
-
-        Collection<String> keySet() {
-            return mMap.keySet();
-        }
-
-        Collection<ScanDetail> values() {
-            return mMap.values();
-        }
-
-        public void trim(int num) {
-            int currentSize = mMap.size();
-            if (currentSize <= num) {
-                return; // Nothing to trim
-            }
-            ArrayList<ScanDetail> list = new ArrayList<ScanDetail>(mMap.values());
-            if (list.size() != 0) {
-                // Sort by descending timestamp
-                Collections.sort(list, new Comparator() {
-                    public int compare(Object o1, Object o2) {
-                        ScanDetail a = (ScanDetail)o1;
-                        ScanDetail b = (ScanDetail)o2;
-                        if (a.getSeen() > b.getSeen()) {
-                            return 1;
-                        }
-                        if (a.getSeen() < b.getSeen()) {
-                            return -1;
-                        }
-                        return a.getBSSIDString().compareTo(b.getBSSIDString());
-                    }
-                });
-            }
-            for (int i = 0; i < currentSize - num ; i++) {
-                // Remove oldest results from scan cache
-                ScanDetail result = list.get(i);
-                mMap.remove(result.getBSSIDString());
-            }
-        }
-
-        /* @hide */
-        private ArrayList<ScanDetail> sort() {
-            ArrayList<ScanDetail> list = new ArrayList<ScanDetail>(mMap.values());
-            if (list.size() != 0) {
-                Collections.sort(list, new Comparator() {
-                    public int compare(Object o1, Object o2) {
-                        ScanResult a = ((ScanDetail)o1).getScanResult();
-                        ScanResult b = ((ScanDetail)o2).getScanResult();
-                        if (a.numIpConfigFailures > b.numIpConfigFailures) {
-                            return 1;
-                        }
-                        if (a.numIpConfigFailures < b.numIpConfigFailures) {
-                            return -1;
-                        }
-                        if (a.seen > b.seen) {
-                            return -1;
-                        }
-                        if (a.seen < b.seen) {
-                            return 1;
-                        }
-                        if (a.level > b.level) {
-                            return -1;
-                        }
-                        if (a.level < b.level) {
-                            return 1;
-                        }
-                        return a.BSSID.compareTo(b.BSSID);
-                    }
-                });
-            }
-            return list;
-        }
-
-        public WifiConfiguration.Visibility getVisibility(long age) {
-            WifiConfiguration.Visibility status = new WifiConfiguration.Visibility();
-
-            long now_ms = System.currentTimeMillis();
-            for(ScanDetail scanDetail : values()) {
-                ScanResult result = scanDetail.getScanResult();
-                if (scanDetail.getSeen() == 0)
-                    continue;
-
-                if (result.is5GHz()) {
-                    //strictly speaking: [4915, 5825]
-                    //number of known BSSID on 5GHz band
-                    status.num5 = status.num5 + 1;
-                } else if (result.is24GHz()) {
-                    //strictly speaking: [2412, 2482]
-                    //number of known BSSID on 2.4Ghz band
-                    status.num24 = status.num24 + 1;
-                }
-
-                if ((now_ms - result.seen) > age) continue;
-
-                if (result.is5GHz()) {
-                    if (result.level > status.rssi5) {
-                        status.rssi5 = result.level;
-                        status.age5 = result.seen;
-                        status.BSSID5 = result.BSSID;
-                    }
-                } else if (result.is24GHz()) {
-                    if (result.level > status.rssi24) {
-                        status.rssi24 = result.level;
-                        status.age24 = result.seen;
-                        status.BSSID24 = result.BSSID;
-                    }
-                }
-            }
-
-            return status;
-        }
-
-
-
-        @Override
-        public String toString() {
-            StringBuilder sbuf = new StringBuilder();
-            sbuf.append("Scan Cache:  ").append('\n');
-
-            ArrayList<ScanDetail> list = sort();
-            long now_ms = System.currentTimeMillis();
-            if (list.size() > 0) {
-                for (ScanDetail scanDetail : list) {
-                    ScanResult result = scanDetail.getScanResult();
-                    long milli = now_ms - scanDetail.getSeen();
-                    long ageSec = 0;
-                    long ageMin = 0;
-                    long ageHour = 0;
-                    long ageMilli = 0;
-                    long ageDay = 0;
-                    if (now_ms > scanDetail.getSeen() && scanDetail.getSeen() > 0) {
-                        ageMilli = milli % 1000;
-                        ageSec   = (milli / 1000) % 60;
-                        ageMin   = (milli / (60*1000)) % 60;
-                        ageHour  = (milli / (60*60*1000)) % 24;
-                        ageDay   = (milli / (24*60*60*1000));
-                    }
-                    sbuf.append("{").append(result.BSSID).append(",").append(result.frequency);
-                    sbuf.append(",").append(String.format("%3d", result.level));
-                    if (result.autoJoinStatus > 0) {
-                        sbuf.append(",st=").append(result.autoJoinStatus);
-                    }
-                    if (ageSec > 0 || ageMilli > 0) {
-                        sbuf.append(String.format(",%4d.%02d.%02d.%02d.%03dms", ageDay,
-                                ageHour, ageMin, ageSec, ageMilli));
-                    }
-                    if (result.numIpConfigFailures > 0) {
-                        sbuf.append(",ipfail=");
-                        sbuf.append(result.numIpConfigFailures);
-                    }
-                    sbuf.append("} ");
-                }
-                sbuf.append('\n');
-            }
-
-            return sbuf.toString();
-        }
-
-    }
 
 
     /* Stores a map of NetworkId to ScanCache */
@@ -3084,6 +2888,12 @@ public class WifiConfigStore extends IpConfigStore {
         return null;
     }
 
+    public HomeSP getHomeSPForConfig(WifiConfiguration config) {
+        HomeSP homeSP = mConfiguredHomeSPs.get(config.networkId);
+        if (homeSP == null) Log.e(TAG, "Could not find homeSP for config " + config.FQDN);
+        return homeSP;
+    }
+
     public ScanDetailCache getScanDetailCache(WifiConfiguration config) {
         if (config == null) return null;
         ScanDetailCache cache = mScanDetailCaches.get(config.networkId);
@@ -3490,7 +3300,7 @@ public class WifiConfigStore extends IpConfigStore {
         Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, false);
         Log.d("HS2J", scanDetail.getSSID() + " pass 2 matches: " + toMatchString(matches));
 
-        cacheScanResultForPasspointConfig(scanDetail, matches);
+        cacheScanResultForPasspointConfigs(scanDetail, matches);
     }
 
 
@@ -3522,20 +3332,21 @@ public class WifiConfigStore extends IpConfigStore {
 
     // !!! << JNo
 
-    private void cacheScanResultForPasspointConfig(ScanDetail scanDetail,
+    private void cacheScanResultForPasspointConfigs(ScanDetail scanDetail,
                                            Map<HomeSP,PasspointMatch> matches) {
 
         for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
             WifiConfiguration config = getWifiConfigForHomeSP(entry.getKey());
             if (config != null) {
-                cacheScanResultForConfig(config, scanDetail);
+                cacheScanResultForConfig(config, scanDetail, entry.getValue());
             } else {
                 /* perhaps the configuration was deleted?? */
             }
         }
     }
 
-    private void cacheScanResultForConfig(WifiConfiguration config, ScanDetail scanDetail) {
+    private void cacheScanResultForConfig(
+            WifiConfiguration config, ScanDetail scanDetail, PasspointMatch passpointMatch) {
 
         ScanResult scanResult = scanDetail.getScanResult();
 
@@ -3599,7 +3410,11 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         // Add the scan result to this WifiConfiguration
-        scanDetailCache.put(scanDetail);
+        if (passpointMatch != null)
+            scanDetailCache.put(scanDetail, passpointMatch, getHomeSPForConfig(config));
+        else
+            scanDetailCache.put(scanDetail);
+
         // Since we added a scan result to this configuration, re-attempt linking
         linkConfiguration(config);
     }
@@ -3620,7 +3435,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         if (networkDetail.hasInterworking()) {
             Map<HomeSP, PasspointMatch> matches = matchPasspointNetworks(scanDetail);
-            cacheScanResultForPasspointConfig(scanDetail, matches);
+            cacheScanResultForPasspointConfigs(scanDetail, matches);
             return matches.size() != 0;
         }
 
@@ -3661,7 +3476,7 @@ public class WifiConfigStore extends IpConfigStore {
 
             if (found) {
                 numConfigFound ++;
-                cacheScanResultForConfig(config, scanDetail);
+                cacheScanResultForConfig(config, scanDetail, null);
             }
 
             if (VDBG && found) {
