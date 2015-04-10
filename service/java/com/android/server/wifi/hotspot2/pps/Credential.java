@@ -1,22 +1,28 @@
 package com.android.server.wifi.hotspot2.pps;
 
 import android.net.wifi.WifiEnterpriseConfig;
+import android.security.Credentials;
+import android.security.KeyStore;
 import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
-import com.android.server.wifi.anqp.eap.InnerAuthEAP;
+import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.OMAException;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 
 public class Credential {
     public enum CertType {IEEE, x509v3}
+
+    public static final String CertTypeX509 = "x509v3";
+    public static final String CertTypeIEEE = "802.1ar";
 
     private final long mCtime;
     private final long mExpTime;
@@ -100,16 +106,18 @@ public class Credential {
         mShare = false;
     }
 
-    public Credential(WifiEnterpriseConfig enterpriseConfig) {
+    public Credential(WifiEnterpriseConfig enterpriseConfig) throws IOException {
         mCtime = 0;
         mExpTime = 0;
         mRealm = enterpriseConfig.getRealm();
         mCheckAAACert = true;
         mEAPMethod = mapEapMethod(enterpriseConfig.getEapMethod(),
                 enterpriseConfig.getPhase2Method());
-        mCertType = mapCertType(enterpriseConfig.getEapMethod());
-        byte[] fingerPrint = null;
+        mCertType = mEAPMethod.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS ? CertType.x509v3 : null;
+        byte[] fingerPrint;
+
         if (enterpriseConfig.getClientCertificate() != null) {
+            // !!! Not sure this will be true in any practical instances:
             try {
                 MessageDigest digester = MessageDigest.getInstance("SHA-256");
                 fingerPrint = digester.digest(enterpriseConfig.getClientCertificate().getEncoded());
@@ -118,7 +126,34 @@ public class Credential {
                 Log.e("CRED", "Failed to generate certificate fingerprint: " + gse);
                 fingerPrint = null;
             }
-        } else {
+        }
+        else if (enterpriseConfig.getClientCertificateAlias() != null) {
+            String alias = enterpriseConfig.getClientCertificateAlias();
+            Log.d("HS2J", "Client alias '" + alias + "'");
+            byte[] octets = KeyStore.getInstance().get(Credentials.USER_CERTIFICATE + alias);
+            Log.d("HS2J", "DER: " + (octets == null ? "-" : Integer.toString(octets.length)));
+            if (octets != null) {
+                try {
+                    MessageDigest digester = MessageDigest.getInstance("SHA-256");
+                    fingerPrint = digester.digest(octets);
+                }
+                catch (GeneralSecurityException gse) {
+                    Log.e("HS2J", "Failed to construct digest: " + gse);
+                    fingerPrint = null;
+                }
+            }
+            else // !!! The current alias is *not* derived from the fingerprint...
+            {
+                try {
+                    fingerPrint = Base64.decode(enterpriseConfig.getClientCertificateAlias(),
+                            Base64.DEFAULT);
+                } catch (IllegalArgumentException ie) {
+                    Log.e("CRED", "Bad base 64 alias");
+                    fingerPrint = null;
+                }
+            }
+        }
+        else {
             fingerPrint = null;
         }
         mFingerPrint = fingerPrint;
@@ -131,24 +166,36 @@ public class Credential {
     }
 
     public static CertType mapCertType(String certType) throws OMAException {
-        if (certType.equalsIgnoreCase("x509v3")) {
+        if (certType.equalsIgnoreCase(CertTypeX509)) {
             return CertType.x509v3;
-        } else if (certType.equalsIgnoreCase("802.1ar")) {
+        } else if (certType.equalsIgnoreCase(CertTypeIEEE)) {
             return CertType.IEEE;
         } else {
             throw new OMAException("Invalid cert type: '" + certType + "'");
         }
     }
 
-    private static EAPMethod mapEapMethod(int eapMethod, int phase2Method) {
+    private static EAPMethod mapEapMethod(int eapMethod, int phase2Method) throws IOException {
         if (eapMethod == WifiEnterpriseConfig.Eap.TLS) {
             return new EAPMethod(EAP.EAPMethodID.EAP_TLS, null);
         } else if (eapMethod == WifiEnterpriseConfig.Eap.TTLS) {
             /* keep this table in sync with WifiEnterpriseConfig.Phase2 enum */
-            if (phase2Method == WifiEnterpriseConfig.Phase2.MSCHAPV2) {
-                return new EAPMethod(EAP.EAPMethodID.EAP_TTLS,
-                        new InnerAuthEAP(EAP.EAPMethodID.EAP_MSCHAPv2));
+            NonEAPInnerAuth inner;
+            switch (phase2Method) {
+                case WifiEnterpriseConfig.Phase2.PAP:
+                    inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.PAP);
+                    break;
+                case WifiEnterpriseConfig.Phase2.MSCHAP:
+                    inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.MSCHAP);
+                    break;
+                case WifiEnterpriseConfig.Phase2.MSCHAPV2:
+                    inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.MSCHAPv2);
+                    break;
+                default:
+                    throw new IOException("TTLS phase2 method " +
+                            phase2Method + " not valid for Passpoint");
             }
+            return new EAPMethod(EAP.EAPMethodID.EAP_TTLS, inner);
         } else if (eapMethod == WifiEnterpriseConfig.Eap.PEAP) {
             /* restricting passpoint implementation from using PEAP */
             return null;
@@ -169,16 +216,6 @@ public class Credential {
 
         Log.d("PARSE-LOG", "Invalid eap method");
         return null;
-    }
-
-    private static CertType mapCertType(int eapMethod) {
-        if (eapMethod == WifiEnterpriseConfig.Eap.TLS
-                || eapMethod == WifiEnterpriseConfig.Eap.TTLS) {
-            return CertType.x509v3;
-        } else {
-            Log.d("PARSE-LOG", "Invalid cert type" + eapMethod);
-            return null;
-        }
     }
 
     public EAPMethod getEAPMethod() {

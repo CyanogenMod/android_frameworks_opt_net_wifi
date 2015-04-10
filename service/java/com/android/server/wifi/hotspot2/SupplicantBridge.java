@@ -101,7 +101,7 @@ public class SupplicantBridge {
         }
 
         String bssData = mSupplicantHook.scanResult(scanDetail.getBSSIDString());
-        //Log.d("HS2J", "BSS data for " + networkInfo + ": " + bssData);
+        //Log.d("HS2J", "BSS data for " + scanDetail.getBSSIDString() + ": " + bssData);
         try {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
             if (!elements.isEmpty()) {

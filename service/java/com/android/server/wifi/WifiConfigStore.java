@@ -2800,22 +2800,28 @@ public class WifiConfigStore extends IpConfigStore {
 
         /* save HomeSP object for passpoint networks */
         if (config.isPasspoint()) {
-            if (newNetwork == false) {
-                /* when updating a network, we'll just create a new HomeSP */
-                mConfiguredHomeSPs.remove(netId);
-            }
+            try {
+                Credential credential = new Credential(config.enterpriseConfig);
+                HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
+                        config.roamingConsortiumIds, Collections.<String>emptySet(),
+                        Collections.<Long>emptySet(), Collections.<Long>emptyList(),
+                        config.providerFriendlyName, null, credential);
 
-            Credential credential = new Credential(config.enterpriseConfig);
-            HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
-                    config.roamingConsortiumIds, Collections.<String>emptySet(),
-                    Collections.<Long>emptySet(), Collections.<Long>emptyList(),
-                    config.providerFriendlyName, null, credential);
-            mConfiguredHomeSPs.put(netId, homeSP);
-            log("created a homeSP object for " + config.networkId + ":" + config.SSID);
+                if (!newNetwork) {
+                /* when updating a network, we'll just create a new HomeSP */
+                    mConfiguredHomeSPs.remove(netId);
+                }
+
+                mConfiguredHomeSPs.put(netId, homeSP);
+                log("created a homeSP object for " + config.networkId + ":" + config.SSID);
 
             /* fix enterprise config properties for passpoint */
-            currentConfig.enterpriseConfig.setRealm(config.enterpriseConfig.getRealm());
-            currentConfig.enterpriseConfig.setPlmn(config.enterpriseConfig.getPlmn());
+                currentConfig.enterpriseConfig.setRealm(config.enterpriseConfig.getRealm());
+                currentConfig.enterpriseConfig.setPlmn(config.enterpriseConfig.getPlmn());
+            }
+            catch (IOException ioe) {
+                return new NetworkUpdateResult(INVALID_NETWORK_ID);
+            }
         }
 
         if (uid >= 0) {

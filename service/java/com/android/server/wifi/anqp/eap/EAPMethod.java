@@ -31,7 +31,7 @@ public class EAPMethod {
         int count = payload.get() & Constants.BYTE_MASK;
 
         mEAPMethodID = EAP.mapEAPMethod(methodID);
-        mAuthParams = new EnumMap<EAP.AuthInfoID, Set<AuthParam>>(EAP.AuthInfoID.class);
+        mAuthParams = new EnumMap<>(EAP.AuthInfoID.class);
 
         int realCount = 0;
 
@@ -84,9 +84,9 @@ public class EAPMethod {
 
     public EAPMethod(EAP.EAPMethodID eapMethodID, AuthParam authParam) {
         mEAPMethodID = eapMethodID;
-        mAuthParams = new HashMap<EAP.AuthInfoID, Set<AuthParam>>(1);
+        mAuthParams = new HashMap<>(1);
         if (authParam != null) {
-            Set<AuthParam> authParams = new HashSet<AuthParam>();
+            Set<AuthParam> authParams = new HashSet<>();
             authParams.add(authParam);
             mAuthParams.put(authParam.getAuthInfoID(), authParams);
         }
@@ -95,7 +95,7 @@ public class EAPMethod {
     private void addAuthParam(AuthParam param) {
         Set<AuthParam> authParams = mAuthParams.get(param.getAuthInfoID());
         if (authParams == null) {
-            authParams = new HashSet<AuthParam>();
+            authParams = new HashSet<>();
             mAuthParams.put(param.getAuthInfoID(), authParams);
         }
         authParams.add(param);
