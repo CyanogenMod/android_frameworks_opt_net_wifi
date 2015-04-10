@@ -7393,6 +7393,11 @@ public class WifiStateMachine extends StateMachine {
                     return NOT_HANDLED;
                     /* Ignore */
                 case WifiMonitor.NETWORK_CONNECTION_EVENT:
+                    if (DBG) log("Network connection established");
+                    String bssid = (String) message.obj;
+                    if (bssid != null) {
+                        sendNetworkStateChangeBroadcast(bssid);
+                    }
                     break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
