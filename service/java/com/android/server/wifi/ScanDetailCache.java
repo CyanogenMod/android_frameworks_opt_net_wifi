@@ -37,9 +37,13 @@ class ScanDetailCache {
     }
 
     void put(ScanDetail scanDetail, PasspointMatch match, HomeSP homeSp) {
+
         mMap.put(scanDetail.getBSSIDString(), scanDetail);
-        mPasspointMatches.put(scanDetail.getBSSIDString(),
-                new PasspointMatchInfo(match, scanDetail, homeSp));
+
+        if (match != null && homeSp != null) {
+            mPasspointMatches.put(scanDetail.getBSSIDString(),
+                    new PasspointMatchInfo(match, scanDetail, homeSp));
+        }
     }
 
     ScanResult get(String bssid) {

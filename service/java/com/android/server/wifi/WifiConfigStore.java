@@ -3342,11 +3342,14 @@ public class WifiConfigStore extends IpConfigStore {
                                            Map<HomeSP,PasspointMatch> matches) {
 
         for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
-            WifiConfiguration config = getWifiConfigForHomeSP(entry.getKey());
-            if (config != null) {
-                cacheScanResultForConfig(config, scanDetail, entry.getValue());
-            } else {
-                /* perhaps the configuration was deleted?? */
+            PasspointMatch match = entry.getValue();
+            if (match == PasspointMatch.HomeProvider || match == PasspointMatch.RoamingProvider) {
+                WifiConfiguration config = getWifiConfigForHomeSP(entry.getKey());
+                if (config != null) {
+                    cacheScanResultForConfig(config, scanDetail, entry.getValue());
+                } else {
+                    /* perhaps the configuration was deleted?? */
+                }
             }
         }
     }
