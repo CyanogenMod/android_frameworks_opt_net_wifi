@@ -1886,14 +1886,13 @@ public class WifiConfigStore extends IpConfigStore {
 
         for (HomeSP homeSp : homeSPs) {
             String fqdn = homeSp.getFQDN();
-            String chksum = Long.toString(getChecksum(fqdn));
-            log("Looking for " + chksum + " for " + fqdn);
+            log("Looking for " + fqdn);
             for (WifiConfiguration config : mConfiguredNetworks.values()) {
                 log("Testing " + config.SSID);
 
                 String id_str = mWifiNative.getNetworkVariable(config.networkId, idStringVarName);
-                if (id_str != null && id_str.equals(chksum) && config.enterpriseConfig != null) {
-                    log("Matched " + id_str);
+                if (id_str != null && id_str.equals(fqdn) && config.enterpriseConfig != null) {
+                    log("Matched " + id_str + " with " + config.networkId);
                     config.FQDN = fqdn;
                     config.providerFriendlyName = homeSp.getFriendlyName();
                     config.roamingConsortiumIds = new HashSet<Long>();
@@ -2650,8 +2649,8 @@ public class WifiConfigStore extends IpConfigStore {
                 if (!mWifiNative.setNetworkVariable(
                             netId,
                             idStringVarName,
-                            Long.toString(getChecksum(config.FQDN)))) {
-                    loge("failed to set id_str: " + config.SSID);
+                            config.FQDN)) {
+                    loge("failed to set id_str: " + config.FQDN);
                     break setVariables;
                 }
             } else {
