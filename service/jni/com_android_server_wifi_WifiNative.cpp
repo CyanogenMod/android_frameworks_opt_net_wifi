@@ -258,7 +258,7 @@ int set_iface_flags(const char *ifname, int dev_up) {
 
     if (ioctl(sock, SIOCGIFFLAGS, &ifr) != 0) {
       ret = errno ? -errno : -999;
-      ALOGD("Could not read interface %s flags: %d\n", ifname, errno);
+      ALOGE("Could not read interface %s flags: %d\n", ifname, errno);
       close(sock);
       return ret;
     } else {
@@ -267,14 +267,14 @@ int set_iface_flags(const char *ifname, int dev_up) {
 
     if (dev_up) {
       if (ifr.ifr_flags & IFF_UP) {
-        ALOGD("interface %s is already up\n", ifname);
+        // ALOGD("interface %s is already up\n", ifname);
         close(sock);
         return 0;
       }
       ifr.ifr_flags |= IFF_UP;
     } else {
       if (!(ifr.ifr_flags & IFF_UP)) {
-        ALOGD("interface %s is already down\n", ifname);
+        // ALOGD("interface %s is already down\n", ifname);
         close(sock);
         return 0;
       }
@@ -282,7 +282,7 @@ int set_iface_flags(const char *ifname, int dev_up) {
     }
 
     if (ioctl(sock, SIOCSIFFLAGS, &ifr) != 0) {
-      ALOGD("Could not set interface %s flags \n", ifname);
+      ALOGE("Could not set interface %s flags \n", ifname);
       close(sock);
       return ret;
     } else {
@@ -515,7 +515,7 @@ static jboolean android_net_wifi_startScan(
             bool passive = getBoolField(env, channel, "passive");
             params.buckets[i].channels[j].passive = (passive ? 1 : 0);
 
-            ALOGD("Initialized channel %d", params.buckets[i].channels[j].channel);
+            // ALOGD("Initialized channel %d", params.buckets[i].channels[j].channel);
         }
     }
 
