@@ -834,7 +834,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         private static final int MAX_BUCKETS = 8;
         private static final int MAX_CHANNELS = 8;
         private static final int DEFAULT_MAX_AP_PER_SCAN = 10;
-        private static final int DEFAULT_REPORT_THRESHOLD_PERCENT = 80;
+        private static final int DEFAULT_REPORT_THRESHOLD_PERCENT = 100;
         private static final int DEFAULT_BASE_PERIOD_MS = 5000;
         private static final int DEFAULT_REPORT_THRESHOLD_NUM_SCANS = 10;
 
