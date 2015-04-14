@@ -44,6 +44,7 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.SystemProperties;
@@ -116,6 +117,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     private int mMulticastDisabled;
 
     private final IBatteryStats mBatteryStats;
+    private final PowerManager mPowerManager;
     private final AppOpsManager mAppOps;
 
     private String mInterfaceName;
@@ -303,6 +305,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         mWifiStateMachine = new WifiStateMachine(mContext, mInterfaceName, mTrafficPoller);
         mWifiStateMachine.enableRssiPolling(true);
         mBatteryStats = BatteryStatsService.getService();
+        mPowerManager = context.getSystemService(PowerManager.class);
         mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
 
         mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);
@@ -348,6 +351,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         // without active user involvement. Always receive broadcasts.
         registerForBroadcasts();
         registerForPackageOrUserRemoval();
+        mInIdleMode = mPowerManager.isDeviceIdleMode();
 
         mWifiController.start();
 
@@ -391,6 +395,12 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public void startLocationRestrictedScan(WorkSource workSource) {
         enforceChangePermission();
         enforceLocationHardwarePermission();
+        synchronized (mBatchedScanners) {
+            if (mInIdleMode) {
+                mScanPending = true;
+                return;
+            }
+        }
         List<WifiChannel> channels = getChannelList();
         if (channels == null) {
             Slog.e(TAG, "startLocationRestrictedScan cant get channels");
@@ -419,6 +429,12 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public void startScan(ScanSettings settings, WorkSource workSource) {
         enforceChangePermission();
+        synchronized (mBatchedScanners) {
+            if (mInIdleMode) {
+                mScanPending = true;
+                return;
+            }
+        }
         if (settings != null) {
             settings = new ScanSettings(settings);
             if (!settings.isValid()) {
@@ -462,6 +478,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     private final List<BatchedScanRequest> mBatchedScanners = new ArrayList<BatchedScanRequest>();
+    boolean mInIdleMode;
+    boolean mScanPending;
 
     public boolean isBatchedScanSupported() {
         return mBatchedScanSupported;
@@ -552,7 +570,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         int responsibleUid = 0;
         double responsibleCsph = 0; // Channel Scans Per Hour
 
-        if (mBatchedScanners.size() == 0) {
+        if (mBatchedScanners.size() == 0 || mInIdleMode) {
             mWifiStateMachine.setBatchedScanSettings(null, 0, 0, null);
             return;
         }
@@ -622,6 +640,27 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         setting.constrain();
         mWifiStateMachine.setBatchedScanSettings(setting, responsibleUid, (int)responsibleCsph,
                 responsibleWorkSource);
+    }
+
+    void handleIdleModeChanged() {
+        boolean doScan = false;
+        synchronized (mBatchedScanners) {
+            boolean idle = mPowerManager.isDeviceIdleMode();
+            if (mInIdleMode != idle) {
+                mInIdleMode = idle;
+                if (!idle) {
+                    if (mScanPending) {
+                        mScanPending = false;
+                        doScan = true;
+                    }
+                }
+                resolveBatchedScannersLocked();
+            }
+        }
+        if (doScan) {
+            // Someone requested a scan while we were idle; do a full scan now.
+            startScan(null, null);
+        }
     }
 
     private void enforceAccessPermission() {
@@ -1398,6 +1437,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             } else if (action.equals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED)) {
                 boolean emergencyMode = intent.getBooleanExtra("phoneinECMState", false);
                 mWifiController.sendMessage(CMD_EMERGENCY_MODE_CHANGED, emergencyMode ? 1 : 0, 0);
+            } else if (action.equals(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)) {
+                handleIdleModeChanged();
             }
         }
     };
@@ -1428,6 +1469,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         intentFilter.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         intentFilter.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
         intentFilter.addAction(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
+        intentFilter.addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED);
         mContext.registerReceiver(mReceiver, intentFilter);
     }
 
@@ -1477,6 +1519,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                                        Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0));
         pw.println("mMulticastEnabled " + mMulticastEnabled);
         pw.println("mMulticastDisabled " + mMulticastDisabled);
+        pw.println("mInIdleMode " + mInIdleMode);
+        pw.println("mScanPending " + mScanPending);
         mWifiController.dump(fd, pw, args);
         mSettingsStore.dump(fd, pw, args);
         mNotificationController.dump(fd, pw, args);
