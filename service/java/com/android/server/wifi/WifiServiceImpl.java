@@ -51,6 +51,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.WorkSource;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.Slog;
 
@@ -924,6 +925,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             Slog.e("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
                     + " SSID " + config.SSID
                     + " nid=" + Integer.toString(config.networkId));
+            if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
+                config.creatorUid = Binder.getCallingUid();
+            } else {
+                config.lastUpdateUid = Binder.getCallingUid();
+            }
             if (mWifiStateMachineChannel != null) {
                 return mWifiStateMachine.syncAddOrUpdateNetwork(mWifiStateMachineChannel, config);
             } else {

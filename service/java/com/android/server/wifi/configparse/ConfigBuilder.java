@@ -241,6 +241,7 @@ public class ConfigBuilder {
         String alias = Base64.encodeToString(reference, Base64.DEFAULT);
 
         WifiConfiguration config = buildBaseConfiguration(homeSP);
+        config.enterpriseConfig.setIdentity("anonymous");           // !!! anonymous@fqdn from CN?
         config.enterpriseConfig.setClientCertificateAlias(alias);
         config.enterpriseConfig.setClientKeyEntry(clientKey, clientCertificate);
         if (caCert != null) {

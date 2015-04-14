@@ -608,7 +608,7 @@ public class WifiAutoJoinController {
             // We didn't find the connect choice; fallback to some default choices
             int sourceScore = getSecurityScore(source);
             int targetScore = getSecurityScore(target);
-            choice = targetScore - sourceScore;
+            choice = sourceScore - targetScore;
         }
 
         if (choice < 0) {
@@ -1042,7 +1042,7 @@ public class WifiAutoJoinController {
             return a;
         }
 
-        WifiConfigStore.ScanDetailCache scanDetailCache =
+        ScanDetailCache scanDetailCache =
                 mWifiConfigStore.getScanDetailCache(current);
 
         if (scanDetailCache == null) {
@@ -1682,7 +1682,11 @@ public class WifiAutoJoinController {
                     logDbg("attemptAutoJoin will compare candidate  " + candidate.configKey()
                             + " with " + config.configKey());
                 }
+
                 int order = compareWifiConfigurations(candidate, config);
+                if (VDBG) {
+                    logDbg("attemptAutoJoin compareWifiConfigurations returned " + order);
+                }
 
                 // The lastSelectedConfiguration is the configuration the user has manually selected
                 // thru WifiPicker, or that a 3rd party app asked us to connect to via the
