@@ -17,6 +17,8 @@
 package com.android.server.wifi;
 
 import android.app.AppGlobals;
+import android.app.admin.DeviceAdminInfo;
+import android.app.admin.DevicePolicyManagerInternal;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -60,6 +62,7 @@ import android.util.LocalLog;
 import android.util.Log;
 import android.util.SparseArray;
 
+import com.android.server.LocalServices;
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.net.IpConfigStore;
 import com.android.internal.R;
@@ -4330,6 +4333,13 @@ public class WifiConfigStore extends IpConfigStore {
         } if (currentApp == null) {
             loge("canModifyNetwork: unkown uid " + uid);
             return false;
+        }
+
+        final DevicePolicyManagerInternal dpmi = LocalServices.getService(
+                DevicePolicyManagerInternal.class);
+        if (dpmi.isActiveAdminWithPolicy(config.creatorUid,
+                DeviceAdminInfo.USES_POLICY_DEVICE_OWNER)) {
+            return uid == config.creatorUid;
         }
 
         if (config.lastUpdateName == null) {
