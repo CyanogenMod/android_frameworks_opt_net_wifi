@@ -166,3 +166,22 @@ wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_n
 wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code) {
     return WIFI_ERROR_NOT_SUPPORTED;
 }
+
+wifi_error wifi_enable_tdls_stub(wifi_interface_handle iface, mac_addr addr,
+        wifi_tdls_params *params, wifi_tdls_handler handler) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_disable_tdls_stub(wifi_interface_handle iface, mac_addr addr) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_get_tdls_status_stub(wifi_interface_handle iface, mac_addr addr,
+        wifi_tdls_status *status) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_get_tdls_capabilities_stub(wifi_interface_handle iface,
+        wifi_tdls_capabilities *capabilities) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}

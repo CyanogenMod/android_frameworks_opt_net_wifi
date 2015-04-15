@@ -1804,6 +1804,79 @@ public class WifiNative {
         }
     }
 
+    /* Rtt related commands/events */
+    public abstract class TdlsEventHandler {
+        abstract public void onTdlsStatus(String macAddr, int status, int reason);
+    }
+
+    private static TdlsEventHandler sTdlsEventHandler;
+
+
+    private static native boolean enableDisableTdlsNative(int iface, boolean enable,
+            String macAddr);
+    synchronized public static boolean enableDisableTdls(boolean enable, String macAdd,
+            TdlsEventHandler tdlsCallBack) {
+        synchronized (mLock) {
+            if (startHal()) {
+                sTdlsEventHandler = tdlsCallBack;
+                return enableDisableTdlsNative(sWlan0Index, enable, macAdd);
+            } else {
+                return false;
+            }
+        }
+    }
+
+    // Once TDLS per mac and event feature is implemented, this class definition should be
+    // moved to the right place, like WifiManager etc
+    public static class TdlsStatus {
+        int channel;
+        int global_operating_class;
+        int state;
+        int reason;
+    }
+    private static native TdlsStatus getTdlsStatusNative(int iface, String macAddr);
+    synchronized public static TdlsStatus getTdlsStatus (String macAdd) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getTdlsStatusNative(sWlan0Index, macAdd);
+            } else {
+                return null;
+            }
+        }
+    }
+
+    //ToFix: Once TDLS per mac and event feature is implemented, this class definition should be
+    // moved to the right place, like WifiStateMachine etc
+    public static class TdlsCapabilities {
+        /* Maximum TDLS session number can be supported by the Firmware and hardware */
+        int maxConcurrentTdlsSessionNumber;
+        boolean isGlobalTdlsSupported;
+        boolean isPerMacTdlsSupported;
+        boolean isOffChannelTdlsSupported;
+    }
+
+
+
+    private static native TdlsCapabilities getTdlsCapabilitiesNative(int iface);
+    synchronized public static TdlsCapabilities getTdlsCapabilities () {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getTdlsCapabilitiesNative(sWlan0Index);
+            } else {
+                return null;
+            }
+        }
+    }
+
+    synchronized private static boolean onTdlsStatus(String macAddr, int status, int reason) {
+         if (sTdlsEventHandler == null) {
+             return false;
+         } else {
+             sTdlsEventHandler.onTdlsStatus(macAddr, status, reason);
+             return true;
+         }
+    }
+
     //---------------------------------------------------------------------------------
 
     /* Wifi Logger commands/events */
