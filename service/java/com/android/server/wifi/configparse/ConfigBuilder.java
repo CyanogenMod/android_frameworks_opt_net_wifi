@@ -37,6 +37,7 @@ import java.util.Enumeration;
 import java.util.List;
 
 public class ConfigBuilder {
+    public static final String WifiConfigType = "application/x-wifi-config";
     private static final String ProfileTag = "application/x-passpoint-profile";
     private static final String KeyTag = "application/x-pkcs12";
     private static final String CATag = "application/x-x509-ca-cert";
@@ -60,10 +61,17 @@ public class ConfigBuilder {
             throw new IOException("Encoding for " +
                     mimeContainer.getContentType() + " is not base64");
         }
-        byte[] wrappedContent = Base64.decode(mimeContainer.getText(), Base64.DEFAULT);
-        MIMEContainer inner = new MIMEContainer(new LineNumberReader(
-                new InputStreamReader(new ByteArrayInputStream(wrappedContent),
-                        StandardCharsets.ISO_8859_1)), null);
+        MIMEContainer inner;
+        if (mimeContainer.getContentType().equals(WifiConfigType)) {
+            byte[] wrappedContent = Base64.decode(mimeContainer.getText(), Base64.DEFAULT);
+            Log.d(TAG, "Building container from '" + new String(wrappedContent, StandardCharsets.ISO_8859_1) + "'");
+            inner = new MIMEContainer(new LineNumberReader(
+                    new InputStreamReader(new ByteArrayInputStream(wrappedContent),
+                            StandardCharsets.ISO_8859_1)), null);
+        }
+        else {
+            inner = mimeContainer;
+        }
         return parse(inner, context);
     }
 
@@ -84,7 +92,7 @@ public class ConfigBuilder {
         List<X509Certificate> clientChain = null;
 
         for (MIMEContainer subContainer : root.getMimeContainers()) {
-            Log.d(TAG, " Content Type: " + subContainer.getContentType());
+            Log.d(TAG, " + Content Type: " + subContainer.getContentType());
             switch (subContainer.getContentType()) {
                 case ProfileTag:
                     if (subContainer.isBase64()) {
@@ -105,6 +113,7 @@ public class ConfigBuilder {
                     caCert = (X509Certificate) factory.generateCertificate(
                             new ByteArrayInputStream(octets));
                     Log.d(TAG, "Cert subject " + caCert.getSubjectX500Principal());
+                    Log.d(TAG, "Full Cert: " + caCert);
                     break;
                 }
                 case KeyTag: {
@@ -157,15 +166,19 @@ public class ConfigBuilder {
 
         HomeSP homeSP = MOManager.buildSP(text);
 
+        WifiConfiguration config;
+
         EAP.EAPMethodID eapMethodID = homeSP.getCredential().getEAPMethod().getEAPMethodID();
         switch (eapMethodID) {
             case EAP_TTLS:
                 if (key != null || clientChain != null) {
                     Log.w(TAG, "Client cert and/or key included with EAP-TTLS profile");
                 }
-                return buildTTLSConfig(homeSP, caCert);
+                config = buildTTLSConfig(homeSP, caCert);
+                break;
             case EAP_TLS:
-                return buildTLSConfig(homeSP, caCert, clientChain, key);
+                config = buildTLSConfig(homeSP, caCert, clientChain, key);
+                break;
             case EAP_AKA:
             case EAP_AKAPrim:
             case EAP_SIM:
@@ -173,10 +186,13 @@ public class ConfigBuilder {
                     Log.i(TAG, "Client/CA cert and/or key included with " +
                             eapMethodID + " profile");
                 }
-                return buildSIMConfig(homeSP, context);
+                config = buildSIMConfig(homeSP, context);
+                break;
             default:
                 throw new IOException("Unsupported EAP Method: " + eapMethodID);
         }
+        config.enterpriseConfig.setRealm(homeSP.getCredential().getRealm());
+        return config;
     }
 
     private static WifiConfiguration buildTTLSConfig(HomeSP homeSP, X509Certificate caCert)

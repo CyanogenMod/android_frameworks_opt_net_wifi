@@ -106,7 +106,7 @@ public class Credential {
         mShare = false;
     }
 
-    public Credential(WifiEnterpriseConfig enterpriseConfig) throws IOException {
+    public Credential(WifiEnterpriseConfig enterpriseConfig, KeyStore keyStore) throws IOException {
         mCtime = 0;
         mExpTime = 0;
         mRealm = enterpriseConfig.getRealm();
@@ -130,7 +130,7 @@ public class Credential {
         else if (enterpriseConfig.getClientCertificateAlias() != null) {
             String alias = enterpriseConfig.getClientCertificateAlias();
             Log.d("HS2J", "Client alias '" + alias + "'");
-            byte[] octets = KeyStore.getInstance().get(Credentials.USER_CERTIFICATE + alias);
+            byte[] octets = keyStore.get(Credentials.USER_CERTIFICATE + alias);
             Log.d("HS2J", "DER: " + (octets == null ? "-" : Integer.toString(octets.length)));
             if (octets != null) {
                 try {

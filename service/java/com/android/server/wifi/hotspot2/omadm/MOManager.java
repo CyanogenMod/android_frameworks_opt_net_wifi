@@ -67,7 +67,6 @@ public class MOManager {
             while (in.available() > 0) {
                 MOTree tree = MOTree.unmarshal(in);
                 if (tree != null) {
-                    Log.d("PARSE-LOG", "adding tree no " + trees.size());
                     trees.add(tree);
                 } else {
                     break;
@@ -83,23 +82,17 @@ public class MOManager {
             }
         }
 
-        Log.d("PARSE-LOG", "number of trees " + trees.size());
         for (MOTree moTree : trees) {
-            Log.d("PARSE-LOG", "pasring a moTree");
             List<HomeSP> sp = buildSPs(moTree);
             if (sp != null) {
-                Log.d("PARSE-LOG", "built " + sp.size() + " HomeSPs");
                 sps.addAll(sp);
             } else {
                 Log.d("PARSE-LOG", "failed to build HomeSP");
             }
         }
 
-        Log.d("PARSE-LOG", "collected " + sps.size());
         for (HomeSP sp : sps) {
-            Log.d("PARSE-LOG", "adding " + sp.getFQDN());
             if (mSPs.put(sp.getFQDN(), sp) != null) {
-                Log.d("PARSE-LOG", "failed to add " + sp.getFQDN());
                 throw new OMAException("Multiple SPs for FQDN '" + sp.getFQDN() + "'");
             } else {
                 Log.d("PARSE-LOG", "added " + sp.getFQDN() + " to list");
@@ -159,8 +152,6 @@ public class MOManager {
             OMANode providerNode = root.addChild(TAG_PerProviderSubscription, null, null, null);
             OMANode providerSubNode = providerNode.addChild("Node", null, null, null);
 
-            Log.d("PARSE-LOG", "creating node homeSP for " + homeSP.getFQDN());
-
             if (mSPs.put(homeSP.getFQDN(), homeSP) != null) {
                 throw new OMAException("SP " + homeSP.getFQDN() + " already exists");
             }
@@ -180,7 +171,6 @@ public class MOManager {
                     || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKA
                     || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKAPrim) {
 
-                Log.d("PARSE-LOG", "Saving SIM credential");
                 OMANode simNode = credentialNode.addChild(TAG_SIM, null, null, null);
                 simNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
                 simNode.addChild(TAG_EAPType, null,
@@ -188,7 +178,6 @@ public class MOManager {
 
             } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
 
-                Log.d("PARSE-LOG", "Saving TTLS Credential");
                 OMANode unpNode = credentialNode.addChild(TAG_UsernamePassword, null, null, null);
                 unpNode.addChild(TAG_Username, null, cred.getUserName(), null);
                 unpNode.addChild(TAG_Password, null, cred.getPassword(), null);
@@ -200,7 +189,6 @@ public class MOManager {
 
             } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS) {
 
-                Log.d("PARSE-LOG", "Saving TLS Credential");
                 OMANode certNode = credentialNode.addChild(TAG_DigitalCertificate, null, null, null);
                 certNode.addChild(TAG_CertificateType, null, Credential.CertTypeX509, null);
                 certNode.addChild(TAG_CertSHA256Fingerprint, null,
@@ -228,8 +216,6 @@ public class MOManager {
             }
             credentialNode.addChild(TAG_RoamingConsortiumOI, null, builder.toString(), null);
         }
-
-        Log.d("PARSE-LOG", "Saving all SPs");
 
         MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", root);
         try (BufferedOutputStream out =
@@ -321,15 +307,12 @@ public class MOManager {
         List<String> spPath = Arrays.asList(TAG_PerProviderSubscription);
         OMAConstructed spList = moTree.getRoot().getListValue(spPath.iterator());
 
-        List<HomeSP> homeSPs = new ArrayList<HomeSP>();
+        List<HomeSP> homeSPs = new ArrayList<>();
 
         if (spList == null) {
             return homeSPs;
         }
-        Log.d("PARSE-LOG", " node-name = " + spList.getName());
-        Log.d("PARSE-LOG", " num_children = " + spList.getChildren().size());
         for (OMANode spRoot : spList.getChildren()) {
-            Log.d("PARSE-LOG", " node-name = " + spRoot.getName());
             homeSPs.add(buildHomeSP(spRoot));
         }
 
@@ -337,12 +320,10 @@ public class MOManager {
     }
 
     private static HomeSP buildHomeSP(OMANode ppsRoot) throws OMAException {
-        Log.d("PARSE-LOG", " node-name = " + ppsRoot.getName());
         OMANode spRoot = ppsRoot.getChild(TAG_HomeSP);
 
         String fqdn = spRoot.getScalarValue(Arrays.asList(TAG_FQDN).iterator());
         String friendlyName = spRoot.getScalarValue(Arrays.asList(TAG_FriendlyName).iterator());
-        System.out.println("FQDN: " + fqdn + ", friendly: " + friendlyName);
         String iconURL = spRoot.getScalarValue(Arrays.asList(TAG_IconURL).iterator());
 
         HashSet<Long> roamingConsortiums = new HashSet<Long>();
@@ -388,13 +369,11 @@ public class MOManager {
 
         Credential credential = buildCredential(ppsRoot.getChild(TAG_Credential));
 
-        Log.d("PARSE-LOG", " Building a new HomeSP for " + fqdn);
         return new HomeSP(ssids, fqdn, roamingConsortiums, otherHomePartners,
                 matchAnyOIs, matchAllOIs, friendlyName, iconURL, credential);
     }
 
     private static Credential buildCredential(OMANode credNode) throws OMAException {
-        Log.d("PARSE-LOG", " Reading credential from " + credNode.getName());
         long ctime = getTime(credNode.getChild(TAG_CreationDate));
         long expTime = getTime(credNode.getChild(TAG_ExpirationDate));
         String realm = getString(credNode.getChild(TAG_Realm));
