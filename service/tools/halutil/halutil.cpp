@@ -296,13 +296,29 @@ struct rtt_params {
 };
 struct rtt_params default_rtt_param = {0, 0, 0, 0, 0, 15, 0, 0, 0, 0};
 
+static int A_band_boost_threshold = 65;
+static int A_band_penalty_threshold = 75;
+static int A_band_boost_factor = 4;
+static int A_band_penalty_factor = 2;
+static int A_band_max_boost = 50;
+static int lazy_roam_hysteresis = 10;
+static int alert_roam_rssi_trigger = 65;
+static int lazy_roam = 1;
+
 mac_addr hotlist_bssids[16];
+mac_addr blacklist_bssids[16];
 unsigned char mac_oui[3];
 wifi_epno_network epno_ssid[32];
 int channel_list[16];
 int num_hotlist_bssids = 0;
 int num_channels = 0;
 int num_epno_ssids = -1;
+char whitelist_ssids[16][32];
+int num_whitelist_ssids = -1;
+mac_addr pref_bssids[16];
+int rssi_modifier[16];
+int num_pref_bssids = -1;
+int num_blacklist_bssids = -1;
 
 #define EPNO_HIDDEN               (1 << 0)
 #define EPNO_A_BAND_TRIG          (1 << 1)
@@ -609,7 +625,6 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
 
         /* create a schedule to scan channels 1, 6, 11 every 5 second and
          * scan 36, 40, 44, 149, 153, 157, 161 165 every 10 second */
-
         params.max_ap_per_scan = max_ap_per_scan;
         params.base_period = base_period;                      // 5 second
         params.report_threshold_percent = threshold_percent;
@@ -648,7 +663,6 @@ static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
         params.buckets[2].num_channels = 1;
 
         params.buckets[2].channels[0].channel = 2462;
-
     }
 
     wifi_scan_result_handler handler;
@@ -1650,6 +1664,56 @@ void readTestOptions(int argc, char *argv[]){
                printf(" flags %d\n", epno_ssid[num_epno_ssids].flags);
             }
             j++;
+        } else if (strcmp(argv[j], "-whitelist_ssids") == 0) {
+            j++;
+            for (num_whitelist_ssids = 0;
+                        j < argc && num_whitelist_ssids < 16 && (argv[j][0] != '-');
+                        j++, num_whitelist_ssids++) {
+                strncpy(whitelist_ssids[num_whitelist_ssids], argv[j], strlen(argv[j]));
+                whitelist_ssids[num_whitelist_ssids][strlen(argv[j])] = '\0';
+            }
+            j -= 1;
+        } else if (strcmp(argv[j], "-a_boost_th") == 0 && isdigit(argv[j+1][0])) {
+            A_band_boost_threshold = atoi(argv[++j]);
+            printf(" A_band_boost_threshold #-%d\n", A_band_boost_threshold);
+        } else if (strcmp(argv[j], "-a_penalty_th") == 0 && isdigit(argv[j+1][0])) {
+            A_band_penalty_threshold = atoi(argv[++j]);
+            printf(" A_band_penalty_threshold #-%d\n", A_band_penalty_threshold);
+        } else if (strcmp(argv[j], "-a_boost_factor") == 0 && isdigit(argv[j+1][0])) {
+            A_band_boost_factor = atoi(argv[++j]);
+            printf(" A_band_boost_factor #%d\n", A_band_boost_factor);
+        } else if (strcmp(argv[j], "-a_penalty_factor") == 0 && isdigit(argv[j+1][0])) {
+            A_band_penalty_factor = atoi(argv[++j]);
+            printf(" A_band_penalty_factor #%d\n", A_band_penalty_factor);
+        } else if (strcmp(argv[j], "-max_boost") == 0 && isdigit(argv[j+1][0])) {
+            A_band_max_boost = atoi(argv[++j]);
+            printf(" A_band_max_boost #%d\n", A_band_max_boost);
+        } else if (strcmp(argv[j], "-hysteresis") == 0 && isdigit(argv[j+1][0])) {
+            lazy_roam_hysteresis = atoi(argv[++j]);
+            printf(" lazy_roam_hysteresiss #%d\n", lazy_roam_hysteresis);
+        } else if (strcmp(argv[j], "-alert_trigger") == 0 && isdigit(argv[j+1][0])) {
+            alert_roam_rssi_trigger = atoi(argv[++j]);
+            printf(" alert_roam_rssi_trigger #%d\n", alert_roam_rssi_trigger);
+        } else if (strcmp(argv[j], "-lazy_roam") == 0 && isdigit(argv[j+1][0])) {
+            lazy_roam = atoi(argv[++j]);
+            printf(" lazy_roam #%d\n", lazy_roam);
+        } else if (strcmp(argv[j], "-pref_bssid") == 0 && isxdigit(argv[j+1][0])) {
+            j++;
+            for (num_pref_bssids = 0; j < argc-1 && isxdigit(argv[j][0]); j++,
+                 num_pref_bssids++) {
+                parseMacAddress(argv[j], pref_bssids[num_pref_bssids]);
+                rssi_modifier[num_pref_bssids] = atoi(argv[++j]);
+                printf(" rssi_modifier #%d\n", rssi_modifier[num_pref_bssids]);
+            }
+            j -= 1;
+        } else if (strcmp(argv[j], "-blacklist_bssids") == 0 && isxdigit(argv[j+1][0])) {
+            j++;
+            for (num_blacklist_bssids = 0;
+                    j < argc && isxdigit(argv[j][0]) && num_whitelist_ssids < 16;
+                    j++, num_blacklist_bssids++) {
+                parseMacAddress(argv[j], blacklist_bssids[num_blacklist_bssids]);
+            }
+            j -= 1;
         }
     }
 }
@@ -1874,6 +1938,138 @@ void getFeatureSetMatrix(void)
         printMsg("Concurrent feature set - %x\n", set[i]);
     return;
 }
+
+static wifi_error setWhitelistBSSIDs()
+{
+    wifi_ssid params[16];
+    memset(&params, 0, sizeof(params));
+    int cmdId;
+
+    if (num_whitelist_ssids == -1)
+        return WIFI_SUCCESS;
+
+    for (int i = 0; i < num_whitelist_ssids; i++)
+	    memcpy(params[i].ssid, whitelist_ssids[i], sizeof(params[i].ssid));
+
+    printMsg("whitelist SSIDs:\n");
+    for (int i = 0; i < num_whitelist_ssids; i++) {
+        printMsg("%d.\t%s\n", i, params[i].ssid);
+    }
+
+    cmdId = getNewCmdId();
+    return wifi_set_ssid_white_list(cmdId, wlan0Handle, num_whitelist_ssids, params);
+}
+
+static wifi_error setRoamParams()
+{
+    wifi_roam_params params;
+    memset(&params, 0, sizeof(params));
+    int cmdId;
+
+    params.A_band_boost_threshold  = -A_band_boost_threshold;
+    params.A_band_penalty_threshold = -A_band_penalty_threshold;
+    params.A_band_boost_factor = A_band_boost_factor;
+    params.A_band_penalty_factor = A_band_penalty_factor;
+    params.A_band_max_boost = A_band_max_boost;
+    params.lazy_roam_hysteresis = lazy_roam_hysteresis;
+    params.alert_roam_rssi_trigger = -alert_roam_rssi_trigger;
+
+    cmdId = getNewCmdId();
+    printMsg("Setting Roam params\n");
+    return wifi_set_gscan_roam_params(cmdId, wlan0Handle, &params);
+}
+
+
+static wifi_error setBSSIDPreference()
+{
+    int cmdId;
+    wifi_bssid_preference prefs[16];
+
+    if (num_pref_bssids == -1)
+        return WIFI_SUCCESS;
+
+    memset(&prefs, 0, sizeof(prefs));
+
+    for (int i = 0; i < num_pref_bssids; i++) {
+	    memcpy(prefs[i].bssid, pref_bssids[i], sizeof(mac_addr));
+	    prefs[i].rssi_modifier = rssi_modifier[i];
+    }
+
+    printMsg("BSSID\t\t\trssi_modifier\n");
+    for (int i = 0; i < num_pref_bssids; i++) {
+        mac_addr &addr = prefs[i].bssid;
+        printMsg("%02x:%02x:%02x:%02x:%02x:%02x\t%d\n", addr[0],
+                addr[1], addr[2], addr[3], addr[4], addr[5],
+                prefs[i].rssi_modifier);
+    }
+
+    cmdId = getNewCmdId();
+    printMsg("Setting BSSID pref\n");
+    return wifi_set_bssid_preference(cmdId, wlan0Handle, num_pref_bssids, prefs);
+}
+
+static wifi_error setLazyRoam()
+{
+    int cmdId;
+    cmdId = getNewCmdId();
+    printMsg("Lazy roam\n");
+    return wifi_enable_lazy_roam(cmdId, wlan0Handle, lazy_roam);
+}
+
+static wifi_error setBlacklist()
+{   
+    if (num_blacklist_bssids == -1)
+        return WIFI_SUCCESS;
+    wifi_bssid_params params;
+
+    params.num_bssid = num_blacklist_bssids;
+    cmdId = getNewCmdId();
+    printMsg("Setting Blacklist BSSIDs\n");
+    for (int i = 0; i < num_blacklist_bssids; i++) {
+        mac_addr &addr = params.bssids[i];
+        memcpy(&params.bssids[i], &blacklist_bssids[i], sizeof(mac_addr) );
+        printMsg("%02x:%02x:%02x:%02x:%02x:%02x\n", addr[0],
+                addr[1], addr[2], addr[3], addr[4], addr[5]);
+    }
+    return wifi_set_bssid_blacklist(cmdId, wlan0Handle, params);
+}
+
+static void testLazyRoam()
+{
+    int result;
+
+    result = setRoamParams();
+    if (result == WIFI_SUCCESS) {
+        printMsg("Set Roaming Parameters\n");
+    } else {
+        printMsg("Could not set Roaming Parameters : %d\n", result);
+    }
+    result = setBlacklist();
+    if (result == WIFI_SUCCESS) {
+        printMsg("Set Roaming Parameters\n");
+    } else {
+        printMsg("Could not set Roaming Parameters : %d\n", result);
+    }
+    result = setBSSIDPreference();
+    if (result == WIFI_SUCCESS) {
+        printMsg("Set BSSID preference\n");
+    } else {
+        printMsg("Could not set BSSID preference : %d\n", result);
+    }
+    result = setWhitelistBSSIDs();
+    if (result == WIFI_SUCCESS) {
+        printMsg("whitelisted SSIDs\n");
+    } else {
+        printMsg("Could not set SSID whitelist : %d\n", result);
+    }
+    result = setLazyRoam();
+    if (result == WIFI_SUCCESS) {
+        printMsg("Lazy roam command successful\n");
+    } else {
+        printMsg("Could not set Lazy Roam : %d\n", result);
+    }
+}
+
 void printUsage() {
     printf("Usage:	halutil [OPTION]\n");
     printf(" -s 			  start AP scan test\n");
@@ -1906,7 +2102,43 @@ void printUsage() {
     printf(" -nodfs <0|1>	  Turn OFF/ON non-DFS locales\n");
     printf(" -country <alpha2 country code> Set country\n");
     printf(" -ePNO Configure ePNO SSIDs\n");
+    printf(" -lazy_roam enable/disable lazy roam with default params\n");
+    printf(" -a_boost_th A band boost threshold\n");
+    printf(" -a_penalty_th A band penalty threshold\n");
+    printf(" -a_boost_factor A band boost factor\n");
+    printf(" -a_penalty_factor A band penalty factor\n");
+    printf(" -max_boost max allowed boost\n");
+    printf(" -hysteresis cur AP boost hysteresis\n");
+    printf(" -alert_trigger alert roam trigger threshold\n");
+    printf(" -blacklist_bssids blacklist bssids\n");
+    printf(" -pref_bssid preference BSSID/RSSI pairs\n");
+    printf(" -whitelist_ssids whitelist SSIDs\n");
 }
+
+static bool isLazyRoamParam(char *arg)
+{
+    if ((strcmp(arg, "-blacklist_bssids") == 0)) {
+        num_blacklist_bssids = 0;
+        return true;
+    }
+    if ((strcmp(arg, "-pref_bssid") == 0)) {
+        num_pref_bssids = 0;
+        return true;
+    }
+    if ((strcmp(arg, "-whitelist_ssids") == 0)) {
+        num_whitelist_ssids = 0;
+        return true;
+    }
+    return ((strcmp(arg, "-lazy_roam") == 0) ||
+            (strcmp(arg, "-a_boost_th") == 0) ||
+            (strcmp(arg, "-a_penalty_th") == 0) ||
+            (strcmp(arg, "-a_boost_factor") == 0) ||
+            (strcmp(arg, "-a_penalty_factor") == 0) ||
+            (strcmp(arg, "-max_boost") == 0) ||
+            (strcmp(arg, "-hysteresis") == 0) ||
+            (strcmp(arg, "-alert_trigger") == 0));
+}
+
 int main(int argc, char *argv[]) {
 
     pthread_mutex_init(&printMutex, NULL);
@@ -1991,6 +2223,9 @@ int main(int argc, char *argv[]) {
         hal_fn.wifi_set_country_code(wlan0Handle, country_code);
     } else if (strcmp(argv[1], "-help") == 0) {
         printUsage();
+    } else if (isLazyRoamParam(argv[1])) {
+        readTestOptions(argc, argv);
+        testLazyRoam();
     }
 cleanup:
     cleanup();

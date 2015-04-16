@@ -19,10 +19,12 @@ package com.android.server.wifi;
 import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.RttManager;
 import android.net.wifi.ScanResult;
+import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiLinkLayerStats;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.RttManager;
+import android.net.wifi.WifiSsid;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
@@ -1197,7 +1199,13 @@ public class WifiNative {
     }
 
     synchronized public static boolean startHal() {
-        Log.i(TAG, "startHal");
+        Log.i(TAG, "startHal"
+                + " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
+                + " - " + Thread.currentThread().getStackTrace()[3].getMethodName()
+                + " - " + Thread.currentThread().getStackTrace()[4].getMethodName()
+                + " - " + Thread.currentThread().getStackTrace()[5].getMethodName()
+                + " - " + Thread.currentThread().getStackTrace()[6].getMethodName()
+                + " - " + Thread.currentThread().getStackTrace()[7].getMethodName());
         synchronized (mLock) {
             if (sHalFailed)
                 return false;
@@ -1324,27 +1332,22 @@ public class WifiNative {
         }
     }
 
-    synchronized static void onFullScanResult(int id, ScanResult result, byte bytes[]) {
-        if (DBG) Log.i(TAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
-                "num = " + bytes.length);
-
-        if (sScanEventHandler == null) {
-            return;
-        }
-
+    static void populateScanResult(ScanResult result, byte bytes[], String dbg) {
         int num = 0;
+        if (bytes == null) return;
+        if (dbg == null) dbg = "";
         for (int i = 0; i < bytes.length; ) {
             int type  = bytes[i] & 0xFF;
             int len = bytes[i + 1] & 0xFF;
 
             if (i + len + 2 > bytes.length) {
-                Log.w(TAG, "bad length " + len + " of IE " + type + " from " + result.BSSID);
-                Log.w(TAG, "ignoring the rest of the IEs");
+                Log.w(TAG, dbg + "bad length " + len + " of IE " + type + " from " + result.BSSID);
+                Log.w(TAG, dbg + "ignoring the rest of the IEs");
                 break;
             }
             num++;
             i += len + 2;
-            if (DBG) Log.i(TAG, "bytes[" + i + "] = [" + type + ", " + len + "]" + ", " +
+            if (DBG) Log.i(TAG, dbg + "bytes[" + i + "] = [" + type + ", " + len + "]" + ", " +
                     "next = " + i);
         }
 
@@ -1358,7 +1361,7 @@ public class WifiNative {
         for (int i = 0, index = 0; i < num; i++) {
             int type  = bytes[index] & 0xFF;
             int len = bytes[index + 1] & 0xFF;
-            if (DBG) Log.i(TAG, "index = " + index + ", type = " + type + ", len = " + len);
+            if (DBG) Log.i(TAG, dbg + "index = " + index + ", type = " + type + ", len = " + len);
             ScanResult.InformationElement elem = new ScanResult.InformationElement();
             elem.id = type;
             elem.bytes = new byte[len];
@@ -1376,18 +1379,18 @@ public class WifiNative {
                 centerFreqIndex1 = bytes[inforStart + 1];
                 centerFreqIndex2 = bytes[inforStart + 2];
             } else if (type == EID_EXTENDED_CAPS) {
-                 int tempIndex = RTT_RESP_ENABLE_BIT / 8;
-                 byte offset = RTT_RESP_ENABLE_BIT % 8;
+                int tempIndex = RTT_RESP_ENABLE_BIT / 8;
+                byte offset = RTT_RESP_ENABLE_BIT % 8;
 
-                 if(len < tempIndex + 1) {
-                     result.is80211McRTTResponder = false;
-                 } else {
-                     if ((bytes[inforStart + tempIndex] & ((byte)0x1 << offset)) != 0) {
-                         result.is80211McRTTResponder = true;
-                     } else {
-                         result.is80211McRTTResponder = false;
-                     }
-                 }
+                if(len < tempIndex + 1) {
+                    result.is80211McRTTResponder = false;
+                } else {
+                    if ((bytes[inforStart + tempIndex] & ((byte)0x1 << offset)) != 0) {
+                        result.is80211McRTTResponder = true;
+                    } else {
+                        result.is80211McRTTResponder = false;
+                    }
+                }
             }
         }
         //handle RTT related information
@@ -1413,7 +1416,7 @@ public class WifiNative {
                     result.centerFreq0 = result.frequency - 20;
                 } else {
                     result.centerFreq0 = 0;
-                    Log.e(TAG, ": Error on secondChanelOffset");
+                    Log.e(TAG, dbg + ": Error on secondChanelOffset");
                 }
             } else {
                 result.centerFreq0  = 0;
@@ -1422,13 +1425,24 @@ public class WifiNative {
             result.centerFreq1  = 0;
         }
         if(DBG) {
-            Log.d(TAG, ":SSID: " + result.SSID + "ChannelWidth is: " + result.channelWidth +
+            Log.d(TAG, dbg + "SSID: " + result.SSID + " ChannelWidth is: " + result.channelWidth +
                     " PrimaryFreq: " + result.frequency +" mCenterfreq0: " + result.centerFreq0 +
                     " mCenterfreq1: " + result.centerFreq1 + (result.is80211McRTTResponder ?
                     "Support RTT reponder: " : "Do not support RTT responder"));
         }
 
         result.informationElements = elements;
+    }
+
+    synchronized static void onFullScanResult(int id, ScanResult result, byte bytes[]) {
+        if (DBG) Log.i(TAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
+                "num = " + bytes.length);
+
+        if (sScanEventHandler == null) {
+            return;
+        }
+        populateScanResult(result, bytes, " onFullScanResult ");
+
         sScanEventHandler.onFullScanResult(result);
     }
 
@@ -1799,4 +1813,105 @@ public class WifiNative {
             sWifiLoggerEventHandler.onDataAvailable(data, len);
         }
     }
+
+    //---------------------------------------------------------------------------------
+    /* Configure ePNO */
+
+    public class WifiPnoNetwork {
+        String SSID;
+        int rssi_threshold;
+        int flags;
+        int auth;
+        String configKey; // kept for reference
+
+        WifiPnoNetwork(WifiConfiguration config, int threshold) {
+            if (config.SSID == null) {
+                this.SSID = "";
+                this.flags = 1;
+            } else {
+                this.SSID = config.SSID;
+            }
+            this.rssi_threshold = threshold;
+            if (config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK)) {
+                auth |= 2;
+            } else if (config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_EAP) ||
+                    config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.IEEE8021X)) {
+                auth |= 4;
+            } else if (config.wepKeys[0] != null) {
+                auth |= 1;
+            } else {
+                auth |= 1;
+            }
+//            auth = 0;
+            flags |= 6; //A and G
+            configKey = config.configKey();
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sbuf = new StringBuilder();
+            sbuf.append(this.SSID);
+            sbuf.append(" flags=").append(this.flags);
+            sbuf.append(" rssi=").append(this.rssi_threshold);
+            sbuf.append(" auth=").append(this.auth);
+            return sbuf.toString();
+        }
+    }
+
+    public static interface WifiPnoEventHandler {
+        void onPnoNetworkFound(ScanResult results[]);
+    }
+
+    private static WifiPnoEventHandler sWifiPnoEventHandler;
+
+    private static int sPnoCmdId = 0;
+
+    private native static boolean setPnoListNative(int iface, int id, WifiPnoNetwork list[]);
+
+    synchronized public static boolean setPnoList(WifiPnoNetwork list[],
+                                                  WifiPnoEventHandler eventHandler) {
+        Log.e(TAG, "setPnoList cmd " + sPnoCmdId);
+
+        synchronized (mLock) {
+
+            sPnoCmdId = getNewCmdIdLocked();
+
+            sWifiPnoEventHandler = eventHandler;
+            if (setPnoListNative(sWlan0Index, sPnoCmdId, list) == false) {
+                sWifiPnoEventHandler = null;
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    synchronized public static void onPnoNetworkFound(int id, ScanResult[] results) {
+
+        if (results == null) {
+            Log.e(TAG, "onPnoNetworkFound null results");
+            return;
+
+        }
+        Log.d(TAG, "WifiNative.onPnoNetworkFound result " + results.length);
+
+        //Log.e(TAG, "onPnoNetworkFound length " + results.length);
+        //return;
+        for (int i=0; i<results.length; i++) {
+            Log.e(TAG, "onPnoNetworkFound SSID " + results[i].SSID
+                    + " " + results[i].level + " " + results[i].frequency);
+
+            populateScanResult(results[i], results[i].bytes, "onPnoNetworkFound ");
+            results[i].wifiSsid = WifiSsid.createFromAsciiEncoded(results[i].SSID);
+        }
+        synchronized (mLock) {
+            if (sPnoCmdId != 0 && sWifiPnoEventHandler != null) {
+                sWifiPnoEventHandler.onPnoNetworkFound(results);
+            } else {
+                /* this can happen because of race conditions */
+                Log.d(TAG, "Ignoring Pno Network found event");
+            }
+        }
+}
+
 }

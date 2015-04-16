@@ -58,17 +58,23 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     private static final String TAG = "WifiScanningService";
     private static final boolean DBG = true;
+    private static final boolean VDBG = true;
     private static final int INVALID_KEY = 0;                               // same as WifiScanner
     private static final int MIN_PERIOD_PER_CHANNEL_MS = 200;               // DFS needs 120 ms
 
     @Override
     public Messenger getMessenger() {
-        return new Messenger(mClientHandler);
+        if (mClientHandler != null) {
+            return new Messenger(mClientHandler);
+        } else {
+            Log.e(TAG, "WifiScanningServiceImpl trying to get messenger w/o initialization");
+            return null;
+        }
     }
 
     @Override
     public Bundle getAvailableChannels(int band) {
-        WifiScanner.ChannelSpec channelSpecs[] = getChannelsForBand(band);
+        WifiScanner.ChannelSpec channelSpecs[] = getChannelsForBand(band, true);
         ArrayList<Integer> list = new ArrayList<Integer>(channelSpecs.length);
         for (WifiScanner.ChannelSpec channelSpec : channelSpecs) {
             list.add(channelSpec.frequency);
@@ -572,7 +578,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             WifiScanner.ChannelSpec desiredChannels[] = settings.channels;
             if (settings.band != WifiScanner.WIFI_BAND_UNSPECIFIED
                     || desiredChannels == null || desiredChannels.length == 0)  {
-                desiredChannels = getChannelsForBand(settings.band);
+                desiredChannels = getChannelsForBand(settings.band, true);
             }
 
             // check the channels this client asked for ..
@@ -612,11 +618,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 }
 
                 if (copyScanData) {
-                    Log.d(TAG, "adding at " + index);
+                    if (VDBG) {
+                        Log.d(TAG, "adding at " + index);
+                    }
                     results2[index] = new WifiScanner.ScanData(result);
                     index++;
                 }
             }
+            Log.d(TAG, "delivering results, num = " + results2.length);
 
             deliverScanResults(handler, results2);
             if (settings.periodInMs == 0) {
@@ -639,7 +648,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 WifiScanner.ChannelSpec desiredChannels[] = settings.channels;
                 if (settings.band != WifiScanner.WIFI_BAND_UNSPECIFIED
                         || desiredChannels == null || desiredChannels.length == 0)  {
-                    desiredChannels = getChannelsForBand(settings.band);
+                    desiredChannels = getChannelsForBand(settings.band, true);
                 }
                 for (WifiScanner.ChannelSpec channelSpec : desiredChannels) {
                     if (channelSpec.frequency == result.frequency) {
@@ -807,9 +816,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
-    private static class SettingsComputer {
+    private class SettingsComputer {
 
-        private static class TimeBucket {
+        private class TimeBucket {
             int periodInSecond;
             int periodMinInSecond;
             int periodMaxInSecond;
@@ -821,7 +830,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
         }
 
-        private static final TimeBucket[] mTimeBuckets = new TimeBucket[] {
+        private final TimeBucket[] mTimeBuckets = new TimeBucket[] {
                 new TimeBucket( 1, 0, 5 ),
                 new TimeBucket( 5, 5, 10 ),
                 new TimeBucket( 10, 10, 25 ),
@@ -872,7 +881,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             WifiScanner.ChannelSpec channels[] = settings.channels;
             if (channels == null) {
                 // set channels based on band
-                channels = getChannelsForBand(settings.band);
+                channels = getChannelsForBand(settings.band, true);
             }
 
             if (channels == null) {
@@ -938,7 +947,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     || desiredChannels == null
                     || desiredChannels.length == 0) {
                 // set channels based on band
-                desiredChannels = getChannelsForBand(settings.band);
+                desiredChannels = getChannelsForBand(settings.band, true);
                 if (desiredChannels == null) {
                     // still no channels; then there's nothing to scan
                     Log.e(TAG, "No channels to scan!!");
@@ -1047,6 +1056,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     boolean resetBuckets() {
+        Log.e(TAG, "resetBuckets num clients: " + mClients.size());
         SettingsComputer c = new SettingsComputer();
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci : clients) {
@@ -1083,8 +1093,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return true;
         } else {
             if (WifiNative.startScan(s, mStateMachine)) {
-                if (DBG) Log.d(TAG, "Successfully started scan of " + s.num_buckets + " buckets at"
-                        + "time = " + SystemClock.elapsedRealtimeNanos()/1000);
+                if (DBG) Log.e(TAG, "Successfully started scan of " + s.num_buckets + " buckets at"
+                        + "time = " + SystemClock.elapsedRealtimeNanos()/1000 + " period "
+                        + s.base_period_ms);
                 return true;
             } else {
                 if (DBG) Log.d(TAG, "Failed to start scan of " + s.num_buckets + " buckets");
@@ -1647,7 +1658,66 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     }
 
-    private static WifiScanner.ChannelSpec[] getChannelsForBand(int band) {
+    private int[] cachedChannelSpecG;
+    private int[] cachedChannelSpecA;
+    private int[] cachedChannelSpecDFS;
+
+    private WifiScanner.ChannelSpec[] getChannelsForBand(int band, boolean allowCached) {
+
+        if (allowCached == false) {
+            return getChannelsForBand(band);
+        }
+
+       if ((band & WifiScanner.WIFI_BAND_24_GHZ) != 0) {
+           if (cachedChannelSpecG == null || cachedChannelSpecG.length == 0) {
+               cachedChannelSpecG = WifiNative.getChannelsForBand(WifiScanner.WIFI_BAND_24_GHZ);
+           }
+       }
+       if ((band & WifiScanner.WIFI_BAND_5_GHZ) != 0) {
+           if (cachedChannelSpecA == null || cachedChannelSpecA.length == 0) {
+               cachedChannelSpecA = WifiNative.getChannelsForBand(WifiScanner.WIFI_BAND_5_GHZ);
+           }
+       }
+       if ((band & WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY) != 0) {
+           if (cachedChannelSpecDFS == null || cachedChannelSpecDFS.length == 0) {
+               cachedChannelSpecDFS
+                       = WifiNative.getChannelsForBand(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY);
+           }
+       }
+       int length = 0;
+       if ((band & WifiScanner.WIFI_BAND_24_GHZ) != 0) {
+           length += cachedChannelSpecG.length;
+       }
+       if ((band & WifiScanner.WIFI_BAND_5_GHZ) != 0) {
+           length += cachedChannelSpecA.length;
+       }
+       if ((band & WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY) != 0) {
+           length += cachedChannelSpecDFS.length;
+       }
+
+       WifiScanner.ChannelSpec[] spec = new WifiScanner.ChannelSpec[length];
+       int idx = 0;
+       if ((band & WifiScanner.WIFI_BAND_24_GHZ) != 0) {
+           for (int i = 0; i < cachedChannelSpecG.length; i++) {
+               spec[i] = new WifiScanner.ChannelSpec(cachedChannelSpecG[i]);
+           }
+           idx += cachedChannelSpecG.length;
+       }
+       if ((band & WifiScanner.WIFI_BAND_5_GHZ) != 0) {
+           for (int i = 0; i < cachedChannelSpecA.length; i++) {
+               spec[i+idx] = new WifiScanner.ChannelSpec(cachedChannelSpecA[i]);
+           }
+           idx += cachedChannelSpecA.length;
+       }
+       if ((band & WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY) != 0) {
+           for (int i = 0; i < cachedChannelSpecDFS.length; i++) {
+               spec[i+idx] = new WifiScanner.ChannelSpec(cachedChannelSpecDFS[i]);
+           }
+       }
+       return spec;
+    }
+
+    private WifiScanner.ChannelSpec[] getChannelsForBand(int band) {
         int channels[] = WifiNative.getChannelsForBand(band);
         if (channels != null) {
             WifiScanner.ChannelSpec channelSpecs[] = new WifiScanner.ChannelSpec[channels.length];
@@ -1660,8 +1730,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
-    private static boolean isDfs(int channel) {
-        int[] dfsChannels = WifiNative.getChannelsForBand(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY);
+    private boolean isDfs(int channel) {
+        int[] dfsChannels;
+        if (cachedChannelSpecDFS == null || cachedChannelSpecDFS.length == 0) {
+            cachedChannelSpecDFS
+                    = WifiNative.getChannelsForBand(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY);
+        }
+        dfsChannels = cachedChannelSpecDFS;
         for (int i = 0; i < dfsChannels.length; i++) {
             if (channel == dfsChannels[i]) {
                 return true;
@@ -1670,7 +1745,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         return false;
     }
 
-    private static int getBandFromChannels(WifiScanner.ChannelSpec[] channels) {
+    private int getBandFromChannels(WifiScanner.ChannelSpec[] channels) {
         int band = WifiScanner.WIFI_BAND_UNSPECIFIED;
         for (WifiScanner.ChannelSpec channel : channels) {
             if (2400 <= channel.frequency && channel.frequency < 2500) {
@@ -1683,7 +1758,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
         return band;
     }
-    private static int getBandFromChannels(WifiNative.ChannelSettings[] channels) {
+    private int getBandFromChannels(WifiNative.ChannelSettings[] channels) {
         int band = WifiScanner.WIFI_BAND_UNSPECIFIED;
         for (WifiNative.ChannelSettings channel : channels) {
             if (2400 <= channel.frequency && channel.frequency < 2500) {

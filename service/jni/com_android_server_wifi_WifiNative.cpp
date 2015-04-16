@@ -219,12 +219,14 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result *result) {
         return NULL;
     }
 
-    // ALOGD("setting SSID to %s", result.ssid);
+    ALOGE("setting SSID to %s", result->ssid);
+    //jstring jssid = env->NewStringUTF(result->ssid);
     setStringField(env, scanResult, "SSID", result->ssid);
 
     char bssid[32];
     sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0], result->bssid[1],
         result->bssid[2], result->bssid[3], result->bssid[4], result->bssid[5]);
+    //jstring jbssid = env->NewStringUTF(bssid);
 
     setStringField(env, scanResult, "BSSID", bssid);
 
@@ -244,12 +246,12 @@ int set_iface_flags(const char *ifname, int dev_up) {
         return -errno;
     }
 
-    ALOGD("setting interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
+    //ALOGD("setting interface %s flags (%s)\n", ifname, dev_up ? "UP" : "DOWN");
 
     memset(&ifr, 0, sizeof(ifr));
     strlcpy(ifr.ifr_name, ifname, IFNAMSIZ);
 
-    ALOGD("reading old value\n");
+    //ALOGD("reading old value\n");
 
     if (ioctl(sock, SIOCGIFFLAGS, &ifr) != 0) {
       ret = errno ? -errno : -999;
@@ -257,7 +259,7 @@ int set_iface_flags(const char *ifname, int dev_up) {
       close(sock);
       return ret;
     } else {
-      ALOGD("writing new value\n");
+      //ALOGD("writing new value\n");
     }
 
     if (dev_up) {
@@ -1407,6 +1409,148 @@ static jboolean android_net_wifi_start_logging(JNIEnv *env, jclass cls, jint ifa
     return result;
 }
 
+// ----------------------------------------------------------------------------
+// ePno framework
+// ----------------------------------------------------------------------------
+
+
+static void onPnoNetworkFound(wifi_request_id id,
+                                          unsigned num_results, wifi_scan_result *results) {
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("onPnoNetworkFound called, vm = %p, obj = %p, env = %p, num_results %u",
+            mVM, mCls, env, num_results);
+
+    if (results == 0 || num_results == 0) {
+       ALOGE("onPnoNetworkFound: Error no results");
+       return;
+    }
+
+    jobject scanResult;
+    jbyte *bytes;
+    jobjectArray scanResults;
+    //jbyteArray elements;
+
+    for (unsigned i=0; i<num_results; i++) {
+
+        scanResult = createScanResult(env, &results[i]);
+        if (i == 0) {
+            scanResults = env->NewObjectArray(num_results,
+                    env->FindClass("android/net/wifi/ScanResult"), scanResult);
+            if (scanResults == 0) {
+                ALOGD("cant allocate array");
+            } else {
+                ALOGD("allocated array %u", env->GetArrayLength(scanResults));
+            }
+        } else {
+            env->SetObjectArrayElement(scanResults, i, scanResult);
+        }
+
+        ALOGD("Scan result with ie length %d, i %u, <%s> rssi=%d %02x:%02x:%02x:%02x:%02x:%02x", results->ie_length, i,
+            results[i].ssid, results[i].rssi, results[i].bssid[0], results[i].bssid[1],
+            results[i].bssid[2], results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
+
+        /*elements = env->NewByteArray(results->ie_length);
+        if (elements == NULL) {
+            ALOGE("Error in allocating array");
+            return;
+        }*/
+
+        //ALOGD("onPnoNetworkFound: Setting byte array");
+
+        //bytes = (jbyte *)&(results->ie_data[0]);
+        //env->SetByteArrayRegion(elements, 0, results->ie_length, bytes);
+
+        //ALOGD("onPnoNetworkFound: Returning result");
+    }
+
+
+    ALOGD("calling report");
+
+    reportEvent(env, mCls, "onPnoNetworkFound", "(I[Landroid/net/wifi/ScanResult;)V", id,
+               scanResults);
+        ALOGD("free ref");
+
+    env->DeleteLocalRef(scanResults);
+    //env->DeleteLocalRef(elements);
+}
+
+static jboolean android_net_wifi_setPnoListNative(
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject list)  {
+
+    wifi_epno_handler handler;
+    handler.on_network_found = &onPnoNetworkFound;
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("configure ePno list request [%d] = %p", id, handle);
+
+    if (list == NULL) {
+        // stop pno
+        int result = hal_fn.wifi_set_epno_list(id, handle, 0, NULL, handler);
+        ALOGE(" setPnoListNative: STOP result = %d", result);
+        return result;
+    }
+
+    wifi_epno_network net_list[MAX_PNO_SSID];
+    memset(&net_list, 0, sizeof(net_list));
+
+    size_t len = env->GetArrayLength((jobjectArray)list);
+    if (len > (size_t)MAX_PNO_SSID) {
+        return false;
+    }
+
+    for (unsigned int i = 0; i < len; i++) {
+
+        jobject pno_net = env->GetObjectArrayElement((jobjectArray)list, i);
+        if (pno_net == NULL) {
+            ALOGD("setPnoListNative: could not get element %d", i);
+            continue;
+        }
+
+        jstring sssid = (jstring) getObjectField(
+                   env, pno_net, "SSID", "Ljava/lang/String;");
+        if (sssid == NULL) {
+              ALOGE("Error setPnoListNative: getting ssid field");
+              return false;
+        }
+
+        const char *ssid = env->GetStringUTFChars(sssid, NULL);
+        if (ssid == NULL) {
+             ALOGE("Error setPnoListNative: getting ssid");
+             return false;
+        }
+        int ssid_len = strnlen((const char*)ssid, 33);
+        if (ssid_len > 32) {
+           ALOGE("Error setPnoListNative: long ssid %u", strnlen((const char*)ssid, 256));
+           return false;
+        }
+        if (ssid_len > 1 && ssid[0] == '"' && ssid[ssid_len-1])
+        {
+            // strip leading and trailing '"'
+            ssid++;
+            ssid_len-=2;
+        }
+        if (ssid_len == 0) {
+            ALOGE("Error setPnoListNative: zero length ssid, skip it");
+            continue;
+        }
+        memcpy(net_list[i].ssid, ssid, ssid_len);
+
+        int rssit = getIntField(env, pno_net, "rssi_threshold");
+        net_list[i].rssi_threshold = (byte)rssit;
+        int a = getIntField(env, pno_net, "auth");
+        net_list[i].auth_bit_field = a;
+        int f = getIntField(env, pno_net, "flags");
+        net_list[i].flags = f;
+        ALOGE(" setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]", i, (signed byte)net_list[i].rssi_threshold, net_list[i].rssi_threshold, net_list[i].auth_bit_field, a, net_list[i].flags, f, net_list[i].ssid);
+    }
+
+    int result = hal_fn.wifi_set_epno_list(id, handle, len, net_list, handler);
+    ALOGE(" setPnoListNative: result %d", result);
+
+    return result >= 0;
+}
 
 // ----------------------------------------------------------------------------
 
@@ -1464,7 +1608,9 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_get_rtt_capabilities},
     { "startLogging", "(I)Z", (void*) android_net_wifi_start_logging},
     {"setCountryCodeHalNative", "(ILjava/lang/String;)Z",
-            (void*) android_net_wifi_set_Country_Code_Hal}
+            (void*) android_net_wifi_set_Country_Code_Hal},
+    { "setPnoListNative", "(II[Lcom/android/server/wifi/WifiNative$WifiPnoNetwork;)Z",
+            (void*) android_net_wifi_setPnoListNative}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {

@@ -182,9 +182,6 @@ public class WifiConfigStore extends IpConfigStore {
      */
     private HashMap<Integer, HomeSP> mConfiguredHomeSPs = new HashMap<Integer, HomeSP>();
 
-
-
-
     /* Stores a map of NetworkId to ScanCache */
     private HashMap<Integer, ScanDetailCache> mScanDetailCaches;
 
@@ -327,6 +324,9 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY
             = "ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED:   ";
 
+    private static final String ENABLE_HAL_BASED_PNO
+            = "ENABLE_HAL_BASED_PNO";
+
     // The three below configurations are mainly for power stats and CPU usage tracking
     // allowing to incrementally disable framework features
     private static final String ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY
@@ -344,7 +344,7 @@ public class WifiConfigStore extends IpConfigStore {
     // for testing purpose.
     // It is not intended for normal use.
     private static final String WIFI_VERBOSE_LOGS_KEY
-            = "WIFI_VERBOSE_LOGS:   ";
+            = "WIFI_VERBOSE_LOGS";
 
     // As we keep deleted PSK WifiConfiguration for a while, the PSK of
     // those deleted WifiConfiguration is set to this random unused PSK
@@ -395,7 +395,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     public static final int maxNumScanCacheEntries = 128;
 
-
+    public final AtomicBoolean enableHalBasedPno = new AtomicBoolean(true);
     public final AtomicBoolean enableAutoJoinWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableFullBandScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableAutoJoinScanWhenAssociated = new AtomicBoolean(true);
@@ -423,6 +423,7 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicInteger alwaysEnableScansWhileAssociated = new AtomicInteger(0);
     public final AtomicInteger maxNumPassiveChannelsForPartialScans = new AtomicInteger(2);
     public final AtomicInteger maxNumActiveChannelsForPartialScans = new AtomicInteger(6);
+    public final AtomicInteger wifiDisconnectedScanIntervalMs = new AtomicInteger(15000);
 
     private static final Map<String, Object> sKeyMap = new HashMap<>();
 
@@ -531,6 +532,7 @@ public class WifiConfigStore extends IpConfigStore {
         sKeyMap.put(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY, alwaysEnableScansWhileAssociated);
         sKeyMap.put(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumPassiveChannelsForPartialScans);
         sKeyMap.put(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumActiveChannelsForPartialScans);
+        sKeyMap.put(ENABLE_HAL_BASED_PNO, enableHalBasedPno);
 
         if (showNetworks) {
             mLocalLog = mWifiNative.getLocalLog();
@@ -544,6 +546,10 @@ public class WifiConfigStore extends IpConfigStore {
         associatedPartialScanPeriodMilli.set(mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_associated_scan_interval));
         loge("associatedPartialScanPeriodMilli set to " + associatedPartialScanPeriodMilli);
+
+
+        wifiDisconnectedScanIntervalMs.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_disconnected_scan_interval));
 
         onlyLinkSameCredentialConfigurations = mContext.getResources().getBoolean(
                 R.bool.config_wifi_only_link_same_credential_configurations);
@@ -623,7 +629,10 @@ public class WifiConfigStore extends IpConfigStore {
 
         networkSwitchingBlackListPeriodMilli = mContext.getResources().getInteger(
                 R.integer.config_wifi_network_switching_blacklist_time);
-                
+
+        enableHalBasedPno.set(mContext.getResources().getBoolean(
+                        R.bool.config_wifi_hal_pno_enable));
+
         Chronograph chronograph = new Chronograph();
         mAnqpCache = new AnqpCache(chronograph);
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
@@ -892,6 +901,7 @@ public class WifiConfigStore extends IpConfigStore {
                     config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 } else {
                     loge("Enable network failed on " + config.networkId);
+
                 }
             }
         }
