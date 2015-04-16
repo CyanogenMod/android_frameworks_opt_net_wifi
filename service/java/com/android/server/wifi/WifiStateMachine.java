@@ -3058,7 +3058,7 @@ public class WifiStateMachine extends StateMachine {
                     sb.append(" ").append(mWifiInfo.getBSSID());
                 }
                 if (c != null) {
-                    WifiConfigStore.ScanDetailCache scanDetailCache =
+                    ScanDetailCache scanDetailCache =
                             mWifiConfigStore.getScanDetailCache(c);
                     if (scanDetailCache != null) {
                         for (ScanDetail sd : scanDetailCache.values()) {
@@ -3817,7 +3817,7 @@ public class WifiStateMachine extends StateMachine {
         boolean use24Thresholds = false;
         boolean homeNetworkBoost = false;
         WifiConfiguration currentConfiguration = getCurrentWifiConfiguration();
-        WifiConfigStore.ScanDetailCache scanDetailCache =
+        ScanDetailCache scanDetailCache =
                 mWifiConfigStore.getScanDetailCache(currentConfiguration);
         if (currentConfiguration != null && scanDetailCache != null) {
             currentConfiguration.setVisibility(scanDetailCache.getVisibility(12000));
@@ -6447,7 +6447,7 @@ public class WifiStateMachine extends StateMachine {
         if (BSSID == null) {
             BSSID = mTargetRoamBSSID;
         }
-        WifiConfigStore.ScanDetailCache scanDetailCache =
+        ScanDetailCache scanDetailCache =
                 mWifiConfigStore.getScanDetailCache(config);
 
         if (scanDetailCache == null) {
@@ -7285,7 +7285,7 @@ public class WifiStateMachine extends StateMachine {
         // primary purpose of the partial scans is roaming.
         // Full badn scans with exponential backoff for the purpose or extended roaming and
         // network switching are performed unconditionally.
-        WifiConfigStore.ScanDetailCache scanDetailCache =
+        ScanDetailCache scanDetailCache =
                 mWifiConfigStore.getScanDetailCache(config);
         if (scanDetailCache == null
                 || !config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK)
@@ -7293,8 +7293,7 @@ public class WifiStateMachine extends StateMachine {
             //return true but to not trigger the scan
             return true;
         }
-        HashSet<Integer> channels
-                = mWifiConfigStore.makeChannelList(config,
+        HashSet<Integer> channels = mWifiConfigStore.makeChannelList(config,
                 ONE_HOUR_MILLI, restrictChannelList);
         if (channels != null && channels.size() != 0) {
             StringBuilder freqs = new StringBuilder();

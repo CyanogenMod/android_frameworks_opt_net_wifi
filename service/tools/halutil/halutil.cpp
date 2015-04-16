@@ -283,16 +283,18 @@ static wifi_band band = WIFI_BAND_UNSPECIFIED;
 static int max_ap = 256; // the maximum count of  ap for RTT test
 static char rtt_aplist[FILE_NAME_LEN] = DEFAULT_RTT_FILE;
 struct rtt_params {
-    u32 interval;
+    u32 burst_period;
     u32 num_burst;
     u32 num_frames_per_burst;
     u32 num_retries_per_ftm;
     u32 num_retries_per_ftmr;
-    u32 burst_timeout;
+    u32 burst_duration;
     u8 LCI_request;
     u8 LCR_request;
+    u8 preamble;
+    u8 bw;
 };
-struct rtt_params default_rtt_param = {0,0,0,0,0,0,0,0};
+struct rtt_params default_rtt_param = {0, 0, 0, 0, 0, 15, 0, 0, 0, 0};
 
 mac_addr hotlist_bssids[16];
 unsigned char mac_oui[3];
@@ -833,12 +835,13 @@ static void onRTTResults (wifi_request_id id, unsigned num_results, wifi_rtt_res
         printMsg("\tburst_num : %d, measurement_number : %d, success_number : %d\n"
                 "\tnumber_per_burst_peer : %d, status : %d, retry_after_duration : %d s\n"
                 "\trssi : %d dbm, rx_rate : %d Kbps, rtt : %llu ns, rtt_sd : %llu\n"
-                "\tdistance : %d cm, burst_duration : %d ms\n",
+                "\tdistance : %d cm, burst_duration : %d ms, negotiated_burst_num : %d\n",
                 rtt_result->burst_num, rtt_result->measurement_number,
                 rtt_result->success_number, rtt_result->number_per_burst_peer,
                 rtt_result->status, rtt_result->retry_after_duration,
                 rtt_result->rssi, rtt_result->rx_rate.bitrate * 100,
-                rtt_result->rtt/10, rtt_result->rtt_sd, rtt_result->distance, rtt_result->burst_duration);
+                rtt_result->rtt/10, rtt_result->rtt_sd, rtt_result->distance,
+                rtt_result->burst_duration, rtt_result->negotiated_burst_num);
     }
 
     putEventInCache(EVENT_TYPE_RTT_RESULTS, "RTT results");
@@ -1020,8 +1023,8 @@ static void testRTT()
                 return;
             }
             fprintf(w_fp, "|SSID|BSSID|Primary Freq|Center Freq|Channel BW(0=20MHZ,1=40MZ,2=80MHZ)"
-                    "|rtt_type(1=1WAY,2=2WAY,3=auto)|Peer Type(STA=0, AP=1)|burst interval|"
-                    "Num of Burst|FTM retry count|FTMR retry count|LCI|LCR|Burst Timeout|\n");
+                    "|rtt_type(1=1WAY,2=2WAY,3=auto)|Peer Type(STA=0, AP=1)|burst period|"
+                    "Num of Burst|FTM retry count|FTMR retry count|LCI|LCR|Burst Duration|Preamble|BW\n");
         }
         for (int i = 0; i < min(num_results, max_ap); i++) {
             scan_param = results[i];
@@ -1041,18 +1044,21 @@ static void testRTT()
                 params[num_ap].num_retries_per_rtt_frame =
                     default_rtt_param.num_retries_per_ftm;
                 params[num_ap].num_retries_per_ftmr = default_rtt_param.num_retries_per_ftmr;
-                params[num_ap].burst_period = default_rtt_param.interval;
-                params[num_ap].burst_duration = default_rtt_param.burst_timeout;
+                params[num_ap].burst_period = default_rtt_param.burst_period;
+                params[num_ap].burst_duration = default_rtt_param.burst_duration;
                 params[num_ap].LCI_request = default_rtt_param.LCI_request;
                 params[num_ap].LCR_request = default_rtt_param.LCR_request;
+                params[num_ap].preamble = (wifi_rtt_preamble)default_rtt_param.preamble;
+                params[num_ap].bw = (wifi_rtt_bw)default_rtt_param.bw;
                 if (rtt_to_file) {
-                    fprintf(w_fp, "%s %02x:%02x:%02x:%02x:%02x:%02x %d %d %d %d %d %d %d %d %d %d %d %d %d\n", scan_param->ssid,
+                    fprintf(w_fp, "%s %02x:%02x:%02x:%02x:%02x:%02x %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", scan_param->ssid,
                             params[num_ap].addr[0], params[num_ap].addr[1], params[num_ap].addr[2], params[num_ap].addr[3],
                             params[num_ap].addr[4], params[num_ap].addr[5],params[num_ap].channel.center_freq,
                             params[num_ap].channel.center_freq0, params[num_ap].channel.width, params[num_ap].type,params[num_ap].peer,
                             params[num_ap].burst_period, params[num_ap].num_burst, params[num_ap].num_frames_per_burst,
                             params[num_ap].num_retries_per_rtt_frame, params[num_ap].num_retries_per_ftmr,
-                            params[num_ap].LCI_request, params[num_ap].LCR_request, params[num_ap].burst_duration);
+                            params[num_ap].LCI_request, params[num_ap].LCR_request, params[num_ap].burst_duration,
+                            params[num_ap].preamble, params[num_ap].bw);
                 }
                 num_ap++;
             } else {
@@ -1081,21 +1087,21 @@ static void testRTT()
                     "Please specify correct full path or use default one, %s, \n"
                     "  by following order in file, such as:\n"
                     "|SSID|BSSID|Center Freq|Freq0|Channel BW(0=20MHZ,1=40MZ,2=80MHZ)|"
-                    "RTT_Type(1=1WAY,2=2WAY,3=auto)|Peer Type(STA=0, AP=1)|Burst Interval|"
+                    "RTT_Type(1=1WAY,2=2WAY,3=auto)|Peer Type(STA=0, AP=1)|Burst Period|"
                     "No of Burst|No of FTM Burst|FTM Retry Count|FTMR Retry Count|LCI|LCR|"
-                    "Burst Timeout|Preamble|\n",
+                    "Burst Duration|Preamble|Bandwith\n",
                     rtt_aplist, DEFAULT_RTT_FILE);
             return;
         }
         printMsg("    %-16s%-20s%-8s%-14s%-12s%-10s%-10s%-16s%-10s%-14s%-11s%-12s%-5s%-5s%-15s%-10s\n",
                 "SSID", "BSSID", "c_Freq", "c_Freq0", "Bandwidth", "RTT_Type", "RTT_Peer",
-                "Burst_Interval", "No_Burst", "No_FTM_Burst", "FTM_Retry",
-                "FTMR_Retry", "LCI", "LCR", "Burst_Timeout", "Preamble");
+                "Burst_Period", "No_Burst", "No_FTM_Burst", "FTM_Retry",
+                "FTMR_Retry", "LCI", "LCR", "Burst_duration", "Preamble", "Bandwidth");
         int i = 0;
         while (!feof(fp)) {
             if ((fscanf(fp, "%c", &first_char) == 1) && (first_char != '|')) {
                 fseek(fp, -1, SEEK_CUR);
-                fscanf(fp, "%s %s %u %u %u %u %u %u %u %u %u %u %hhu %hhu %u\n",
+                fscanf(fp, "%s %s %u %u %u %u %u %u %u %u %u %u %hhu %hhu %u %hhu %hhu\n",
                         ssid, bssid, (unsigned int*)&params[i].channel.center_freq,
                         (unsigned int*)&params[i].channel.center_freq0,
                         (unsigned int*)&params[i].channel.width,
@@ -1106,18 +1112,20 @@ static void testRTT()
                         &params[i].num_retries_per_ftmr,
                         (unsigned char*)&params[i].LCI_request,
                         (unsigned char*)&params[i].LCR_request,
-                        (unsigned int*)&params[i].burst_duration);
+                        (unsigned int*)&params[i].burst_duration,
+                        (unsigned char*)&params[i].preamble,
+                        (unsigned char*)&params[i].bw);
 
                 parseMacAddress(bssid, params[i].addr);
 
-                printMsg("[%d] %-16s%-20s%-8u%-14u%-12d%-10d%-10u%-16u%-10u%-14u%-11u%-12u%-5hhu%-5hhu%-15u%-10hhu\n",
+                printMsg("[%d] %-16s%-20s%-8u%-14u%-12d%-10d%-10u%-16u%-10u%-14u%-11u%-12u%-5hhu%-5hhu%-15u%-10hhu-10hhu\n",
                         i+1, ssid, bssid, params[i].channel.center_freq,
                         params[i].channel.center_freq0, params[i].channel.width,
                         params[i].type, params[i].peer, params[i].burst_period,
                         params[i].num_burst, params[i].num_frames_per_burst,
                         params[i].num_retries_per_rtt_frame,
                         params[i].num_retries_per_ftmr, params[i].LCI_request,
-                        params[i].LCR_request, params[i].burst_duration, params[i].preamble);
+                        params[i].LCR_request, params[i].burst_duration, params[i].preamble, params[i].bw);
 
                 i++;
             } else {
@@ -1157,38 +1165,47 @@ static void testRTT()
         printMsg("written AP info into file %s successfully\n", rtt_aplist);
     }
 }
+static int cancelRTT()
+{
+    int ret;
+    ret = hal_fn.wifi_rtt_range_cancel(rttCmdId, wlan0Handle, 0, NULL);
+    if (ret == WIFI_SUCCESS) {
+        printMsg("Successfully cancelled the RTT\n");
+    }
+    return ret;
+}
 static void getRTTCapability()
 {
-	int ret;
-	wifi_rtt_capabilities rtt_capability;
-	ret = hal_fn.wifi_get_rtt_capabilities(wlan0Handle, &rtt_capability);
-	if (ret == WIFI_SUCCESS) {
-		printMsg("Supported Capabilites of RTT :\n");
-		if (rtt_capability.rtt_one_sided_supported)
-			printMsg("One side RTT is supported\n");
-		if (rtt_capability.rtt_ftm_supported)
-			printMsg("FTM(11mc) RTT is supported\n");
-		if (rtt_capability.lci_support)
-			printMsg("LCI is supported\n");
-		if (rtt_capability.lcr_support)
-			printMsg("LCR is supported\n");
-		if (rtt_capability.bw_support) {
-			printMsg("BW(%s %s %s %s) are supported\n",
-				(rtt_capability.bw_support & BW_20_SUPPORT) ? "20MHZ" : "",
-				(rtt_capability.bw_support & BW_40_SUPPORT) ? "40MHZ" : "",
-				(rtt_capability.bw_support & BW_80_SUPPORT) ? "80MHZ" : "",
-				(rtt_capability.bw_support & BW_160_SUPPORT) ? "160MHZ" : "");
-		}
-		if (rtt_capability.preamble_support) {
-			printMsg("Preamble(%s %s %s) are supported\n",
-				(rtt_capability.preamble_support & PREAMBLE_LEGACY) ? "Legacy" : "",
-				(rtt_capability.preamble_support & PREAMBLE_HT) ? "HT" : "",
-				(rtt_capability.preamble_support & PREAMBLE_VHT) ? "VHT" : "");
+    int ret;
+    wifi_rtt_capabilities rtt_capability;
+    ret = hal_fn.wifi_get_rtt_capabilities(wlan0Handle, &rtt_capability);
+    if (ret == WIFI_SUCCESS) {
+        printMsg("Supported Capabilites of RTT :\n");
+        if (rtt_capability.rtt_one_sided_supported)
+            printMsg("One side RTT is supported\n");
+        if (rtt_capability.rtt_ftm_supported)
+            printMsg("FTM(11mc) RTT is supported\n");
+        if (rtt_capability.lci_support)
+            printMsg("LCI is supported\n");
+        if (rtt_capability.lcr_support)
+            printMsg("LCR is supported\n");
+        if (rtt_capability.bw_support) {
+            printMsg("BW(%s %s %s %s) are supported\n",
+                    (rtt_capability.bw_support & BW_20_SUPPORT) ? "20MHZ" : "",
+                    (rtt_capability.bw_support & BW_40_SUPPORT) ? "40MHZ" : "",
+                    (rtt_capability.bw_support & BW_80_SUPPORT) ? "80MHZ" : "",
+                    (rtt_capability.bw_support & BW_160_SUPPORT) ? "160MHZ" : "");
+        }
+        if (rtt_capability.preamble_support) {
+            printMsg("Preamble(%s %s %s) are supported\n",
+                    (rtt_capability.preamble_support & PREAMBLE_LEGACY) ? "Legacy" : "",
+                    (rtt_capability.preamble_support & PREAMBLE_HT) ? "HT" : "",
+                    (rtt_capability.preamble_support & PREAMBLE_VHT) ? "VHT" : "");
 
-		}
-	} else {
-		printMsg("Could not get the rtt capabilities : %d\n", ret);
-	}
+        }
+    } else {
+        printMsg("Could not get the rtt capabilities : %d\n", ret);
+    }
 
 }
 
@@ -1670,7 +1687,7 @@ void readRTTOptions(int argc, char *argv[]) {
         } else if ((strcmp(argv[j], "-m") == 0) && isdigit(argv[j+1][0])) {
             default_rtt_param.num_retries_per_ftmr = atoi(argv[++j]);
         } else if ((strcmp(argv[j], "-b") == 0) && isdigit(argv[j+1][0])) {
-            default_rtt_param.burst_timeout = atoi(argv[++j]);
+            default_rtt_param.burst_duration = atoi(argv[++j]);
         } else if ((strcmp(argv[j], "-max_ap") == 0) && isdigit(argv[j+1][0])) {
             max_ap = atoi(argv[++j]);
         } else if ((strcmp(argv[j], "-o") == 0)) {
@@ -1878,10 +1895,12 @@ void printUsage() {
     printf(" -get_ch_list <a/bg/abg/a_nodfs/abg_nodfs/dfs>	Get channel list\n");
     printf(" -get_feature_set  Get Feature set\n");
     printf(" -get_feature_matrix  Get concurrent feature matrix\n");
-    printf(" -rtt [-get_ch_list <a/bg/abg>] [-i <interval>] [-n <num_bursts>]\n"
+    printf(" -rtt [-get_ch_list <a/bg/abg>] [-i <burst_period of 100ms unit> [0 - 31] ]"
+            "    [-n <exponents of 2 = (num_bursts)> [0 - 15]]\n"
             "    [-f <num_frames_per_burst>] [-r <num_retries_per_ftm>]\n"
-            "    [-m <num_retries_per_ftmr>] [-b <burst_timeout>]"
-			"    [-max_ap <count of allowed max AP>] [-l <file to read>] [-o <file to be stored>]\n");
+            "    [-m <num_retries_per_ftmr>] [-b <burst_duration [2-11 or 15]>]"
+            "    [-max_ap <count of allowed max AP>] [-l <file to read>] [-o <file to be stored>]\n");
+    printf(" -cancel_rtt      cancel current RTT process\n");
     printf(" -get_capa_rtt Get the capability of RTT such as 11mc");
     printf(" -scan_mac_oui XY:AB:CD\n");
     printf(" -nodfs <0|1>	  Turn OFF/ON non-DFS locales\n");
@@ -1937,9 +1956,11 @@ int main(int argc, char *argv[]) {
     } else if (strcmp(argv[1], "-rtt") == 0) {
         readRTTOptions(argc, ++argv);
         testRTT();
+    } else if (strcmp(argv[1], "-cancel_rtt") == 0) {
+        cancelRTT();
     } else if (strcmp(argv[1], "-get_capa_rtt") == 0) {
-		getRTTCapability();
-	} else if ((strcmp(argv[1], "-get_ch_list") == 0)) {
+        getRTTCapability();
+    } else if ((strcmp(argv[1], "-get_ch_list") == 0)) {
         readTestOptions(argc, argv);
         getChannelList();
     } else if ((strcmp(argv[1], "-get_feature_set") == 0)) {

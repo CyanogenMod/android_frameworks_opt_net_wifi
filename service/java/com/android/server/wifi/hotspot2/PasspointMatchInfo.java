@@ -116,44 +116,45 @@ public class PasspointMatchInfo implements Comparable<PasspointMatchInfo> {
                 getNetworkDetail().getCapacity()) >>> 26;
                 // Gives a value of 23 max capped at 200 stations and max cap 31250
 
-        Map<ANQPElementType, ANQPElement> anqp = getNetworkDetail().getANQPElements();
-
-        HSWanMetricsElement wm = (HSWanMetricsElement) anqp.get(ANQPElementType.HSWANMetrics);
-
-        if (wm != null) {
-            if (wm.getStatus() != HSWanMetricsElement.LinkStatus.Up || wm.isCapped()) {
-                score -= 1000;
-            }
-            else {
-                long scaledSpeed =
-                        wm.getDlSpeed() * (255 - wm.getDlLoad()) * 8 +
-                        wm.getUlSpeed() * (255 - wm.getUlLoad()) * 2;
-                score += Math.min(scaledSpeed, 255000000L) >>> 23;
-                // Max value is 30 capped at 100Mb/s
-            }
-        }
-
         if (getNetworkDetail().hasInterworking()) {
             score += sAntScores.get(getNetworkDetail().getAnt());
         }
 
-        IPAddressTypeAvailabilityElement ipa =
-                (IPAddressTypeAvailabilityElement)anqp.get(ANQPElementType.ANQPIPAddrAvailability);
+        Map<ANQPElementType, ANQPElement> anqp = getNetworkDetail().getANQPElements();
 
-        if (ipa != null) {
-            Integer as14 = sIP4Scores.get(ipa.getV4Availability());
-            Integer as16 = sIP6Scores.get(ipa.getV6Availability());
-            as14 = as14 != null ? as14 : 1;
-            as16 = as16 != null ? as16 : 1;
-            // Is IPv4 twice as important as IPv6???
-            score += as14 * 2 + as16;
-        }
+        if (anqp != null) {
+            HSWanMetricsElement wm = (HSWanMetricsElement) anqp.get(ANQPElementType.HSWANMetrics);
 
-        HSConnectionCapabilityElement cce =
-                (HSConnectionCapabilityElement) anqp.get(ANQPElementType.HSConnCapability);
+            if (wm != null) {
+                if (wm.getStatus() != HSWanMetricsElement.LinkStatus.Up || wm.isCapped()) {
+                    score -= 1000;
+                } else {
+                    long scaledSpeed =
+                            wm.getDlSpeed() * (255 - wm.getDlLoad()) * 8 +
+                                    wm.getUlSpeed() * (255 - wm.getUlLoad()) * 2;
+                    score += Math.min(scaledSpeed, 255000000L) >>> 23;
+                    // Max value is 30 capped at 100Mb/s
+                }
+            }
 
-        if (cce != null) {
-            score = Math.min(Math.max(protoScore(cce) >> 3, -10), 10);
+            IPAddressTypeAvailabilityElement ipa =
+                    (IPAddressTypeAvailabilityElement) anqp.get(ANQPElementType.ANQPIPAddrAvailability);
+
+            if (ipa != null) {
+                Integer as14 = sIP4Scores.get(ipa.getV4Availability());
+                Integer as16 = sIP6Scores.get(ipa.getV6Availability());
+                as14 = as14 != null ? as14 : 1;
+                as16 = as16 != null ? as16 : 1;
+                // Is IPv4 twice as important as IPv6???
+                score += as14 * 2 + as16;
+            }
+
+            HSConnectionCapabilityElement cce =
+                    (HSConnectionCapabilityElement) anqp.get(ANQPElementType.HSConnCapability);
+
+            if (cce != null) {
+                score = Math.min(Math.max(protoScore(cce) >> 3, -10), 10);
+            }
         }
 
         mScore = score;

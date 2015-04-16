@@ -55,10 +55,6 @@ public class ScanDetail {
         mMatches = matches;
     }
 
-    public ScanDetail score(Map<HomeSP, PasspointMatch> matches) {
-        return new ScanDetail(mScanResult, mNetworkDetail, matches);
-    }
-
     public void updateResults(NetworkDetail networkDetail, int level, WifiSsid wssid, String ssid,
                               String flags, int freq, long tsf) {
         mScanResult.level = level;

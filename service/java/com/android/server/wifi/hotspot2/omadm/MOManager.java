@@ -176,44 +176,55 @@ public class MOManager {
                 throw new OMAException("SP " + homeSP.getFQDN() + " already exists");
             }
 
-            OMANode credRootNode;
             if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_SIM
                     || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKA
                     || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKAPrim) {
 
                 Log.d("PARSE-LOG", "Saving SIM credential");
-                credRootNode = credentialNode.addChild(TAG_SIM, null, null, null);
-                credRootNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
+                OMANode simNode = credentialNode.addChild(TAG_SIM, null, null, null);
+                simNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
+                simNode.addChild(TAG_EAPType, null,
+                        Integer.toString(EAP.mapEAPMethod(method.getEAPMethodID())), null);
 
             } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
 
                 Log.d("PARSE-LOG", "Saving TTLS Credential");
-                credRootNode = credentialNode.addChild(TAG_UsernamePassword, null, null, null);
-                credRootNode.addChild(TAG_Username, null, cred.getUserName(), null);
+                OMANode unpNode = credentialNode.addChild(TAG_UsernamePassword, null, null, null);
+                unpNode.addChild(TAG_Username, null, cred.getUserName(), null);
+                unpNode.addChild(TAG_Password, null, cred.getPassword(), null);
+                OMANode eapNode = unpNode.addChild(TAG_EAPMethod, null, null, null);
+                eapNode.addChild(TAG_EAPType, null,
+                        Integer.toString(EAP.mapEAPMethod(method.getEAPMethodID())), null);
+                eapNode.addChild(TAG_InnerMethod, null,
+                        ((NonEAPInnerAuth) method.getAuthParam()).getOMAtype(), null);
 
             } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS) {
 
                 Log.d("PARSE-LOG", "Saving TLS Credential");
-                credRootNode = credentialNode.addChild(TAG_DigitalCertificate, null, null, null);
+                OMANode certNode = credentialNode.addChild(TAG_DigitalCertificate, null, null, null);
+                certNode.addChild(TAG_CertificateType, null, Credential.CertTypeX509, null);
+                certNode.addChild(TAG_CertSHA256Fingerprint, null,
+                        Utils.toHex(cred.getFingerPrint()), null);
 
             } else {
                 throw new OMAException("Invalid credential on " + homeSP.getFQDN());
             }
 
             credentialNode.addChild(TAG_Realm, null, homeSP.getCredential().getRealm(), null);
-            credentialNode.addChild(TAG_CheckAAAServerCertStatus, null, "true", null);
-            OMANode eapMethodNode = credRootNode.addChild(TAG_EAPMethod, null, null, null);
-            OMANode eapTypeNode = eapMethodNode.addChild(TAG_EAPType,
-                    null, EAP.mapEAPMethod(method.getEAPMethodID()).toString(), null);
-
-            if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
-                OMANode innerEAPType = eapMethodNode.addChild(TAG_InnerEAPType,
-                        null, EAP.mapEAPMethod(EAP.EAPMethodID.EAP_MSCHAPv2).toString(), null);
-            }
+            // !!! Note: This node defines CRL checking through OSCP, I suspect we won't be able
+            // to do that so it is commented out:
+            //credentialNode.addChild(TAG_CheckAAAServerCertStatus, null, "TRUE", null);
 
             StringBuilder builder = new StringBuilder();
+            boolean first = true;
             for (Long roamingConsortium : homeSP.getRoamingConsortiums()) {
-                builder.append(roamingConsortium.toString());
+                if (first) {
+                    first = false;
+                }
+                else {
+                    builder.append(',');
+                }
+                builder.append(String.format("%x", roamingConsortium));
             }
             credentialNode.addChild(TAG_RoamingConsortiumOI, null, builder.toString(), null);
         }
@@ -221,19 +232,10 @@ public class MOManager {
         Log.d("PARSE-LOG", "Saving all SPs");
 
         MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", root);
-        BufferedOutputStream out = null;
-        try {
-            out = new BufferedOutputStream(new FileOutputStream(mPpsFile, true));
+        try (BufferedOutputStream out =
+                     new BufferedOutputStream(new FileOutputStream(mPpsFile, true))) {
             tree.marshal(out);
             out.flush();
-        } finally {
-            if (out != null) {
-                try {
-                    out.close();
-                } catch (IOException ioe) {
-                    /**/
-                }
-            }
         }
     }
 

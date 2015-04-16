@@ -2,6 +2,9 @@ package com.android.server.wifi.anqp.eap;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.Map;
 
 import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 
@@ -11,8 +14,21 @@ import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 public class NonEAPInnerAuth implements AuthParam {
 
     public enum NonEAPType {Reserved, PAP, CHAP, MSCHAP, MSCHAPv2}
+    private static final Map<NonEAPType, String> sOmaMap = new EnumMap<>(NonEAPType.class);
+    private static final Map<String, NonEAPType> sRevOmaMap = new HashMap<>();
 
     private final NonEAPType mType;
+
+    static {
+        sOmaMap.put(NonEAPType.PAP, "PAP");
+        sOmaMap.put(NonEAPType.CHAP, "CHAP");
+        sOmaMap.put(NonEAPType.MSCHAP, "MS-CHAP");
+        sOmaMap.put(NonEAPType.MSCHAPv2, "MS-CHAP-V2");
+
+        for (Map.Entry<NonEAPType, String> entry : sOmaMap.entrySet()) {
+            sRevOmaMap.put(entry.getValue(), entry.getKey());
+        }
+    }
 
     public NonEAPInnerAuth(int length, ByteBuffer payload) throws ProtocolException {
         if (length != 1) {
@@ -25,26 +41,16 @@ public class NonEAPInnerAuth implements AuthParam {
                 NonEAPType.Reserved;
     }
 
+    public NonEAPInnerAuth(NonEAPType type) {
+        mType = type;
+    }
+
     /**
      * Construct from the OMA-DM PPS data
      * @param eapType as defined in the HS2.0 spec.
      */
     public NonEAPInnerAuth(String eapType) {
-        if (eapType.equalsIgnoreCase("PAP")) {
-            mType = NonEAPType.PAP;
-        }
-        else if (eapType.equalsIgnoreCase("CHAP")) {
-            mType = NonEAPType.CHAP;
-        }
-        else if (eapType.equalsIgnoreCase("MS-CHAP")) {
-            mType = NonEAPType.MSCHAP;
-        }
-        else if (eapType.equalsIgnoreCase("MS-CHAP-V2")) {
-            mType = NonEAPType.MSCHAPv2;
-        }
-        else {
-            mType = null;
-        }
+        mType = sRevOmaMap.get(eapType);
     }
 
     @Override
@@ -54,6 +60,10 @@ public class NonEAPInnerAuth implements AuthParam {
 
     public NonEAPType getType() {
         return mType;
+    }
+
+    public String getOMAtype() {
+        return sOmaMap.get(mType);
     }
 
     @Override

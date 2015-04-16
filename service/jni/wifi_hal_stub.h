@@ -68,8 +68,7 @@ wifi_error wifi_get_link_stats_stub(wifi_request_id id,
          wifi_rtt_capabilities *capabilities);
  wifi_error wifi_set_nodfs_flag_stub(wifi_interface_handle iface, u32 nodfs);
  wifi_error wifi_start_logging_stub(wifi_interface_handle iface, u32 verbose_level, u32 flags,
-         u32 max_interval_sec, u32 min_data_size, u8 *buffer_name,
-         wifi_ring_buffer_data_handler handler);
+         u32 max_interval_sec, u32 min_data_size, char *buffer_name);
  wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_networks,
          wifi_epno_network *networks, wifi_epno_handler handler);
  wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
