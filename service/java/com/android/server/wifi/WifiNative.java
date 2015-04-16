@@ -1199,13 +1199,15 @@ public class WifiNative {
     }
 
     synchronized public static boolean startHal() {
-        Log.i(TAG, "startHal"
-                + " stack:" + Thread.currentThread().getStackTrace()[2].getMethodName()
-                + " - " + Thread.currentThread().getStackTrace()[3].getMethodName()
-                + " - " + Thread.currentThread().getStackTrace()[4].getMethodName()
-                + " - " + Thread.currentThread().getStackTrace()[5].getMethodName()
-                + " - " + Thread.currentThread().getStackTrace()[6].getMethodName()
-                + " - " + Thread.currentThread().getStackTrace()[7].getMethodName());
+
+        String debugLog = "startHal stack: ";
+        java.lang.StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 2; i < elements.length && i <= 7; i++ ) {
+            debugLog = debugLog + " - " + elements[i].getMethodName();
+        }
+
+        Log.i(TAG,debugLog);
+
         synchronized (mLock) {
             if (sHalFailed)
                 return false;
