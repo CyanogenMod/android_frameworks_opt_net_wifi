@@ -623,7 +623,7 @@ public class WifiStateMachine extends StateMachine {
     /* Remove a packages associated configrations */
     static final int CMD_REMOVE_APP_CONFIGURATIONS        = BASE + 97;
     /* Remove a packages associated configrations */
-    static final int CMD_REMOVE_USER_CONFIGURATIONS       = BASE + 149;
+    static final int CMD_REMOVE_USER_CONFIGURATIONS       = BASE + 152;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
@@ -710,7 +710,9 @@ public class WifiStateMachine extends StateMachine {
 
     static final int CMD_NETWORK_STATUS                   = BASE + 148;
 
-    static final int CMD_ACCEPT_UNVALIDATED               = BASE + 149;
+    /* Note: BASE + 152 in use by CMD_REMOVE_USER_CONFIGURATIONS */
+
+    static final int CMD_ACCEPT_UNVALIDATED               = BASE + 153;
 
     /* Wifi state machine modes of operation */
     /* CONNECT_MODE - connect to any 'known' AP when it becomes available */
