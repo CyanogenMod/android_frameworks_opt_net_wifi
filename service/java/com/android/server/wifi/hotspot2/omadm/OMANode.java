@@ -1,7 +1,5 @@
 package com.android.server.wifi.hotspot2.omadm;
 
-import android.util.Log;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -34,9 +32,10 @@ public abstract class OMANode {
     }
 
     public List<String> getPath() {
-        LinkedList<String> path = new LinkedList<String>();
-        for (OMANode node = this; node.getParent() != null; node = node.getParent())
+        LinkedList<String> path = new LinkedList<>();
+        for (OMANode node = this; node != null; node = node.getParent()) {
             path.addFirst(node.getName());
+        }
         return path;
     }
 
@@ -76,8 +75,9 @@ public abstract class OMANode {
 
     public static OMAConstructed unmarshal(InputStream in) throws IOException {
         OMANode node = buildNode(in, null);
-        if (node == null || node.isLeaf())
+        if (node == null || node.isLeaf()) {
             throw new IOException("Bad OMA tree");
+        }
         unmarshal(in, (OMAConstructed) node);
         return (OMAConstructed) node;
     }
@@ -85,45 +85,39 @@ public abstract class OMANode {
     private static void unmarshal(InputStream in, OMAConstructed parent) throws IOException {
         for (; ; ) {
             OMANode node = buildNode(in, parent);
-            if (node == null)
+            if (node == null) {
                 return;
-            else if (!node.isLeaf())
+            }
+            else if (!node.isLeaf()) {
                 unmarshal(in, (OMAConstructed) node);
+            }
         }
     }
 
     private static OMANode buildNode(InputStream in, OMAConstructed parent) throws IOException {
         String name = OMAConstants.deserializeString(in);
         if (name == null) {
-            Log.d("PARSE-LOG", "Could not read node name");
             return null;
         }
-
-        Log.d("PARSE-LOG", "name = " + name);
 
         String urn = null;
         int next = in.read();
         if (next == '(') {
             urn = OMAConstants.readURN(in);
-            Log.d("PARSE-LOG", "Urn = " + urn);
             next = in.read();
         }
 
         if (next == '=') {
             String value = OMAConstants.deserializeString(in);
-            Log.d("PARSE-LOG", "value = " + value);
             return parent.addChild(name, urn, value, null);
         } else if (next == '+') {
             if (parent != null) {
-                Log.d("PARSE-LOG", "added child node " + name);
                 return parent.addChild(name, urn, null, null);
             } else {
-                Log.d("PARSE-LOG", "created new node " + name);
                 return new OMAConstructed(null, name, urn);
             }
         }
         else {
-            Log.d("PARSE-LOG", "parsing error");
             throw new IOException("Parse error: expected = or + after node name");
         }
     }

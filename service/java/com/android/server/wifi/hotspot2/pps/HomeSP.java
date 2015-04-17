@@ -15,6 +15,7 @@ import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.Utils;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -27,6 +28,7 @@ public class HomeSP {
     private final Map<String, Long> mSSIDs;        // SSID, HESSID, [0,N]
     private final String mFQDN;
     private final DomainMatcher mDomainMatcher;
+    private final Set<String> mOtherHomePartners;
     private final HashSet<Long> mRoamingConsortiums;    // [0,N]
     private final Set<Long> mMatchAnyOIs;           // [0,N]
     private final List<Long> mMatchAllOIs;          // [0,N]
@@ -52,6 +54,7 @@ public class HomeSP {
         for (String otherPartner : otherHomePartners) {
             otherPartners.add(Utils.splitDomain(otherPartner));
         }
+        mOtherHomePartners = otherHomePartners;
         mFQDN = fqdn;
         mDomainMatcher = new DomainMatcher(Utils.splitDomain(fqdn), otherPartners);
         mRoamingConsortiums = roamingConsortiums;
@@ -211,6 +214,38 @@ public class HomeSP {
     public String getFriendlyName() { return mFriendlyName; }
     public HashSet<Long> getRoamingConsortiums() { return mRoamingConsortiums; }
     public Credential getCredential() { return mCredential; }
+
+    public Map<String, Long> getSSIDs() {
+        return mSSIDs;
+    }
+
+    public Collection<String> getOtherHomePartners() {
+        return mOtherHomePartners;
+    }
+
+    public Set<Long> getMatchAnyOIs() {
+        return mMatchAnyOIs;
+    }
+
+    public List<Long> getMatchAllOIs() {
+        return mMatchAllOIs;
+    }
+
+    public String getIconURL() {
+        return mIconURL;
+    }
+
+    public boolean deepEquals(HomeSP other) {
+        return mFQDN.equals(other.mFQDN) &&
+                mSSIDs.equals(other.mSSIDs) &&
+                mOtherHomePartners.equals(other.mOtherHomePartners) &&
+                mRoamingConsortiums.equals(other.mRoamingConsortiums) &&
+                mMatchAnyOIs.equals(other.mMatchAnyOIs) &&
+                mMatchAllOIs.equals(other.mMatchAllOIs) &&
+                mFriendlyName.equals(other.mFriendlyName) &&
+                Utils.compare(mIconURL, other.mIconURL) == 0 &&
+                mCredential.equals(other.mCredential);
+    }
 
     @Override
     public boolean equals(Object thatObject) {

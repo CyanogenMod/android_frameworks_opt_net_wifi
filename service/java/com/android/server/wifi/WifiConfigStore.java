@@ -450,7 +450,9 @@ public class WifiConfigStore extends IpConfigStore {
             WifiEnterpriseConfig.PASSWORD_KEY, WifiEnterpriseConfig.CLIENT_CERT_KEY,
             WifiEnterpriseConfig.CA_CERT_KEY, WifiEnterpriseConfig.SUBJECT_MATCH_KEY,
             WifiEnterpriseConfig.ENGINE_KEY, WifiEnterpriseConfig.ENGINE_ID_KEY,
-            WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY, WifiEnterpriseConfig.ALTSUBJECT_MATCH_KEY };
+            WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY, WifiEnterpriseConfig.ALTSUBJECT_MATCH_KEY,
+            WifiEnterpriseConfig.DOM_SUFFIX_MATCH_KEY
+    };
 
 
     /**
@@ -486,6 +488,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
+    private final MOManager mMOManager;
     private final List<String> mImsis;
 
     WifiConfigStore(Context c, WifiNative wn) {
@@ -626,9 +629,10 @@ public class WifiConfigStore extends IpConfigStore {
                         R.bool.config_wifi_hal_pno_enable));
 
         Chronograph chronograph = new Chronograph();
+        mMOManager = new MOManager(new File(PPS_FILE));
         mAnqpCache = new AnqpCache(chronograph);
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
-        mScanDetailCaches = new HashMap();
+        mScanDetailCaches = new HashMap<>();
 
         TelephonyManager tm = TelephonyManager.from(mContext);
         SubscriptionManager sub = SubscriptionManager.from(mContext);
@@ -1796,17 +1800,11 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void readPasspointConfig() {
-        File file = new File(PPS_FILE);
 
-        MOManager moManager;
         List<HomeSP> homeSPs;
         try {
-            moManager = new MOManager(file);
-            homeSPs = moManager.loadAllSPs();
+            homeSPs = mMOManager.loadAllSPs();
         } catch (IOException e) {
-            loge("Could not read " + PPS_FILE + " : " + e);
-            return;
-        } catch (NullPointerException e) {
             loge("Could not read " + PPS_FILE + " : " + e);
             return;
         }
@@ -1846,12 +1844,9 @@ public class WifiConfigStore extends IpConfigStore {
             @Override
             public void onWriteCalled(DataOutputStream out) throws IOException {
                 log("saving " + mConfiguredHomeSPs.size() + " in " + PPS_FILE + " ...");
-                File file = new File(PPS_FILE);
 
-                MOManager moManager;
                 try {
-                    moManager = new MOManager(file);
-                    moManager.saveAllSps(mConfiguredHomeSPs.values());
+                    mMOManager.saveAllSps(mConfiguredHomeSPs.values());
                 } catch (IOException e) {
                     loge("Could not write " + PPS_FILE + " : " + e);
                 }
@@ -2830,6 +2825,7 @@ public class WifiConfigStore extends IpConfigStore {
                 currentConfig.enterpriseConfig.setPlmn(config.enterpriseConfig.getPlmn());
             }
             catch (IOException ioe) {
+                Log.e(TAG, "Failed to create Passpoint config: " + ioe);
                 return new NetworkUpdateResult(INVALID_NETWORK_ID);
             }
         }

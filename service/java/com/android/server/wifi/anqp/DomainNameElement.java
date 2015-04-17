@@ -16,7 +16,7 @@ public class DomainNameElement extends ANQPElement {
     public DomainNameElement(Constants.ANQPElementType infoID, ByteBuffer payload)
             throws ProtocolException {
         super(infoID);
-        mDomains = new ArrayList<String>();
+        mDomains = new ArrayList<>();
 
         while (payload.hasRemaining()) {
             // Use latin-1 to decode for now - safe for ASCII and retains encoding
