@@ -196,7 +196,7 @@ public class ConfigBuilder {
         WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
         enterpriseConfig.setAnonymousIdentity("anonymous@" + credential.getRealm());
         enterpriseConfig.setRealm(credential.getRealm());
-        enterpriseConfig.setDomSuffixMatch(homeSP.getFQDN());
+        enterpriseConfig.setDomainSuffixMatch(homeSP.getFQDN());
 
         return config;
     }
