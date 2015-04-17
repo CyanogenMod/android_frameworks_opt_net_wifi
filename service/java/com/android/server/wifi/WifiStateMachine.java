@@ -3200,6 +3200,85 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     }
 
+    // In associated more, lazy roam will be looking for 5GHz roam candidate
+    private boolean configureLazyRoam() {
+        boolean status;
+        if (!mAlwaysOnPnoSupported || (!mWifiConfigStore.enableHalBasedPno.get())) return false;
+
+        WifiNative.WifiLazyRoamParams params = mWifiNative.new WifiLazyRoamParams();
+        params.A_band_boost_threshold = mWifiConfigStore.bandPreferenceBoostThreshold5.get();
+        params.A_band_penalty_threshold = mWifiConfigStore.bandPreferencePenaltyThreshold5.get();
+        params.A_band_boost_factor = mWifiConfigStore.bandPreferenceBoostFactor5;
+        params.A_band_penalty_factor = mWifiConfigStore.bandPreferencePenaltyFactor5;
+        params.A_band_max_boost = 50;
+        params.lazy_roam_hysteresis = 25;
+        params.alert_roam_rssi_trigger = -75;
+
+        loge("startLazyRoam " + params.toString());
+
+        if (!WifiNative.setLazyRoam(true, params)) {
+
+            loge("startLazyRoam couldnt program params");
+
+            return false;
+        }
+        return true;
+    }
+
+    // This function sends a background scan request for the current configuration
+    private boolean setScanSettingsForLazyRoam() {
+
+        WifiConfiguration config = getCurrentWifiConfiguration();
+        HashSet<Integer> channels = mWifiConfigStore.makeChannelList(config,
+                ONE_HOUR_MILLI, false);
+        if (channels != null && channels.size() != 0) {
+
+            // then send a scan background request so as firmware
+            // starts looking for our networks
+            WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
+            settings.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
+            settings.channels = new WifiScanner.ChannelSpec[channels.size()];
+            int i = 0;
+
+            StringBuilder sb = new StringBuilder();
+            for (Integer channel : channels) {
+                settings.channels[i++] = new WifiScanner.ChannelSpec(channel);
+                sb.append(" " + channel);
+            }
+
+            // TODO, fix the scan interval logic
+            if (mScreenOn)
+                settings.periodInMs = mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
+            else
+                settings.periodInMs = mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
+
+            settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL;
+            log("startLazyRoam: scan interval " + settings.periodInMs
+                    + " screen " + mScreenOn
+                    + " channels " + channels.size() + " : " + sb.toString());
+
+            mWifiScanner.startBackgroundScan(settings, mWifiScanListener);
+
+
+        } else {
+            if (DBG) loge("WifiStateMachine no channels for " + config.configKey());
+            return false;
+        }
+
+
+
+
+        return true;
+    }
+
+    // In associated more, lazy roam will be looking for 5GHz roam candidate
+    private boolean stopLazyRoam() {
+        boolean status;
+        if (!mAlwaysOnPnoSupported || (!mWifiConfigStore.enableHalBasedPno.get())) return false;
+
+        return WifiNative.setLazyRoam(false, null);
+    }
+
     private boolean startPno() {
         if (!mAlwaysOnPnoSupported || (!mWifiConfigStore.enableHalBasedPno.get())) return false;
 
@@ -3215,46 +3294,46 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         List<WifiNative.WifiPnoNetwork> llist
                 = mWifiAutoJoinController.getPnoList(getCurrentWifiConfiguration());
-        if (llist != null) {
-            log("startPno: got llist size " + llist.size());
+        if (llist == null) {
+            log("startPno: couldnt get PNO list ");
+            return false;
+        }
+        log("startPno: got llist size " + llist.size());
 
-            // first program the network we want to look for thru the pno API
-            WifiNative.WifiPnoNetwork list[]
+        // first program the network we want to look for thru the pno API
+        WifiNative.WifiPnoNetwork list[]
                     = (WifiNative.WifiPnoNetwork[]) llist.toArray(new WifiNative.WifiPnoNetwork[0]);
 
-            if (!WifiNative.setPnoList(list, WifiStateMachine.this)) {
-                Log.e(TAG, "Failed to set pno, length = " + list.length);
-            }
+        if (!WifiNative.setPnoList(list, WifiStateMachine.this)) {
+            Log.e(TAG, "Failed to set pno, length = " + list.length);
+        }
 
-            // then send a scan background request so as firmware
-            // starts looking for our networks
-            WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
-            settings.band = WifiScanner.WIFI_BAND_BOTH;
+        // then send a scan background request so as firmware
+        // starts looking for our networks
+        WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
+        settings.band = WifiScanner.WIFI_BAND_BOTH;
 
-            // TODO, fix the scan interval logic
-            if (mScreenOn)
+        // TODO, fix the scan interval logic
+        if (mScreenOn)
                 settings.periodInMs = mDefaultFrameworkScanIntervalMs;
-            else
+        else
                 settings.periodInMs = mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
 
-            settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL;
-            log("startPno: settings BOTH_BANDS, length = " + list.length);
+        settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL;
+        log("startPno: settings BOTH_BANDS, length = " + list.length);
 
-            mWifiScanner.startBackgroundScan(settings, mWifiScanListener);
+        mWifiScanner.startBackgroundScan(settings, mWifiScanListener);
 //            mWifiScannerChannel.sendMessage
 //                  (WifiScanner.CMD_START_BACKGROUND_SCAN, settings);
-            if (DBG) {
-                StringBuilder sb = new StringBuilder();
-                sb.append(" list: ");
-                for (WifiNative.WifiPnoNetwork net : llist) {
-                    sb.append(" ").append(net.SSID).append(" auth ").append(net.auth);
-                }
-                sendMessage(CMD_STARTED_PNO_DBG, 1, 0, sb.toString());
+        if (DBG) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(" list: ");
+            for (WifiNative.WifiPnoNetwork net : llist) {
+                sb.append(" ").append(net.SSID).append(" auth ").append(net.auth);
             }
-            return true;
+            sendMessage(CMD_STARTED_PNO_DBG, 1, 0, sb.toString());
         }
-        log("startPno: couldnt get PNO list ");
-        return false;
+        return true;
     }
 
     private void handleScreenStateChanged(boolean screenOn, boolean startBackgroundScanIfNeeded) {
@@ -8080,11 +8159,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             String address;
             updateDefaultRouteMacAddress(1000);
             if (DBG) {
-                log("ConnectedState Enter "
+                log("ConnectedState EEnter "
                         + " mScreenOn=" + mScreenOn
                         + " scanperiod="
                         + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMilli.get()) );
             }
+
+            configureLazyRoam();
             if (mScreenOn
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
                 if (mAlwaysOnPnoSupported) {
@@ -8116,6 +8197,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiConfigStore.enableAllNetworks();
 
             mLastDriverRoamAttempt = 0;
+
+            //startLazyRoam();
         }
         @Override
         public boolean processMessage(Message message) {
@@ -8296,6 +8379,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             loge("WifiStateMachine: Leaving Connected state");
             setScanAlarm(false);
             mLastDriverRoamAttempt = 0;
+
+            stopLazyRoam();
         }
     }
 

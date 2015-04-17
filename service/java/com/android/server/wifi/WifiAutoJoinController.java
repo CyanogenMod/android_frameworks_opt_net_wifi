@@ -1903,34 +1903,11 @@ public class WifiAutoJoinController {
             }
         }
 
-        if (networkSwitchType == AUTO_JOIN_IDLE) {
+        if (networkSwitchType == AUTO_JOIN_IDLE && !mWifiConfigStore.enableHalBasedPno.get()) {
             String currentBSSID = mWifiStateMachine.getCurrentBSSID();
             // Attempt same WifiConfiguration roaming
             ScanResult roamCandidate =
                     attemptRoam(null, currentConfiguration, mScanResultAutoJoinAge, currentBSSID);
-            /**
-             *  TODO: (post L initial release)
-             *  consider handling linked configurations roaming (i.e. extended Roaming)
-             *  thru the attemptRoam function which makes use of the RSSI roaming threshold.
-             *  At the moment, extended roaming is only handled thru the attemptAutoJoin()
-             *  function which compare configurations.
-             *
-             *  The advantage of making use of attemptRoam function is that this function
-             *  will looks at all the BSSID of each configurations, instead of only looking
-             *  at WifiConfiguration.visibility which keeps trackonly of the RSSI/band of the
-             *  two highest BSSIDs.
-             */
-            // Attempt linked WifiConfiguration roaming
-            /* if (currentConfiguration != null
-                    && currentConfiguration.linkedConfigurations != null) {
-                for (String key : currentConfiguration.linkedConfigurations.keySet()) {
-                    WifiConfiguration link = mWifiConfigStore.getWifiConfiguration(key);
-                    if (link != null) {
-                        roamCandidate = attemptRoam(roamCandidate, link, mScanResultAutoJoinAge,
-                                currentBSSID);
-                    }
-                }
-            }*/
             if (roamCandidate != null && currentBSSID != null
                     && currentBSSID.equals(roamCandidate.BSSID)) {
                 roamCandidate = null;

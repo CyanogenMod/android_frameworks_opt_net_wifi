@@ -64,6 +64,11 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
     hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
     hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
+    hal_fn->wifi_set_ssid_white_list = wifi_set_ssid_white_list_stub;
+    hal_fn->wifi_set_gscan_roam_params = wifi_set_gscan_roam_params_stub;
+    hal_fn->wifi_set_bssid_preference = wifi_set_bssid_preference_stub;
+    hal_fn->wifi_set_bssid_blacklist = wifi_set_bssid_blacklist_stub;
+    hal_fn->wifi_enable_lazy_roam = wifi_enable_lazy_roam_stub;
     return 0;
 }
 
@@ -2697,7 +2702,7 @@ static wifi_error setWhitelistBSSIDs()
     }
 
     cmdId = getNewCmdId();
-    return wifi_set_ssid_white_list(cmdId, wlan0Handle, num_whitelist_ssids, params);
+    return hal_fn.wifi_set_ssid_white_list(cmdId, wlan0Handle, num_whitelist_ssids, params);
 }
 
 static wifi_error setRoamParams()
@@ -2716,7 +2721,7 @@ static wifi_error setRoamParams()
 
     cmdId = getNewCmdId();
     printMsg("Setting Roam params\n");
-    return wifi_set_gscan_roam_params(cmdId, wlan0Handle, &params);
+    return hal_fn.wifi_set_gscan_roam_params(cmdId, wlan0Handle, &params);
 }
 
 
@@ -2745,7 +2750,7 @@ static wifi_error setBSSIDPreference()
 
     cmdId = getNewCmdId();
     printMsg("Setting BSSID pref\n");
-    return wifi_set_bssid_preference(cmdId, wlan0Handle, num_pref_bssids, prefs);
+    return hal_fn.wifi_set_bssid_preference(cmdId, wlan0Handle, num_pref_bssids, prefs);
 }
 
 static wifi_error setLazyRoam()
@@ -2753,7 +2758,7 @@ static wifi_error setLazyRoam()
     int cmdId;
     cmdId = getNewCmdId();
     printMsg("Lazy roam\n");
-    return wifi_enable_lazy_roam(cmdId, wlan0Handle, lazy_roam);
+    return hal_fn.wifi_enable_lazy_roam(cmdId, wlan0Handle, lazy_roam);
 }
 
 static wifi_error setBlacklist()
@@ -2771,7 +2776,7 @@ static wifi_error setBlacklist()
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5]);
     }
-    return wifi_set_bssid_blacklist(cmdId, wlan0Handle, params);
+    return hal_fn.wifi_set_bssid_blacklist(cmdId, wlan0Handle, params);
 }
 
 static void testLazyRoam()
@@ -2786,7 +2791,7 @@ static void testLazyRoam()
     }
     result = setBlacklist();
     if (result == WIFI_SUCCESS) {
-        printMsg("Set Roaming Parameters\n");
+        printMsg("Set Blacklist Parameters\n");
     } else {
         printMsg("Could not set Roaming Parameters : %d\n", result);
     }

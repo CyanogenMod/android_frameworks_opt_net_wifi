@@ -96,6 +96,16 @@ wifi_error wifi_get_logger_supported_feature_set_stub(wifi_interface_handle ifac
 wifi_error wifi_get_ring_data_stub(wifi_interface_handle iface, char *ring_name);
 wifi_error wifi_get_driver_version_stub(wifi_interface_handle iface, char **buffer,
         int *buffer_size);
+ wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
+wifi_error wifi_set_bssid_blacklist_stub(wifi_request_id id, wifi_interface_handle iface,
+        wifi_bssid_params params);
+wifi_error wifi_enable_lazy_roam_stub(wifi_request_id id, wifi_interface_handle iface, int enable);
+wifi_error wifi_set_bssid_preference_stub(wifi_request_id id, wifi_interface_handle iface,
+                                    int num_bssid, wifi_bssid_preference *prefs);
+wifi_error wifi_set_gscan_roam_params_stub(wifi_request_id id, wifi_interface_handle iface,
+                                        wifi_roam_params * params);
+wifi_error wifi_set_ssid_white_list_stub(wifi_request_id id, wifi_interface_handle iface,
+                       int num_networks, wifi_ssid *ssids);
 #ifdef __cplusplus
 }
 #endif

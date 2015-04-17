@@ -87,6 +87,12 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
     hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
     hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
+    hal_fn->wifi_set_country_code = wifi_set_country_code;
+    hal_fn->wifi_set_ssid_white_list = wifi_set_ssid_white_list;
+    hal_fn->wifi_set_gscan_roam_params = wifi_set_gscan_roam_params;
+    hal_fn->wifi_set_bssid_preference = wifi_set_bssid_preference;
+    hal_fn->wifi_enable_lazy_roam = wifi_enable_lazy_roam;
+    hal_fn->wifi_set_bssid_blacklist = wifi_set_bssid_blacklist;
     return 0;
 }
 
@@ -1834,7 +1840,8 @@ static void onPnoNetworkFound(wifi_request_id id,
             env->SetObjectArrayElement(scanResults, i, scanResult);
         }
 
-        ALOGD("Scan result with ie length %d, i %u, <%s> rssi=%d %02x:%02x:%02x:%02x:%02x:%02x", results->ie_length, i,
+        ALOGD("Scan result with ie length %d, i %u, <%s> rssi=%d %02x:%02x:%02x:%02x:%02x:%02x",
+        results->ie_length, i,
             results[i].ssid, results[i].rssi, results[i].bssid[0], results[i].bssid[1],
             results[i].bssid[2], results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
 
@@ -1941,6 +1948,34 @@ static jboolean android_net_wifi_setPnoListNative(
     return result >= 0;
 }
 
+static jboolean android_net_wifi_setLazyRoam(
+        JNIEnv *env, jclass cls, jint iface, jint id, jboolean enabled, jobject roam_param)  {
+
+    jboolean status = true;
+    wifi_roam_params params;
+    memset(&params, 0, sizeof(params));
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("configure lazy roam request [%d] = %p", id, handle);
+
+    if (roam_param != NULL) {
+        params.A_band_boost_threshold  = getIntField(env, roam_param, "A_band_boost_threshold");
+        params.A_band_penalty_threshold  = getIntField(env, roam_param, "A_band_penalty_threshold");
+        params.A_band_boost_factor = getIntField(env, roam_param, "A_band_boost_factor");
+        params.A_band_penalty_factor  = getIntField(env, roam_param, "A_band_penalty_factor");
+        params.A_band_max_boost  = getIntField(env, roam_param, "A_band_max_boost");
+        params.lazy_roam_hysteresis = getIntField(env, roam_param, "lazy_roam_hysteresis");
+        params.alert_roam_rssi_trigger = getIntField(env, roam_param, "alert_roam_rssi_trigger");
+        status = hal_fn.wifi_set_gscan_roam_params(id, handle, &params);
+    }
+    if (status) {
+        int doEnable = enabled ? 1 : 0;
+        status = hal_fn.wifi_enable_lazy_roam(id, handle, doEnable);
+    }
+    ALOGE("android_net_wifi_setLazyRoam\n");
+    return status;
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -2017,7 +2052,9 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_start_logging_ring_buffer},
     {"getRingBufferDataNative", "(ILjava/lang/String;)Z",
             (void*) android_net_wifi_get_ring_buffer_data},
-    {"getFwMemoryDumpNative","(I)Z", (void*) android_net_wifi_get_fw_memory_dump}
+    {"getFwMemoryDumpNative","(I)Z", (void*) android_net_wifi_get_fw_memory_dump},
+    { "setLazyRoam", "(IIZLcom/android/server/wifi/WifiNative$WifiLazyRoamParams;)Z",
+            (void*) android_net_wifi_setLazyRoam}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
