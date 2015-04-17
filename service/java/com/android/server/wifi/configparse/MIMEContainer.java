@@ -81,7 +81,8 @@ public class MIMEContainer {
             for (;;) {
                 String line = in.readLine();
                 if (line == null) {
-                    throw new IOException("Unexpected EOF before first boundary @ " + in.getLineNumber());
+                    throw new IOException("Unexpected EOF before first boundary @ " +
+                            in.getLineNumber());
                 }
                 if (line.startsWith("--") && line.length() == subBoundary.length() + 2 &&
                         line.regionMatches(2, subBoundary, 0, subBoundary.length())) {
@@ -120,7 +121,7 @@ public class MIMEContainer {
         mBase64 = base64;
 
         Log.d("WFII", String.format("%s MIME container, boundary '%s', type '%s', encoding %s",
-                multiPart ? "multipart" : "plain", subBoundary, mContentType, encoding));
+                multiPart ? "multipart" : "plain", boundary, mContentType, encoding));
 
         AtomicBoolean eof = new AtomicBoolean();
         mText = recode(getBody(in, boundary, quoted, eof), charset);

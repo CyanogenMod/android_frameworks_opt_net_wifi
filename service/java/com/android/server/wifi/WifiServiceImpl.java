@@ -765,7 +765,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      * @return a WifiConfiguration.
      */
     public WifiConfiguration buildWifiConfig(String uriString, String mimeType, byte[] data) {
-        if (mimeType.equals("application/x-wifi-config")) {
+        if (mimeType.equals(ConfigBuilder.WifiConfigType)) {
             try {
                 return ConfigBuilder.buildConfig(uriString, data, mContext);
             }
