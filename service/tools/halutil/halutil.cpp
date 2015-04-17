@@ -1957,7 +1957,7 @@ static wifi_error setWhitelistBSSIDs()
     }
 
     cmdId = getNewCmdId();
-    return wifi_set_ssid_white_list(cmdId, wlan0Handle, num_whitelist_ssids, params);
+    return WIFI_SUCCESS;//wifi_set_ssid_white_list(cmdId, wlan0Handle, num_whitelist_ssids, params);
 }
 
 static wifi_error setRoamParams()
@@ -1976,7 +1976,7 @@ static wifi_error setRoamParams()
 
     cmdId = getNewCmdId();
     printMsg("Setting Roam params\n");
-    return wifi_set_gscan_roam_params(cmdId, wlan0Handle, &params);
+    return WIFI_SUCCESS;//wifi_set_gscan_roam_params(cmdId, wlan0Handle, &params);
 }
 
 
@@ -2005,7 +2005,7 @@ static wifi_error setBSSIDPreference()
 
     cmdId = getNewCmdId();
     printMsg("Setting BSSID pref\n");
-    return wifi_set_bssid_preference(cmdId, wlan0Handle, num_pref_bssids, prefs);
+    return WIFI_SUCCESS;//wifi_set_bssid_preference(cmdId, wlan0Handle, num_pref_bssids, prefs);
 }
 
 static wifi_error setLazyRoam()
@@ -2013,7 +2013,7 @@ static wifi_error setLazyRoam()
     int cmdId;
     cmdId = getNewCmdId();
     printMsg("Lazy roam\n");
-    return wifi_enable_lazy_roam(cmdId, wlan0Handle, lazy_roam);
+    return WIFI_SUCCESS; //wifi_enable_lazy_roam(cmdId, wlan0Handle, lazy_roam);
 }
 
 static wifi_error setBlacklist()
@@ -2031,7 +2031,7 @@ static wifi_error setBlacklist()
         printMsg("%02x:%02x:%02x:%02x:%02x:%02x\n", addr[0],
                 addr[1], addr[2], addr[3], addr[4], addr[5]);
     }
-    return wifi_set_bssid_blacklist(cmdId, wlan0Handle, params);
+    return WIFI_SUCCESS;//wifi_set_bssid_blacklist(cmdId, wlan0Handle, params);
 }
 
 static void testLazyRoam()
