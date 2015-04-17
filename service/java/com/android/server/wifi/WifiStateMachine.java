@@ -665,7 +665,7 @@ public class WifiStateMachine extends StateMachine {
      */
     private final int mDefaultFrameworkScanIntervalMs;
 
-    private int mDisconnectedScanPeriodMs = 10000;
+    private final int mDisconnectedScanPeriodMs;
 
     /**
      * Supplicant scan interval in milliseconds.
@@ -925,6 +925,8 @@ public class WifiStateMachine extends StateMachine {
             period = frameworkMinScanIntervalSaneValue;
         }
         mDefaultFrameworkScanIntervalMs = period;
+        mDisconnectedScanPeriodMs = mContext.getResources().getInteger(
+                R.integer.config_wifi_disconnected_scan_interval);
         mDriverStopDelayMs = mContext.getResources().getInteger(
                 R.integer.config_wifi_driver_stop_delay);
 
