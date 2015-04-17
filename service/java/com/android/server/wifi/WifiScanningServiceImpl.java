@@ -1106,6 +1106,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     boolean addScanRequest(ClientInfo ci, int handler, ScanSettings settings) {
         // sanity check the input
+        if (ci == null) {
+            Log.d(TAG, "Failing scan request ClientInfo not found " + handler);
+            return false;
+        }
         if (settings.periodInMs < WifiScanner.MIN_SCAN_PERIOD_MS) {
             Log.d(TAG, "Failing scan request because periodInMs is " + settings.periodInMs);
             return false;
@@ -1146,6 +1150,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     boolean addSingleScanRequest(ClientInfo ci, int handler, ScanSettings settings) {
+        if (ci == null) {
+            Log.d(TAG, "Failing single scan request ClientInfo not found " + handler);
+            return false;
+        }
         if (settings.reportEvents == 0) {
             settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
         }
@@ -1165,8 +1173,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     void removeScanRequest(ClientInfo ci, int handler) {
-        ci.removeScanRequest(handler);
-        resetBuckets();
+        if (ci != null) {
+            ci.removeScanRequest(handler);
+            resetBuckets();
+        }
     }
 
     boolean reportScanResults() {
