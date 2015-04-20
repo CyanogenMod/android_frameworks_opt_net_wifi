@@ -1946,4 +1946,23 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             return null;
         }
     }
+
+    public void factoryReset() {
+        enforceConnectivityInternalPermission();
+
+        // Turn mobile hotspot off
+        setWifiApEnabled(null, false);
+
+        // Enable wifi
+        setWifiEnabled(true);
+        // Delete all Wifi SSIDs
+        List<WifiConfiguration> networks = getConfiguredNetworks();
+        if (networks != null) {
+            for (WifiConfiguration config : networks) {
+                removeNetwork(config.networkId);
+            }
+            saveConfiguration();
+        }
+    }
+
 }
