@@ -1208,6 +1208,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mAggressiveHandover = enabled;
     }
 
+    public void clearANQPCache() {
+        mWifiConfigStore.clearANQPCache();
+    }
+
     public void setAllowScansWithTraffic(int enabled) {
         mWifiConfigStore.alwaysEnableScansWhileAssociated.set(enabled);
     }
@@ -5950,6 +5954,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mWifiNative.startTdls(remoteAddress, enable);
                     }
                     break;
+                case WifiMonitor.ANQP_DONE_EVENT:
+                    Log.d("HS2J", String.format("WFSM: ANQP for %016x %s",
+                            (Long)message.obj, message.arg1 != 0 ? "success" : "fail"));
+                    mWifiConfigStore.notifyANQPDone((Long) message.obj, message.arg1 != 0);
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -7192,11 +7201,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     sendNetworkStateChangeBroadcast(mLastBssid);
                     transitionTo(mObtainingIpState);
-                    break;
-                case WifiMonitor.ANQP_DONE_EVENT:
-                    Log.d("HS2J", String.format("WFSM: ANQP for %016x %s",
-                            (Long)message.obj, message.arg1 != 0 ? "success" : "fail"));
-                    mWifiConfigStore.notifyANQPDone((Long) message.obj, message.arg1 != 0);
                     break;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     // Calling handleNetworkDisconnect here is redundant because we might already

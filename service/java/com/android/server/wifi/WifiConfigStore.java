@@ -644,6 +644,10 @@ public class WifiConfigStore extends IpConfigStore {
         Log.d("HS2J", "Active IMSIs " + mImsis);
     }
 
+    public void clearANQPCache() {
+        mAnqpCache.clear();
+    }
+
     void enableVerboseLogging(int verbose) {
         enableVerboseLogging.set(verbose);
         if (verbose > 0) {
