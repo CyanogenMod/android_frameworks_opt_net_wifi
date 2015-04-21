@@ -1690,7 +1690,7 @@ public class WifiNative {
             sRttEventHandler.onRttResults(results);
             sRttCmdId = 0;
         } else {
-            Log.d(TAG, "Received event for unknown cmd = " + id + ", current id = " + sRttCmdId);
+            Log.d(TAG, "RTT Received event for unknown cmd = " + id + ", current id = " + sRttCmdId);
         }
     }
 
@@ -1703,11 +1703,13 @@ public class WifiNative {
             RttManager.RttParams[] params, RttEventHandler handler) {
         synchronized (mLock) {
             if (sRttCmdId != 0) {
+                Log.v("TAG", "Last one is still under measurement!");
                 return false;
             } else {
                 sRttCmdId = getNewCmdIdLocked();
             }
             sRttEventHandler = handler;
+            Log.v(TAG, "native issue RTT request");
             return requestRangeNative(sWlan0Index, sRttCmdId, params);
         }
     }
@@ -1718,10 +1720,14 @@ public class WifiNative {
                 return false;
             }
 
+            sRttCmdId = 0;
+
             if (cancelRangeRequestNative(sWlan0Index, sRttCmdId, params)) {
                 sRttEventHandler = null;
+                Log.v(TAG, "Xin: RTT cancel Request Successfully");
                 return true;
             } else {
+                Log.e(TAG, "Xin:RTT cancel Request failed");
                 return false;
             }
         }
