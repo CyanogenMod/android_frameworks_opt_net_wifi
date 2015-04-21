@@ -121,6 +121,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     private final IBatteryStats mBatteryStats;
     private final PowerManager mPowerManager;
     private final AppOpsManager mAppOps;
+    private final UserManager mUserManager;
 
     private String mInterfaceName;
 
@@ -307,6 +308,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         mBatteryStats = BatteryStatsService.getService();
         mPowerManager = context.getSystemService(PowerManager.class);
         mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
+        mUserManager = UserManager.get(mContext);
 
         mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);
         mSettingsStore = new WifiSettingsStore(mContext);
@@ -588,8 +590,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public void setWifiApEnabled(WifiConfiguration wifiConfig, boolean enabled) {
         enforceChangePermission();
         ConnectivityManager.enforceTetherChangePermission(mContext);
-        UserManager um = UserManager.get(mContext);
-        if (um.hasUserRestriction(UserManager.DISALLOW_CONFIG_TETHERING)) {
+        if (mUserManager.hasUserRestriction(UserManager.DISALLOW_CONFIG_TETHERING)) {
             throw new SecurityException("DISALLOW_CONFIG_TETHERING is enabled for this user.");
         }
         // null wifiConfig is a meaningful input for CMD_SET_AP
@@ -924,7 +925,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         if (userId == currentUser) {
             return true;
         }
-        List<UserInfo> profiles = UserManager.get(mContext).getProfiles(currentUser);
+        List<UserInfo> profiles = mUserManager.getProfiles(currentUser);
         for (UserInfo user : profiles) {
             if (userId == user.id) {
                 return true;
@@ -946,7 +947,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             if (userId == ownerUser) {
                 return true;
             }
-            List<UserInfo> profiles = UserManager.get(mContext).getProfiles(ownerUser);
+            List<UserInfo> profiles = mUserManager.getProfiles(ownerUser);
             for (UserInfo profile : profiles) {
                 if (userId == profile.id) {
                     return true;
@@ -1845,18 +1846,26 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public void factoryReset() {
         enforceConnectivityInternalPermission();
 
-        // Turn mobile hotspot off
-        setWifiApEnabled(null, false);
+        if (mUserManager.hasUserRestriction(UserManager.DISALLOW_NETWORK_RESET)) {
+            return;
+        }
 
-        // Enable wifi
-        setWifiEnabled(true);
-        // Delete all Wifi SSIDs
-        List<WifiConfiguration> networks = getConfiguredNetworks();
-        if (networks != null) {
-            for (WifiConfiguration config : networks) {
-                removeNetwork(config.networkId);
+        if (!mUserManager.hasUserRestriction(UserManager.DISALLOW_CONFIG_TETHERING)) {
+            // Turn mobile hotspot off
+            setWifiApEnabled(null, false);
+        }
+
+        if (!mUserManager.hasUserRestriction(UserManager.DISALLOW_CONFIG_WIFI)) {
+            // Enable wifi
+            setWifiEnabled(true);
+            // Delete all Wifi SSIDs
+            List<WifiConfiguration> networks = getConfiguredNetworks();
+            if (networks != null) {
+                for (WifiConfiguration config : networks) {
+                    removeNetwork(config.networkId);
+                }
+                saveConfiguration();
             }
-            saveConfiguration();
         }
     }
 
