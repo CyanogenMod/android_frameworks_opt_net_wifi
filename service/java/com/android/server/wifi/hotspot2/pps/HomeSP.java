@@ -65,6 +65,23 @@ public class HomeSP {
         mCredential = credential;
     }
 
+    public HomeSP getClone(String password) {
+        if (getCredential().hasDisregardPassword()) {
+            return new HomeSP(mSSIDs,
+                    mFQDN,
+                    mRoamingConsortiums,
+                    mOtherHomePartners,
+                    mMatchAnyOIs,
+                    mMatchAllOIs,
+                    mFriendlyName,
+                    mIconURL,
+                    new Credential(mCredential, password));
+        }
+        else {
+            return this;
+        }
+    }
+
     public PasspointMatch match(NetworkDetail networkDetail,
                                 Map<ANQPElementType, ANQPElement> anqpElementMap,
                                 List<String> imsis) {
