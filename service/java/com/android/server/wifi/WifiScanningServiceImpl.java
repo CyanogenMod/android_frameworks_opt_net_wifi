@@ -60,7 +60,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     private static final String TAG = "WifiScanningService";
     private static final boolean DBG = true;
-    private static final boolean VDBG = true;
+    private static final boolean VDBG = false;
+    
     private static final int INVALID_KEY = 0;                               // same as WifiScanner
     private static final int MIN_PERIOD_PER_CHANNEL_MS = 200;               // DFS needs 120 ms
 
@@ -508,9 +509,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
             super.dump(fd, pw, args);
             pw.println("number of clients : " + mClients.size());
+            for (ClientInfo client : mClients.values()) {
+                pw.append(client.toString());
+                pw.append("------\n");
+            }
             pw.println();
         }
-
     }
 
     /* client management */
@@ -531,14 +535,30 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         public String toString() {
             StringBuffer sb = new StringBuffer();
             sb.append("mChannel ").append(mChannel).append("\n");
-            sb.append("mMessenger ").append(mMessenger).append("\n");
+            sb.append("mMessenger ").append(mMessenger).append("\n\n");
 
             Iterator<Map.Entry<Integer, ScanSettings>> it = mScanSettings.entrySet().iterator();
             for (; it.hasNext(); ) {
                 Map.Entry<Integer, ScanSettings> entry = it.next();
-                sb.append("[ScanId ").append(entry.getKey()).append("\n");
-                sb.append("ScanSettings ").append(entry.getValue()).append("\n");
-                sb.append("]");
+                sb.append("ScanId ").append(entry.getKey()).append("\n");
+
+                ScanSettings scanSettings = entry.getValue();
+                sb.append("  band:").append(scanSettings.band);
+                sb.append("  period:").append(scanSettings.periodInMs);
+                sb.append("  reportEvents:").append(scanSettings.reportEvents);
+                sb.append("  numBssidsPerScan:").append(scanSettings.numBssidsPerScan).append("\n");
+                sb.append("  maxScansToCache:").append(scanSettings.maxScansToCache);
+
+                sb.append("  channels: ");
+
+                if (scanSettings.channels != null) {
+                    for (int i = 0; i < scanSettings.channels.length; i++) {
+                        sb.append(scanSettings.channels[i].frequency);
+                        sb.append(" ");
+                    }
+                }
+
+                sb.append("\n\n");
             }
 
             return sb.toString();
@@ -970,7 +990,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             HashSet<ChannelSpec> newChannels = new HashSet<ChannelSpec>();
             for (ChannelSpec desiredChannelSpec : desiredChannels) {
 
-                Log.d(TAG, "desired channel " + desiredChannelSpec.frequency);
+                if (VDBG) Log.d(TAG, "desired channel " + desiredChannelSpec.frequency);
 
                 boolean found = false;
                 for (WifiNative.ChannelSettings existingChannelSpec : bucket.channels) {
@@ -998,7 +1018,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             } else {
                 for (ChannelSpec desiredChannelSpec : newChannels) {
 
-                    Log.d(TAG, "adding new channel spec " + desiredChannelSpec.frequency);
+                    if (VDBG) Log.d(TAG, "adding new channel spec " + desiredChannelSpec.frequency);
 
                     WifiNative.ChannelSettings channelSettings = bucket.channels[bucket.num_channels];
                     channelSettings.frequency = desiredChannelSpec.frequency;
@@ -1058,7 +1078,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     boolean resetBuckets() {
-        Log.e(TAG, "resetBuckets num clients: " + mClients.size());
+        if (DBG) Log.d(TAG, "resetBuckets num clients: " + mClients.size());
         SettingsComputer c = new SettingsComputer();
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci : clients) {
@@ -1095,12 +1115,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return true;
         } else {
             if (WifiNative.startScan(s, mStateMachine)) {
-                if (DBG) Log.e(TAG, "Successfully started scan of " + s.num_buckets + " buckets at"
-                        + "time = " + SystemClock.elapsedRealtimeNanos()/1000 + " period "
+                if (DBG) Log.d(TAG, "Successfully started scan of " + s.num_buckets + " buckets at"
+                        + "time = " + SystemClock.elapsedRealtimeNanos() / 1000 + " period "
                         + s.base_period_ms);
                 return true;
             } else {
-                if (DBG) Log.d(TAG, "Failed to start scan of " + s.num_buckets + " buckets");
+                if (DBG) Log.e(TAG, "Failed to start scan of " + s.num_buckets + " buckets");
                 return false;
             }
         }
@@ -1786,4 +1806,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         return band;
     }
 
+    @Override
+    protected void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+        mStateMachine.dump(fd, pw, args);
+    }
 }
