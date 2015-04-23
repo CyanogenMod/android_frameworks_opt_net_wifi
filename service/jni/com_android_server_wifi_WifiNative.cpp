@@ -431,11 +431,11 @@ static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
-    ALOGD("onFullScanResult called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+    //ALOGD("onFullScanResult called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
     jobject scanResult = createScanResult(env, result);
 
-    ALOGD("Creating a byte array of length %d", result->ie_length);
+    //ALOGD("Creating a byte array of length %d", result->ie_length);
 
     jbyteArray elements = env->NewByteArray(result->ie_length);
     if (elements == NULL) {
@@ -443,12 +443,12 @@ static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
         return;
     }
 
-    ALOGE("Setting byte array");
+    // ALOGD("Setting byte array");
 
     jbyte *bytes = (jbyte *)&(result->ie_data[0]);
     env->SetByteArrayRegion(elements, 0, result->ie_length, bytes);
 
-    ALOGE("Returning result");
+    // ALOGD("Returning result");
 
     reportEvent(env, mCls, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[B)V", id,
             scanResult, elements);
@@ -516,7 +516,7 @@ static jboolean android_net_wifi_startScan(
         }
     }
 
-    ALOGD("Initialized all fields");
+    // ALOGD("Initialized all fields");
 
     wifi_scan_result_handler handler;
     memset(&handler, 0, sizeof(handler));
@@ -547,7 +547,7 @@ static jobject android_net_wifi_getScanResults(
     int num_scan_data = 64;
     
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("getting scan results on interface[%d] = %p", iface, handle);
+    // ALOGD("getting scan results on interface[%d] = %p", iface, handle);
 
     byte b = flush ? 0 : 0xFF;
     int result = hal_fn.wifi_get_cached_gscan_results(handle, b, num_scan_data, scan_data, &num_scan_data);
@@ -611,6 +611,7 @@ static jobject android_net_wifi_getScanResults(
             env->SetObjectArrayElement(scanData, i, data);
         }
 
+        ALOGD("retrieved %d scan data from interface[%d] = %p", num_scan_data, iface, handle);
         return scanData;
     } else {
         return NULL;
@@ -622,7 +623,7 @@ static jboolean android_net_wifi_getScanCapabilities(
         JNIEnv *env, jclass cls, jint iface, jobject capabilities) {
 
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("getting scan capabilities on interface[%d] = %p", iface, handle);
+    // ALOGD("getting scan capabilities on interface[%d] = %p", iface, handle);
 
     wifi_gscan_capabilities c;
     memset(&c, 0, sizeof(c));
@@ -1073,10 +1074,10 @@ static jint android_net_wifi_getSupportedFeatures(JNIEnv *env, jclass cls, jint 
 
     result = hal_fn.wifi_get_supported_feature_set(handle, &set);
     if (result == WIFI_SUCCESS) {
-        ALOGD("wifi_get_supported_feature_set returned set = 0x%x", set);
+        // ALOGD("wifi_get_supported_feature_set returned set = 0x%x", set);
         return set;
     } else {
-        ALOGD("wifi_get_supported_feature_set returned error = 0x%x", result);
+        ALOGE("wifi_get_supported_feature_set returned error = 0x%x", result);
         return 0;
     }
 }

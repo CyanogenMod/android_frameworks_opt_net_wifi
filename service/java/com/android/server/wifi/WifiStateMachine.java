@@ -167,7 +167,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String GOOGLE_OUI = "DA-A1-19";
 
     /* temporary debug flag - best network selection development */
-    private static boolean PDBG = true;
+    private static boolean PDBG = false;
 
     /* debug flag, indicating if handling of ASSOCIATION_REJECT ended up blacklisting
      * the corresponding BSSID.
