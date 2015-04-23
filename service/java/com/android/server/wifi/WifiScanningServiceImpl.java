@@ -64,7 +64,7 @@ import java.util.Map;
 public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     private static final String TAG = "WifiScanningService";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false;
     
     private static final int INVALID_KEY = 0;                               // same as WifiScanner
@@ -611,8 +611,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 sb.append("  band:").append(scanSettings.band);
                 sb.append("  period:").append(scanSettings.periodInMs);
                 sb.append("  reportEvents:").append(scanSettings.reportEvents);
-                sb.append("  numBssidsPerScan:").append(scanSettings.numBssidsPerScan).append("\n");
-                sb.append("  maxScansToCache:").append(scanSettings.maxScansToCache);
+                sb.append("  numBssidsPerScan:").append(scanSettings.numBssidsPerScan);
+                sb.append("  maxScansToCache:").append(scanSettings.maxScansToCache).append("\n");
 
                 sb.append("  channels: ");
 
@@ -714,7 +714,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     index++;
                 }
             }
-            Log.d(TAG, "delivering results, num = " + results2.length);
+
+            if (DBG) Log.d(TAG, "delivering results, num = " + results2.length);
 
             deliverScanResults(handler, results2);
             if (settings.periodInMs == 0) {
@@ -1005,13 +1006,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 for (ChannelSpec desiredChannelSpec : channels) {
                     mChannelToBucketMap.put(desiredChannelSpec.frequency, mostFrequentBucketIndex);
                 }
-                Log.d(TAG, "returning mf bucket number " + mostFrequentBucketIndex);
+                if (DBG) Log.d(TAG, "returning mf bucket number " + mostFrequentBucketIndex);
                 return mostFrequentBucketIndex;
             } else if (bestBucketIndex != -1) {
                 for (ChannelSpec desiredChannelSpec : channels) {
                     mChannelToBucketMap.put(desiredChannelSpec.frequency, bestBucketIndex);
                 }
-                Log.d(TAG, "returning best bucket number " + bestBucketIndex);
+                if (DBG) Log.d(TAG, "returning best bucket number " + bestBucketIndex);
                 return bestBucketIndex;
             }
 

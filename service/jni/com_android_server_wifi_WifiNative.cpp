@@ -237,7 +237,7 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result *result) {
         return NULL;
     }
 
-    ALOGE("setting SSID to %s", result->ssid);
+    ALOGV("setting SSID to %s", result->ssid);
     //jstring jssid = env->NewStringUTF(result->ssid);
     setStringField(env, scanResult, "SSID", result->ssid);
 

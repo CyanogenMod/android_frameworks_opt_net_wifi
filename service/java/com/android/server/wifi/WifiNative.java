@@ -1212,6 +1212,8 @@ public class WifiNative {
         synchronized (mLock) {
             if (sHalFailed)
                 return false;
+            if (sHalIsStarted)
+                return true;
             if (startHalNative() && (getInterfaces() != 0) && (sWlan0Index != -1)) {
                 new MonitorThread().start();
                 sHalIsStarted = true;
