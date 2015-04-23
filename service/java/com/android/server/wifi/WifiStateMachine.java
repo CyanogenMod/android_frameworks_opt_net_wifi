@@ -699,6 +699,8 @@ public class WifiStateMachine extends StateMachine {
      */
     private final int mDefaultFrameworkScanIntervalMs;
 
+    private int mDefaultDisconnectedScanIntervelWhenP2pConnected = 180000;
+
     private int mDisconnectedScanPeriodMs = 10000;
 
     /**
@@ -962,6 +964,9 @@ public class WifiStateMachine extends StateMachine {
             period = frameworkMinScanIntervalSaneValue;
         }
         mDefaultFrameworkScanIntervalMs = period;
+        Settings.Global.putInt(mContext.getContentResolver(),
+            Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
+            mDefaultDisconnectedScanIntervelWhenP2pConnected);
         mDriverStopDelayMs = mContext.getResources().getInteger(
                 R.integer.config_wifi_driver_stop_delay);
 
