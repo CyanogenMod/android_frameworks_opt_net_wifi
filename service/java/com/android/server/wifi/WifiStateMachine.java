@@ -8099,11 +8099,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         // If this network was explicitly selected by the user, evaluate whether to call
         // explicitlySelected() so the system can treat it appropriately.
         WifiConfiguration config = getCurrentWifiConfiguration();
-        if (mWifiConfigStore.isLastSelectedConfiguration(config) && mNetworkAgent != null) {
-            if (mWifiConfigStore.checkConfigOverridePermission(config.lastConnectUid)) {
+        if (mWifiConfigStore.isLastSelectedConfiguration(config)) {
+            boolean prompt = mWifiConfigStore.checkConfigOverridePermission(config.lastConnectUid);
+            if (DBG) {
+                log("Network selected by UID " + config.lastConnectUid + " prompt=" + prompt);
+            }
+            if (prompt) {
                 // Selected by the user via Settings or QuickSettings. If this network has Internet
                 // access, switch to it. Otherwise, switch to it only if the user confirms that they
                 // really want to switch, or has already confirmed and selected "Don't ask again".
+                if (DBG) {
+                    log("explictlySelected acceptUnvalidated=" + config.noInternetAccessExpected);
+                }
                 mNetworkAgent.explicitlySelected(config.noInternetAccessExpected);
             }
         }
