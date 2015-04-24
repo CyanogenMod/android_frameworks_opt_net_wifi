@@ -23,7 +23,7 @@ public class OMAConstructed extends OMANode {
             OMANode child = value != null ?
                     new OMAScalar(this, name, context, value) :
                     new OMAConstructed(this, name, context);
-            mChildren.put(name, child);
+            mChildren.put(name.toLowerCase(), child);
             return child;
         } else {
             OMANode target = this;
@@ -46,7 +46,7 @@ public class OMAConstructed extends OMANode {
             throw new OMAException("Path too short for " + getPathString());
         }
         String tag = path.next();
-        OMANode child = mChildren.get(tag);
+        OMANode child = mChildren.get(tag.toLowerCase());
         if (child != null) {
             return child.getScalarValue(path);
         } else {
@@ -60,7 +60,7 @@ public class OMAConstructed extends OMANode {
             return this;
         }
         String tag = path.next();
-        OMANode child = mChildren.get(tag);
+        OMANode child = mChildren.get(tag.toLowerCase());
         if (child != null) {
             return child.getListValue(path);
         } else {
@@ -79,7 +79,7 @@ public class OMAConstructed extends OMANode {
     }
 
     public OMANode getChild(String name) {
-        return mChildren.get(name);
+        return mChildren.get(name.toLowerCase());
     }
 
     @Override
