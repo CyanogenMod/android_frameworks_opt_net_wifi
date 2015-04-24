@@ -2914,7 +2914,7 @@ public class WifiConfigStore extends IpConfigStore {
         /* save HomeSP object for passpoint networks */
         if (config.isPasspoint()) {
             try {
-                Credential credential = new Credential(config.enterpriseConfig);
+                Credential credential = new Credential(config.enterpriseConfig, mKeyStore);
                 HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
                         config.roamingConsortiumIds, Collections.<String>emptySet(),
                         Collections.<Long>emptySet(), Collections.<Long>emptyList(),
@@ -3475,6 +3475,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (config != null) {
                     cacheScanResultForConfig(config, scanDetail, entry.getValue());
                 } else {
+		    Log.w("HS2J", "Failed to find config for '" + entry.getKey().getFQDN() + "'");
                     /* perhaps the configuration was deleted?? */
                 }
             }
