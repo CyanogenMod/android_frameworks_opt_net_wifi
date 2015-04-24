@@ -165,10 +165,11 @@ public class ConfigBuilder {
             throws IOException, SAXException, GeneralSecurityException {
 
         HomeSP homeSP = MOManager.buildSP(text);
+        Credential credential = homeSP.getCredential();
 
         WifiConfiguration config;
 
-        EAP.EAPMethodID eapMethodID = homeSP.getCredential().getEAPMethod().getEAPMethodID();
+        EAP.EAPMethodID eapMethodID = credential.getEAPMethod().getEAPMethodID();
         switch (eapMethodID) {
             case EAP_TTLS:
                 if (key != null || clientChain != null) {
@@ -191,7 +192,12 @@ public class ConfigBuilder {
             default:
                 throw new IOException("Unsupported EAP Method: " + eapMethodID);
         }
-        config.enterpriseConfig.setRealm(homeSP.getCredential().getRealm());
+
+        WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
+        enterpriseConfig.setAnonymousIdentity("anonymous@" + credential.getRealm());
+        enterpriseConfig.setRealm(credential.getRealm());
+        enterpriseConfig.setDomSuffixMatch(homeSP.getFQDN());
+
         return config;
     }
 
@@ -213,11 +219,12 @@ public class ConfigBuilder {
 
         WifiConfiguration config = buildBaseConfiguration(homeSP);
         NonEAPInnerAuth ttlsParam = (NonEAPInnerAuth) authParam;
-        config.enterpriseConfig.setPhase2Method(remapInnerMethod(ttlsParam.getType()));
-        config.enterpriseConfig.setIdentity(credential.getUserName());
-        config.enterpriseConfig.setPassword(credential.getPassword());
+        WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
+        enterpriseConfig.setPhase2Method(remapInnerMethod(ttlsParam.getType()));
+        enterpriseConfig.setIdentity(credential.getUserName());
+        enterpriseConfig.setPassword(credential.getPassword());
         if (caCert != null) {
-            config.enterpriseConfig.setCaCertificate(caCert);
+            enterpriseConfig.setCaCertificate(caCert);
         }
 
         return config;
@@ -257,11 +264,11 @@ public class ConfigBuilder {
         String alias = Base64.encodeToString(reference, Base64.DEFAULT);
 
         WifiConfiguration config = buildBaseConfiguration(homeSP);
-        config.enterpriseConfig.setIdentity("anonymous");           // !!! anonymous@fqdn from CN?
-        config.enterpriseConfig.setClientCertificateAlias(alias);
-        config.enterpriseConfig.setClientKeyEntry(clientKey, clientCertificate);
+        WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
+        enterpriseConfig.setClientCertificateAlias(alias);
+        enterpriseConfig.setClientKeyEntry(clientKey, clientCertificate);
         if (caCert != null) {
-            config.enterpriseConfig.setCaCertificate(caCert);
+            enterpriseConfig.setCaCertificate(caCert);
         }
 
         return config;

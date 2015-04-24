@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class MOTree {
+    public static final String MgmtTreeTag = "MgmtTree";
+
     private static final String NodeTag = "Node";
     private static final String NodeNameTag = "NodeName";
     private static final String PathTag = "Path";
@@ -40,7 +42,7 @@ public class MOTree {
         mUrn = urn;
         mDtdRev = dtdRev;
 
-        mRoot = new OMAConstructed(null, ".", null);
+        mRoot = new OMAConstructed(null, MgmtTreeTag, null);
 
         for (XMLNode child : node.getChildren()) {
             buildNode(mRoot, child);
@@ -199,9 +201,7 @@ public class MOTree {
         StringBuilder tree = new StringBuilder();
         for (; ; ) {
             int octet = in.read();
-            Log.d("PARSE-LOG", "octet = " + octet);
             if (octet < 0) {
-                Log.d("PARSE-LOG", "returning because octet < 0");
                 return null;
             } else if (octet > ' ') {
                 tree.append((char) octet);
@@ -210,16 +210,15 @@ public class MOTree {
                 break;
             }
         }
-        if (!tree.toString().equals("tree"))
+        if (!tree.toString().equals("tree")) {
             throw new IOException("Not a tree: " + tree);
+        }
 
         String version = OMAConstants.deserializeString(in);
         String urn = OMAConstants.readURN(in);
-        Log.d("PARSE-LOG", "version = " + version + ", urn = " + urn);
 
         OMAConstructed root = OMANode.unmarshal(in);
 
-        Log.d("PARSE-LOG", "return new MOTree");
         return new MOTree(urn, version, root);
     }
 }

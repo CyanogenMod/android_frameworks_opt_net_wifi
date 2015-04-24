@@ -25,6 +25,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -37,199 +38,6 @@ import java.util.TimeZone;
  * Handles provisioning of PerProviderSubscription data.
  */
 public class MOManager {
-    private final File mPpsFile;
-    private final Map<String, HomeSP> mSPs;
-
-    public MOManager(File ppsFile) throws IOException {
-        mPpsFile = ppsFile;
-        mSPs = new HashMap<>();
-    }
-
-    public File getPpsFile() {
-        return mPpsFile;
-    }
-
-    public Map<String, HomeSP> getLoadedSPs() {
-        return mSPs;
-    }
-
-    public List<HomeSP> loadAllSPs() throws IOException {
-        List<MOTree> trees = new ArrayList<MOTree>();
-        List<HomeSP> sps = new ArrayList<HomeSP>();
-
-        if (!mPpsFile.exists()) {
-            return sps;
-        }
-
-        BufferedInputStream in = null;
-        try {
-            in = new BufferedInputStream(new FileInputStream(mPpsFile));
-            while (in.available() > 0) {
-                MOTree tree = MOTree.unmarshal(in);
-                if (tree != null) {
-                    trees.add(tree);
-                } else {
-                    break;
-                }
-            }
-        } finally {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (IOException ioe) {
-                    /**/
-                }
-            }
-        }
-
-        for (MOTree moTree : trees) {
-            List<HomeSP> sp = buildSPs(moTree);
-            if (sp != null) {
-                sps.addAll(sp);
-            } else {
-                Log.d("PARSE-LOG", "failed to build HomeSP");
-            }
-        }
-
-        for (HomeSP sp : sps) {
-            if (mSPs.put(sp.getFQDN(), sp) != null) {
-                throw new OMAException("Multiple SPs for FQDN '" + sp.getFQDN() + "'");
-            } else {
-                Log.d("PARSE-LOG", "added " + sp.getFQDN() + " to list");
-            }
-        }
-
-        Log.d("PARSE-LOG", "found " + mSPs.size() + " configurations");
-        return sps;
-    }
-
-    public static HomeSP buildSP(String xml) throws IOException, SAXException {
-        OMAParser omaParser = new OMAParser();
-        MOTree tree = omaParser.parse(xml, OMAConstants.LOC_PPS + ":1.0");
-        List<HomeSP> spList = buildSPs(tree);
-        if (spList.size() != 1) {
-            throw new OMAException("Expected exactly one HomeSP, got " + spList.size());
-        }
-        return spList.iterator().next();
-    }
-
-    public HomeSP addSP(String xml) throws IOException, SAXException {
-        OMAParser omaParser = new OMAParser();
-        MOTree tree = omaParser.parse(xml, OMAConstants.LOC_PPS + ":1.0");
-        List<HomeSP> spList = buildSPs(tree);
-        if (spList.size() != 1) {
-            throw new OMAException("Expected exactly one HomeSP, got " + spList.size());
-        }
-        HomeSP sp = spList.iterator().next();
-        String fqdn = sp.getFQDN();
-        if (mSPs.put(fqdn, sp) != null) {
-            throw new OMAException("SP " + fqdn + " already exists");
-        }
-
-        BufferedOutputStream out = null;
-        try {
-            out = new BufferedOutputStream(new FileOutputStream(mPpsFile, true));
-            tree.marshal(out);
-            out.flush();
-        } finally {
-            if (out != null) {
-                try {
-                    out.close();
-                } catch (IOException ioe) {
-                    /**/
-                }
-            }
-        }
-
-        return sp;
-    }
-
-    public void saveAllSps(Collection<HomeSP> homeSPs) throws IOException {
-
-        OMAConstructed root = new OMAConstructed(null, "MgmtTree", "");
-
-        for (HomeSP homeSP : homeSPs) {
-            OMANode providerNode = root.addChild(TAG_PerProviderSubscription, null, null, null);
-            OMANode providerSubNode = providerNode.addChild("Node", null, null, null);
-
-            if (mSPs.put(homeSP.getFQDN(), homeSP) != null) {
-                throw new OMAException("SP " + homeSP.getFQDN() + " already exists");
-            }
-            OMANode homeSpNode = providerSubNode.addChild(TAG_HomeSP, null, null, null);
-            homeSpNode.addChild(TAG_FQDN, null, homeSP.getFQDN(), null);
-            homeSpNode.addChild(TAG_FriendlyName, null, homeSP.getFriendlyName(), null);
-
-            OMANode credentialNode = providerSubNode.addChild(TAG_Credential, null, null, null);
-            Credential cred = homeSP.getCredential();
-            EAPMethod method = cred.getEAPMethod();
-
-            if (method == null) {
-                throw new OMAException("SP " + homeSP.getFQDN() + " already exists");
-            }
-
-            if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_SIM
-                    || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKA
-                    || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKAPrim) {
-
-                OMANode simNode = credentialNode.addChild(TAG_SIM, null, null, null);
-                simNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
-                simNode.addChild(TAG_EAPType, null,
-                        Integer.toString(EAP.mapEAPMethod(method.getEAPMethodID())), null);
-
-            } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
-
-                OMANode unpNode = credentialNode.addChild(TAG_UsernamePassword, null, null, null);
-                unpNode.addChild(TAG_Username, null, cred.getUserName(), null);
-                unpNode.addChild(TAG_Password, null, cred.getPassword(), null);
-                OMANode eapNode = unpNode.addChild(TAG_EAPMethod, null, null, null);
-                eapNode.addChild(TAG_EAPType, null,
-                        Integer.toString(EAP.mapEAPMethod(method.getEAPMethodID())), null);
-                eapNode.addChild(TAG_InnerMethod, null,
-                        ((NonEAPInnerAuth) method.getAuthParam()).getOMAtype(), null);
-
-            } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS) {
-
-                OMANode certNode = credentialNode.addChild(TAG_DigitalCertificate, null, null, null);
-                certNode.addChild(TAG_CertificateType, null, Credential.CertTypeX509, null);
-                certNode.addChild(TAG_CertSHA256Fingerprint, null,
-                        Utils.toHex(cred.getFingerPrint()), null);
-
-            } else {
-                throw new OMAException("Invalid credential on " + homeSP.getFQDN());
-            }
-
-            credentialNode.addChild(TAG_Realm, null, homeSP.getCredential().getRealm(), null);
-            // !!! Note: This node defines CRL checking through OSCP, I suspect we won't be able
-            // to do that so it is commented out:
-            //credentialNode.addChild(TAG_CheckAAAServerCertStatus, null, "TRUE", null);
-
-            StringBuilder builder = new StringBuilder();
-            boolean first = true;
-            for (Long roamingConsortium : homeSP.getRoamingConsortiums()) {
-                if (first) {
-                    first = false;
-                }
-                else {
-                    builder.append(',');
-                }
-                builder.append(String.format("%x", roamingConsortium));
-            }
-            credentialNode.addChild(TAG_RoamingConsortiumOI, null, builder.toString(), null);
-        }
-
-        MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", root);
-        try (BufferedOutputStream out =
-                     new BufferedOutputStream(new FileOutputStream(mPpsFile, true))) {
-            tree.marshal(out);
-            out.flush();
-        }
-    }
-
-    private static final DateFormat DTFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-
-    static {
-        DTFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-    }
 
     public static final String TAG_AAAServerTrustRoot = "AAAServerTrustRoot";
     public static final String TAG_AbleToShare = "AbleToShare";
@@ -303,9 +111,280 @@ public class MOManager {
     public static final String TAG_VendorId = "VendorId";
     public static final String TAG_VendorType = "VendorType";
 
+    private final File mPpsFile;
+    private final Map<String, HomeSP> mSPs;
+
+    public MOManager(File ppsFile) {
+        mPpsFile = ppsFile;
+        mSPs = new HashMap<>();
+    }
+
+    public File getPpsFile() {
+        return mPpsFile;
+    }
+
+    public Map<String, HomeSP> getLoadedSPs() {
+        return mSPs;
+    }
+
+    public List<HomeSP> loadAllSPs() throws IOException {
+
+        if (!mPpsFile.exists()) {
+            return Collections.emptyList();
+        }
+
+        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(mPpsFile))) {
+            MOTree moTree = MOTree.unmarshal(in);
+            Log.d("HS2J", "MO Tree: " + moTree);
+            mSPs.clear();
+            if (moTree == null) {
+                return Collections.emptyList();     // Empty file
+            }
+
+            List<HomeSP> sps = buildSPs(moTree);
+            if (sps != null) {
+                for (HomeSP sp : sps) {
+                    if (mSPs.put(sp.getFQDN(), sp) != null) {
+                        throw new OMAException("Multiple SPs for FQDN '" + sp.getFQDN() + "'");
+                    } else {
+                        Log.d("PARSE-LOG", "retrieved " + sp.getFQDN() + " from PPS");
+                    }
+                }
+                return sps;
+
+            } else {
+                throw new OMAException("Failed to build HomeSP");
+            }
+        }
+    }
+
+    public static HomeSP buildSP(String xml) throws IOException, SAXException {
+        OMAParser omaParser = new OMAParser();
+        MOTree tree = omaParser.parse(xml, OMAConstants.LOC_PPS + ":1.0");
+        List<HomeSP> spList = buildSPs(tree);
+        if (spList.size() != 1) {
+            throw new OMAException("Expected exactly one HomeSP, got " + spList.size());
+        }
+        return spList.iterator().next();
+    }
+
+    public HomeSP addSP(String xml) throws IOException, SAXException {
+        OMAParser omaParser = new OMAParser();
+        MOTree tree = omaParser.parse(xml, OMAConstants.LOC_PPS + ":1.0");
+        List<HomeSP> spList = buildSPs(tree);
+        if (spList.size() != 1) {
+            throw new OMAException("Expected exactly one HomeSP, got " + spList.size());
+        }
+        HomeSP sp = spList.iterator().next();
+        String fqdn = sp.getFQDN();
+        if (mSPs.put(fqdn, sp) != null) {
+            throw new OMAException("SP " + fqdn + " already exists");
+        }
+
+        BufferedOutputStream out = null;
+        try {
+            out = new BufferedOutputStream(new FileOutputStream(mPpsFile, true));
+            tree.marshal(out);
+            out.flush();
+        } finally {
+            if (out != null) {
+                try {
+                    out.close();
+                } catch (IOException ioe) {
+                    /**/
+                }
+            }
+        }
+
+        return sp;
+    }
+
+    public void saveAllSps(Collection<HomeSP> homeSPs) throws IOException {
+        boolean dirty = homeSPs.size() != mSPs.size();
+
+        if (!dirty) {
+            Map<String, HomeSP> spClone = new HashMap<>(mSPs);
+            for (HomeSP homeSP : homeSPs) {
+                HomeSP existing = spClone.remove(homeSP.getFQDN());
+                if (!homeSP.deepEquals(existing)) {
+                    dirty = true;
+                    break;
+                }
+            }
+
+            if (!dirty) {
+                dirty = !spClone.isEmpty();
+            }
+        }
+
+        Log.d("HS2J", "Save all SPs: dirty: " + dirty +
+                ", update from " + mSPs.size() + " to " + homeSPs);
+        if (homeSPs.size() < mSPs.size()) {
+            return;
+        }
+
+        if (dirty) {
+            mSPs.clear();
+
+            OMAConstructed ppsNode = new OMAConstructed(null, TAG_PerProviderSubscription, null);
+            int instance = 0;
+            for (HomeSP homeSP : homeSPs) {
+                buildHomeSPTree(homeSP, ppsNode, instance++);
+                mSPs.put(homeSP.getFQDN(), homeSP);
+            }
+
+            MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", ppsNode);
+            try (BufferedOutputStream out =
+                         new BufferedOutputStream(new FileOutputStream(mPpsFile, true))) {
+                tree.marshal(out);
+                out.flush();
+            }
+        }
+    }
+
+    private static void buildHomeSPTree(HomeSP homeSP, OMAConstructed root, int spInstance)
+            throws IOException {
+        OMANode providerSubNode = root.addChild(getInstanceString(spInstance), null, null, null);
+
+        // The HomeSP:
+        OMANode homeSpNode = providerSubNode.addChild(TAG_HomeSP, null, null, null);
+        if (!homeSP.getSSIDs().isEmpty()) {
+            OMAConstructed nwkIDNode =
+                    (OMAConstructed) homeSpNode.addChild(TAG_NetworkID, null, null, null);
+            int instance = 0;
+            for (Map.Entry<String, Long> entry : homeSP.getSSIDs().entrySet()) {
+                OMAConstructed inode =
+                        (OMAConstructed) nwkIDNode.addChild(getInstanceString(instance++), null, null, null);
+                inode.addChild(TAG_SSID, null, entry.getKey(), null);
+                if (entry.getValue() != null) {
+                    inode.addChild(TAG_HESSID, null, String.format("%012x", entry.getValue()), null);
+                }
+            }
+        }
+
+        homeSpNode.addChild(TAG_FriendlyName, null, homeSP.getFriendlyName(), null);
+
+        if (homeSP.getIconURL() != null) {
+            homeSpNode.addChild(TAG_IconURL, null, homeSP.getIconURL(), null);
+        }
+
+        homeSpNode.addChild(TAG_FQDN, null, homeSP.getFQDN(), null);
+
+        if (!homeSP.getMatchAllOIs().isEmpty() || !homeSP.getMatchAnyOIs().isEmpty()) {
+            OMAConstructed homeOIList =
+                    (OMAConstructed) homeSpNode.addChild(TAG_HomeOIList, null, null, null);
+
+            int instance = 0;
+            for (Long oi : homeSP.getMatchAllOIs()) {
+                OMAConstructed inode =
+                        (OMAConstructed) homeOIList.addChild(getInstanceString(instance++),
+                                null, null, null);
+                inode.addChild(TAG_HomeOI, null, String.format("%x", oi), null);
+                inode.addChild(TAG_HomeOIRequired, null, "TRUE", null);
+            }
+            for (Long oi : homeSP.getMatchAnyOIs()) {
+                OMAConstructed inode =
+                        (OMAConstructed) homeOIList.addChild(getInstanceString(instance++),
+                                null, null, null);
+                inode.addChild(TAG_HomeOI, null, String.format("%x", oi), null);
+                inode.addChild(TAG_HomeOIRequired, null, "FALSE", null);
+            }
+        }
+
+        if (!homeSP.getOtherHomePartners().isEmpty()) {
+            OMAConstructed otherPartners =
+                    (OMAConstructed) homeSpNode.addChild(TAG_OtherHomePartners, null, null, null);
+            int instance = 0;
+            for (String fqdn : homeSP.getOtherHomePartners()) {
+                OMAConstructed inode =
+                        (OMAConstructed) otherPartners.addChild(getInstanceString(instance++),
+                                null, null, null);
+                inode.addChild(TAG_FQDN, null, fqdn, null);
+            }
+        }
+
+        if (!homeSP.getRoamingConsortiums().isEmpty()) {
+            homeSpNode.addChild(TAG_RoamingConsortiumOI, null, getRCList(homeSP.getRoamingConsortiums()), null);
+        }
+
+        // The Credential:
+        OMANode credentialNode = providerSubNode.addChild(TAG_Credential, null, null, null);
+        Credential cred = homeSP.getCredential();
+        EAPMethod method = cred.getEAPMethod();
+
+        if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_SIM
+                || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKA
+                || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKAPrim) {
+
+            OMANode simNode = credentialNode.addChild(TAG_SIM, null, null, null);
+            simNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
+            simNode.addChild(TAG_EAPType, null,
+                    Integer.toString(EAP.mapEAPMethod(method.getEAPMethodID())), null);
+
+        } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TTLS) {
+
+            OMANode unpNode = credentialNode.addChild(TAG_UsernamePassword, null, null, null);
+            unpNode.addChild(TAG_Username, null, cred.getUserName(), null);
+            unpNode.addChild(TAG_Password, null, cred.getPassword(), null);
+            OMANode eapNode = unpNode.addChild(TAG_EAPMethod, null, null, null);
+            eapNode.addChild(TAG_EAPType, null,
+                    Integer.toString(EAP.mapEAPMethod(method.getEAPMethodID())), null);
+            eapNode.addChild(TAG_InnerMethod, null,
+                    ((NonEAPInnerAuth) method.getAuthParam()).getOMAtype(), null);
+
+        } else if (method.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS) {
+
+            OMANode certNode = credentialNode.addChild(TAG_DigitalCertificate, null, null, null);
+            certNode.addChild(TAG_CertificateType, null, Credential.CertTypeX509, null);
+            certNode.addChild(TAG_CertSHA256Fingerprint, null,
+                    Utils.toHex(cred.getFingerPrint()), null);
+
+        } else {
+            throw new OMAException("Invalid credential on " + homeSP.getFQDN());
+        }
+
+        credentialNode.addChild(TAG_Realm, null, homeSP.getCredential().getRealm(), null);
+        // !!! Note: This node defines CRL checking through OSCP, I suspect we won't be able
+        // to do that so it is commented out:
+        //credentialNode.addChild(TAG_CheckAAAServerCertStatus, null, "TRUE", null);
+    }
+
+    private static String getInstanceString(int instance) {
+        return "i" + instance;
+    }
+
+    private static String getRCList(Collection<Long> rcs) {
+        StringBuilder builder = new StringBuilder();
+        boolean first = true;
+        for (Long roamingConsortium : rcs) {
+            if (first) {
+                first = false;
+            }
+            else {
+                builder.append(',');
+            }
+            builder.append(String.format("%x", roamingConsortium));
+        }
+        return builder.toString();
+    }
+
+    private static final DateFormat DTFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+    static {
+        DTFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+    }
+
     private static List<HomeSP> buildSPs(MOTree moTree) throws OMAException {
-        List<String> spPath = Arrays.asList(TAG_PerProviderSubscription);
-        OMAConstructed spList = moTree.getRoot().getListValue(spPath.iterator());
+        Log.d("HS2J", "MO root: " + moTree.getRoot().getName());
+        OMAConstructed spList;
+        if (moTree.getRoot().getName().equals(TAG_PerProviderSubscription)) {
+            // The PPS file is rooted at PPS instead of MgmtTree to conserve space
+            spList = moTree.getRoot();
+        }
+        else {
+            List<String> spPath = Arrays.asList(TAG_PerProviderSubscription);
+            spList = moTree.getRoot().getListValue(spPath.iterator());
+        }
 
         List<HomeSP> homeSPs = new ArrayList<>();
 
@@ -326,7 +405,7 @@ public class MOManager {
         String friendlyName = spRoot.getScalarValue(Arrays.asList(TAG_FriendlyName).iterator());
         String iconURL = spRoot.getScalarValue(Arrays.asList(TAG_IconURL).iterator());
 
-        HashSet<Long> roamingConsortiums = new HashSet<Long>();
+        HashSet<Long> roamingConsortiums = new HashSet<>();
         String oiString = spRoot.getScalarValue(Arrays.asList(TAG_RoamingConsortiumOI).iterator());
         if (oiString != null) {
             for (String oi : oiString.split(",")) {
@@ -334,7 +413,7 @@ public class MOManager {
             }
         }
 
-        Map<String, Long> ssids = new HashMap<String, Long>();
+        Map<String, Long> ssids = new HashMap<>();
 
         OMANode ssidListNode = spRoot.getListValue(Arrays.asList(TAG_NetworkID).iterator());
         if (ssidListNode != null) {
@@ -344,8 +423,8 @@ public class MOManager {
             }
         }
 
-        Set<Long> matchAnyOIs = new HashSet<Long>();
-        List<Long> matchAllOIs = new ArrayList<Long>();
+        Set<Long> matchAnyOIs = new HashSet<>();
+        List<Long> matchAllOIs = new ArrayList<>();
         OMANode homeOIListNode = spRoot.getListValue(Arrays.asList(TAG_HomeOIList).iterator());
         if (homeOIListNode != null) {
             for (OMANode homeOIRoot : homeOIListNode.getChildren()) {
@@ -358,7 +437,7 @@ public class MOManager {
             }
         }
 
-        Set<String> otherHomePartners = new HashSet<String>();
+        Set<String> otherHomePartners = new HashSet<>();
         OMANode otherListNode =
                 spRoot.getListValue(Arrays.asList(TAG_OtherHomePartners).iterator());
         if (otherListNode != null) {

@@ -1,18 +1,20 @@
 package com.android.server.wifi.hotspot2.omadm;
 
-import android.util.Log;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
 public class OMAConstructed extends OMANode {
-    private final Map<String, OMANode> m_children;
+    private final Map<String, OMANode> mChildren;
 
     public OMAConstructed(OMANode parent, String name, String context) {
         super(parent, name, context);
-        m_children = new HashMap<>();
+        mChildren = new HashMap<>();
     }
 
     @Override
@@ -21,7 +23,7 @@ public class OMAConstructed extends OMANode {
             OMANode child = value != null ?
                     new OMAScalar(this, name, context, value) :
                     new OMAConstructed(this, name, context);
-            m_children.put(name, child);
+            mChildren.put(name, child);
             return child;
         } else {
             OMANode target = this;
@@ -44,7 +46,7 @@ public class OMAConstructed extends OMANode {
             throw new OMAException("Path too short for " + getPathString());
         }
         String tag = path.next();
-        OMANode child = m_children.get(tag);
+        OMANode child = mChildren.get(tag);
         if (child != null) {
             return child.getScalarValue(path);
         } else {
@@ -58,7 +60,7 @@ public class OMAConstructed extends OMANode {
             return this;
         }
         String tag = path.next();
-        OMANode child = m_children.get(tag);
+        OMANode child = mChildren.get(tag);
         if (child != null) {
             return child.getListValue(path);
         } else {
@@ -73,11 +75,11 @@ public class OMAConstructed extends OMANode {
 
     @Override
     public Collection<OMANode> getChildren() {
-        return Collections.unmodifiableCollection(m_children.values());
+        return Collections.unmodifiableCollection(mChildren.values());
     }
 
     public OMANode getChild(String name) {
-        return m_children.get(name);
+        return mChildren.get(name);
     }
 
     @Override
@@ -87,12 +89,15 @@ public class OMAConstructed extends OMANode {
 
     @Override
     public void toString(StringBuilder sb, int level) {
+        sb.append(getPathString());
         if (getContext() != null) {
-            sb.append(getPathString()).append(" (").append(getContext()).append(')').append('\n');
+            sb.append(" (").append(getContext()).append(')');
         }
+        sb.append('\n');
 
-        for (OMANode node : m_children.values())
+        for (OMANode node : mChildren.values()) {
             node.toString(sb, level + 1);
+        }
     }
 
     @Override
@@ -104,9 +109,7 @@ public class OMAConstructed extends OMANode {
         }
         out.write(new byte[] { '+', '\n' });
 
-        Log.d("PARSE-LOG", "Node " + getName() + " has " + m_children.size() + " children");
-        for (OMANode child : m_children.values()) {
-            Log.d("PARSE-LOG", "marshalling " + child.getName());
+        for (OMANode child : mChildren.values()) {
             child.marshal(out, level + 1);
         }
         OMAConstants.indent(level, out);

@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.util.Arrays;
 
 public class Credential {
     public enum CertType {IEEE, x509v3}
@@ -121,13 +122,11 @@ public class Credential {
             try {
                 MessageDigest digester = MessageDigest.getInstance("SHA-256");
                 fingerPrint = digester.digest(enterpriseConfig.getClientCertificate().getEncoded());
-            }
-            catch (GeneralSecurityException gse) {
+            } catch (GeneralSecurityException gse) {
                 Log.e("CRED", "Failed to generate certificate fingerprint: " + gse);
                 fingerPrint = null;
             }
-        }
-        else if (enterpriseConfig.getClientCertificateAlias() != null) {
+        } else if (enterpriseConfig.getClientCertificateAlias() != null) {
             String alias = enterpriseConfig.getClientCertificateAlias();
             Log.d("HS2J", "Client alias '" + alias + "'");
             byte[] octets = keyStore.get(Credentials.USER_CERTIFICATE + alias);
@@ -136,13 +135,11 @@ public class Credential {
                 try {
                     MessageDigest digester = MessageDigest.getInstance("SHA-256");
                     fingerPrint = digester.digest(octets);
-                }
-                catch (GeneralSecurityException gse) {
+                } catch (GeneralSecurityException gse) {
                     Log.e("HS2J", "Failed to construct digest: " + gse);
                     fingerPrint = null;
                 }
-            }
-            else // !!! The current alias is *not* derived from the fingerprint...
+            } else // !!! The current alias is *not* derived from the fingerprint...
             {
                 try {
                     fingerPrint = Base64.decode(enterpriseConfig.getClientCertificateAlias(),
@@ -152,8 +149,7 @@ public class Credential {
                     fingerPrint = null;
                 }
             }
-        }
-        else {
+        } else {
             fingerPrint = null;
         }
         mFingerPrint = fingerPrint;
@@ -176,46 +172,42 @@ public class Credential {
     }
 
     private static EAPMethod mapEapMethod(int eapMethod, int phase2Method) throws IOException {
-        if (eapMethod == WifiEnterpriseConfig.Eap.TLS) {
-            return new EAPMethod(EAP.EAPMethodID.EAP_TLS, null);
-        } else if (eapMethod == WifiEnterpriseConfig.Eap.TTLS) {
+        switch (eapMethod) {
+            case WifiEnterpriseConfig.Eap.TLS:
+                return new EAPMethod(EAP.EAPMethodID.EAP_TLS, null);
+            case WifiEnterpriseConfig.Eap.TTLS:
             /* keep this table in sync with WifiEnterpriseConfig.Phase2 enum */
-            NonEAPInnerAuth inner;
-            switch (phase2Method) {
-                case WifiEnterpriseConfig.Phase2.PAP:
-                    inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.PAP);
-                    break;
-                case WifiEnterpriseConfig.Phase2.MSCHAP:
-                    inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.MSCHAP);
-                    break;
-                case WifiEnterpriseConfig.Phase2.MSCHAPV2:
-                    inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.MSCHAPv2);
-                    break;
-                default:
-                    throw new IOException("TTLS phase2 method " +
-                            phase2Method + " not valid for Passpoint");
-            }
-            return new EAPMethod(EAP.EAPMethodID.EAP_TTLS, inner);
-        } else if (eapMethod == WifiEnterpriseConfig.Eap.PEAP) {
-            /* restricting passpoint implementation from using PEAP */
-            return null;
-        } else if (eapMethod == WifiEnterpriseConfig.Eap.PWD) {
-            /* restricting passpoint implementation from using EAP_PWD */
-            return null;
-        } else if (eapMethod == WifiEnterpriseConfig.Eap.SIM) {
-            return new EAPMethod(EAP.EAPMethodID.EAP_SIM, null);
-        } else if (eapMethod == WifiEnterpriseConfig.Eap.AKA) {
-            return new EAPMethod(EAP.EAPMethodID.EAP_AKA, null);
+                NonEAPInnerAuth inner;
+                switch (phase2Method) {
+                    case WifiEnterpriseConfig.Phase2.PAP:
+                        inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.PAP);
+                        break;
+                    case WifiEnterpriseConfig.Phase2.MSCHAP:
+                        inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.MSCHAP);
+                        break;
+                    case WifiEnterpriseConfig.Phase2.MSCHAPV2:
+                        inner = new NonEAPInnerAuth(NonEAPInnerAuth.NonEAPType.MSCHAPv2);
+                        break;
+                    default:
+                        throw new IOException("TTLS phase2 method " +
+                                phase2Method + " not valid for Passpoint");
+                }
+                return new EAPMethod(EAP.EAPMethodID.EAP_TTLS, inner);
+            case WifiEnterpriseConfig.Eap.SIM:
+                return new EAPMethod(EAP.EAPMethodID.EAP_SIM, null);
+            case WifiEnterpriseConfig.Eap.AKA:
+                return new EAPMethod(EAP.EAPMethodID.EAP_AKA, null);
+            case WifiEnterpriseConfig.Eap.AKA_PRIME:
+                return new EAPMethod(EAP.EAPMethodID.EAP_AKAPrim, null);
+            default:
+                String methodName;
+                if (eapMethod >= 0 && eapMethod < WifiEnterpriseConfig.Eap.strings.length) {
+                    methodName = WifiEnterpriseConfig.Eap.strings[eapMethod];
+                } else {
+                    methodName = Integer.toString(eapMethod);
+                }
+                throw new IOException("EAP method id " + methodName + " is not valid for Passpoint");
         }
-        /*
-            TODO: Uncomment this when AKA_PRIME is defined in WifiEnterpriseConfig
-        else if (eapMethod == WifiEnterpriseConfig.Eap.AKA_PRIME) {
-            return new EAPMethod(EAP.EAPMethodID.EAP_AKAPrim, null);
-        }
-        */
-
-        Log.d("PARSE-LOG", "Invalid eap method");
-        return null;
     }
 
     public EAPMethod getEAPMethod() {
@@ -244,6 +236,51 @@ public class Credential {
 
     public byte[] getFingerPrint() {
         return mFingerPrint;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        Credential that = (Credential) o;
+
+        if (mCheckAAACert != that.mCheckAAACert) return false;
+        if (mCtime != that.mCtime) return false;
+        if (mExpTime != that.mExpTime) return false;
+        if (mMachineManaged != that.mMachineManaged) return false;
+        if (mShare != that.mShare) return false;
+        if (mCertType != that.mCertType) return false;
+        if (!mEAPMethod.equals(that.mEAPMethod)) return false;
+        if (!Arrays.equals(mFingerPrint, that.mFingerPrint)) return false;
+        if (mImsi != null ? !mImsi.equals(that.mImsi) : that.mImsi != null) return false;
+        if (mPassword != null ? !mPassword.equals(that.mPassword) : that.mPassword != null)
+            return false;
+        if (!mRealm.equals(that.mRealm)) return false;
+        if (mSTokenApp != null ? !mSTokenApp.equals(that.mSTokenApp) : that.mSTokenApp != null)
+            return false;
+        if (mUserName != null ? !mUserName.equals(that.mUserName) : that.mUserName != null)
+            return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = (int) (mCtime ^ (mCtime >>> 32));
+        result = 31 * result + (int) (mExpTime ^ (mExpTime >>> 32));
+        result = 31 * result + mRealm.hashCode();
+        result = 31 * result + (mCheckAAACert ? 1 : 0);
+        result = 31 * result + (mUserName != null ? mUserName.hashCode() : 0);
+        result = 31 * result + (mPassword != null ? mPassword.hashCode() : 0);
+        result = 31 * result + (mMachineManaged ? 1 : 0);
+        result = 31 * result + (mSTokenApp != null ? mSTokenApp.hashCode() : 0);
+        result = 31 * result + (mShare ? 1 : 0);
+        result = 31 * result + mEAPMethod.hashCode();
+        result = 31 * result + (mCertType != null ? mCertType.hashCode() : 0);
+        result = 31 * result + (mFingerPrint != null ? Arrays.hashCode(mFingerPrint) : 0);
+        result = 31 * result + (mImsi != null ? mImsi.hashCode() : 0);
+        return result;
     }
 
     @Override
