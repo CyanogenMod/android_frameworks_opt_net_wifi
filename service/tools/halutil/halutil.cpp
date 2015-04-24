@@ -269,7 +269,146 @@ static int swctest_rssi_ch_threshold =  1;
 static int htest_low_threshold =  90;
 static int htest_high_threshold =  10;
 
+#define FILE_NAME_LEN 128
+#define FILE_MAX_SIZE (1 * 1024 * 1024)
+#define MAX_RING_NAME_SIZE 32
 
+#define NUM_ALERT_DUMPS 10
+
+/////////////////////////////////////////////////////////////////
+// Logger related.
+
+#define DEFAULT_MEMDUMP_FILE "/data/memdump.bin"
+#define ALERT_MEMDUMP_PREFIX "/data/alertdump"
+#define RINGDATA_PREFIX "/data/ring-"
+
+static char mem_dump_file[FILE_NAME_LEN] = DEFAULT_MEMDUMP_FILE;
+
+struct LoggerParams {
+    u32 verbose_level;
+    u32 flags;
+    u32 max_interval_sec;
+    u32 min_data_size;
+    wifi_ring_buffer_id ring_id;
+    char ring_name[MAX_RING_NAME_SIZE];
+};
+struct LoggerParams default_logger_param = {0,0,0,0,0,0};
+
+char default_ring_name[MAX_RING_NAME_SIZE] = "fw_event";
+
+typedef enum {
+    LOG_INVALID = -1,
+    LOG_START,
+    LOG_GET_MEMDUMP,
+    LOG_GET_FW_VER,
+    LOG_GET_DRV_VER,
+    LOG_GET_RING_STATUS,
+    LOG_GET_RINGDATA,
+    LOG_GET_FEATURE,
+    LOG_GET_RING_DATA,
+    LOG_SET_LOG_HANDLER,
+    LOG_SET_ALERT_HANDLER,
+} LoggerCmd;
+
+LoggerCmd log_cmd = LOG_INVALID;
+wifi_ring_buffer_id ringId = -1;
+
+#define C2S(x)  case x: return #x;
+
+static const char *RBentryTypeToString(int cmd) {
+    switch (cmd) {
+        C2S(ENTRY_TYPE_CONNECT_EVENT)
+        C2S(ENTRY_TYPE_PKT)
+        C2S(ENTRY_TYPE_WAKE_LOCK)
+        C2S(ENTRY_TYPE_POWER_EVENT)
+        C2S(ENTRY_TYPE_DATA)
+        default:
+            return "ENTRY_TYPE_UNKNOWN";
+    }
+}
+
+static const char *RBconnectEventToString(int cmd)
+{
+    switch (cmd) {
+        C2S(WIFI_EVENT_ASSOCIATION_REQUESTED)
+        C2S(WIFI_EVENT_AUTH_COMPLETE)
+        C2S(WIFI_EVENT_ASSOC_COMPLETE)
+        C2S(WIFI_EVENT_FW_AUTH_STARTED)
+        C2S(WIFI_EVENT_FW_ASSOC_STARTED)
+        C2S(WIFI_EVENT_FW_RE_ASSOC_STARTED)
+        C2S(WIFI_EVENT_DRIVER_SCAN_REQUESTED)
+        C2S(WIFI_EVENT_DRIVER_SCAN_RESULT_FOUND)
+        C2S(WIFI_EVENT_DRIVER_SCAN_COMPLETE)
+        C2S(WIFI_EVENT_G_SCAN_STARTED)
+        C2S(WIFI_EVENT_G_SCAN_COMPLETE)
+        C2S(WIFI_EVENT_DISASSOCIATION_REQUESTED)
+        C2S(WIFI_EVENT_RE_ASSOCIATION_REQUESTED)
+        C2S(WIFI_EVENT_ROAM_REQUESTED)
+        C2S(WIFI_EVENT_BEACON_RECEIVED)
+        C2S(WIFI_EVENT_ROAM_SCAN_STARTED)
+        C2S(WIFI_EVENT_ROAM_SCAN_COMPLETE)
+        C2S(WIFI_EVENT_ROAM_SEARCH_STARTED)
+        C2S(WIFI_EVENT_ROAM_SEARCH_STOPPED)
+        C2S(WIFI_EVENT_CHANNEL_SWITCH_ANOUNCEMENT)
+        C2S(WIFI_EVENT_FW_EAPOL_FRAME_TRANSMIT_START)
+        C2S(WIFI_EVENT_FW_EAPOL_FRAME_TRANSMIT_STOP)
+        C2S(WIFI_EVENT_DRIVER_EAPOL_FRAME_TRANSMIT_REQUESTED)
+        C2S(WIFI_EVENT_FW_EAPOL_FRAME_RECEIVED)
+        C2S(WIFI_EVENT_DRIVER_EAPOL_FRAME_RECEIVED)
+        C2S(WIFI_EVENT_BLOCK_ACK_NEGOTIATION_COMPLETE)
+        C2S(WIFI_EVENT_BT_COEX_BT_SCO_START)
+        C2S(WIFI_EVENT_BT_COEX_BT_SCO_STOP)
+        C2S(WIFI_EVENT_BT_COEX_BT_SCAN_START)
+        C2S(WIFI_EVENT_BT_COEX_BT_SCAN_STOP)
+        C2S(WIFI_EVENT_BT_COEX_BT_HID_START)
+        C2S(WIFI_EVENT_BT_COEX_BT_HID_STOP)
+        C2S(WIFI_EVENT_ROAM_AUTH_STARTED)
+        C2S(WIFI_EVENT_ROAM_AUTH_COMPLETE)
+        C2S(WIFI_EVENT_ROAM_ASSOC_STARTED)
+        C2S(WIFI_EVENT_ROAM_ASSOC_COMPLETE)
+        default:
+            return "WIFI_EVENT_UNKNOWN";
+    }
+}
+
+static const char *RBTlvTagToString(int cmd) {
+    switch (cmd) {
+        C2S(WIFI_TAG_VENDOR_SPECIFIC)
+        C2S(WIFI_TAG_BSSID)
+        C2S(WIFI_TAG_ADDR)
+        C2S(WIFI_TAG_SSID)
+        C2S(WIFI_TAG_STATUS)
+        C2S(WIFI_TAG_CHANNEL_SPEC)
+        C2S(WIFI_TAG_WAKE_LOCK_EVENT)
+        C2S(WIFI_TAG_ADDR1)
+        C2S(WIFI_TAG_ADDR2)
+        C2S(WIFI_TAG_ADDR3)
+        C2S(WIFI_TAG_ADDR4)
+        C2S(WIFI_TAG_IE)
+        C2S(WIFI_TAG_INTERFACE)
+        C2S(WIFI_TAG_REASON_CODE)
+        C2S(WIFI_TAG_RATE_MBPS)
+        default:
+            return "WIFI_TAG_UNKNOWN";
+    }
+}
+
+static const char *RBchanWidthToString(int cmd) {
+    switch (cmd) {
+        C2S(WIFI_CHAN_WIDTH_20)
+        C2S(WIFI_CHAN_WIDTH_40)
+        C2S(WIFI_CHAN_WIDTH_80)
+        C2S(WIFI_CHAN_WIDTH_160)
+        C2S(WIFI_CHAN_WIDTH_80P80)
+        C2S(WIFI_CHAN_WIDTH_5)
+        C2S(WIFI_CHAN_WIDTH_10)
+        C2S(WIFI_CHAN_WIDTH_INVALID)
+        default:
+            return "WIFI_CHAN_WIDTH_INVALID";
+    }
+}
+
+/////////////////////////////////////////////////////////////////
 // RTT related to configuration
 #define FILE_NAME_LEN 128
 #define MAX_SSID_LEN (32 + 1)
@@ -522,7 +661,10 @@ typedef enum {
     EVENT_TYPE_RTT_RESULTS = 1003,
     EVENT_TYPE_SCAN_COMPLETE = 1004,
     EVENT_TYPE_HOTLIST_AP_LOST = 1005,
-    EVENT_TYPE_EPNO_SSID = 1006
+    EVENT_TYPE_EPNO_SSID = 1006,
+    EVENT_TYPE_LOGGER_RINGBUFFER_DATA = 1007,
+    EVENT_TYPE_LOGGER_MEMDUMP_DATA = 1008,
+    EVENT_TYPE_LOGGER_ALERT_DATA = 1009,
 } EventType;
 
 typedef struct {
@@ -588,6 +730,7 @@ static int hotlistCmdId;
 static int significantChangeCmdId;
 static int rttCmdId;
 static int epnoCmdId;
+static int loggerCmdId;
 
 static bool startScan( void (*pfnOnResultsAvailable)(wifi_request_id, unsigned),
         int max_ap_per_scan, int base_period, int threshold_percent, int threshold_num_scans) {
@@ -1529,6 +1672,527 @@ void testStopScan() {
     printMsg("stopped scan\n");
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Logger feature set
+
+static void onRingBufferData(char *ring_name, char *buffer, int buffer_size,
+                                wifi_ring_buffer_status *status)
+{
+    // helper for LogHandler
+
+    static int cnt = 1;
+    FILE* w_fp;
+    static int f_count = 0;
+    char ring_file[FILE_NAME_LEN];
+    char *pBuff;
+
+    if (!buffer || buffer_size <= 0) {
+        printMsg("No data in dump buffer\n");
+        return;
+    }
+
+    printMsg("\n%d) RingId=%d, Name=%s, Flags=%u, DebugLevel=%u, "
+            "wBytes=%u, rBytes=%u, RingSize=%u, wRecords=%u\n",
+            cnt++, status->ring_id, status->name, status->flags,
+            status->verbose_level, status->written_bytes,
+            status->read_bytes, status->ring_buffer_byte_size,
+            status->written_records);
+
+    wifi_ring_buffer_entry *buffer_entry = (wifi_ring_buffer_entry *) buffer;
+
+    printMsg("Format: (%d) ", buffer_entry->flags);
+    if (buffer_entry->flags & RING_BUFFER_ENTRY_FLAGS_HAS_BINARY)
+        printMsg("\"BINARY\" ");
+    if (buffer_entry->flags & RING_BUFFER_ENTRY_FLAGS_HAS_TIMESTAMP)
+        printMsg("\"TIMESTAMP\"");
+
+    printMsg(", Type: %s (%d)", RBentryTypeToString(buffer_entry->type), buffer_entry->type);
+    printMsg(", Size: %d bytes\n", buffer_entry->entry_size);
+
+    pBuff = (char *) (buffer_entry + 1);
+    sprintf(ring_file, "%s%s-%d.bin", RINGDATA_PREFIX, ring_name, f_count);
+    w_fp = fopen(ring_file, "a");
+    if (w_fp == NULL) {
+        printMsg("Failed to open a file: %s\n", ring_file);
+        return;
+    }
+
+    fwrite(pBuff, 1, buffer_entry->entry_size, w_fp);
+    if (ftell(w_fp) >= FILE_MAX_SIZE) {
+        f_count++;
+        if (f_count >= NUM_ALERT_DUMPS)
+            f_count = 0;
+    }
+    fclose(w_fp);
+    w_fp = NULL;
+
+    printMsg("Data: ");
+    if (buffer_entry->flags & RING_BUFFER_ENTRY_FLAGS_HAS_BINARY) {
+        for (int i = 0; i < buffer_size; i++)
+            printMsg("%02x ", buffer[i]);
+        printMsg("\n");
+    } else {
+        printMsg("%s\n", pBuff);
+    }
+
+    /*
+     * Parsing TLV data
+     */
+    if (buffer_entry->type != ENTRY_TYPE_CONNECT_EVENT)
+        return;
+    wifi_ring_buffer_driver_connectivity_event *connect_event =
+        (wifi_ring_buffer_driver_connectivity_event *) (pBuff);
+
+    tlv_log *tlv_data = (tlv_log *) (connect_event + 1);
+    printMsg("Event type: %s (%u)\n", RBconnectEventToString(connect_event->event),
+            connect_event->event);
+
+    char *pos = (char *)tlv_data;
+    char *end = (char *)connect_event + buffer_entry->entry_size;
+    while (pos < end) {
+        printMsg("TLV.type: %s (%02x), TLV.len=%d(%02x)\n",
+                RBTlvTagToString(tlv_data->tag),
+                tlv_data->tag, tlv_data->length, tlv_data->length);
+
+        switch (tlv_data->tag) {
+            case WIFI_TAG_VENDOR_SPECIFIC:
+                break;
+
+            case WIFI_TAG_BSSID:
+            case WIFI_TAG_ADDR:
+            case WIFI_TAG_ADDR1:
+            case WIFI_TAG_ADDR2:
+            case WIFI_TAG_ADDR3:
+            case WIFI_TAG_ADDR4:
+            {
+                if (tlv_data->length == sizeof(mac_addr)) {
+                    mac_addr addr;
+                    memcpy(&addr, tlv_data->value, sizeof(mac_addr));
+                    printMsg("Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                        addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+                } else
+                    printMsg("wrong lenght of address\n");
+                break;
+            }
+
+            case WIFI_TAG_SSID:
+            {
+                char ssid[MAX_SSID_LEN];
+                memset(ssid, 0, sizeof(ssid));
+                if (tlv_data->length > MAX_SSID_LEN)
+                    tlv_data->length = MAX_SSID_LEN;
+                memcpy(ssid, tlv_data->value, tlv_data->length);
+                printMsg("SSID = %s\n", ssid);
+                break;
+            }
+
+            case WIFI_TAG_STATUS:
+            {
+                unsigned int status = 0;
+                memcpy(&status, tlv_data->value, tlv_data->length);
+                printMsg("Status = %u\n", status);
+                break;
+            }
+
+            case WIFI_TAG_CHANNEL_SPEC:
+            {
+                wifi_channel_info *ch_spec = (wifi_channel_info *) tlv_data->value;
+                printMsg("Channel Info: center_freq=%d, freq0=%d, freq1=%d, width=%s (%d)\n",
+                    RBchanWidthToString(ch_spec->width), ch_spec->center_freq,
+                    ch_spec->center_freq0, ch_spec->center_freq1);
+                break;
+            }
+
+            case WIFI_TAG_WAKE_LOCK_EVENT:
+            {
+                printMsg("Wake lock event = \"TO BE DONE LATER\"\n", tlv_data->value);
+                break;
+            }
+
+            case WIFI_TAG_TSF:
+            {
+                u64 tsf = 0;
+                memcpy(&tsf, tlv_data->value, tlv_data->length);
+                printMsg("TSF value = %d\n", tsf);
+                break;
+            }
+
+            case WIFI_TAG_IE:
+            {
+                printMsg("Information Element = \"TO BE\"\n");
+                break;
+            }
+
+            case WIFI_TAG_INTERFACE:
+            {
+                const int len = 32;
+                char inf_name[len];
+
+                if (tlv_data->length > len)
+                    tlv_data->length = len;
+                memset(inf_name, 0, 32);
+                memcpy(inf_name, tlv_data->value, tlv_data->length);
+                printMsg("Interface = %s\n", inf_name);
+                break;
+            }
+
+            case WIFI_TAG_REASON_CODE:
+            {
+                u16 reason = 0;
+                memcpy(&reason, tlv_data->value, 2);
+                printMsg("Reason code = %d\n", reason);
+                break;
+            }
+
+            case WIFI_TAG_RATE_MBPS:
+            {
+                u32 rate = 0;
+                memcpy(&rate, tlv_data->value, tlv_data->length);
+                printMsg("Rate = %d Kbps\n", rate);
+                break;
+            }
+        }
+        pos = (char *)(tlv_data + 1);
+        pos += tlv_data->length;
+        tlv_data = (tlv_log *) pos;
+    }
+}
+
+static void onAlert(wifi_request_id id, char *buffer, int buffer_size, int err_code)
+{
+
+    // helper for AlertHandler
+
+    printMsg("Getting FW Memory dump: (%d bytes), err code: %d\n", buffer_size, err_code);
+
+    FILE* w_fp = NULL;
+    static int f_count = 0;
+    char dump_file[FILE_NAME_LEN];
+
+    if (!buffer || buffer_size <= 0) {
+        printMsg("No data in alert buffer\n");
+        return;
+    }
+
+    sprintf(dump_file, "%s-%d.bin", ALERT_MEMDUMP_PREFIX, f_count++);
+    if (f_count >= NUM_ALERT_DUMPS)
+        f_count = 0;
+
+    w_fp = fopen(dump_file, "w");
+    if (w_fp == NULL) {
+        printMsg("Failed to create a file: %s\n", dump_file);
+        return;
+    }
+
+    printMsg("Write to \"%s\"\n", dump_file);
+    fwrite(buffer, 1, buffer_size, w_fp);
+    fclose(w_fp);
+    w_fp = NULL;
+
+#if 0
+    for (int i = 0; i < buffer_size; i++)
+        printMsg("%02x ", buffer[i]);
+    printMsg("\n");
+#endif
+}
+
+static void onFirmwareMemoryDump(char *buffer, int buffer_size)
+{
+    // helper for LoggerGetMemdump()
+
+    printMsg("Getting FW Memory dump: (%d bytes)\n", buffer_size);
+
+    // Write a raw dump data into default local file or specified name
+    FILE* w_fp = NULL;
+
+    if (!buffer || buffer_size <= 0) {
+        printMsg("No data in dump buffer\n");
+        return;
+    }
+
+    w_fp = fopen(mem_dump_file, "w");
+    if (w_fp == NULL) {
+        printMsg("Failed to create a file: %s\n", mem_dump_file);
+        return;
+    }
+
+    printMsg("Write to \"%s\"\n", mem_dump_file);
+    fwrite(buffer, 1, buffer_size, w_fp);
+    fclose(w_fp);
+	w_fp = NULL;
+
+    putEventInCache(EVENT_TYPE_LOGGER_MEMDUMP_DATA, "Memdump data");
+}
+
+static wifi_error LoggerStart()
+{
+    int ret;
+
+    ret = wifi_start_logging(wlan0Handle,
+        default_logger_param.verbose_level, default_logger_param.flags,
+        default_logger_param.max_interval_sec, default_logger_param.min_data_size,
+        default_logger_param.ring_name);
+
+    if (ret != WIFI_SUCCESS) {
+        printMsg("Failed to start Logger: %d\n", ret);
+        return WIFI_ERROR_UNKNOWN;
+    }
+
+    /*
+     * debug mode (0) which means no more debug events will be triggered.
+     *
+     * Hopefully, need to extend this functionality by additional interfaces such as
+     * set verbose level to each ring buffer.
+     */
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerGetMemdump()
+{
+    wifi_firmware_memory_dump_handler handler;
+    handler.on_firmware_memory_dump = &onFirmwareMemoryDump;
+
+    printMsg("Create Memdump event\n");
+    int result = wifi_get_firmware_memory_dump(wlan0Handle, handler);
+
+    if (result == WIFI_SUCCESS) {
+        EventInfo info;
+        while (true) {
+            memset(&info, 0, sizeof(info));
+            getEventFromCache(info);
+            if (info.type == EVENT_TYPE_LOGGER_MEMDUMP_DATA)
+                break;
+            else
+                printMsg("Could not get memdump data: %d\n", result);
+        }
+    }
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerGetRingData()
+{
+    int result = wifi_get_ring_data(wlan0Handle, default_ring_name);
+
+    if (result == WIFI_SUCCESS)
+        printMsg("Get Ring data command success\n");
+    else
+        printMsg("Failed to execute get ring data command\n");
+
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerGetFW()
+{
+    int ret;
+    int buffer_size = 256;
+
+    char *buffer = (char *)malloc(buffer_size);
+    if (buffer == NULL)
+        return WIFI_ERROR_OUT_OF_MEMORY;
+    memset(buffer, 0, buffer_size);
+
+    ret = wifi_get_firmware_version(wlan0Handle, &buffer, &buffer_size);
+
+    if (ret == WIFI_SUCCESS)
+        printMsg("FW version (len=%d):\n%s\n", buffer_size, buffer);
+    else
+        printMsg("Failed to get FW version\n");
+
+    free(buffer);
+    buffer = NULL;
+
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerGetDriver()
+{
+    // halutil -logger -get driver
+
+    int ret;
+    int buffer_size = 256;
+
+    char *buffer = (char *)malloc(buffer_size);
+    if (buffer == NULL)
+        return WIFI_ERROR_OUT_OF_MEMORY;
+    memset(buffer, 0, buffer_size);
+
+    ret = wifi_get_driver_version(wlan0Handle, &buffer, &buffer_size);
+
+    if (ret == WIFI_SUCCESS)
+        printMsg("Driver version (len=%d):\n%s\n", buffer_size, buffer);
+    else
+        printMsg("Failed to get driver version\n");
+
+    free(buffer);
+    buffer = NULL;
+
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerGetRingbufferStatus()
+{
+    int ret;
+    u32 num_rings = 10;
+
+    wifi_ring_buffer_status *status =
+        (wifi_ring_buffer_status *)malloc(sizeof(wifi_ring_buffer_status) * num_rings);
+
+    if (status == NULL)
+        return WIFI_ERROR_OUT_OF_MEMORY;
+    memset(status, 0, sizeof(wifi_ring_buffer_status));
+
+    ret = wifi_get_ring_buffers_status(wlan0Handle, &num_rings, &status);
+
+    if (ret == WIFI_SUCCESS) {
+        printMsg("RingBuffer status: [%d ring(s)]\n", num_rings);
+
+        for (unsigned int i=0; i < num_rings; i++) {
+            printMsg("[%d] RingId=%d, Name=%s, Flags=%u, DebugLevel=%u, "
+                    "wBytes=%u, rBytes=%u, RingSize=%u, wRecords=%u, status_addr=%p\n",
+                    i+1,
+                    status->ring_id,
+                    status->name,
+                    status->flags,
+                    status->verbose_level,
+                    status->written_bytes,
+                    status->read_bytes,
+                    status->ring_buffer_byte_size,
+                    status->written_records, status);
+            status++;
+        }
+    } else {
+        printMsg("Failed to get Ringbuffer status\n");
+    }
+
+    free(status);
+    status = NULL;
+
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerGetFeature()
+{
+    int ret;
+    unsigned int support = 0;
+
+    const char *mapFeatures[] = {
+        "MEMORY_DUMP",
+        "PER_PACKET_TX_RX_STATUS",
+        "CONNECT_EVENT",
+        "POWER_EVENT",
+        "WAKE_LOCK",
+        "VERBOSE",
+        "WATCHDOG_TIMER"
+    };
+
+    ret = wifi_get_logger_supported_feature_set(wlan0Handle, &support);
+
+    if (ret == WIFI_SUCCESS) {
+        printMsg("Logger supported features: %02x  [", support);
+
+        if (support & WIFI_LOGGER_MEMORY_DUMP_SUPPORTED)
+            printMsg(" \"%s\" ", mapFeatures[0]);
+        if (support & WIFI_LOGGER_PER_PACKET_TX_RX_STATUS_SUPPORTED)
+            printMsg(" \"%s\" ", mapFeatures[1]);
+        if (support & WIFI_LOGGER_CONNECT_EVENT_SUPPORTED)
+            printMsg(" \"%s\" ", mapFeatures[2]);
+        if (support & WIFI_LOGGER_POWER_EVENT_SUPPORTED)
+            printMsg(" \"%s\" ", mapFeatures[3]);
+        if (support & WIFI_LOGGER_WAKE_LOCK_SUPPORTED)
+            printMsg(" \"%s\" ", mapFeatures[4]);
+        if (support & WIFI_LOGGER_VERBOSE_SUPPORTED)
+            printMsg(" \"%s\" ", mapFeatures[5]);
+        if (support & WIFI_LOGGER_WATCHDOG_TIMER_SUPPORTED)
+            printMsg(" \"%s\" ", mapFeatures[6]);
+        printMsg("]\n");
+    } else {
+        printMsg("Failed to get Logger supported features\n");
+    }
+
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerSetLogHandler()
+{
+    wifi_ring_buffer_data_handler handler;
+    handler.on_ring_buffer_data = &onRingBufferData;
+
+    printMsg("Setting log handler\n");
+    int result = wifi_set_log_handler(loggerCmdId, wlan0Handle, handler);
+
+    if (result == WIFI_SUCCESS) {
+        EventInfo info;
+        while (true) {
+            memset(&info, 0, sizeof(info));
+            getEventFromCache(info);
+            if (info.type == EVENT_TYPE_LOGGER_RINGBUFFER_DATA)
+                break;
+        }
+    } else {
+        printMsg("Failed set Log handler: %d\n", result);
+    }
+    return WIFI_SUCCESS;
+}
+
+static wifi_error LoggerSetAlertHandler()
+{
+    loggerCmdId = getNewCmdId();
+    wifi_alert_handler handler;
+    handler.on_alert = &onAlert;
+
+    printMsg("Create alert handler\n");
+    int result = wifi_set_alert_handler(loggerCmdId, wlan0Handle, handler);
+
+    if (result == WIFI_SUCCESS) {
+        EventInfo info;
+        while (true) {
+            memset(&info, 0, sizeof(info));
+            getEventFromCache(info);
+            if (info.type == EVENT_TYPE_LOGGER_ALERT_DATA)
+                break;
+        }
+    } else {
+        printMsg("Failed set Alert handler: %d\n", result);
+    }
+    return WIFI_SUCCESS;
+}
+
+static void runLogger()
+{
+    switch (log_cmd) {
+        case LOG_GET_FW_VER:
+            LoggerGetFW();
+            break;
+        case LOG_GET_DRV_VER:
+            LoggerGetDriver();
+            break;
+        case LOG_GET_RING_STATUS:
+            LoggerGetRingbufferStatus();
+            break;
+        case LOG_GET_FEATURE:
+            LoggerGetFeature();
+            break;
+        case LOG_GET_MEMDUMP:
+            LoggerGetMemdump();
+            break;
+        case LOG_GET_RING_DATA:
+            LoggerGetRingData();
+            break;
+        case LOG_START:
+            LoggerStart();
+            break;
+        case LOG_SET_LOG_HANDLER:
+            LoggerSetLogHandler();
+            break;
+        case LOG_SET_ALERT_HANDLER:
+            LoggerSetAlertHandler();
+            break;
+        default:
+            break;
+    }
+}
+
 byte parseHexChar(char ch) {
     if (isdigit(ch))
         return ch - '0';
@@ -1563,7 +2227,7 @@ void parseMacOUI(char *str, unsigned char *addr) {
             addr[1], addr[2]);
 }
 
-void readTestOptions(int argc, char *argv[]){
+void readTestOptions(int argc, char *argv[]) {
 
     printf("Total number of argc #%d\n", argc);
     for (int j = 1; j < argc-1; j++) {
@@ -1763,6 +2427,75 @@ void readRTTOptions(int argc, char *argv[]) {
                 strcpy(rtt_aplist, argv[j]);
             rtt_to_file = 1;
         }
+    }
+}
+
+void readLoggerOptions(int argc, char *argv[])
+{
+    void printUsage();          // declaration for below printUsage()
+    int j = 1;
+
+    if (argc < 3) {
+        printUsage();
+        return;
+    }
+
+    if ((strcmp(argv[j], "-start") == 0) && (argc == 13)) {
+        log_cmd = LOG_START;
+        memset(&default_logger_param, 0, sizeof(default_logger_param));
+
+        j++;
+        if ((strcmp(argv[j], "-d") == 0) && isdigit(argv[j+1][0]))
+            default_logger_param.verbose_level = (unsigned int)atoi(argv[++j]);
+        if ((strcmp(argv[++j], "-f") == 0) && isdigit(argv[j+1][0]))
+            default_logger_param.flags = atoi(argv[++j]);
+        if ((strcmp(argv[++j], "-i") == 0) && isdigit(argv[j+1][0]))
+            default_logger_param.max_interval_sec = atoi(argv[++j]);
+        if ((strcmp(argv[++j], "-s") == 0) && isdigit(argv[j+1][0]))
+            default_logger_param.min_data_size = atoi(argv[++j]);
+        if ((strcmp(argv[++j], "-n") == 0))
+            memcpy(default_logger_param.ring_name, argv[j+1], strlen(argv[j+1]));
+        return;
+    } else if ((strcmp(argv[j], "-get") == 0) && (argc > 3)) {
+        if ((strcmp(argv[j+1], "fw") == 0)) {
+            log_cmd = LOG_GET_FW_VER;
+        } else if ((strcmp(argv[j+1], "driver") == 0)) {
+            log_cmd = LOG_GET_DRV_VER;
+        } else if ((strcmp(argv[j+1], "memdump") == 0)) {
+            log_cmd = LOG_GET_MEMDUMP;
+            j++;
+            if ((j+1 < argc-1) && (strcmp(argv[j+1], "-o") == 0)) {
+                // If this option is specified but there is no file name,
+                // use a default file from DEFAULT_MEMDUMP_FILE.
+                j++;
+                if (j+1 < argc-1)
+                    strcpy(mem_dump_file, argv[j+1]);
+            }
+        } else if ((strcmp(argv[j+1], "ringstatus") == 0)) {
+            log_cmd = LOG_GET_RING_STATUS;
+        } else if ((strcmp(argv[j+1], "feature") == 0)) {
+            log_cmd = LOG_GET_FEATURE;
+        } else if ((strcmp(argv[j+1], "ringdata") == 0)) {
+            log_cmd = LOG_GET_RING_DATA;
+            j+=2;
+            if ((strcmp(argv[j], "-n") == 0))
+                memcpy(default_ring_name, argv[j+1], strlen(argv[j+1]));
+        } else {
+            printf("\nUse correct logger option:\n");
+            printUsage();
+        }
+        return;
+    } else if ((strcmp(argv[j], "-set") == 0) && (argc > 3)) {
+        if ((strcmp(argv[j+1], "loghandler") == 0)) {
+            log_cmd = LOG_SET_LOG_HANDLER;
+        } else if ((strcmp(argv[j+1], "alerthandler") == 0)) {
+            log_cmd = LOG_SET_ALERT_HANDLER;
+        }
+    } else {
+        printf("\nUse correct logger option:\n");
+        printUsage();
+
+        return;
     }
 }
 
@@ -2113,6 +2846,11 @@ void printUsage() {
     printf(" -blacklist_bssids blacklist bssids\n");
     printf(" -pref_bssid preference BSSID/RSSI pairs\n");
     printf(" -whitelist_ssids whitelist SSIDs\n");
+    printf(" -logger [-start] [-d <debug_level> -f <flags> -i <max_interval_sec>\n"
+           "                   -s <min_data_size> -n <ring_name>]\n"
+           "         [-get]   [fw] [driver] [feature] [memdump -o <filename>]\n"
+           "                  [ringstatus] [ringdata -n <ring_name>]\n"
+           "         [-set]   [loghandler] [alerthandler]\n");
 }
 
 static bool isLazyRoamParam(char *arg)
@@ -2221,12 +2959,18 @@ int main(int argc, char *argv[]) {
         printf("Fix Setting wifi_set_country_code\n");
         printf("***************************************\n");
         hal_fn.wifi_set_country_code(wlan0Handle, country_code);
+    } else if ((strcmp(argv[1], "-logger") == 0)) {
+        readLoggerOptions(argc, ++argv);
+        runLogger();
     } else if (strcmp(argv[1], "-help") == 0) {
         printUsage();
     } else if (isLazyRoamParam(argv[1])) {
         readTestOptions(argc, argv);
         testLazyRoam();
+    } else {
+        printUsage();
     }
+
 cleanup:
     cleanup();
     return 0;
