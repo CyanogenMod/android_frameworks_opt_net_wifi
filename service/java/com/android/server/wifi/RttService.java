@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Queue;
+import android.Manifest;
 
 class RttService extends SystemService {
 
@@ -283,20 +284,32 @@ class RttService extends SystemService {
                             transitionTo(mRequestPendingState);
                             break;
                         case RttManager.CMD_OP_START_RANGING: {
-                                RttManager.ParcelableRttParams params =
-                                        (RttManager.ParcelableRttParams)msg.obj;
-                                if (params == null) {
-                                    replyFailed(msg,
-                                            RttManager.REASON_INVALID_REQUEST, "No params");
-                                } else if (ci.addRttRequest(msg.arg2, params) == false) {
-                                    replyFailed(msg,
-                                            RttManager.REASON_INVALID_REQUEST, "Unspecified");
-                                } else {
-                                    sendMessage(CMD_ISSUE_NEXT_REQUEST);
-                                }
+                            //check permission
+                            if(DBG) Log.d(TAG, "UID is: " + msg.sendingUid);
+                            if (!enforcePermissionCheck(msg)) {
+                                Log.e(TAG, "UID: " + msg.sendingUid + " has no" +
+                                        " LOCATION_HARDWARE Permission");
+                                break;
                             }
+
+                            RttManager.ParcelableRttParams params =
+                                    (RttManager.ParcelableRttParams)msg.obj;
+                            if (params == null) {
+                                replyFailed(msg,
+                                        RttManager.REASON_INVALID_REQUEST, "No params");
+                            } else if (ci.addRttRequest(msg.arg2, params) == false) {
+                                replyFailed(msg,
+                                        RttManager.REASON_INVALID_REQUEST, "Unspecified");
+                            } else {
+                                sendMessage(CMD_ISSUE_NEXT_REQUEST);
+                            }
+                        }
                             break;
                         case RttManager.CMD_OP_STOP_RANGING:
+                            if(!enforcePermissionCheck(msg)) {
+                                break;
+                            }
+
                             for (Iterator<RttRequest> it = mRequestQueue.iterator();
                                     it.hasNext(); ) {
                                 RttRequest request = it.next();
@@ -337,9 +350,11 @@ class RttService extends SystemService {
                                     transitionTo(mEnabledState);
                                 }
                                 if(mOutstandingRequest != null) {
-                                    if (DBG) Log.d(TAG, "new mOutstandingRequest.key is: " + mOutstandingRequest.key);
+                                    if (DBG) Log.d(TAG, "new mOutstandingRequest.key is: " +
+                                            mOutstandingRequest.key);
                                 } else {
-                                    if (DBG) Log.d(TAG, "CMD_ISSUE_NEXT_REQUEST: mOutstandingRequest =null ");
+                                    if (DBG) Log.d(TAG,
+                                            "CMD_ISSUE_NEXT_REQUEST: mOutstandingRequest =null ");
                                 }
                             } else {
                                 /* just wait; we'll issue next request after
@@ -357,6 +372,12 @@ class RttService extends SystemService {
                             sendMessage(CMD_ISSUE_NEXT_REQUEST);
                             break;
                         case RttManager.CMD_OP_STOP_RANGING:
+                            if(!enforcePermissionCheck(msg)) {
+                                Log.e(TAG, "UID: " + msg.sendingUid + " has no " +
+                                        "LOCATION_HARDWARE Permission");
+                                break;
+                            }
+
                             if (mOutstandingRequest != null
                                     && msg.arg2 == mOutstandingRequest.key) {
                                 if (DBG) Log.d(TAG, "Cancelling ongoing RTT of: " + msg.arg2);
@@ -408,6 +429,17 @@ class RttService extends SystemService {
             } catch (RemoteException e) {
                 // There's not much we can do if reply can't be sent!
             }
+        }
+
+        boolean enforcePermissionCheck(Message msg) {
+            try {
+                mContext.enforcePermission(Manifest.permission.LOCATION_HARDWARE,
+                         -1, msg.sendingUid, "LocationRTT");
+            } catch (SecurityException e) {
+                replyFailed(msg,RttManager.REASON_PERMISSION_DENIED, "No params");
+                return false;
+            }
+            return true;
         }
 
         private WifiNative.RttEventHandler mEventHandler = new WifiNative.RttEventHandler() {
