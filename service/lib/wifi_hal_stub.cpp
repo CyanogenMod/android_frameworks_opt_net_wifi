@@ -185,3 +185,42 @@ wifi_error wifi_get_tdls_capabilities_stub(wifi_interface_handle iface,
         wifi_tdls_capabilities *capabilities) {
     return WIFI_ERROR_NOT_SUPPORTED;
 }
+
+wifi_error wifi_get_firmware_memory_dump_stub( wifi_interface_handle iface,
+        wifi_firmware_memory_dump_handler handler){
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_set_log_handler_stub(wifi_request_id id, wifi_interface_handle iface,
+        wifi_ring_buffer_data_handler handler) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_set_alert_handler_stub(wifi_request_id id, wifi_interface_handle iface,
+        wifi_alert_handler handler) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_get_firmware_version_stub( wifi_interface_handle iface, char **buffer,
+        int *buffer_size) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_get_ring_buffers_status_stub(wifi_interface_handle iface,
+        u32 *num_rings, wifi_ring_buffer_status **status) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_get_logger_supported_feature_set_stub(wifi_interface_handle iface,
+        unsigned int *support) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_get_ring_data_stub(wifi_interface_handle iface, char *ring_name) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_get_driver_version_stub(wifi_interface_handle iface, char **buffer,
+        int *buffer_size) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
