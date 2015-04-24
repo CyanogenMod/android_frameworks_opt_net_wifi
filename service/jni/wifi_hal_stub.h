@@ -72,6 +72,21 @@ wifi_error wifi_get_link_stats_stub(wifi_request_id id,
  wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_networks,
          wifi_epno_network *networks, wifi_epno_handler handler);
  wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
+wifi_error wifi_get_firmware_memory_dump_stub( wifi_interface_handle iface,
+        wifi_firmware_memory_dump_handler handler);
+wifi_error wifi_set_log_handler_stub(wifi_request_id id, wifi_interface_handle iface,
+        wifi_ring_buffer_data_handler handler);
+wifi_error wifi_set_alert_handler_stub(wifi_request_id id, wifi_interface_handle iface,
+        wifi_alert_handler handler);
+wifi_error wifi_get_firmware_version_stub( wifi_interface_handle iface, char **buffer,
+        int *buffer_size);
+wifi_error wifi_get_ring_buffers_status_stub(wifi_interface_handle iface,
+        u32 *num_rings, wifi_ring_buffer_status **status);
+wifi_error wifi_get_logger_supported_feature_set_stub(wifi_interface_handle iface,
+        unsigned int *support);
+wifi_error wifi_get_ring_data_stub(wifi_interface_handle iface, char *ring_name);
+wifi_error wifi_get_driver_version_stub(wifi_interface_handle iface, char **buffer,
+        int *buffer_size);
 #ifdef __cplusplus
 }
 #endif
