@@ -542,14 +542,14 @@ static int compare_scan_result_timestamp(const void *v1, const void *v2) {
 
 static jobject android_net_wifi_getScanResults(
         JNIEnv *env, jclass cls, jint iface, jboolean flush)  {
-    
+
     wifi_cached_scan_results scan_data[64];
     int num_scan_data = 64;
-    
+
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     // ALOGD("getting scan results on interface[%d] = %p", iface, handle);
 
-    byte b = flush ? 0 : 0xFF;
+    byte b = flush ? 0xFF : 0;
     int result = hal_fn.wifi_get_cached_gscan_results(handle, b, num_scan_data, scan_data, &num_scan_data);
     if (result == WIFI_SUCCESS) {
         jobjectArray scanData = createObjectArray(env,
