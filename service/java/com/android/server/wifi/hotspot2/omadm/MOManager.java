@@ -154,7 +154,7 @@ public class MOManager {
                     if (mSPs.put(sp.getFQDN(), sp) != null) {
                         throw new OMAException("Multiple SPs for FQDN '" + sp.getFQDN() + "'");
                     } else {
-                        Log.d(Utils.HS20_TAG, "retrieved " + sp.getFQDN() + " from PPS");
+                        Log.d(Utils.hs2LogTag(getClass()), "retrieved " + sp.getFQDN() + " from PPS");
                     }
                 }
                 return sps;
@@ -221,15 +221,16 @@ public class MOManager {
             else {
                 resultSet.add(existing);
             }
+            Log.d("HSXX", "From wpa: " + newSP.getCredential().hasDisregardPassword());
         }
 
         if (!obsolete.isEmpty() || additions > 0) {
-            Log.d(Utils.HS20_TAG, String.format("MO change: %s -> %s: %s",
+            Log.d(Utils.hs2LogTag(getClass()), String.format("MO change: %s -> %s: %s",
                     fqdnList(mSPs.values()), fqdnList(homeSPs), fqdnList(resultSet)));
             rewriteMO(resultSet, mSPs, mPpsFile);
         }
         else {
-            Log.d(Utils.HS20_TAG, "Not persisting MO");
+            Log.d(Utils.hs2LogTag(getClass()), "Not persisting MO");
         }
     }
 
@@ -240,31 +241,32 @@ public class MOManager {
 
         Map<String, HomeSP> spClone = new HashMap<>(mSPs);
         for (HomeSP homeSP : homeSPs) {
-            Log.d(Utils.HS20_TAG, "Passed HomeSP: " + homeSP);
+            Log.d(Utils.hs2LogTag(getClass()), "Passed HomeSP: " + homeSP);
             HomeSP existing = spClone.remove(homeSP.getFQDN());
             if (existing == null) {
                 dirty = true;
                 newSet.add(homeSP);
-                Log.d(Utils.HS20_TAG, "New HomeSP");
+                Log.d(Utils.hs2LogTag(getClass()), "New HomeSP");
             }
             else if (!homeSP.deepEquals(existing)) {
                 dirty = true;
                 newSet.add(homeSP.getClone(existing.getCredential().getPassword()));
-                Log.d(Utils.HS20_TAG, "Non-equal HomeSP: " + existing);
+                Log.d(Utils.hs2LogTag(getClass()), "Non-equal HomeSP: " + existing);
             }
             else {
                 newSet.add(existing);
-                Log.d(Utils.HS20_TAG, "Keeping HomeSP: " + existing);
+                Log.d(Utils.hs2LogTag(getClass()), "Keeping HomeSP: " + existing);
             }
         }
 
-        Log.d(Utils.HS20_TAG, String.format("Saving all SPs (%s): current %s (%d), new %s (%d)",
+        Log.d(Utils.hs2LogTag(getClass()),
+                String.format("Saving all SPs (%s): current %s (%d), new %s (%d)",
                 dirty ? "dirty" : "clean",
                 fqdnList(mSPs.values()), mSPs.size(),
                 fqdnList(newSet), newSet.size()));
 
         if (!dirty && spClone.isEmpty()) {
-            Log.d(Utils.HS20_TAG, "Not persisting");
+            Log.d(Utils.hs2LogTag(getClass()), "Not persisting");
             return;
         }
 

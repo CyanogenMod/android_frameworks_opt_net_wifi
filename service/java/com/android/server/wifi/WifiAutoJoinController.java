@@ -1345,12 +1345,10 @@ public class WifiAutoJoinController {
                             break;
                         }
                     } catch (NumberFormatException nfe) {
-                        Log.d("HS2J", "NFE on '" + line + "'");
                         return WifiConfiguration.INVALID_NETWORK_ID;
                     }
                 } else if (name.equals("wpa_state")) {
                     state = line.substring(split + 1);
-                    Log.d("HS2J", "State: '" + line + "'");
                     if (ASSOC_STATES.contains(state)) {
                         return WifiConfiguration.INVALID_NETWORK_ID;
                     } else if (id >= 0) {

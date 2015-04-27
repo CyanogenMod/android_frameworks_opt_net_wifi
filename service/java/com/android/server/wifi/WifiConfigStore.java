@@ -21,10 +21,8 @@ import android.content.Intent;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
-import android.net.LinkAddress;
 import android.net.NetworkInfo.DetailedState;
 import android.net.ProxyInfo;
-import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
@@ -83,14 +81,10 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.math.BigInteger;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
-import java.text.SimpleDateFormat;
-import java.text.DateFormat;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -641,7 +635,7 @@ public class WifiConfigStore extends IpConfigStore {
         for (int subId : sub.getActiveSubscriptionIdList()) {
             mImsis.add(tm.getSubscriberId(subId));
         }
-        Log.d("HS2J", "Active IMSIs " + mImsis);
+        Log.d(TAG, "Active IMSIs " + mImsis);
     }
 
     public void clearANQPCache() {
@@ -3282,7 +3276,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail,
                 networkDetail.getANQPElements() == null);
-        Log.d("HS2J", scanDetail.getSSID() + " pass 1 matches: " + toMatchString(matches));
+        Log.d(Utils.hs2LogTag(getClass()), scanDetail.getSSID() + " pass 1 matches: " + toMatchString(matches));
         return matches;
     }
 
@@ -3297,7 +3291,7 @@ public class WifiConfigStore extends IpConfigStore {
         boolean queried = !query;
         Collection<HomeSP> homeSPs = getHomeSPs();
         Map<HomeSP, PasspointMatch> matches = new HashMap<>(homeSPs.size());
-        Log.d("HS2J", "match nwk " + scanDetail.getSSID() +
+        Log.d(Utils.hs2LogTag(getClass()), "match nwk " + scanDetail.getSSID() +
                 ", anqp " + ( anqpData != null ? "present" : "missing" ) +
                 ", query " + query + ", home sps: " + homeSPs.size());
         for (HomeSP homeSP : homeSPs) {
@@ -3327,7 +3321,7 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, false);
-        Log.d("HS2J", scanDetail.getSSID() + " pass 2 matches: " + toMatchString(matches));
+        Log.d(Utils.hs2LogTag(getClass()), scanDetail.getSSID() + " pass 2 matches: " + toMatchString(matches));
 
         cacheScanResultForPasspointConfigs(scanDetail, matches);
     }
@@ -3371,7 +3365,8 @@ public class WifiConfigStore extends IpConfigStore {
                 if (config != null) {
                     cacheScanResultForConfig(config, scanDetail, entry.getValue());
                 } else {
-		    Log.w("HS2J", "Failed to find config for '" + entry.getKey().getFQDN() + "'");
+		            Log.w(Utils.hs2LogTag(getClass()), "Failed to find config for '" +
+                            entry.getKey().getFQDN() + "'");
                     /* perhaps the configuration was deleted?? */
                 }
             }

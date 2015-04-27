@@ -13,7 +13,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -310,7 +309,7 @@ public class NetworkDetail {
             }
         }
         catch (IllegalArgumentException | BufferUnderflowException e) {
-            Log.d("HS2J", "Caught " + e);
+            Log.d(Utils.hs2LogTag(getClass()), "Caught " + e);
             if (ssidOctets == null) {
                 throw new IllegalArgumentException("Malformed IE string (no SSID)", e);
             }
