@@ -52,7 +52,18 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_start_logging = wifi_start_logging_stub;
     hal_fn->wifi_set_epno_list = wifi_set_epno_list_stub;
     hal_fn->wifi_set_country_code = wifi_set_country_code_stub;
-
+    hal_fn->wifi_enable_tdls = wifi_enable_tdls_stub;
+    hal_fn->wifi_disable_tdls = wifi_disable_tdls_stub;
+    hal_fn->wifi_get_tdls_status = wifi_get_tdls_status_stub;
+    hal_fn->wifi_get_tdls_capabilities = wifi_get_tdls_capabilities_stub;
+    hal_fn->wifi_get_firmware_memory_dump = wifi_get_firmware_memory_dump_stub;
+    hal_fn->wifi_set_log_handler = wifi_set_log_handler_stub;
+    hal_fn->wifi_set_alert_handler = wifi_set_alert_handler_stub;
+    hal_fn->wifi_get_firmware_version = wifi_get_firmware_version_stub;
+    hal_fn->wifi_get_ring_buffers_status = wifi_get_ring_buffers_status_stub;
+    hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
+    hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
+    hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
     return 0;
 }
 
@@ -1924,7 +1935,7 @@ static wifi_error LoggerStart()
 {
     int ret;
 
-    ret = wifi_start_logging(wlan0Handle,
+    ret = hal_fn.wifi_start_logging(wlan0Handle,
         default_logger_param.verbose_level, default_logger_param.flags,
         default_logger_param.max_interval_sec, default_logger_param.min_data_size,
         default_logger_param.ring_name);
@@ -1949,7 +1960,7 @@ static wifi_error LoggerGetMemdump()
     handler.on_firmware_memory_dump = &onFirmwareMemoryDump;
 
     printMsg("Create Memdump event\n");
-    int result = wifi_get_firmware_memory_dump(wlan0Handle, handler);
+    int result = hal_fn.wifi_get_firmware_memory_dump(wlan0Handle, handler);
 
     if (result == WIFI_SUCCESS) {
         EventInfo info;
@@ -1967,7 +1978,7 @@ static wifi_error LoggerGetMemdump()
 
 static wifi_error LoggerGetRingData()
 {
-    int result = wifi_get_ring_data(wlan0Handle, default_ring_name);
+    int result = hal_fn.wifi_get_ring_data(wlan0Handle, default_ring_name);
 
     if (result == WIFI_SUCCESS)
         printMsg("Get Ring data command success\n");
@@ -1987,7 +1998,7 @@ static wifi_error LoggerGetFW()
         return WIFI_ERROR_OUT_OF_MEMORY;
     memset(buffer, 0, buffer_size);
 
-    ret = wifi_get_firmware_version(wlan0Handle, &buffer, &buffer_size);
+    ret = hal_fn.wifi_get_firmware_version(wlan0Handle, &buffer, &buffer_size);
 
     if (ret == WIFI_SUCCESS)
         printMsg("FW version (len=%d):\n%s\n", buffer_size, buffer);
@@ -2012,7 +2023,7 @@ static wifi_error LoggerGetDriver()
         return WIFI_ERROR_OUT_OF_MEMORY;
     memset(buffer, 0, buffer_size);
 
-    ret = wifi_get_driver_version(wlan0Handle, &buffer, &buffer_size);
+    ret = hal_fn.wifi_get_driver_version(wlan0Handle, &buffer, &buffer_size);
 
     if (ret == WIFI_SUCCESS)
         printMsg("Driver version (len=%d):\n%s\n", buffer_size, buffer);
@@ -2037,7 +2048,7 @@ static wifi_error LoggerGetRingbufferStatus()
         return WIFI_ERROR_OUT_OF_MEMORY;
     memset(status, 0, sizeof(wifi_ring_buffer_status));
 
-    ret = wifi_get_ring_buffers_status(wlan0Handle, &num_rings, &status);
+    ret = hal_fn.wifi_get_ring_buffers_status(wlan0Handle, &num_rings, &status);
 
     if (ret == WIFI_SUCCESS) {
         printMsg("RingBuffer status: [%d ring(s)]\n", num_rings);
@@ -2081,7 +2092,7 @@ static wifi_error LoggerGetFeature()
         "WATCHDOG_TIMER"
     };
 
-    ret = wifi_get_logger_supported_feature_set(wlan0Handle, &support);
+    ret = hal_fn.wifi_get_logger_supported_feature_set(wlan0Handle, &support);
 
     if (ret == WIFI_SUCCESS) {
         printMsg("Logger supported features: %02x  [", support);
@@ -2114,7 +2125,7 @@ static wifi_error LoggerSetLogHandler()
     handler.on_ring_buffer_data = &onRingBufferData;
 
     printMsg("Setting log handler\n");
-    int result = wifi_set_log_handler(loggerCmdId, wlan0Handle, handler);
+    int result = hal_fn.wifi_set_log_handler(loggerCmdId, wlan0Handle, handler);
 
     if (result == WIFI_SUCCESS) {
         EventInfo info;
@@ -2137,7 +2148,7 @@ static wifi_error LoggerSetAlertHandler()
     handler.on_alert = &onAlert;
 
     printMsg("Create alert handler\n");
-    int result = wifi_set_alert_handler(loggerCmdId, wlan0Handle, handler);
+    int result = hal_fn.wifi_set_alert_handler(loggerCmdId, wlan0Handle, handler);
 
     if (result == WIFI_SUCCESS) {
         EventInfo info;

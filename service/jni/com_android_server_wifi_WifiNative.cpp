@@ -80,6 +80,14 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_disable_tdls = wifi_disable_tdls_stub;
     hal_fn->wifi_get_tdls_status = wifi_get_tdls_status_stub;
     hal_fn->wifi_get_tdls_capabilities = wifi_get_tdls_capabilities_stub;
+    hal_fn->wifi_get_firmware_memory_dump = wifi_get_firmware_memory_dump_stub;
+    hal_fn->wifi_set_log_handler = wifi_set_log_handler_stub;
+    hal_fn->wifi_set_alert_handler = wifi_set_alert_handler_stub;
+    hal_fn->wifi_get_firmware_version = wifi_get_firmware_version_stub;
+    hal_fn->wifi_get_ring_buffers_status = wifi_get_ring_buffers_status_stub;
+    hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
+    hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
+    hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
     return 0;
 }
 
