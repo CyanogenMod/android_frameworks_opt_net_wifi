@@ -29,7 +29,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Queue;
 
-class RttService extends SystemService {
+public final class RttService extends SystemService {
 
     public static final boolean DBG = true;
 
