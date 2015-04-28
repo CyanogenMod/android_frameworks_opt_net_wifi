@@ -105,7 +105,7 @@ public class SupplicantBridge {
         try {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
             if (!elements.isEmpty()) {
-                Log.d("HS2J", "Parsed ANQP: " + elements);
+                Log.d("HS2J", String.format("Parsed ANQP for %016x: %s", bssid, elements));
                 mConfigStore.notifyANQPResponse(scanDetail, elements);
             }
         }
