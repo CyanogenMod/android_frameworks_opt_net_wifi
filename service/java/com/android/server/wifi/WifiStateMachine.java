@@ -980,8 +980,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mWifiConfigStore = new WifiConfigStore(context, mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
-        mWifiLogger = new WifiLogger(mContext, this);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
+        mWifiLogger = new WifiLogger();
+
         mWifiInfo = new WifiInfo();
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
                 getHandler());
@@ -2585,6 +2586,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mUntrustedNetworkFactory.dump(fd, pw, args);
         pw.println();
         mWifiConfigStore.dump(fd, pw, args);
+        pw.println("FW Version is: " + mWifiLogger.getFirmwareVersion());
+        pw.println("Driver Version is: " + mWifiLogger.getDriverVersion());
+        WifiLogger.RingBufferStatus[] status = mWifiLogger.getRingBufferStatus();
+        for (WifiLogger.RingBufferStatus element : status) {
+            pw.println("Ring buffer status: " + element);
+        }
+        mWifiLogger.getAllRingBufferData();
+        pw.println("Start fw memory dump:-----------------------------------------------");
+        String fwDump = mWifiLogger.getFwMemoryDump();
+        if(fwDump != null) {
+            pw.println(fwDump);
+        } else {
+            pw.println("Fail to get FW memory dump");
+        }
+        pw.println("End fw memory dump:--------------------------------------------------");
     }
 
     /**
@@ -5270,7 +5286,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         @Override
         public void enter() {
             mWifiNative.unloadDriver();
-
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
                 mWifiP2pChannel.connect(mContext, getHandler(),
@@ -5728,6 +5743,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             if (PDBG) {
                 loge("DriverStartedState enter");
+            }
+            if (VDBG) {
+                mWifiLogger.startLoggingAllBuffer(3, 0, 60, 0);
+                mWifiLogger.getAllRingBufferData();
             }
             mIsRunning = true;
             mInDelayedStop = false;

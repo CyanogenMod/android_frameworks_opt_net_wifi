@@ -31,6 +31,7 @@ import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
 import android.os.SystemClock;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.util.LocalLog;
 import android.util.Log;
 
@@ -1881,7 +1882,7 @@ public class WifiNative {
 
     /* Wifi Logger commands/events */
 
-    private static native boolean startLogging(int iface);
+    public static native boolean startLogging(int iface);
 
     public static interface WifiLoggerEventHandler {
         void onDataAvailable(char data[], int len);
@@ -1889,9 +1890,135 @@ public class WifiNative {
 
     private static WifiLoggerEventHandler sWifiLoggerEventHandler = null;
 
-    synchronized private static void onDataAvailable(char data[], int len) {
-        if (sWifiLoggerEventHandler != null) {
-            sWifiLoggerEventHandler.onDataAvailable(data, len);
+    public static class WifiLoggerEvent {
+        WifiLogger.RingBufferStatus status;
+        int entrySize;
+        int flags;
+        int type;
+        long timestamp;
+        byte[] entry;
+
+        public String toString() {
+            StringBuilder str =  new StringBuilder();
+            str.append(status + "\n entry size: " + entrySize + " flags: " + flags);
+            str.append(" type: " + type + " timestamp: " + timestamp +"\n");
+            if (entry != null) {
+                str.append(android.util.Base64.encodeToString(entry, Base64.DEFAULT));
+            } else {
+                str.append(" empty bytes[]");
+            }
+            str.append("\n\n");
+            return str.toString();
+        }
+    }
+
+    private static void onWifiLoggerEvent(WifiLoggerEvent event) {
+        if (event != null) {
+            Log.d(TAG, "Logger Event:" + event);
+        }
+    }
+
+    private static void onWifiAlert(byte[] buffer, int errorCode) {
+        Log.d(TAG, "Logger Alert error code:" + errorCode);
+        if (buffer != null) {
+            StringBuilder str =  new StringBuilder();
+            str.append(android.util.Base64.encodeToString(buffer, android.util.Base64.NO_WRAP));
+            Log.e(TAG,"Logger Alert event:");
+            Log.e(TAG, str.toString());
+        } else {
+            Log.e(TAG," empty Alert");
+        }
+    }
+
+    private static native boolean startLoggingRingBufferNative(int iface, int verboseLevel,
+            int flags, int maxInterval,int minDataSize, String ringName);
+    synchronized public static boolean startLoggingRingBuffer(int verboseLevel, int flags, int maxInterval,
+            int minDataSize, String ringName){
+        synchronized (mLock) {
+            if (startHal()) {
+                return startLoggingRingBufferNative(sWlan0Index, verboseLevel, flags, maxInterval,
+                        minDataSize, ringName);
+            } else {
+                return false;
+            }
+        }
+    }
+
+    private static native int getSupportedLoggerFeatureSetNative(int iface);
+    synchronized public static int getSupportedLoggerFeatureSet() {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getSupportedLoggerFeatureSetNative(sWlan0Index);
+            } else {
+                return -1;
+            }
+        }
+    }
+
+    private static native String getDriverVersionNative(int iface);
+    synchronized public static String getDriverVersion() {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getDriverVersionNative(sWlan0Index);
+            } else {
+                return null;
+            }
+        }
+    }
+
+
+    private static native String getFirmwareVersionNative(int iface);
+    synchronized public static String getFirmwareVersion() {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getFirmwareVersionNative(sWlan0Index);
+            } else {
+                return null;
+            }
+        }
+    }
+
+    private static native WifiLogger.RingBufferStatus[] getRingBufferStatusNative(int iface);
+    synchronized public static WifiLogger.RingBufferStatus[] getRingBufferStatus() {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getRingBufferStatusNative(sWlan0Index);
+            } else {
+                return null;
+            }
+        }
+    }
+
+    private static native boolean getRingBufferDataNative(int iface, String ringName);
+    synchronized public static boolean getRingBufferData(String ringName) {
+        synchronized (mLock) {
+            if (startHal()) {
+                return getRingBufferDataNative(sWlan0Index, ringName);
+            } else {
+                return false;
+            }
+        }
+    }
+
+    public static String mFwMemoryDump;
+    private static void onWifiFwMemoryAvailable(byte[] buffer) {
+        Log.d(TAG, "onWifiFwMemoryAvailable is called");
+        mFwMemoryDump =  android.util.Base64.encodeToString(buffer, Base64.DEFAULT);
+    }
+    private static native boolean getFwMemoryDumpNative(int iface);
+    synchronized public static String getFwMemoryDump() {
+        synchronized (mLock) {
+            if (startHal()) {
+                if(getFwMemoryDumpNative(sWlan0Index)) {
+                    String tmp = mFwMemoryDump;
+                    mFwMemoryDump = null;
+                    return tmp;
+                } else {
+                    return null;
+                }
+            } else {
+                return null;
+            }
         }
     }
 
