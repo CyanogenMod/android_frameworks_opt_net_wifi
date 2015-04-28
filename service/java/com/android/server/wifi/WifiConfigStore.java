@@ -1823,7 +1823,8 @@ public class WifiConfigStore extends IpConfigStore {
             for (WifiConfiguration config : mConfiguredNetworks.values()) {
                 log("Testing " + config.SSID);
 
-                String id_str = mWifiNative.getNetworkVariable(config.networkId, idStringVarName);
+                String id_str = Utils.unquote(mWifiNative.getNetworkVariable(
+                        config.networkId, idStringVarName));
                 if (id_str != null && id_str.equals(fqdn) && config.enterpriseConfig != null) {
                     log("Matched " + id_str + " with " + config.networkId);
                     config.FQDN = fqdn;
@@ -2547,7 +2548,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (!mWifiNative.setNetworkVariable(
                             netId,
                             idStringVarName,
-                            config.FQDN)) {
+                            '"' + config.FQDN + '"')) {
                     loge("failed to set id_str: " + config.FQDN);
                     break setVariables;
                 }
@@ -2809,7 +2810,8 @@ public class WifiConfigStore extends IpConfigStore {
         /* save HomeSP object for passpoint networks */
         if (config.isPasspoint()) {
             try {
-                Credential credential = new Credential(config.enterpriseConfig, mKeyStore);
+                Credential credential =
+                        new Credential(config.enterpriseConfig, mKeyStore, !newNetwork);
                 HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
                         config.roamingConsortiumIds, Collections.<String>emptySet(),
                         Collections.<Long>emptySet(), Collections.<Long>emptyList(),
