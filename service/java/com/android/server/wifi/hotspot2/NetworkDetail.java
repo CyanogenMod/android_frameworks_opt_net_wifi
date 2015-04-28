@@ -460,6 +460,15 @@ public class NetworkDetail {
         return mSSID;
     }
 
+    public String getTrimmedSSID() {
+        for (int n = 0; n < mSSID.length(); n++) {
+            if (mSSID.charAt(n) != 0) {
+                return mSSID;
+            }
+        }
+        return "";
+    }
+
     public long getHESSID() {
         return mHESSID;
     }

@@ -3391,9 +3391,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                     new NetworkDetail(bssid, infoElements, anqpLines, freq);
 
                             String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
-                            if (!xssid.equals(networkDetail.getSSID())) {
-                                Log.d(Utils.hs2LogTag(getClass()), "Inconsistency: SSID: '" + xssid +
-                                        "' vs '" + networkDetail.getSSID() + "': " + infoElements);
+                            if (!xssid.equals(networkDetail.getTrimmedSSID())) {
+                                Log.d(Utils.hs2LogTag(getClass()),
+                                        String.format("Inconsistent SSID on BSSID '%s':" +
+                                                        " '%s' vs '%s': %s",
+                                        bssid, xssid, networkDetail.getSSID(), infoElements));
                             }
 
                             if (networkDetail.hasInterworking()) {
