@@ -2488,6 +2488,9 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private boolean matchHomeSP(String fqdn) {
+        if (fqdn == null) {
+            return false;
+        }
         List<String> labels = Utils.splitDomain(fqdn);
         for (HomeSP homeSP : mConfiguredHomeSPs.values()) {
             if (Utils.splitDomain(homeSP.getFQDN()).equals(labels)) {
