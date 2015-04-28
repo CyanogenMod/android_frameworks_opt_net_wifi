@@ -2487,6 +2487,16 @@ public class WifiConfigStore extends IpConfigStore {
         return Utils.toHex(removeDoubleQuotes(str).getBytes(StandardCharsets.UTF_8));
     }
 
+    private boolean matchHomeSP(String fqdn) {
+        List<String> labels = Utils.splitDomain(fqdn);
+        for (HomeSP homeSP : mConfiguredHomeSPs.values()) {
+            if (Utils.splitDomain(homeSP.getFQDN()).equals(labels)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private NetworkUpdateResult addOrUpdateNetworkNative(WifiConfiguration config, int uid) {
         /*
          * If the supplied networkId is INVALID_NETWORK_ID, we create a new empty
@@ -2516,7 +2526,7 @@ public class WifiConfigStore extends IpConfigStore {
             if (savedNetId != null) {
                 netId = savedNetId;
             } else {
-                if (mConfiguredHomeSPs.containsValue(config.FQDN)) {
+                if (matchHomeSP(config.FQDN)) {
                     loge("addOrUpdateNetworkNative passpoint " + config.FQDN
                             + " was found, but no network Id");
                 }
