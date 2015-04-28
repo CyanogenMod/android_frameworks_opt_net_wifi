@@ -14,6 +14,7 @@ import static com.android.server.wifi.anqp.Constants.NIBBLE_MASK;
 public abstract class Utils {
 
     public static final String HS20_TAG = "HS20";
+    public static final long UNSET_TIME = -1;
 
     private static final String[] PLMNText = { "wlan", "mnc*", "mcc*", "3gppnetwork", "org" };
 

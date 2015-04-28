@@ -130,10 +130,10 @@ public class Credential {
 
     public Credential(WifiEnterpriseConfig enterpriseConfig, KeyStore keyStore, boolean update)
             throws IOException {
-        mCtime = 0;
-        mExpTime = 0;
+        mCtime = Utils.UNSET_TIME;
+        mExpTime = Utils.UNSET_TIME;
         mRealm = enterpriseConfig.getRealm();
-        mCheckAAACert = true;
+        mCheckAAACert = false;
         mEAPMethod = mapEapMethod(enterpriseConfig.getEapMethod(),
                 enterpriseConfig.getPhase2Method());
         mCertType = mEAPMethod.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS ? CertType.x509v3 : null;

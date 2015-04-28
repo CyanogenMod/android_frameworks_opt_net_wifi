@@ -208,47 +208,84 @@ public class MOManager {
 
     public void saveAllSps(Collection<HomeSP> homeSPs) throws IOException {
 
+        Map<String, HomeSP> obsolete = new HashMap<>(mSPs);
+        List<HomeSP> resultSet = new ArrayList<>(homeSPs.size());
+        int additions = 0;
+
+        for (HomeSP newSP : homeSPs) {
+            HomeSP existing = obsolete.remove(newSP.getFQDN());
+            if (existing == null) {
+                resultSet.add(newSP);
+                additions++;
+            }
+            else {
+                resultSet.add(existing);
+            }
+        }
+
+        if (!obsolete.isEmpty() || additions > 0) {
+            Log.d(Utils.HS20_TAG, String.format("MO change: %s -> %s: %s",
+                    fqdnList(mSPs.values()), fqdnList(homeSPs), fqdnList(resultSet)));
+            rewriteMO(resultSet, mSPs, mPpsFile);
+        }
+        else {
+            Log.d(Utils.HS20_TAG, "Not persisting MO");
+        }
+    }
+
+    public void updateAndSaveAllSps(Collection<HomeSP> homeSPs) throws IOException {
+
         boolean dirty = false;
         List<HomeSP> newSet = new ArrayList<>(homeSPs.size());
 
         Map<String, HomeSP> spClone = new HashMap<>(mSPs);
         for (HomeSP homeSP : homeSPs) {
+            Log.d(Utils.HS20_TAG, "Passed HomeSP: " + homeSP);
             HomeSP existing = spClone.remove(homeSP.getFQDN());
             if (existing == null) {
                 dirty = true;
                 newSet.add(homeSP);
+                Log.d(Utils.HS20_TAG, "New HomeSP");
             }
             else if (!homeSP.deepEquals(existing)) {
                 dirty = true;
                 newSet.add(homeSP.getClone(existing.getCredential().getPassword()));
-                Log.d(Utils.HS20_TAG, "Non-equal HomeSP");
+                Log.d(Utils.HS20_TAG, "Non-equal HomeSP: " + existing);
             }
             else {
                 newSet.add(existing);
+                Log.d(Utils.HS20_TAG, "Keeping HomeSP: " + existing);
             }
         }
 
         Log.d(Utils.HS20_TAG, String.format("Saving all SPs (%s): current %s (%d), new %s (%d)",
                 dirty ? "dirty" : "clean",
                 fqdnList(mSPs.values()), mSPs.size(),
-                fqdnList(homeSPs), homeSPs.size()));
+                fqdnList(newSet), newSet.size()));
 
         if (!dirty && spClone.isEmpty()) {
+            Log.d(Utils.HS20_TAG, "Not persisting");
             return;
         }
 
-        mSPs.clear();
+        rewriteMO(newSet, mSPs, mPpsFile);
+    }
+
+    private static void rewriteMO(Collection<HomeSP> homeSPs, Map<String, HomeSP> current, File f)
+            throws IOException {
+
+        current.clear();
 
         OMAConstructed ppsNode = new OMAConstructed(null, TAG_PerProviderSubscription, null);
         int instance = 0;
-        for (HomeSP homeSP : newSet) {
+        for (HomeSP homeSP : homeSPs) {
             buildHomeSPTree(homeSP, ppsNode, instance++);
-            mSPs.put(homeSP.getFQDN(), homeSP);
+            current.put(homeSP.getFQDN(), homeSP);
         }
 
         MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", ppsNode);
         try (BufferedOutputStream out =
-                     new BufferedOutputStream(new FileOutputStream(mPpsFile, true))) {
+                     new BufferedOutputStream(new FileOutputStream(f, false))) {
             tree.marshal(out);
             out.flush();
         }
@@ -408,7 +445,6 @@ public class MOManager {
     }
 
     private static List<HomeSP> buildSPs(MOTree moTree) throws OMAException {
-        Log.d("HS2J", "MO root: " + moTree.getRoot().getName());
         OMAConstructed spList;
         if (moTree.getRoot().getName().equals(TAG_PerProviderSubscription)) {
             // The PPS file is rooted at PPS instead of MgmtTree to conserve space
@@ -622,7 +658,7 @@ public class MOManager {
 
     private static long getTime(OMANode timeNode) throws OMAException {
         if (timeNode == null) {
-            return -1;
+            return Utils.UNSET_TIME;
         }
         String timeText = timeNode.getValue();
         try {

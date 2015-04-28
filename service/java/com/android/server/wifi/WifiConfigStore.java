@@ -1855,7 +1855,7 @@ public class WifiConfigStore extends IpConfigStore {
                     loge("Could not write " + PPS_FILE + " : " + e);
                 }
             }
-        });
+        }, false);
     }
 
     public void writeKnownNetworkHistory(boolean force) {
