@@ -4174,7 +4174,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         final DevicePolicyManagerInternal dpmi = LocalServices.getService(
                 DevicePolicyManagerInternal.class);
-        if (dpmi.isActiveAdminWithPolicy(config.creatorUid,
+        if (dpmi != null && dpmi.isActiveAdminWithPolicy(config.creatorUid,
                 DeviceAdminInfo.USES_POLICY_DEVICE_OWNER)) {
             return uid == config.creatorUid;
         }
