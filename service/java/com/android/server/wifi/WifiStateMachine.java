@@ -5260,7 +5260,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_DISCONNECTING_WATCHDOG_TIMER:
                 case CMD_ROAM_WATCHDOG_TIMER:
                 case CMD_DISABLE_EPHEMERAL_NETWORK:
-                case CMD_GET_MATCHING_CONFIG:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
@@ -5318,6 +5317,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_GET_LINK_LAYER_STATS:
                     // Not supported hence reply with error message
                     replyToMessage(message, message.what, null);
+                    break;
+                case CMD_GET_MATCHING_CONFIG:
+                    replyToMessage(message, message.what);
                     break;
                 case WifiP2pServiceImpl.P2P_CONNECTION_CHANGED:
                     NetworkInfo info = (NetworkInfo) message.obj;
@@ -6367,6 +6369,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case CMD_GET_LINK_LAYER_STATS:
                 s = "CMD_GET_LINK_LAYER_STATS";
+                break;
+            case CMD_GET_MATCHING_CONFIG:
+                s = "CMD_GET_MATCHING_CONFIG";
                 break;
             case CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS:
                 s = "CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS";
