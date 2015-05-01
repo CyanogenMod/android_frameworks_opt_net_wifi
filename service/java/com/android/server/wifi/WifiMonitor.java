@@ -1168,8 +1168,8 @@ public class WifiMonitor {
         int result = eventStr.substring(
                 resPos + RESULT_STRING.length(), eoresult).equalsIgnoreCase("success") ? 1 : 0;
 
-        Log.d("HS2J", String.format("AQPD %016x %d", bssid, result));
-
+        Log.d("HS2J", String.format("ANQP Done for %016x, status %d",
+                bssid, result));
         mStateMachine.sendMessage(ANQP_DONE_EVENT, result, 0, bssid);
     }
 

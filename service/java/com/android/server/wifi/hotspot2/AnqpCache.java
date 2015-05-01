@@ -134,15 +134,6 @@ public class AnqpCache implements AlarmHandler {
         }
     }
 
-    public int getRetry(NetworkDetail network) {
-        ANQPData data;
-        CacheKey key = CacheKey.buildKey(network, STANDARD_ESS);
-        synchronized (mANQPCache) {
-            data = mANQPCache.get(key);
-        }
-        return data != null ? data.incrementAndGetRetry() : -1;
-    }
-
     public void update(NetworkDetail network,
                        Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
 
@@ -184,6 +175,12 @@ public class AnqpCache implements AlarmHandler {
             return null;
         }
         return data;
+    }
+
+    public void clear() {
+        synchronized (mANQPCache) {
+            mANQPCache.clear();
+        }
     }
 
     @Override

@@ -18,7 +18,6 @@ public class ANQPData {
     private final long mCtime;
     private final long mExpiry;
     private volatile long mAtime;
-    private int mRetry;
 
     public ANQPData(NetworkDetail network,
                     Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
@@ -68,13 +67,6 @@ public class ANQPData {
 
     public boolean expendable(long at) {
         return mANQPElements == null && mCtime + ANQP_HOLDOFF_TIME < at;
-    }
-
-    public int incrementAndGetRetry() {
-        if (mANQPElements != null) {
-            return -1;
-        }
-        return ++mRetry;
     }
 
     @Override
