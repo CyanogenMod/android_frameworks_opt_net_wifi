@@ -50,6 +50,7 @@ import android.net.ConnectivityManager;
 import android.net.DhcpResults;
 import android.net.BaseDhcpStateMachine;
 import android.net.DhcpStateMachine;
+import android.net.Network;
 import android.net.dhcp.DhcpClient;
 import android.net.InterfaceConfiguration;
 import android.net.LinkAddress;
@@ -2518,6 +2519,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         Settings.Global.WIFI_COUNTRY_CODE,
                         countryCode);
             }
+        }
+    }
+
+    /**
+     * Get Network object of current wifi network
+     * @return Network object of current wifi network
+     */
+    public Network getCurrentNetwork() {
+        if (mNetworkAgent != null) {
+            return new Network(mNetworkAgent.netId);
+        } else {
+            return null;
         }
     }
 
