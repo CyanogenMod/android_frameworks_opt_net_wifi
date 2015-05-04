@@ -32,6 +32,7 @@ import android.net.DhcpInfo;
 import android.net.DhcpResults;
 import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
+import android.net.Network;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.Uri;
@@ -2007,6 +2008,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             }
             saveConfiguration();
         }
+    }
+
+    public Network getCurrentNetwork() {
+        enforceAccessPermission();
+        return mWifiStateMachine.getCurrentNetwork();
     }
 
 }
