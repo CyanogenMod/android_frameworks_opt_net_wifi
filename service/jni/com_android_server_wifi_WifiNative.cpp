@@ -78,6 +78,7 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_disable_tdls = wifi_disable_tdls_stub;
     hal_fn->wifi_get_tdls_status = wifi_get_tdls_status_stub;
     hal_fn->wifi_get_tdls_capabilities = wifi_get_tdls_capabilities_stub;
+    hal_fn->wifi_set_nodfs_flag = wifi_set_nodfs_flag_stub;
     return 0;
 }
 
