@@ -87,15 +87,15 @@ wifi_error wifi_set_log_handler_stub(wifi_request_id id, wifi_interface_handle i
         wifi_ring_buffer_data_handler handler);
 wifi_error wifi_set_alert_handler_stub(wifi_request_id id, wifi_interface_handle iface,
         wifi_alert_handler handler);
-wifi_error wifi_get_firmware_version_stub( wifi_interface_handle iface, char **buffer,
-        int *buffer_size);
+wifi_error wifi_get_firmware_version_stub(wifi_interface_handle iface, char *buffer,
+        int buffer_size);
 wifi_error wifi_get_ring_buffers_status_stub(wifi_interface_handle iface,
-        u32 *num_rings, wifi_ring_buffer_status **status);
+        u32 *num_rings, wifi_ring_buffer_status *status);
 wifi_error wifi_get_logger_supported_feature_set_stub(wifi_interface_handle iface,
         unsigned int *support);
 wifi_error wifi_get_ring_data_stub(wifi_interface_handle iface, char *ring_name);
-wifi_error wifi_get_driver_version_stub(wifi_interface_handle iface, char **buffer,
-        int *buffer_size);
+wifi_error wifi_get_driver_version_stub(wifi_interface_handle iface, char *buffer,
+        int buffer_size);
  wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
 wifi_error wifi_set_bssid_blacklist_stub(wifi_request_id id, wifi_interface_handle iface,
         wifi_bssid_params params);

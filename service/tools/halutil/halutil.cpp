@@ -1748,125 +1748,138 @@ static void onRingBufferData(char *ring_name, char *buffer, int buffer_size,
     }
 
     /*
+     * Parsing Wake Lock event
+     */
+    if (buffer_entry->type == ENTRY_TYPE_WAKE_LOCK) {
+        const char *strStatus[] = {"Taken", "Released", "Timeout"};
+        wake_lock_event *wlock_event = (wake_lock_event *) pBuff;
+
+        printMsg("Wakelock Event: Status=%s (%02x), Name=%s, Reason=%s (%02x)\n",
+            strStatus[wlock_event->status], wlock_event->status,
+            wlock_event->name, "\"TO BE\"", wlock_event->reason);
+        return;
+    }
+
+    /*
      * Parsing TLV data
      */
-    if (buffer_entry->type != ENTRY_TYPE_CONNECT_EVENT)
-        return;
-    wifi_ring_buffer_driver_connectivity_event *connect_event =
-        (wifi_ring_buffer_driver_connectivity_event *) (pBuff);
+    if (buffer_entry->type == ENTRY_TYPE_CONNECT_EVENT) {
+        wifi_ring_buffer_driver_connectivity_event *connect_event =
+            (wifi_ring_buffer_driver_connectivity_event *) (pBuff);
 
-    tlv_log *tlv_data = (tlv_log *) (connect_event + 1);
-    printMsg("Event type: %s (%u)\n", RBconnectEventToString(connect_event->event),
-            connect_event->event);
+        tlv_log *tlv_data = (tlv_log *) (connect_event + 1);
+        printMsg("Event type: %s (%u)\n", RBconnectEventToString(connect_event->event),
+                connect_event->event);
 
-    char *pos = (char *)tlv_data;
-    char *end = (char *)connect_event + buffer_entry->entry_size;
-    while (pos < end) {
-        printMsg("TLV.type: %s (%02x), TLV.len=%d(%02x)\n",
-                RBTlvTagToString(tlv_data->tag),
-                tlv_data->tag, tlv_data->length, tlv_data->length);
+        char *pos = (char *)tlv_data;
+        char *end = (char *)connect_event + buffer_entry->entry_size;
+        while (pos < end) {
+            printMsg("TLV.type: %s (%d), TLV.len=%d (%02x)\n",
+                    RBTlvTagToString(tlv_data->tag),
+                    tlv_data->tag, tlv_data->length, tlv_data->length);
 
-        switch (tlv_data->tag) {
-            case WIFI_TAG_VENDOR_SPECIFIC:
-                break;
+            switch (tlv_data->tag) {
+                case WIFI_TAG_VENDOR_SPECIFIC:
+                    break;
 
-            case WIFI_TAG_BSSID:
-            case WIFI_TAG_ADDR:
-            case WIFI_TAG_ADDR1:
-            case WIFI_TAG_ADDR2:
-            case WIFI_TAG_ADDR3:
-            case WIFI_TAG_ADDR4:
-            {
-                if (tlv_data->length == sizeof(mac_addr)) {
-                    mac_addr addr;
-                    memcpy(&addr, tlv_data->value, sizeof(mac_addr));
-                    printMsg("Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                        addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
-                } else
-                    printMsg("wrong lenght of address\n");
-                break;
+                case WIFI_TAG_BSSID:
+                case WIFI_TAG_ADDR:
+                case WIFI_TAG_ADDR1:
+                case WIFI_TAG_ADDR2:
+                case WIFI_TAG_ADDR3:
+                case WIFI_TAG_ADDR4:
+                {
+                    if (tlv_data->length == sizeof(mac_addr)) {
+                        mac_addr addr;
+                        memcpy(&addr, tlv_data->value, sizeof(mac_addr));
+                        printMsg("Address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                            addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+                    } else
+                        printMsg("wrong lenght of address\n");
+                    break;
+                }
+
+                case WIFI_TAG_SSID:
+                {
+                    char ssid[MAX_SSID_LEN];
+                    memset(ssid, 0, sizeof(ssid));
+                    if (tlv_data->length > MAX_SSID_LEN)
+                        tlv_data->length = MAX_SSID_LEN;
+                    memcpy(ssid, tlv_data->value, tlv_data->length);
+                    printMsg("SSID = %s\n", ssid);
+                    break;
+                }
+
+                case WIFI_TAG_STATUS:
+                {
+                    unsigned int status = 0;
+                    memcpy(&status, tlv_data->value, tlv_data->length);
+                    printMsg("Status = %u\n", status);
+                    break;
+                }
+
+                case WIFI_TAG_CHANNEL_SPEC:
+                {
+                    wifi_channel_info *ch_spec = (wifi_channel_info *) tlv_data->value;
+                    printMsg("Channel Info: center_freq=%d, freq0=%d, freq1=%d, width=%s (%d)\n",
+                        RBchanWidthToString(ch_spec->width), ch_spec->center_freq,
+                        ch_spec->center_freq0, ch_spec->center_freq1);
+                    break;
+                }
+
+                case WIFI_TAG_WAKE_LOCK_EVENT:
+                {
+                    printMsg("Wake lock event = \"TO BE DONE LATER\"\n", tlv_data->value);
+                    break;
+                }
+
+                case WIFI_TAG_TSF:
+                {
+                    u64 tsf = 0;
+                    memcpy(&tsf, tlv_data->value, tlv_data->length);
+                    printMsg("TSF value = %d\n", tsf);
+                    break;
+                }
+
+                case WIFI_TAG_IE:
+                {
+                    printMsg("Information Element = \"TO BE\"\n");
+                    break;
+                }
+
+                case WIFI_TAG_INTERFACE:
+                {
+                    const int len = 32;
+                    char inf_name[len];
+
+                    if (tlv_data->length > len)
+                        tlv_data->length = len;
+                    memset(inf_name, 0, 32);
+                    memcpy(inf_name, tlv_data->value, tlv_data->length);
+                    printMsg("Interface = %s\n", inf_name);
+                    break;
+                }
+
+                case WIFI_TAG_REASON_CODE:
+                {
+                    u16 reason = 0;
+                    memcpy(&reason, tlv_data->value, 2);
+                    printMsg("Reason code = %d\n", reason);
+                    break;
+                }
+
+                case WIFI_TAG_RATE_MBPS:
+                {
+                    u32 rate = 0;
+                    memcpy(&rate, tlv_data->value, tlv_data->length);
+                    printMsg("Rate = %.1f Mbps\n", rate * 0.5);    // rate unit is 500 Kbps.
+                    break;
+                }
             }
-
-            case WIFI_TAG_SSID:
-            {
-                char ssid[MAX_SSID_LEN];
-                memset(ssid, 0, sizeof(ssid));
-                if (tlv_data->length > MAX_SSID_LEN)
-                    tlv_data->length = MAX_SSID_LEN;
-                memcpy(ssid, tlv_data->value, tlv_data->length);
-                printMsg("SSID = %s\n", ssid);
-                break;
-            }
-
-            case WIFI_TAG_STATUS:
-            {
-                unsigned int status = 0;
-                memcpy(&status, tlv_data->value, tlv_data->length);
-                printMsg("Status = %u\n", status);
-                break;
-            }
-
-            case WIFI_TAG_CHANNEL_SPEC:
-            {
-                wifi_channel_info *ch_spec = (wifi_channel_info *) tlv_data->value;
-                printMsg("Channel Info: center_freq=%d, freq0=%d, freq1=%d, width=%s (%d)\n",
-                    RBchanWidthToString(ch_spec->width), ch_spec->center_freq,
-                    ch_spec->center_freq0, ch_spec->center_freq1);
-                break;
-            }
-
-            case WIFI_TAG_WAKE_LOCK_EVENT:
-            {
-                printMsg("Wake lock event = \"TO BE DONE LATER\"\n", tlv_data->value);
-                break;
-            }
-
-            case WIFI_TAG_TSF:
-            {
-                u64 tsf = 0;
-                memcpy(&tsf, tlv_data->value, tlv_data->length);
-                printMsg("TSF value = %d\n", tsf);
-                break;
-            }
-
-            case WIFI_TAG_IE:
-            {
-                printMsg("Information Element = \"TO BE\"\n");
-                break;
-            }
-
-            case WIFI_TAG_INTERFACE:
-            {
-                const int len = 32;
-                char inf_name[len];
-
-                if (tlv_data->length > len)
-                    tlv_data->length = len;
-                memset(inf_name, 0, 32);
-                memcpy(inf_name, tlv_data->value, tlv_data->length);
-                printMsg("Interface = %s\n", inf_name);
-                break;
-            }
-
-            case WIFI_TAG_REASON_CODE:
-            {
-                u16 reason = 0;
-                memcpy(&reason, tlv_data->value, 2);
-                printMsg("Reason code = %d\n", reason);
-                break;
-            }
-
-            case WIFI_TAG_RATE_MBPS:
-            {
-                u32 rate = 0;
-                memcpy(&rate, tlv_data->value, tlv_data->length);
-                printMsg("Rate = %d Kbps\n", rate);
-                break;
-            }
+            pos = (char *)(tlv_data + 1);
+            pos += tlv_data->length;
+            tlv_data = (tlv_log *) pos;
         }
-        pos = (char *)(tlv_data + 1);
-        pos += tlv_data->length;
-        tlv_data = (tlv_log *) pos;
     }
 }
 
@@ -1931,7 +1944,7 @@ static void onFirmwareMemoryDump(char *buffer, int buffer_size)
     printMsg("Write to \"%s\"\n", mem_dump_file);
     fwrite(buffer, 1, buffer_size, w_fp);
     fclose(w_fp);
-	w_fp = NULL;
+    w_fp = NULL;
 
     putEventInCache(EVENT_TYPE_LOGGER_MEMDUMP_DATA, "Memdump data");
 }
@@ -1996,47 +2009,37 @@ static wifi_error LoggerGetRingData()
 static wifi_error LoggerGetFW()
 {
     int ret;
-    int buffer_size = 256;
+    const int BSIZE = 256;
+    int buffer_size = BSIZE;
 
-    char *buffer = (char *)malloc(buffer_size);
-    if (buffer == NULL)
-        return WIFI_ERROR_OUT_OF_MEMORY;
-    memset(buffer, 0, buffer_size);
+    char buffer[BSIZE];
+    memset(buffer, 0, BSIZE);
 
-    ret = hal_fn.wifi_get_firmware_version(wlan0Handle, &buffer, &buffer_size);
+    ret = hal_fn.wifi_get_firmware_version(wlan0Handle, buffer, buffer_size);
 
     if (ret == WIFI_SUCCESS)
-        printMsg("FW version (len=%d):\n%s\n", buffer_size, buffer);
+        printMsg("FW version (len=%d):\n%s\n", strlen(buffer), buffer);
     else
         printMsg("Failed to get FW version\n");
-
-    free(buffer);
-    buffer = NULL;
 
     return WIFI_SUCCESS;
 }
 
 static wifi_error LoggerGetDriver()
 {
-    // halutil -logger -get driver
-
     int ret;
-    int buffer_size = 256;
+    const int BSIZE = 256;
+    int buffer_size = BSIZE;
 
-    char *buffer = (char *)malloc(buffer_size);
-    if (buffer == NULL)
-        return WIFI_ERROR_OUT_OF_MEMORY;
-    memset(buffer, 0, buffer_size);
+    char buffer[BSIZE];
+    memset(buffer, 0, BSIZE);
 
-    ret = hal_fn.wifi_get_driver_version(wlan0Handle, &buffer, &buffer_size);
+    ret = hal_fn.wifi_get_driver_version(wlan0Handle, buffer, buffer_size);
 
     if (ret == WIFI_SUCCESS)
-        printMsg("Driver version (len=%d):\n%s\n", buffer_size, buffer);
+        printMsg("Driver version (len=%d):\n%s\n", strlen(buffer), buffer);
     else
         printMsg("Failed to get driver version\n");
-
-    free(buffer);
-    buffer = NULL;
 
     return WIFI_SUCCESS;
 }
@@ -2044,16 +2047,17 @@ static wifi_error LoggerGetDriver()
 static wifi_error LoggerGetRingbufferStatus()
 {
     int ret;
-    u32 num_rings = 10;
+    const int NRING = 10;
+    u32 num_rings = NRING;
 
     wifi_ring_buffer_status *status =
         (wifi_ring_buffer_status *)malloc(sizeof(wifi_ring_buffer_status) * num_rings);
 
     if (status == NULL)
         return WIFI_ERROR_OUT_OF_MEMORY;
-    memset(status, 0, sizeof(wifi_ring_buffer_status));
+    memset(status, 0, sizeof(wifi_ring_buffer_status) * num_rings);
 
-    ret = hal_fn.wifi_get_ring_buffers_status(wlan0Handle, &num_rings, &status);
+    ret = hal_fn.wifi_get_ring_buffers_status(wlan0Handle, &num_rings, status);
 
     if (ret == WIFI_SUCCESS) {
         printMsg("RingBuffer status: [%d ring(s)]\n", num_rings);

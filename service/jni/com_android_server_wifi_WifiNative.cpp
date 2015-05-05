@@ -87,7 +87,6 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
     hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
     hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
-    hal_fn->wifi_set_country_code = wifi_set_country_code;
     hal_fn->wifi_set_ssid_white_list = wifi_set_ssid_white_list;
     hal_fn->wifi_set_gscan_roam_params = wifi_set_gscan_roam_params;
     hal_fn->wifi_set_bssid_preference = wifi_set_bssid_preference;
@@ -1510,7 +1509,9 @@ static jobject android_net_wifi_get_driver_version(JNIEnv *env, jclass cls, jint
      //Need to be fixed. The memory should be allocated from lower layer
     //char *buffer = NULL;
     int buffer_length =  256;
-     char *buffer = (char *)malloc(buffer_length);
+    char *buffer = (char *)malloc(buffer_length);
+    if (!buffer) return NULL;
+    memset(buffer, 0, buffer_length);
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
 
     ALOGD("android_net_wifi_get_driver_version = %p", handle);
@@ -1519,7 +1520,7 @@ static jobject android_net_wifi_get_driver_version(JNIEnv *env, jclass cls, jint
         return NULL;
     }
 
-    wifi_error result = hal_fn.wifi_get_driver_version(handle, &buffer, &buffer_length);
+    wifi_error result = hal_fn.wifi_get_driver_version(handle, buffer, buffer_length);
 
     if (result == WIFI_SUCCESS) {
         ALOGD("buffer is %p, length is %d", buffer, buffer_length);
@@ -1537,6 +1538,8 @@ static jobject android_net_wifi_get_firmware_version(JNIEnv *env, jclass cls, ji
     //char *buffer = NULL;
     int buffer_length = 256;
     char *buffer = (char *)malloc(buffer_length);
+    if (!buffer) return NULL;
+    memset(buffer, 0, buffer_length);
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
 
     ALOGD("android_net_wifi_get_firmware_version = %p", handle);
@@ -1545,7 +1548,7 @@ static jobject android_net_wifi_get_firmware_version(JNIEnv *env, jclass cls, ji
         return NULL;
     }
 
-    wifi_error result = hal_fn.wifi_get_firmware_version(handle, &buffer, &buffer_length);
+    wifi_error result = hal_fn.wifi_get_firmware_version(handle, buffer, buffer_length);
 
     if (result == WIFI_SUCCESS) {
         ALOGD("buffer is %p, length is %d", buffer, buffer_length);
@@ -1572,8 +1575,9 @@ static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls,
     u32 num_rings = 10;
     wifi_ring_buffer_status *status =
         (wifi_ring_buffer_status *)malloc(sizeof(wifi_ring_buffer_status) * num_rings);
-
-    wifi_error result = hal_fn.wifi_get_ring_buffers_status(handle, &num_rings, &status);
+    if (!status) return NULL;
+    memset(status, 0, sizeof(wifi_ring_buffer_status) * num_rings);
+    wifi_error result = hal_fn.wifi_get_ring_buffers_status(handle, &num_rings, status);
     if (result == WIFI_SUCCESS) {
         ALOGD("status is %p, number is %d", status, num_rings);
         jclass clsRingBufferStatus =
@@ -1611,6 +1615,7 @@ static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls,
         free(status);
         return ringBuffersStatus;
     } else {
+        free(status);
         return NULL;
     }
 }
@@ -1841,9 +1846,9 @@ static void onPnoNetworkFound(wifi_request_id id,
         }
 
         ALOGD("Scan result with ie length %d, i %u, <%s> rssi=%d %02x:%02x:%02x:%02x:%02x:%02x",
-        results->ie_length, i,
-            results[i].ssid, results[i].rssi, results[i].bssid[0], results[i].bssid[1],
-            results[i].bssid[2], results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
+                results->ie_length, i, results[i].ssid, results[i].rssi, results[i].bssid[0],
+                results[i].bssid[1],results[i].bssid[2], results[i].bssid[3], results[i].bssid[4],
+                results[i].bssid[5]);
 
         /*elements = env->NewByteArray(results->ie_length);
         if (elements == NULL) {
