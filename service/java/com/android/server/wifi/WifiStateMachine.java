@@ -7699,15 +7699,8 @@ public class WifiStateMachine extends StateMachine {
         @Override
         public boolean processMessage(Message message) {
             logStateAndMessage(message, getClass().getSimpleName());
-            WifiConfiguration config;
+
             switch (message.what) {
-                case CMD_IP_CONFIGURATION_LOST:
-                    config = getCurrentWifiConfiguration();
-                    if (config != null) {
-                        mWifiConfigStore.noteRoamingFailure(config,
-                                WifiConfiguration.ROAMING_FAILURE_IP_CONFIG);
-                    }
-                    return NOT_HANDLED;
                case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
                     if (DBG) log("Roaming and Watchdog reports poor link -> ignore");
                     return HANDLED;
@@ -7793,11 +7786,6 @@ public class WifiStateMachine extends StateMachine {
                             + " isRoaming=" + isRoaming()
                             + " roam=" + Integer.toString(mAutoRoaming));
                     if (message.arg1 == mLastNetworkId) {
-                        config = getCurrentWifiConfiguration();
-                        if (config != null) {
-                            mWifiConfigStore.noteRoamingFailure(config,
-                                    WifiConfiguration.ROAMING_FAILURE_AUTH_FAILURE);
-                        }
                         handleNetworkDisconnect();
                         transitionTo(mDisconnectingState);
                     }

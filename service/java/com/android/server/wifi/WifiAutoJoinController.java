@@ -1578,29 +1578,6 @@ public class WifiAutoJoinController {
             if (config.visibility == null) {
                 continue;
             }
-
-            if (config.lastRoamingFailure != 0
-                    && currentConfiguration != null
-                    && (lastSelectedConfiguration == null
-                    || !config.configKey().equals(lastSelectedConfiguration))) {
-                // Apply blacklisting for roaming to this config if:
-                //   - the target config had a recent roaming failure
-                //   - we are currently associated
-                //   - the target config is not the last selected
-                if (now > config.lastRoamingFailure
-                        && (now - config.lastRoamingFailure)
-                        < config.roamingFailureBlackListTimeMilli) {
-                    if (DBG) {
-                        logDbg("compareNetwork not switching to " + config.configKey()
-                                + " from current " + currentConfiguration.configKey()
-                                + " because it is blacklisted due to roam failure, "
-                                + " blacklist remain time = "
-                                + (now - config.lastRoamingFailure) + " ms");
-                    }
-                    continue;
-                }
-            }
-
             int boost = config.autoJoinUseAggressiveJoinAttemptThreshold + weakRssiBailCount;
             if ((config.visibility.rssi5 + boost)
                         < mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI
