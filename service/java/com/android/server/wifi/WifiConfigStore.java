@@ -655,6 +655,10 @@ public class WifiConfigStore extends IpConfigStore {
         Log.d("HS2J", "Active IMSIs " + mImsis);
     }
 
+    public void clearANQPCache() {
+        mAnqpCache.clear();
+    }
+
     void enableVerboseLogging(int verbose) {
         enableVerboseLogging.set(verbose);
         if (verbose > 0) {
@@ -1888,7 +1892,8 @@ public class WifiConfigStore extends IpConfigStore {
             for (WifiConfiguration config : mConfiguredNetworks.values()) {
                 log("Testing " + config.SSID);
 
-                String id_str = mWifiNative.getNetworkVariable(config.networkId, idStringVarName);
+                String id_str = Utils.unquote(mWifiNative.getNetworkVariable(
+                        config.networkId, idStringVarName));
                 if (id_str != null && id_str.equals(fqdn) && config.enterpriseConfig != null) {
                     log("Matched " + id_str + " with " + config.networkId);
                     config.FQDN = fqdn;
@@ -1919,7 +1924,7 @@ public class WifiConfigStore extends IpConfigStore {
                     loge("Could not write " + PPS_FILE + " : " + e);
                 }
             }
-        });
+        }, false);
     }
 
     public void writeKnownNetworkHistory(boolean force) {
@@ -2583,6 +2588,19 @@ public class WifiConfigStore extends IpConfigStore {
         return Utils.toHex(removeDoubleQuotes(str).getBytes(StandardCharsets.UTF_8));
     }
 
+    private boolean matchHomeSP(String fqdn) {
+        if (fqdn == null) {
+            return false;
+        }
+        List<String> labels = Utils.splitDomain(fqdn);
+        for (HomeSP homeSP : mConfiguredHomeSPs.values()) {
+            if (Utils.splitDomain(homeSP.getFQDN()).equals(labels)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private NetworkUpdateResult addOrUpdateNetworkNative(WifiConfiguration config, int uid) {
         /*
          * If the supplied networkId is INVALID_NETWORK_ID, we create a new empty
@@ -2612,7 +2630,7 @@ public class WifiConfigStore extends IpConfigStore {
             if (savedNetId != null) {
                 netId = savedNetId;
             } else {
-                if (mConfiguredHomeSPs.containsValue(config.FQDN)) {
+                if (matchHomeSP(config.FQDN)) {
                     loge("addOrUpdateNetworkNative passpoint " + config.FQDN
                             + " was found, but no network Id");
                 }
@@ -2644,7 +2662,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (!mWifiNative.setNetworkVariable(
                             netId,
                             idStringVarName,
-                            config.FQDN)) {
+                            '"' + config.FQDN + '"')) {
                     loge("failed to set id_str: " + config.FQDN);
                     break setVariables;
                 }
@@ -2909,7 +2927,8 @@ public class WifiConfigStore extends IpConfigStore {
         /* save HomeSP object for passpoint networks */
         if (config.isPasspoint()) {
             try {
-                Credential credential = new Credential(config.enterpriseConfig, mKeyStore);
+                Credential credential =
+                        new Credential(config.enterpriseConfig, mKeyStore, !newNetwork);
                 HomeSP homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
                         config.roamingConsortiumIds, Collections.<String>emptySet(),
                         Collections.<Long>emptySet(), Collections.<Long>emptyList(),

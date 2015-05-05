@@ -398,6 +398,7 @@ class WifiController extends StateMachine {
             mDisabledTimestamp = SystemClock.elapsedRealtime();
             mDeferredEnableSerialNumber++;
             mHaveDeferredEnable = false;
+            mWifiStateMachine.clearANQPCache();
         }
         @Override
         public boolean processMessage(Message msg) {
@@ -519,6 +520,7 @@ class WifiController extends StateMachine {
             mDisabledTimestamp = SystemClock.elapsedRealtime();
             mDeferredEnableSerialNumber++;
             mHaveDeferredEnable = false;
+            mWifiStateMachine.clearANQPCache();
         }
 
         @Override

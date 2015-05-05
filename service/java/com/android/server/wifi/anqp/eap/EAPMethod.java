@@ -138,6 +138,26 @@ public class EAPMethod {
     }
 
     @Override
+    public boolean equals(Object thatObject) {
+        if (this == thatObject) {
+            return true;
+        }
+        else if (thatObject == null || getClass() != thatObject.getClass()) {
+            return false;
+        }
+
+        EAPMethod that = (EAPMethod) thatObject;
+        return mEAPMethodID == that.mEAPMethodID && mAuthParams.equals(that.mAuthParams);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = mEAPMethodID.hashCode();
+        result = 31 * result + mAuthParams.hashCode();
+        return result;
+    }
+
+    @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("EAP Method ").append(mEAPMethodID).append('\n');

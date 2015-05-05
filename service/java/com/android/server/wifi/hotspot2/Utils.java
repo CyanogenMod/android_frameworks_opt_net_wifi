@@ -13,6 +13,9 @@ import static com.android.server.wifi.anqp.Constants.NIBBLE_MASK;
 
 public abstract class Utils {
 
+    public static final String HS20_TAG = "HS20";
+    public static final long UNSET_TIME = -1;
+
     private static final String[] PLMNText = { "wlan", "mnc*", "mcc*", "3gppnetwork", "org" };
 
     public static List<String> splitDomain(String domain) {
@@ -245,5 +248,17 @@ public abstract class Utils {
                 c.get(Calendar.HOUR_OF_DAY),
                 c.get(Calendar.MINUTE),
                 c.get(Calendar.SECOND));
+    }
+
+    public static String unquote(String s) {
+        if (s == null) {
+            return null;
+        }
+        else if (s.startsWith("\"") && s.endsWith("\"")) {
+            return s.substring(1, s.length()-1);
+        }
+        else {
+            return s;
+        }
     }
 }

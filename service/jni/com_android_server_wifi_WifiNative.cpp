@@ -71,10 +71,13 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_rtt_range_request = wifi_rtt_range_request_stub;
     hal_fn->wifi_rtt_range_cancel = wifi_rtt_range_cancel_stub;
     hal_fn->wifi_get_rtt_capabilities = wifi_get_rtt_capabilities_stub;
-    hal_fn->wifi_set_nodfs_flag = wifi_set_nodfs_flag_stub;
     hal_fn->wifi_start_logging = wifi_start_logging_stub;
     hal_fn->wifi_set_epno_list = wifi_set_epno_list_stub;
     hal_fn->wifi_set_country_code = wifi_set_country_code_stub;
+    hal_fn->wifi_enable_tdls = wifi_enable_tdls_stub;
+    hal_fn->wifi_disable_tdls = wifi_disable_tdls_stub;
+    hal_fn->wifi_get_tdls_status = wifi_get_tdls_status_stub;
+    hal_fn->wifi_get_tdls_capabilities = wifi_get_tdls_capabilities_stub;
     return 0;
 }
 
@@ -1379,6 +1382,94 @@ static jboolean android_net_wifi_set_Country_Code_Hal(JNIEnv *env,jclass cls, ji
 
     return res == WIFI_SUCCESS;
 }
+
+static jboolean android_net_wifi_enable_disable_tdls(JNIEnv *env,jclass cls, jint iface,
+        jboolean enable, jstring addr) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    mac_addr address;
+    parseMacAddress(env, addr, address);
+    wifi_tdls_handler tdls_handler;
+    //tdls_handler.on_tdls_state_changed = &on_tdls_state_changed;
+
+    if(enable) {
+        return (hal_fn.wifi_enable_tdls(handle, address, NULL, tdls_handler) == WIFI_SUCCESS);
+    } else {
+        return (hal_fn.wifi_disable_tdls(handle, address) == WIFI_SUCCESS);
+    }
+}
+
+static void on_tdls_state_changed(mac_addr addr, wifi_tdls_status status) {
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+
+    ALOGD("on_tdls_state_changed is called: vm = %p, obj = %p, env = %p", mVM, mCls, env);
+
+    char mac[32];
+    sprintf(mac, "%02x:%02x:%02x:%02x:%02x:%02x", addr[0], addr[1], addr[2], addr[3], addr[4],
+            addr[5]);
+
+    jstring mac_address = env->NewStringUTF(mac);
+    reportEvent(env, mCls, "onTdlsStatus", "(Ljava/lang/StringII;)V",
+        mac_address, status.state, status.reason);
+
+}
+
+static jobject android_net_wifi_get_tdls_status(JNIEnv *env,jclass cls, jint iface,jstring addr) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    mac_addr address;
+    parseMacAddress(env, addr, address);
+
+    wifi_tdls_status status;
+
+    wifi_error ret;
+    ret = hal_fn.wifi_get_tdls_status(handle, address, &status );
+
+    if (ret != WIFI_SUCCESS) {
+        return NULL;
+    } else {
+        jobject tdls_status = createObject(env, "com/android/server/wifi/WifiNative$TdlsStatus");
+        setIntField(env, tdls_status, "channel", status.channel);
+        setIntField(env, tdls_status, "global_operating_class", status.global_operating_class);
+        setIntField(env, tdls_status, "state", status.state);
+        setIntField(env, tdls_status, "reason", status.reason);
+        return tdls_status;
+    }
+}
+
+static jobject android_net_wifi_get_tdls_capabilities(JNIEnv *env, jclass cls, jint iface) {
+    wifi_tdls_capabilities tdls_capabilities;
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    wifi_error ret = hal_fn.wifi_get_tdls_capabilities(handle, &tdls_capabilities);
+
+    if(WIFI_SUCCESS == ret) {
+         jobject capabilities = createObject(env,
+                 "com/android/server/wifi/WifiNative$TdlsCapabilities");
+         setIntField(env, capabilities, "maxConcurrentTdlsSessionNumber",
+                 tdls_capabilities.max_concurrent_tdls_session_num);
+         setBooleanField(env, capabilities, "isGlobalTdlsSupported",
+                 tdls_capabilities.is_global_tdls_supported == 1);
+         setBooleanField(env, capabilities, "isPerMacTdlsSupported",
+                 tdls_capabilities.is_per_mac_tdls_supported == 1);
+         setBooleanField(env,capabilities, "isOffChannelTdlsSupported",
+                 tdls_capabilities.is_off_channel_tdls_supported);
+
+         ALOGD("TDLS Max Concurrent Tdls Session Number is: %d",
+                 tdls_capabilities.max_concurrent_tdls_session_num);
+         ALOGD("Global Tdls is: %s", tdls_capabilities.is_global_tdls_supported == 1 ? "support" :
+                 "not support");
+         ALOGD("Per Mac Tdls is: %s", tdls_capabilities.is_per_mac_tdls_supported == 1 ? "support" :
+                 "not support");
+         ALOGD("Off Channel Tdls is: %s", tdls_capabilities.is_off_channel_tdls_supported == 1 ?
+                 "support" : "not support");
+
+         return capabilities;
+    } else {
+        return NULL;
+    }
+}
+
 // ----------------------------------------------------------------------------
 // Debug framework
 // ----------------------------------------------------------------------------
@@ -1394,7 +1485,7 @@ int buffer_size, wifi_ring_buffer_status *status) {
         0, 0);
 }
 
-static jboolean android_net_wifi_start_logging(JNIEnv *env, jclass cls, jint iface)  {
+static jboolean android_net_wifi_start_logging(JNIEnv *env, jclass cls, jint iface) {
 
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
     ALOGD("android_net_wifi_start_logging = %p", handle);
@@ -1611,7 +1702,13 @@ static JNINativeMethod gWifiMethods[] = {
     {"setCountryCodeHalNative", "(ILjava/lang/String;)Z",
             (void*) android_net_wifi_set_Country_Code_Hal},
     { "setPnoListNative", "(II[Lcom/android/server/wifi/WifiNative$WifiPnoNetwork;)Z",
-            (void*) android_net_wifi_setPnoListNative}
+            (void*) android_net_wifi_setPnoListNative},
+    {"enableDisableTdlsNative", "(IZLjava/lang/String;)Z",
+            (void*) android_net_wifi_enable_disable_tdls},
+    {"getTdlsStatusNative", "(ILjava/lang/String;)Lcom/android/server/wifi/WifiNative$TdlsStatus;",
+            (void*) android_net_wifi_get_tdls_status},
+    {"getTdlsCapabilitiesNative", "(I)Lcom/android/server/wifi/WifiNative$TdlsCapabilities;",
+            (void*) android_net_wifi_get_tdls_capabilities}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
