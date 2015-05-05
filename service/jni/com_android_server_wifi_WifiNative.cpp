@@ -283,6 +283,7 @@ int set_iface_flags(const char *ifname, int dev_up) {
     }
 
     if (ioctl(sock, SIOCSIFFLAGS, &ifr) != 0) {
+      ret = errno ? -errno : -999;
       ALOGE("Could not set interface %s flags \n", ifname);
       close(sock);
       return ret;
@@ -1636,7 +1637,11 @@ static jboolean android_net_wifi_setPnoListNative(
         net_list[i].auth_bit_field = a;
         int f = getIntField(env, pno_net, "flags");
         net_list[i].flags = f;
-        ALOGE(" setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]", i, (signed byte)net_list[i].rssi_threshold, net_list[i].rssi_threshold, net_list[i].auth_bit_field, a, net_list[i].flags, f, net_list[i].ssid);
+        ALOGE(
+            " setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]",
+            i, (signed char)net_list[i].rssi_threshold,
+            net_list[i].rssi_threshold, net_list[i].auth_bit_field, a,
+            net_list[i].flags, f, net_list[i].ssid);
     }
 
     int result = hal_fn.wifi_set_epno_list(id, handle, len, net_list, handler);
