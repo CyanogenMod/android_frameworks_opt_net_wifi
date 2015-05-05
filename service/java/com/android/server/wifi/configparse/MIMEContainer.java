@@ -2,6 +2,8 @@ package com.android.server.wifi.configparse;
 
 import android.util.Log;
 
+import com.android.server.wifi.hotspot2.Utils;
+
 import java.io.IOException;
 import java.io.LineNumberReader;
 import java.nio.charset.Charset;
@@ -58,7 +60,7 @@ public class MIMEContainer {
 
             for (String attribute : type) {
                 if (attribute.startsWith(Boundary)) {
-                    subBoundary = unquote(attribute.substring(Boundary.length()));
+                    subBoundary = Utils.unquote(attribute.substring(Boundary.length()));
                 }
             }
 
@@ -326,15 +328,6 @@ public class MIMEContainer {
             }
         }
         return sb.toString();
-    }
-
-    private static String unquote(String s) {
-        if (s.startsWith("\"") && s.endsWith("\"")) {
-            return s.substring(1, s.length()-1);
-        }
-        else {
-            return s;
-        }
     }
 
     private static int fromStrictHex(char ch) {

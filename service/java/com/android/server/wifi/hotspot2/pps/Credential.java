@@ -32,6 +32,7 @@ public class Credential {
 
     private final String mUserName;
     private final String mPassword;
+    private final boolean mDisregardPassword;
     private final boolean mMachineManaged;
     private final String mSTokenApp;
     private final boolean mShare;
@@ -58,6 +59,7 @@ public class Credential {
         } else {
             mPassword = null;
         }
+        mDisregardPassword = false;
 
         mMachineManaged = machineManaged;
         mSTokenApp = stApp;
@@ -81,6 +83,7 @@ public class Credential {
 
         mUserName = null;
         mPassword = null;
+        mDisregardPassword = false;
         mMachineManaged = false;
         mSTokenApp = null;
         mShare = false;
@@ -102,16 +105,35 @@ public class Credential {
 
         mUserName = null;
         mPassword = null;
+        mDisregardPassword = false;
         mMachineManaged = false;
         mSTokenApp = null;
         mShare = false;
     }
 
-    public Credential(WifiEnterpriseConfig enterpriseConfig, KeyStore keyStore) throws IOException {
-        mCtime = 0;
-        mExpTime = 0;
+    public Credential(Credential other, String password) {
+        mCtime = other.mCtime;
+        mExpTime = other.mExpTime;
+        mRealm = other.mRealm;
+        mCheckAAACert = other.mCheckAAACert;
+        mUserName = other.mUserName;
+        mPassword = password;
+        mDisregardPassword = other.mDisregardPassword;
+        mMachineManaged = other.mMachineManaged;
+        mSTokenApp = other.mSTokenApp;
+        mShare = other.mShare;
+        mEAPMethod = other.mEAPMethod;
+        mCertType = other.mCertType;
+        mFingerPrint = other.mFingerPrint;
+        mImsi = other.mImsi;
+    }
+
+    public Credential(WifiEnterpriseConfig enterpriseConfig, KeyStore keyStore, boolean update)
+            throws IOException {
+        mCtime = Utils.UNSET_TIME;
+        mExpTime = Utils.UNSET_TIME;
         mRealm = enterpriseConfig.getRealm();
-        mCheckAAACert = true;
+        mCheckAAACert = false;
         mEAPMethod = mapEapMethod(enterpriseConfig.getEapMethod(),
                 enterpriseConfig.getPhase2Method());
         mCertType = mEAPMethod.getEAPMethodID() == EAP.EAPMethodID.EAP_TLS ? CertType.x509v3 : null;
@@ -123,14 +145,12 @@ public class Credential {
                 MessageDigest digester = MessageDigest.getInstance("SHA-256");
                 fingerPrint = digester.digest(enterpriseConfig.getClientCertificate().getEncoded());
             } catch (GeneralSecurityException gse) {
-                Log.e("CRED", "Failed to generate certificate fingerprint: " + gse);
+                Log.e(Utils.HS20_TAG, "Failed to generate certificate fingerprint: " + gse);
                 fingerPrint = null;
             }
         } else if (enterpriseConfig.getClientCertificateAlias() != null) {
             String alias = enterpriseConfig.getClientCertificateAlias();
-            Log.d("HS2J", "Client alias '" + alias + "'");
             byte[] octets = keyStore.get(Credentials.USER_CERTIFICATE + alias);
-            Log.d("HS2J", "DER: " + (octets == null ? "-" : Integer.toString(octets.length)));
             if (octets != null) {
                 try {
                     MessageDigest digester = MessageDigest.getInstance("SHA-256");
@@ -145,7 +165,7 @@ public class Credential {
                     fingerPrint = Base64.decode(enterpriseConfig.getClientCertificateAlias(),
                             Base64.DEFAULT);
                 } catch (IllegalArgumentException ie) {
-                    Log.e("CRED", "Bad base 64 alias");
+                    Log.e(Utils.HS20_TAG, "Bad base 64 alias");
                     fingerPrint = null;
                 }
             }
@@ -156,6 +176,7 @@ public class Credential {
         mImsi = enterpriseConfig.getPlmn();
         mUserName = enterpriseConfig.getIdentity();
         mPassword = enterpriseConfig.getPassword();
+        mDisregardPassword = update && mPassword.length() < 2;
         mMachineManaged = false;
         mSTokenApp = null;
         mShare = false;
@@ -230,12 +251,24 @@ public class Credential {
         return mPassword;
     }
 
+    public boolean hasDisregardPassword() {
+        return mDisregardPassword;
+    }
+
     public CertType getCertType() {
         return mCertType;
     }
 
     public byte[] getFingerPrint() {
         return mFingerPrint;
+    }
+
+    public long getCtime() {
+        return mCtime;
+    }
+
+    public long getExpTime() {
+        return mExpTime;
     }
 
     @Override
@@ -253,16 +286,32 @@ public class Credential {
         if (mCertType != that.mCertType) return false;
         if (!mEAPMethod.equals(that.mEAPMethod)) return false;
         if (!Arrays.equals(mFingerPrint, that.mFingerPrint)) return false;
-        if (mImsi != null ? !mImsi.equals(that.mImsi) : that.mImsi != null) return false;
-        if (mPassword != null ? !mPassword.equals(that.mPassword) : that.mPassword != null)
+        if (!safeEquals(mImsi, that.mImsi)) {
             return false;
+        }
+
+        if (!mDisregardPassword && !safeEquals(mPassword, that.mPassword)) {
+            return false;
+        }
+
         if (!mRealm.equals(that.mRealm)) return false;
-        if (mSTokenApp != null ? !mSTokenApp.equals(that.mSTokenApp) : that.mSTokenApp != null)
+        if (!safeEquals(mSTokenApp, that.mSTokenApp)) {
             return false;
-        if (mUserName != null ? !mUserName.equals(that.mUserName) : that.mUserName != null)
+        }
+        if (!safeEquals(mUserName, that.mUserName)) {
             return false;
+        }
 
         return true;
+    }
+
+    private static boolean safeEquals(String s1, String s2) {
+        if (s1 == null) {
+            return s2 == null;
+        }
+        else {
+            return s2 != null && s1.equals(s2);
+        }
     }
 
     @Override
@@ -292,6 +341,7 @@ public class Credential {
                 ", mCheckAAACert=" + mCheckAAACert +
                 ", mUserName='" + mUserName + '\'' +
                 ", mPassword='" + mPassword + '\'' +
+                ", mDisregardPassword=" + mDisregardPassword +
                 ", mMachineManaged=" + mMachineManaged +
                 ", mSTokenApp='" + mSTokenApp + '\'' +
                 ", mShare=" + mShare +

@@ -56,22 +56,22 @@ wifi_error wifi_get_gscan_capabilities_stub(wifi_interface_handle handle,
 wifi_error wifi_set_link_stats_stub(wifi_interface_handle iface, wifi_link_layer_params params);
 wifi_error wifi_get_link_stats_stub(wifi_request_id id,
          wifi_interface_handle iface, wifi_stats_result_handler handler);
- wifi_error wifi_clear_link_stats_stub(wifi_interface_handle iface,
+wifi_error wifi_clear_link_stats_stub(wifi_interface_handle iface,
        u32 stats_clear_req_mask, u32 *stats_clear_rsp_mask, u8 stop_req, u8 *stop_rsp);
- wifi_error wifi_get_valid_channels_stub(wifi_interface_handle handle,
+wifi_error wifi_get_valid_channels_stub(wifi_interface_handle handle,
          int band, int max_channels, wifi_channel *channels, int *num_channels);
- wifi_error wifi_rtt_range_request_stub(wifi_request_id id, wifi_interface_handle iface,
+wifi_error wifi_rtt_range_request_stub(wifi_request_id id, wifi_interface_handle iface,
          unsigned num_rtt_config, wifi_rtt_config rtt_config[], wifi_rtt_event_handler handler);
- wifi_error wifi_rtt_range_cancel_stub(wifi_request_id id,  wifi_interface_handle iface,
+wifi_error wifi_rtt_range_cancel_stub(wifi_request_id id,  wifi_interface_handle iface,
          unsigned num_devices, mac_addr addr[]);
- wifi_error wifi_get_rtt_capabilities_stub(wifi_interface_handle iface,
+wifi_error wifi_get_rtt_capabilities_stub(wifi_interface_handle iface,
          wifi_rtt_capabilities *capabilities);
- wifi_error wifi_set_nodfs_flag_stub(wifi_interface_handle iface, u32 nodfs);
- wifi_error wifi_start_logging_stub(wifi_interface_handle iface, u32 verbose_level, u32 flags,
+wifi_error wifi_set_nodfs_flag_stub(wifi_interface_handle iface, u32 nodfs);
+wifi_error wifi_start_logging_stub(wifi_interface_handle iface, u32 verbose_level, u32 flags,
          u32 max_interval_sec, u32 min_data_size, char *buffer_name);
- wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_networks,
+wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_networks,
          wifi_epno_network *networks, wifi_epno_handler handler);
- wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
+wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
 wifi_error wifi_get_firmware_memory_dump_stub( wifi_interface_handle iface,
         wifi_firmware_memory_dump_handler handler);
 wifi_error wifi_set_log_handler_stub(wifi_request_id id, wifi_interface_handle iface,
@@ -87,6 +87,15 @@ wifi_error wifi_get_logger_supported_feature_set_stub(wifi_interface_handle ifac
 wifi_error wifi_get_ring_data_stub(wifi_interface_handle iface, char *ring_name);
 wifi_error wifi_get_driver_version_stub(wifi_interface_handle iface, char **buffer,
         int *buffer_size);
+wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_networks,
+        wifi_epno_network *networks, wifi_epno_handler handler);
+wifi_error wifi_enable_tdls_stub(wifi_interface_handle iface, mac_addr addr,
+        wifi_tdls_params *params, wifi_tdls_handler handler);
+wifi_error wifi_disable_tdls_stub(wifi_interface_handle iface, mac_addr addr);
+wifi_error wifi_get_tdls_status_stub(wifi_interface_handle iface, mac_addr addr,
+        wifi_tdls_status *status);
+wifi_error wifi_get_tdls_capabilities_stub(wifi_interface_handle iface,
+        wifi_tdls_capabilities *capabilities);
 #ifdef __cplusplus
 }
 #endif
