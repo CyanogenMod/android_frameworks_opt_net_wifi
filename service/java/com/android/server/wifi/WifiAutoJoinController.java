@@ -124,11 +124,6 @@ public class WifiAutoJoinController {
      */
     int weakRssiBailCount = 0;
 
-    /**
-     * Cached PNO list, it is updated when WifiConfiguration changes due to user input.
-     */
-    ArrayList<WifiNative.WifiPnoNetwork> mCachedPnoList = null;
-
     WifiAutoJoinController(Context c, WifiStateMachine w, WifiConfigStore s,
                            WifiConnectionStatistics st, WifiNative n) {
         mContext = c;
@@ -1907,47 +1902,6 @@ public class WifiAutoJoinController {
         logDbg(reason + config.toString());
     }
 
-    /**
-     * Get the Wifi PNO list
-     *
-     * @return list of WifiNative.WifiPnoNetwork
-     */
-    private ArrayList<WifiNative.WifiPnoNetwork> buildPnoList() {
-        ArrayList<WifiNative.WifiPnoNetwork> list = new ArrayList<WifiNative.WifiPnoNetwork>();
-
-        ArrayList<WifiConfiguration> sortedWifiConfigurations
-                = new ArrayList<WifiConfiguration>(mWifiConfigStore.getConfiguredNetworks());
-        Log.e(TAG, "sortedWifiConfigurations size " + sortedWifiConfigurations.size());
-        if (sortedWifiConfigurations.size() != 0) {
-            // Sort by descending priority
-            Collections.sort(sortedWifiConfigurations, new Comparator() {
-                public int compare(Object o1, Object o2) {
-                    WifiConfiguration a = (WifiConfiguration) o1;
-                    WifiConfiguration b = (WifiConfiguration) o2;
-                    if (a.priority > b.priority) {
-                        return 1;
-                    }
-                    if (a.priority < b.priority) {
-                        return -1;
-                    }
-                    return 1; // cannot happen
-                }
-            });
-        }
-
-        for (WifiConfiguration config : sortedWifiConfigurations) {
-
-            // Use the 2.4GHz threshold since most WifiConfigurations are dual bands
-            // There is very little penalty with triggering too soon, i.e. if PNO finds a network
-            // that has an RSSI too low for us to attempt joining it.
-            int threshold = mWifiConfigStore.thresholdInitialAutoJoinAttemptMin24RSSI.get();
-            Log.e(TAG, "found sortedWifiConfigurations : " + config.configKey());
-            WifiNative.WifiPnoNetwork network = mWifiNative.new WifiPnoNetwork(config, threshold);
-            list.add(network);
-        }
-        return list;
-    }
-
     WifiConfiguration getWifiConfiguration(WifiNative.WifiPnoNetwork network) {
         if (network.configKey != null) {
             return mWifiConfigStore.getWifiConfiguration(network.configKey);
@@ -1957,15 +1911,12 @@ public class WifiAutoJoinController {
 
     ArrayList<WifiNative.WifiPnoNetwork> getPnoList(WifiConfiguration current) {
         int size = -1;
-        ArrayList<WifiNative.WifiPnoNetwork> list;
+        ArrayList<WifiNative.WifiPnoNetwork> list = null;
 
-        if (mCachedPnoList != null) {
-            size = mCachedPnoList.size();
+        if (mWifiConfigStore.mCachedPnoList != null) {
+            size = mWifiConfigStore.mCachedPnoList.size();
         }
-        Log.e(TAG, " get Pno List " + size);
-        if (mCachedPnoList == null) {
-            mCachedPnoList = buildPnoList();
-        }
+        Log.d(TAG, " get Pno List total size:" + size);
 
         if (current != null) {
             String configKey = current.configKey();
@@ -1974,18 +1925,19 @@ public class WifiAutoJoinController {
              * only those networks that have a higher priority
              */
             list = new ArrayList<WifiNative.WifiPnoNetwork>();
-            for (WifiNative.WifiPnoNetwork network : mCachedPnoList) {
+            for (WifiNative.WifiPnoNetwork network : mWifiConfigStore.mCachedPnoList) {
                 WifiConfiguration config = getWifiConfiguration(network);
                 if (config != null && !configKey.equals(network.configKey)) {
                     int choice = getConnectChoice(config, current);
-                    if (choice >= 0) {
-                        // config is same or of higher priority
+                    if (choice > 0) {
+                        // config is of higher priority
                         list.add(network);
+                        network.rssi_threshold = mWifiConfigStore.thresholdGoodRssi24.get();
                     }
                 }
             }
         } else {
-            list = mCachedPnoList;
+            list = mWifiConfigStore.mCachedPnoList;
         }
         return list;
     }

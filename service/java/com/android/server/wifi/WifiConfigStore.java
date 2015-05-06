@@ -387,29 +387,38 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicBoolean enableAutoJoinScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableChipWakeUpWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableRssiPollWhenAssociated = new AtomicBoolean(true);
-    public final AtomicInteger thresholdInitialAutoJoinAttemptMin5RSSI = new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5);
-    public final AtomicInteger thresholdInitialAutoJoinAttemptMin24RSSI = new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24);
+    public final AtomicInteger thresholdInitialAutoJoinAttemptMin5RSSI =
+            new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5);
+    public final AtomicInteger thresholdInitialAutoJoinAttemptMin24RSSI =
+            new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24);
     public final AtomicInteger thresholdUnblacklistThreshold5Hard = new AtomicInteger();
     public final AtomicInteger thresholdUnblacklistThreshold5Soft = new AtomicInteger();
     public final AtomicInteger thresholdUnblacklistThreshold24Hard = new AtomicInteger();
     public final AtomicInteger thresholdUnblacklistThreshold24Soft = new AtomicInteger();
-    public final AtomicInteger thresholdGoodRssi5 = new AtomicInteger(WifiConfiguration.GOOD_RSSI_5);
+    public final AtomicInteger thresholdGoodRssi5 =
+            new AtomicInteger(WifiConfiguration.GOOD_RSSI_5);
     public final AtomicInteger thresholdLowRssi5 = new AtomicInteger(WifiConfiguration.LOW_RSSI_5);
     public final AtomicInteger thresholdBadRssi5 = new AtomicInteger(WifiConfiguration.BAD_RSSI_5);
-    public final AtomicInteger thresholdGoodRssi24 = new AtomicInteger(WifiConfiguration.GOOD_RSSI_24);
+    public final AtomicInteger thresholdGoodRssi24 =
+            new AtomicInteger(WifiConfiguration.GOOD_RSSI_24);
     public final AtomicInteger thresholdLowRssi24 = new AtomicInteger(WifiConfiguration.LOW_RSSI_24);
     public final AtomicInteger thresholdBadRssi24 = new AtomicInteger(WifiConfiguration.BAD_RSSI_24);
     public final AtomicInteger maxTxPacketForNetworkSwitching = new AtomicInteger(40);
     public final AtomicInteger maxRxPacketForNetworkSwitching = new AtomicInteger(80);
     public final AtomicInteger enableVerboseLogging = new AtomicInteger(0);
-    public final AtomicInteger bandPreferenceBoostThreshold5 = new AtomicInteger(WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD);
-    public final AtomicInteger associatedPartialScanPeriodMilli = new AtomicInteger();
-    public final AtomicInteger associatedFullScanBackoff = new AtomicInteger(12); // Will be divided by 8 by WifiStateMachine
-    public final AtomicInteger bandPreferencePenaltyThreshold5 = new AtomicInteger(WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD);
+    public final AtomicInteger bandPreferenceBoostThreshold5 =
+            new AtomicInteger(WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD);
+    public final AtomicInteger associatedFullScanBackoff =
+            new AtomicInteger(12); // Will be divided by 8 by WifiStateMachine
+    public final AtomicInteger bandPreferencePenaltyThreshold5 =
+            new AtomicInteger(WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD);
     public final AtomicInteger alwaysEnableScansWhileAssociated = new AtomicInteger(0);
     public final AtomicInteger maxNumPassiveChannelsForPartialScans = new AtomicInteger(2);
     public final AtomicInteger maxNumActiveChannelsForPartialScans = new AtomicInteger(6);
-    public final AtomicInteger wifiDisconnectedScanIntervalMs = new AtomicInteger(15000);
+    public final AtomicInteger wifiDisconnectedShortScanIntervalMilli = new AtomicInteger(15000);
+    public final AtomicInteger wifiDisconnectedLongScanIntervalMilli = new AtomicInteger(120000);
+    public final AtomicInteger wifiAssociatedShortScanIntervalMilli = new AtomicInteger(20000);
+    public final AtomicInteger wifiAssociatedLongScanIntervalMilli = new AtomicInteger(180000);
 
     private static final Map<String, Object> sKeyMap = new HashMap<>();
 
@@ -480,6 +489,12 @@ public class WifiConfigStore extends IpConfigStore {
      */
     private String lastSelectedConfiguration = null;
 
+    /**
+     * Cached PNO list, it is updated when WifiConfiguration changes due to user input.
+     */
+    ArrayList<WifiNative.WifiPnoNetwork> mCachedPnoList
+            = new ArrayList<WifiNative.WifiPnoNetwork>();
+
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
     private final MOManager mMOManager;
@@ -515,7 +530,9 @@ public class WifiConfigStore extends IpConfigStore {
         sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY, maxRxPacketForNetworkSwitching);
         sKeyMap.put(WIFI_VERBOSE_LOGS_KEY, enableVerboseLogging);
         sKeyMap.put(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferenceBoostThreshold5);
-        sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, associatedPartialScanPeriodMilli);
+        sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, wifiAssociatedShortScanIntervalMilli);
+        sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, wifiAssociatedShortScanIntervalMilli);
+
         sKeyMap.put(ASSOCIATED_FULL_SCAN_BACKOFF_KEY, associatedFullScanBackoff);
         sKeyMap.put(G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferencePenaltyThreshold5);
         sKeyMap.put(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY, alwaysEnableScansWhileAssociated);
@@ -532,13 +549,14 @@ public class WifiConfigStore extends IpConfigStore {
             mFileObserver = null;
         }
 
-        associatedPartialScanPeriodMilli.set(mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_associated_scan_interval));
-        loge("associatedPartialScanPeriodMilli set to " + associatedPartialScanPeriodMilli);
-
-
-        wifiDisconnectedScanIntervalMs.set(mContext.getResources().getInteger(
-                R.integer.config_wifi_disconnected_scan_interval));
+        wifiAssociatedShortScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_associated_short_scan_interval));
+        wifiAssociatedLongScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_associated_short_scan_interval));
+        wifiDisconnectedShortScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_disconnected_short_scan_interval));
+        wifiDisconnectedLongScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_disconnected_long_scan_interval));
 
         onlyLinkSameCredentialConfigurations = mContext.getResources().getBoolean(
                 R.bool.config_wifi_only_link_same_credential_configurations);
@@ -687,7 +705,8 @@ public class WifiConfigStore extends IpConfigStore {
         return mConfiguredNetworks.size();
     }
 
-    private List<WifiConfiguration> getConfiguredNetworks(Map<String, String> pskMap) {
+    private List<WifiConfiguration>
+    getConfiguredNetworks(Map<String, String> pskMap) {
         List<WifiConfiguration> networks = new ArrayList<>();
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             WifiConfiguration newConfig = new WifiConfiguration(config);
@@ -953,6 +972,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (updatePriorities) {
             config.priority = ++mLastPriority;
             setNetworkPriorityNative(config.networkId, config.priority);
+            buildPnoList();
         }
 
         if (config.isPasspoint()) {
@@ -1242,6 +1262,48 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         return result.getNetworkId();
+    }
+
+
+    /**
+     * Get the Wifi PNO list
+     *
+     * @return list of WifiNative.WifiPnoNetwork
+     */
+    private void buildPnoList() {
+        mCachedPnoList = new ArrayList<WifiNative.WifiPnoNetwork>();
+
+        ArrayList<WifiConfiguration> sortedWifiConfigurations
+                = new ArrayList<WifiConfiguration>(getConfiguredNetworks());
+        Log.e(TAG, "buildPnoList sortedWifiConfigurations size " + sortedWifiConfigurations.size());
+        if (sortedWifiConfigurations.size() != 0) {
+            // Sort by descending priority
+            Collections.sort(sortedWifiConfigurations, new Comparator() {
+                public int compare(Object o1, Object o2) {
+                    WifiConfiguration a = (WifiConfiguration) o1;
+                    WifiConfiguration b = (WifiConfiguration) o2;
+
+                    if (a.priority > b.priority) {
+                        return 1;
+                    }
+                    if (a.priority < b.priority) {
+                        return -1;
+                    }
+                    return 1; // cannot happen
+                }
+            });
+        }
+
+        for (WifiConfiguration config : sortedWifiConfigurations) {
+            // Initialize the RSSI threshold with sane value:
+            // Use the 2.4GHz threshold since most WifiConfigurations are dual bands
+            // There is very little penalty with triggering too soon, i.e. if PNO finds a network
+            // that has an RSSI too low for us to attempt joining it.
+            int threshold = thresholdInitialAutoJoinAttemptMin24RSSI.get();
+            Log.e(TAG, "found sortedWifiConfigurations : " + config.configKey());
+            WifiNative.WifiPnoNetwork network = mWifiNative.new WifiPnoNetwork(config, threshold);
+            mCachedPnoList.add(network);
+        }
     }
 
     /**
@@ -1663,6 +1725,8 @@ public class WifiConfigStore extends IpConfigStore {
         readIpAndProxyConfigurations();
         readNetworkHistory();
         readAutoJoinConfig();
+
+        buildPnoList();
 
         sendConfiguredNetworksChangedBroadcast();
 
