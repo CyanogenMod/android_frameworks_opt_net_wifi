@@ -3360,7 +3360,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         getWifiLinkLayerStats(false);
         mOnTimeScreenStateChange = mOnTime;
         lastScreenStateChangeTimeStamp = lastLinkLayerStatsUpdate;
-        mEnableBackgroundScan = false;
+        mEnableBackgroundScan = mScreenOn == false;
         cancelDelayedScan();
 
         if (screenOn) {
