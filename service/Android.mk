@@ -85,8 +85,6 @@ LOCAL_CFLAGS += -Wno-unused-parameter
 
 LOCAL_C_INCLUDES += \
 	$(LOCAL_PATH)/jni \
-	external/stlport/stlport \
-    	bionic \
 	$(call include-path-for, libhardware)/hardware \
 	$(call include-path-for, libhardware_legacy)/hardware_legacy \
 	libcore/include
@@ -95,7 +93,6 @@ LOCAL_SHARED_LIBRARIES += \
 	libcutils \
 	libnl \
 	libandroid_runtime \
-   	libstlport \
 	libutils \
 	libhardware_legacy \
 	libdl
