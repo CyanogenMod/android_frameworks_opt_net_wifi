@@ -4374,9 +4374,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         setSuspendOptimizationsNative(SUSPEND_DUE_TO_DHCP, false);
         mWifiNative.setPowerSave(false);
 
-        // stopBatchedScan();
-        WifiNative.pauseScan();
-
         // Update link layer stats
         getWifiLinkLayerStats(false);
 
@@ -4440,9 +4437,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mWifiNative.BLUETOOTH_COEXISTENCE_MODE_SENSE);
 
         mDhcpActive = false;
-
-        // startBatchedScan();
-        WifiNative.restartScan();
     }
 
     void connectScanningService() {
