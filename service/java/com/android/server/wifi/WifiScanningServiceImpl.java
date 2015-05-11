@@ -16,6 +16,7 @@
 
 package com.android.server.wifi;
 
+import android.Manifest;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -67,6 +68,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final boolean VDBG = true;
     private static final int INVALID_KEY = 0;                               // same as WifiScanner
     private static final int MIN_PERIOD_PER_CHANNEL_MS = 200;               // DFS needs 120 ms
+    private static final int UNKNOWN_PID = -1;
 
     @Override
     public Messenger getMessenger() {
@@ -88,6 +90,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         Bundle b = new Bundle();
         b.putIntegerArrayList(WifiScanner.GET_AVAILABLE_CHANNELS_EXTRA, list);
         return b;
+    }
+
+    private void enforceLocationHardwarePermission(int uid) {
+        mContext.enforcePermission(
+                Manifest.permission.LOCATION_HARDWARE,
+                UNKNOWN_PID, uid,
+                "LocationHardware");
     }
 
     private class ClientHandler extends Handler {
@@ -128,6 +137,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         ci.cleanup();
                     }
                     return;
+            }
+
+            try {
+                enforceLocationHardwarePermission(msg.sendingUid);
+            } catch (SecurityException e) {
+                Log.d(TAG, "failed to authorize app: " + e);
+                replyFailed(msg, WifiScanner.REASON_NOT_AUTHORIZED, "Not authorized");
+                return;
             }
 
             if (msg.what == WifiScanner.CMD_GET_SCAN_RESULTS) {
