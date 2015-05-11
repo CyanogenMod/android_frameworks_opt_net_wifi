@@ -1620,7 +1620,8 @@ static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls,
 
 static void on_ring_buffer_data(char *ring_name, char *buffer, int buffer_size,
         wifi_ring_buffer_status *status) {
-    if (!ring_name || !buffer || !status || buffer_size <= sizeof(wifi_ring_buffer_entry)) {
+    if (!ring_name || !buffer || !status ||
+            (unsigned int)buffer_size <= sizeof(wifi_ring_buffer_entry)) {
         ALOGE("Error input for on_ring_buffer_data!");
     }
     JNIEnv *env = NULL;
