@@ -587,8 +587,8 @@ public class WifiMonitor {
                     if (mWifiNative.connectToSupplicant()) {
                         m.mMonitoring = true;
                         m.mStateMachine.sendMessage(SUP_CONNECTION_EVENT);
-                        new MonitorThread(mWifiNative, this).start();
                         mConnected = true;
+                        new MonitorThread(mWifiNative, this).start();
                         break;
                     }
                     if (connectTries++ < 50) {
@@ -607,7 +607,7 @@ public class WifiMonitor {
 
         public synchronized void stopMonitoring(String iface) {
             WifiMonitor m = mIfaceMap.get(iface);
-            if (DBG) Log.d(TAG, "stopMonitoring(" + iface + ") = " + m.mStateMachine);
+            Log.d(TAG, "stopMonitoring(" + iface + ") = " + m.mStateMachine);
             m.mMonitoring = false;
             m.mStateMachine.sendMessage(SUP_DISCONNECTION_EVENT);
         }
@@ -730,6 +730,8 @@ public class WifiMonitor {
         }
 
         public void run() {
+            Log.d(TAG, "MonitorThread start with mConnected=" + mWifiMonitorSingleton.mConnected);
+
             //noinspection InfiniteLoopStatement
             for (;;) {
                 if (!mWifiMonitorSingleton.mConnected) {
@@ -745,7 +747,7 @@ public class WifiMonitor {
                 }
 
                 if (mWifiMonitorSingleton.dispatchEvent(eventStr)) {
-                    if (DBG) Log.d(TAG, "Disconnecting from the supplicant, no more events");
+                    Log.d(TAG, "Disconnecting from the supplicant, no more events");
                     break;
                 }
             }
