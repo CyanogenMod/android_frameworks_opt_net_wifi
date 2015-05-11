@@ -3012,8 +3012,8 @@ public class WifiConfigStore extends IpConfigStore {
 
             if (doLink) {
                 if (VDBG) {
-                   loge("linkConfiguration: will link " + link.configKey()
-                           + " and " + config.configKey());
+                    loge("linkConfiguration: will link " + link.configKey()
+                            + " and " + config.configKey());
                 }
                 if (link.linkedConfigurations == null) {
                     link.linkedConfigurations = new HashMap<String, Integer>();
@@ -3050,143 +3050,6 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
         }
-    }
-
-    /*
-     * We try to link a scan result with a WifiConfiguration for which SSID and
-     * key management dont match,
-     * for instance, we try identify the 5GHz SSID of a DBDC AP,
-     * even though we know only of the 2.4GHz
-     *
-     * Obviously, this function is not optimal since it is used to compare every scan
-     * result with every Saved WifiConfiguration, with a string.equals operation.
-     * As a speed up, might be better to implement the mConfiguredNetworks store as a
-     * <String, WifiConfiguration> object instead of a <Integer, WifiConfiguration> object
-     * so as to speed this up. Also to prevent the tiny probability of hash collision.
-     *
-     */
-    public WifiConfiguration associateWithConfiguration(ScanDetail scanDetail) {
-
-        ScanResult result = scanDetail.getScanResult();
-        boolean doNotAdd = false;
-        String configKey = WifiConfiguration.configKey(result);
-        if (configKey == null) {
-            if (DBG) loge("associateWithConfiguration(): no config key " );
-            return null;
-        }
-
-        // Need to compare with quoted string
-        String SSID = "\"" + result.SSID + "\"";
-
-        if (VVDBG) {
-            loge("associateWithConfiguration(): try " + configKey);
-        }
-
-        Checksum csum = new CRC32();
-        csum.update(SSID.getBytes(), 0, SSID.getBytes().length);
-        if (mDeletedSSIDs.contains(csum.getValue())) {
-            doNotAdd = true;
-        }
-
-        WifiConfiguration config = null;
-        for (WifiConfiguration link : mConfiguredNetworks.values()) {
-            boolean doLink = false;
-
-            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.selfAdded ||
-                    link.ephemeral) {
-                if (VVDBG) loge("associateWithConfiguration(): skip selfadd " + link.configKey() );
-                // Make sure we dont associate the scan result to a deleted config
-                continue;
-            }
-
-            if (!link.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-                if (VVDBG) loge("associateWithConfiguration(): skip non-PSK " + link.configKey() );
-                // Make sure we dont associate the scan result to a non-PSK config
-                continue;
-            }
-
-            if (configKey.equals(link.configKey())) {
-                if (VVDBG) loge("associateWithConfiguration(): found it!!! " + configKey );
-                return link; // Found it exactly
-            }
-
-            ScanDetailCache linkedScanDetailCache = getScanDetailCache(link);
-            if (!doNotAdd
-                    && (linkedScanDetailCache != null) && (linkedScanDetailCache.size() <= 6)) {
-                for (String bssid : linkedScanDetailCache.keySet()) {
-                    if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
-                            && SSID.regionMatches(false, 0, link.SSID, 0, 4)) {
-                        // If first 16 ascii characters of BSSID matches, and first 3
-                        // characters of SSID match, we assume this is a home setup
-                        // and thus we will try to transfer the password from the known
-                        // BSSID/SSID to the recently found BSSID/SSID
-
-                        // If (VDBG)
-                        //    loge("associateWithConfiguration OK " );
-                        doLink = true;
-                        break;
-                    }
-                }
-            }
-
-            if (doLink) {
-                // Try to make a non verified WifiConfiguration, but only if the original
-                // configuration was not self already added
-                if (VDBG) {
-                    loge("associateWithConfiguration: try to create " +
-                            result.SSID + " and associate it with: " + link.SSID
-                            + " key " + link.configKey());
-                }
-                config = wifiConfigurationFromScanResult(scanDetail);
-                if (config != null) {
-                    config.selfAdded = true;
-                    config.didSelfAdd = true;
-                    config.dirty = true;
-                    config.peerWifiConfiguration = link.configKey();
-                    if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
-                            config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-                        if (VDBG && config != null) {
-                            loge("associateWithConfiguration: got a config from beacon"
-                                    + config.SSID + " key " + config.configKey());
-                        }
-                        // Transfer the credentials from the configuration we are linking from
-                        String psk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
-                        if (psk != null) {
-                            config.preSharedKey = psk;
-                            if (VDBG) {
-                                if (config.preSharedKey != null)
-                                    loge(" transfer PSK : " + config.preSharedKey);
-                            }
-
-                            // Link configurations
-                            if (link.linkedConfigurations == null) {
-                                link.linkedConfigurations = new HashMap<String, Integer>();
-                            }
-                            if (config.linkedConfigurations == null) {
-                                config.linkedConfigurations = new HashMap<String, Integer>();
-                            }
-                            link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
-                            config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
-
-                            // Carry over the Ip configuration
-                            if (link.getIpConfiguration() != null) {
-                                config.setIpConfiguration(link.getIpConfiguration());
-                            }
-                        } else {
-                            config = null;
-                        }
-                    } else {
-                        config = null;
-                    }
-                    if (config != null) break;
-                }
-                if (VDBG && config != null) {
-                    loge("associateWithConfiguration: success, created: " + config.SSID
-                            + " key " + config.configKey());
-                }
-            }
-        }
-        return config;
     }
 
     public HashSet<Integer> makeChannelList(WifiConfiguration config, int age, boolean restrict) {

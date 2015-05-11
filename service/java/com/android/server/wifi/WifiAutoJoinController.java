@@ -276,20 +276,6 @@ public class WifiAutoJoinController {
                 // We couldn't associate the scan result to a Saved WifiConfiguration
                 // Hence it is untrusted
                 result.untrusted = true;
-                associatedConfig = mWifiConfigStore.associateWithConfiguration(scanDetail);
-                if (associatedConfig != null && associatedConfig.SSID != null) {
-                    if (VDBG) {
-                        logDbg("addToScanCache save associated config "
-                                + associatedConfig.SSID + " with " + result.SSID
-                                + " status " + associatedConfig.autoJoinStatus
-                                + " reason " + associatedConfig.disableReason
-                                + " tsp " + associatedConfig.blackListTimestamp
-                                + " was " + (now - associatedConfig.blackListTimestamp));
-                    }
-                    mWifiStateMachine.sendMessage(
-                            WifiStateMachine.CMD_AUTO_SAVE_NETWORK, associatedConfig);
-                    didAssociate = true;
-                }
             } else {
                 // If the scan result has been blacklisted fir 18 hours -> unblacklist
                 if ((now - result.blackListTimestamp) > loseBlackListHardMilli) {
