@@ -39,13 +39,17 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.WorkSource;
 import android.util.Log;
 import android.util.Slog;
 
+import com.android.internal.app.IBatteryStats;
 import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.StateMachine;
 import com.android.internal.util.State;
+import com.android.server.am.BatteryStatsService;
+
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -86,12 +90,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         return b;
     }
 
-    private void enforceConnectivityInternalPermission() {
-        mContext.enforceCallingOrSelfPermission(
-                android.Manifest.permission.CONNECTIVITY_INTERNAL,
-                "WifiScanningServiceImpl");
-    }
-
     private class ClientHandler extends Handler {
 
         ClientHandler(android.os.Looper looper) {
@@ -106,15 +104,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             switch (msg.what) {
 
                 case AsyncChannel.CMD_CHANNEL_HALF_CONNECTED:
-                    if (msg.arg1 == AsyncChannel.STATUS_SUCCESSFUL) {
-                        AsyncChannel c = (AsyncChannel) msg.obj;
-                        if (DBG) Slog.d(TAG, "New client listening to asynchronous messages: " +
-                                msg.replyTo);
-                        ClientInfo cInfo = new ClientInfo(c, msg.replyTo);
-                        mClients.put(msg.replyTo, cInfo);
-                    } else {
+                    if (msg.arg1 != AsyncChannel.STATUS_SUCCESSFUL) {
                         Slog.e(TAG, "Client connection failure, error=" + msg.arg1);
                     }
+                    return;
+                case AsyncChannel.CMD_CHANNEL_FULL_CONNECTION:
+                    AsyncChannel ac = new AsyncChannel();
+                    ac.connect(mContext, this, msg.replyTo);
+                    if (DBG) Slog.d(TAG, "New client connected : " + msg.sendingUid + msg.replyTo);
+                    ClientInfo cInfo = new ClientInfo(msg.sendingUid, ac, msg.replyTo);
+                    mClients.put(msg.replyTo, cInfo);
                     return;
                 case AsyncChannel.CMD_CHANNEL_DISCONNECTED:
                     if (msg.arg1 == AsyncChannel.STATUS_SEND_UNSUCCESSFUL) {
@@ -125,20 +124,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     if (DBG) Slog.d(TAG, "closing client " + msg.replyTo);
                     ClientInfo ci = mClients.remove(msg.replyTo);
                     if (ci != null) {                       /* can be null if send failed above */
+                        if (DBG) Slog.d(TAG, "closing client " + ci.mUid);
                         ci.cleanup();
                     }
                     return;
-                case AsyncChannel.CMD_CHANNEL_FULL_CONNECTION:
-                    AsyncChannel ac = new AsyncChannel();
-                    ac.connect(mContext, this, msg.replyTo);
-                    return;
-            }
-
-            try {
-                enforceConnectivityInternalPermission();
-            } catch (SecurityException e) {
-                replyFailed(msg, WifiScanner.REASON_NOT_AUTHORIZED, "Not authorized");
-                return;
             }
 
             if (msg.what == WifiScanner.CMD_GET_SCAN_RESULTS) {
@@ -192,6 +181,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private Context mContext;
     private WifiScanningStateMachine mStateMachine;
     private ClientHandler mClientHandler;
+    private IBatteryStats mBatteryStats;
 
     WifiScanningServiceImpl() { }
 
@@ -208,6 +198,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         mClientHandler = new ClientHandler(thread.getLooper());
         mStateMachine = new WifiScanningStateMachine(thread.getLooper());
         mWifiChangeStateMachine = new WifiChangeStateMachine(thread.getLooper());
+        mBatteryStats = BatteryStatsService.getService();
 
         mContext.registerReceiver(
                 new BroadcastReceiver() {
@@ -520,11 +511,68 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         private static final int MAX_LIMIT = 16;
         private final AsyncChannel mChannel;
         private final Messenger mMessenger;
+        private final int mUid;
+        private final WorkSource mWorkSource;
+        private boolean mScanWorkReported = false;
 
-        ClientInfo(AsyncChannel c, Messenger m) {
+        ClientInfo(int uid, AsyncChannel c, Messenger m) {
             mChannel = c;
             mMessenger = m;
+            mUid = uid;
+            mWorkSource = new WorkSource(uid, TAG);
             if (DBG) Slog.d(TAG, "New client, channel: " + c + " messenger: " + m);
+        }
+
+        void reportBatchedScanStart() {
+            if (mUid == 0)
+                return;
+
+            int csph = getCsph();
+
+            try {
+                mBatteryStats.noteWifiBatchedScanStartedFromSource(mWorkSource, csph);
+                Log.d(TAG, "started scanning for UID " + mUid + ", csph = " + csph);
+            } catch (RemoteException e) {
+                Log.w(TAG, "failed to report scan work: " + e.toString());
+            }
+        }
+
+        void reportBatchedScanStop() {
+            if (mUid == 0)
+                return;
+
+            try {
+                mBatteryStats.noteWifiBatchedScanStoppedFromSource(mWorkSource);
+                Log.d(TAG, "stopped scanning for UID " + mUid);
+            } catch (RemoteException e) {
+                Log.w(TAG, "failed to cleanup scan work: " + e.toString());
+            }
+        }
+
+        int getCsph() {
+            int csph = 0;
+            for (ScanSettings settings : getScanSettings()) {
+                int num_channels = settings.channels == null ? 0 : settings.channels.length;
+                if (num_channels == 0 && settings.band != 0) {
+                    num_channels = getChannelsForBand(settings.band).length;
+                }
+
+                int scans_per_Hour = settings.periodInMs == 0 ? 1 : (3600 * 1000) / settings.periodInMs;
+                csph += num_channels * scans_per_Hour;
+            }
+
+            return csph;
+        }
+
+        void reportScanWorkUpdate() {
+            if (mScanWorkReported) {
+                reportBatchedScanStop();
+                mScanWorkReported = false;
+            }
+            if (mScanSettings.isEmpty() == false) {
+                reportBatchedScanStart();
+                mScanWorkReported = true;
+            }
         }
 
         @Override
@@ -549,6 +597,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         void addScanRequest(ScanSettings settings, int id) {
             mScanSettings.put(id, settings);
+            reportScanWorkUpdate();
         }
 
         void removeScanRequest(int id) {
@@ -557,6 +606,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 /* this was a single shot scan */
                 mChannel.sendMessage(WifiScanner.CMD_SINGLE_SCAN_COMPLETED, 0, id);
             }
+            reportScanWorkUpdate();
         }
 
         Iterator<Map.Entry<Integer, ScanSettings>> getScans() {
@@ -1096,7 +1146,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         } else {
             if (WifiNative.startScan(s, mStateMachine)) {
                 if (DBG) Log.e(TAG, "Successfully started scan of " + s.num_buckets + " buckets at"
-                        + "time = " + SystemClock.elapsedRealtimeNanos()/1000 + " period "
+                        + "time = " + SystemClock.elapsedRealtimeNanos() / 1000 + " period "
                         + s.base_period_ms);
                 return true;
             } else {
@@ -1611,7 +1661,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         class ClientInfoLocal extends ClientInfo {
             ClientInfoLocal() {
-                super(null, null);
+                super(0, null, null);
             }
             @Override
             void deliverScanResults(int handler, ScanData results[]) {
@@ -1775,5 +1825,4 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
         return band;
     }
-
 }
