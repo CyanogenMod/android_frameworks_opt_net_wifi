@@ -1016,7 +1016,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private WorkSource mNotedBatchedScanWorkSource = null;
     private int mNotedBatchedScanCsph = 0;
 
-    private String mTcpBufferSizes = null;
+    private final String mTcpBufferSizes;
 
     // Used for debug and stats gathering
     private static int sScanAlarmIntentCount = 0;
@@ -4308,9 +4308,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private void updateLinkProperties(int reason) {
         LinkProperties newLp = new LinkProperties();
 
-        // Interface name and proxy are locally configured.
+        // Interface name, proxy, and TCP buffer sizes are locally configured.
         newLp.setInterfaceName(mInterfaceName);
         newLp.setHttpProxy(mWifiConfigStore.getProxyProperties(mLastNetworkId));
+        if (!TextUtils.isEmpty(mTcpBufferSizes)) {
+            newLp.setTcpBufferSizes(mTcpBufferSizes);
+        }
 
         // IPv4/v6 addresses, IPv6 routes and IPv6 DNS servers come from netlink.
         LinkProperties netlinkLinkProperties = mNetlinkTracker.getLinkProperties();
@@ -4350,9 +4353,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
-            if (TextUtils.isEmpty(mTcpBufferSizes) == false) {
-                mLinkProperties.setTcpBufferSizes(mTcpBufferSizes);
-            }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
@@ -7608,7 +7608,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
             setNetworkDetailedState(DetailedState.CONNECTING);
 
-            if (TextUtils.isEmpty(mTcpBufferSizes) == false) {
+            if (!TextUtils.isEmpty(mTcpBufferSizes)) {
                 mLinkProperties.setTcpBufferSizes(mTcpBufferSizes);
             }
             mNetworkAgent = new WifiNetworkAgent(getHandler().getLooper(), mContext,
