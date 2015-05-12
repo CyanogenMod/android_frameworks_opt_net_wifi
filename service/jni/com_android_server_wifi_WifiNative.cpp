@@ -1639,7 +1639,7 @@ static jboolean android_net_wifi_setPnoListNative(
         net_list[i].flags = f;
         ALOGE(
             " setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]",
-            i, (signed char)net_list[i].rssi_threshold,
+            i, (signed)net_list[i].rssi_threshold,
             net_list[i].rssi_threshold, net_list[i].auth_bit_field, a,
             net_list[i].flags, f, net_list[i].ssid);
     }
