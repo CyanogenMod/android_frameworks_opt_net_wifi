@@ -31,6 +31,7 @@ import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
  */
 import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
 
+import android.Manifest;
 import android.app.ActivityManager;
 import android.app.AlarmManager;
 import android.app.AlertDialog;
@@ -39,12 +40,11 @@ import android.app.backup.IBackupManager;
 import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.IPackageManager;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
@@ -84,6 +84,7 @@ import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.os.BatteryStats;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.INetworkManagementService;
@@ -103,7 +104,6 @@ import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.LruCache;
-import android.view.WindowManager;
 
 import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
@@ -357,6 +357,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private final Object mDhcpResultsLock = new Object();
     private DhcpResults mDhcpResults;
+
+    // NOTE: Do not return to clients - use #getWiFiInfoForUid(int)
     private WifiInfo mWifiInfo;
     private NetworkInfo mNetworkInfo;
     private NetworkCapabilities mNetworkCapabilities;
@@ -1843,7 +1845,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * @return a {@link WifiInfo} object containing information about the current connection
      */
     public WifiInfo syncRequestConnectionInfo() {
-        return mWifiInfo;
+        return getWiFiInfoForUid(Binder.getCallingUid());
     }
 
     public DhcpResults syncGetDhcpResults() {
@@ -4287,9 +4289,36 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             intent.putExtra(WifiManager.EXTRA_BSSID, bssid);
         if (mNetworkInfo.getDetailedState() == DetailedState.VERIFYING_POOR_LINK ||
                 mNetworkInfo.getDetailedState() == DetailedState.CONNECTED) {
-            intent.putExtra(WifiManager.EXTRA_WIFI_INFO, new WifiInfo(mWifiInfo));
+            // We no longer report MAC address to third-parties and our code does
+            // not rely on this broadcast, so just send the default MAC address.
+            WifiInfo sentWifiInfo = new WifiInfo(mWifiInfo);
+            sentWifiInfo.setMacAddress(WifiInfo.DEFAULT_MAC_ADDRESS);
+            intent.putExtra(WifiManager.EXTRA_WIFI_INFO, sentWifiInfo);
         }
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+    }
+
+    private WifiInfo getWiFiInfoForUid(int uid) {
+        if (Binder.getCallingUid() == Process.myUid()) {
+            return mWifiInfo;
+        }
+
+        WifiInfo result = new WifiInfo(mWifiInfo);
+        result.setMacAddress(WifiInfo.DEFAULT_MAC_ADDRESS);
+
+        IBinder binder = ServiceManager.getService("package");
+        IPackageManager packageManager = IPackageManager.Stub.asInterface(binder);
+
+        try {
+            if (packageManager.checkUidPermission(Manifest.permission.LOCAL_MAC_ADDRESS,
+                    uid) == PackageManager.PERMISSION_GRANTED) {
+                result.setMacAddress(mWifiInfo.getMacAddress());
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error checking receiver permission", e);
+        }
+
+        return result;
     }
 
     private void sendLinkConfigurationChangedBroadcast() {
