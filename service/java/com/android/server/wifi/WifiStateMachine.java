@@ -53,6 +53,7 @@ import android.net.DhcpStateMachine;
 import android.net.Network;
 import android.net.dhcp.DhcpClient;
 import android.net.InterfaceConfiguration;
+import android.net.IpReachabilityMonitor;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.NetworkAgent;
@@ -225,7 +226,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     /* Chipset supports background scan */
     private final boolean mBackgroundScanSupported;
 
-    private String mInterfaceName;
+    private final String mInterfaceName;
     /* Tethering interface could be separate from wlan interface */
     private String mTetherInterfaceName;
 
@@ -465,7 +466,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * Checks to see if user has specified if the apps configuration is connectable.
      * If the user hasn't specified we query the user and return true.
      *
-     * @param message The message to be deffered
+     * @param message The message to be deferred
      * @param netId Network id of the configuration to check against
      * @param allowOverride If true we won't defer to the user if the uid of the message holds the
      *                      CONFIG_OVERRIDE_PERMISSION
@@ -499,6 +500,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * and domains obtained from router advertisements (RFC 6106).
      */
     private NetlinkTracker mNetlinkTracker;
+
+    private IpReachabilityMonitor mIpReachabilityMonitor;
 
     private AlarmManager mAlarmManager;
     private PendingIntent mScanIntent;
@@ -684,7 +687,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /**
      * Watchdog for protecting against b/16823537
-     * Leave time for 4-ways handshake to succeed
+     * Leave time for 4-way handshake to succeed
      */
     static final int ROAM_GUARD_TIMER_MSEC = 15000;
 
@@ -752,6 +755,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     static final int CMD_ASSOCIATED_BSSID = BASE + 147;
 
     static final int CMD_NETWORK_STATUS                   = BASE + 148;
+
+    /* A layer 3 neighbor on the Wi-Fi link became unreachable. */
+    static final int CMD_IP_REACHABILITY_LOST = BASE + 149;
 
     /* Note: BASE + 152 in use by CMD_REMOVE_USER_CONFIGURATIONS */
 
@@ -1070,6 +1076,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mNwService.registerObserver(mNetlinkTracker);
         } catch (RemoteException e) {
             loge("Couldn't register netlink tracker: " + e.toString());
+        }
+
+        try {
+            mIpReachabilityMonitor = new IpReachabilityMonitor(
+                    mInterfaceName,
+                    new IpReachabilityMonitor.Callback() {
+                        @Override
+                        public void notifyLost(InetAddress ip, String logMsg) {
+                            sendMessage(CMD_IP_REACHABILITY_LOST, logMsg);
+                        }
+                    });
+        } catch (IllegalArgumentException e) {
+            loge("Failed to create IpReachabilityMonitor: ", e);
         }
 
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
@@ -3234,6 +3253,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                 }
                 break;
+            case CMD_IP_REACHABILITY_LOST:
+                if (msg.obj != null) {
+                    sb.append(" ").append((String) msg.obj);
+                }
+                break;
             case CMD_SET_COUNTRY_CODE:
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
@@ -4353,6 +4377,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
+            mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
@@ -4469,6 +4494,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
         }
         mNetlinkTracker.clearLinkProperties();
+        mIpReachabilityMonitor.clearLinkProperties();
 
         // Now clear the merged link properties.
         mLinkProperties.clear();
@@ -4489,7 +4515,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 + gateway.getHostAddress());
                     }
                     address = macAddressFromRoute(gateway.getHostAddress());
-                     /* The gateway's MAC address is known */
+                    /* The gateway's MAC address is known */
                     if ((address == null) && (timeout > 0)) {
                         boolean reachable = false;
                         try {
@@ -4904,6 +4930,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         /* DHCP times out after about 30 seconds, we do a
          * disconnect thru supplicant, we will let autojoin retry connecting to the network
          */
+        mWifiNative.disconnect();
+    }
+
+    // TODO: De-duplicated this and handleIpConfigurationLost().
+    private void handleIpReachabilityLost() {
+        // No need to be told about any additional neighbors that might also
+        // become unreachable--quiet them now while we start disconnecting.
+        mIpReachabilityMonitor.clearLinkProperties();
+
+        mWifiInfo.setInetAddress(null);
+        mWifiInfo.setMeteredHint(false);
+
+        // TODO: Determine whether to call some form of mWifiConfigStore.handleSSIDStateChange().
+
+        // Disconnect via supplicant, and let autojoin retry connecting to the network.
         mWifiNative.disconnect();
     }
 
@@ -5352,6 +5393,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 case CMD_IP_CONFIGURATION_LOST:
+                case CMD_IP_REACHABILITY_LOST:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case CMD_GET_CONNECTION_STATISTICS:
@@ -6563,6 +6605,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 s = "CMD_IP_CONFIGURATION_SUCCESSFUL";
                 break;
+            case CMD_IP_REACHABILITY_LOST:
+                s = "CMD_IP_REACHABILITY_LOST";
+                break;
             case CMD_STATIC_IP_SUCCESS:
                 s = "CMD_STATIC_IP_SUCCESSFUL";
                 break;
@@ -7674,9 +7719,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     transitionTo(mConnectedState);
                     break;
                 case CMD_IP_CONFIGURATION_LOST:
-                    // Get Link layer stats so as we get fresh tx packet counters
+                    // Get Link layer stats so that we get fresh tx packet counters.
                     getWifiLinkLayerStats(true);
                     handleIpConfigurationLost();
+                    transitionTo(mDisconnectingState);
+                    break;
+                case CMD_IP_REACHABILITY_LOST:
+                    if (DBG && message.obj != null) log((String) message.obj);
+                    handleIpReachabilityLost();
                     transitionTo(mDisconnectingState);
                     break;
                 case CMD_DISCONNECT:
@@ -8171,18 +8221,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 WifiConfiguration.ROAMING_FAILURE_IP_CONFIG);
                     }
                     return NOT_HANDLED;
-               case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
+                case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
                     if (DBG) log("Roaming and Watchdog reports poor link -> ignore");
                     return HANDLED;
-               case CMD_UNWANTED_NETWORK:
+                case CMD_UNWANTED_NETWORK:
                     if (DBG) log("Roaming and CS doesnt want the network -> ignore");
                     return HANDLED;
-               case CMD_SET_OPERATIONAL_MODE:
+                case CMD_SET_OPERATIONAL_MODE:
                     if (message.arg1 != CONNECT_MODE) {
                         deferMessage(message);
                     }
                     break;
-               case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
+                case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     /**
                      * If we get a SUPPLICANT_STATE_CHANGE_EVENT indicating a DISCONNECT
                      * before NETWORK_DISCONNECTION_EVENT
@@ -8435,7 +8485,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case CMD_AUTO_ROAM:
-                    // Clear the driver roam indication since we are attempting a framerwork roam
+                    // Clear the driver roam indication since we are attempting a framework roam
                     mLastDriverRoamAttempt = 0;
 
                     /* Connect command coming from auto-join */
@@ -8471,7 +8521,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         break;
                     };
 
-                    // Make sure the network is enabled, since supplicant will not reenable it
+                    // Make sure the network is enabled, since supplicant will not re-enable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
                     if (deferForUserInput(message, netId, false)) {
@@ -8534,8 +8584,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         + " screenOn=" + mScreenOn);
             }
 
-            // Make sure we disconnect: we enter this state prior connecting to a new
-            // network, waiting for either a DISCONECT event or a SUPPLICANT_STATE_CHANGE
+            // Make sure we disconnect: we enter this state prior to connecting to a new
+            // network, waiting for either a DISCONNECT event or a SUPPLICANT_STATE_CHANGE
             // event which in this case will be indicating that supplicant started to associate.
             // In some cases supplicant doesn't ignore the connect requests (it might not
             // find the target SSID in its cache),
