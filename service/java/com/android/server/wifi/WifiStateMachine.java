@@ -66,8 +66,6 @@ import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
 import android.net.TrafficStats;
-import android.net.wifi.BatchedScanResult;
-import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.RssiPacketCountInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
@@ -214,13 +212,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private int mNumScanResultsKnown;
     private int mNumScanResultsReturned;
 
-    /* Batch scan results */
-    private final List<BatchedScanResult> mBatchedScanResults =
-            new ArrayList<BatchedScanResult>();
-    private int mBatchedScanOwnerUid = UNKNOWN_SCAN_SOURCE;
-    private int mExpectedBatchedScans = 0;
-    private long mBatchedScanMinPollTime = 0;
-
     private boolean mScreenOn = false;
 
     /* Chipset supports background scan */
@@ -302,9 +293,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String CUSTOMIZED_SCAN_SETTING = "customized_scan_settings";
     private static final String CUSTOMIZED_SCAN_WORKSOURCE = "customized_scan_worksource";
     private static final String SCAN_REQUEST_TIME = "scan_request_time";
-
-    private static final String BATCHED_SETTING = "batched_settings";
-    private static final String BATCHED_WORKSOURCE = "batched_worksource";
 
     /* Tracks if state machine has received any screen state change broadcast yet.
      * We can miss one of these at boot.
@@ -506,7 +494,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private AlarmManager mAlarmManager;
     private PendingIntent mScanIntent;
     private PendingIntent mDriverStopIntent;
-    private PendingIntent mBatchedScanIntervalIntent;
 
     /* Tracks current frequency mode */
     private AtomicInteger mFrequencyBand = new AtomicInteger(WifiManager.WIFI_FREQUENCY_BAND_AUTO);
@@ -718,15 +705,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     public static final int CMD_DISABLE_P2P_RSP = BASE + 133;
 
     public static final int CMD_BOOT_COMPLETED = BASE + 134;
-
-    /* change the batch scan settings.
-     * arg1 = responsible UID
-     * arg2 = csph (channel scans per hour)
-     * obj = bundle with the new settings and the optional worksource
-     */
-    public static final int CMD_SET_BATCHED_SCAN = BASE + 135;
-    public static final int CMD_START_NEXT_BATCHED_SCAN = BASE + 136;
-    public static final int CMD_POLL_BATCHED_SCAN = BASE + 137;
 
     /* We now have a valid IP configuration. */
     static final int CMD_IP_CONFIGURATION_SUCCESSFUL = BASE + 138;
@@ -987,8 +965,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String ACTION_DELAYED_DRIVER_STOP =
             "com.android.server.WifiManager.action.DELAYED_DRIVER_STOP";
 
-    private static final String ACTION_REFRESH_BATCHED_SCAN =
-            "com.android.server.WifiManager.action.REFRESH_BATCHED_SCAN";
     /**
      * Keep track of whether WIFI is running.
      */
@@ -1011,18 +987,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private final IBatteryStats mBatteryStats;
 
-    private BatchedScanSettings mBatchedScanSettings = null;
-
-    /**
-     * Track the worksource/cost of the current settings and track what's been noted
-     * to the battery stats, so we can mark the end of the previous when changing.
-     */
-    private WorkSource mBatchedScanWorkSource = null;
-    private int mBatchedScanCsph = 0;
-    private WorkSource mNotedBatchedScanWorkSource = null;
-    private int mNotedBatchedScanCsph = 0;
-
-    private final String mTcpBufferSizes;
+    private String mTcpBufferSizes = null;
 
     // Used for debug and stats gathering
     private static int sScanAlarmIntentCount = 0;
@@ -1050,8 +1015,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mWifiConfigStore = new WifiConfigStore(context, mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
-        mWifiLogger = new WifiLogger(mContext, this);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
+        mWifiLogger = new WifiLogger();
+
         mWifiInfo = new WifiInfo();
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
                 getHandler());
@@ -1093,7 +1059,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
-        mBatchedScanIntervalIntent = getPrivateBroadcast(ACTION_REFRESH_BATCHED_SCAN, 0);
 
         // Make sure the interval is not configured less than 10 seconds
         int period = mContext.getResources().getInteger(
@@ -1149,7 +1114,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
-        filter.addAction(ACTION_REFRESH_BATCHED_SCAN);
         mContext.registerReceiver(
                 new BroadcastReceiver() {
                     @Override
@@ -1160,8 +1124,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             sendMessage(CMD_SCREEN_STATE_CHANGED, 1);
                         } else if (action.equals(Intent.ACTION_SCREEN_OFF)) {
                             sendMessage(CMD_SCREEN_STATE_CHANGED, 0);
-                        } else if (action.equals(ACTION_REFRESH_BATCHED_SCAN)) {
-                            startNextBatchedScanAsync();
                         }
                     }
                 }, filter);
@@ -1489,145 +1451,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         sendMessage(CMD_START_SCAN, callingUid, scanCounter, bundle);
     }
 
-    /**
-     * start or stop batched scanning using the given settings
-     */
-    public void setBatchedScanSettings(BatchedScanSettings settings, int callingUid, int csph,
-                                       WorkSource workSource) {
-        Bundle bundle = new Bundle();
-        bundle.putParcelable(BATCHED_SETTING, settings);
-        bundle.putParcelable(BATCHED_WORKSOURCE, workSource);
-        sendMessage(CMD_SET_BATCHED_SCAN, callingUid, csph, bundle);
-    }
-
-    public List<BatchedScanResult> syncGetBatchedScanResultsList() {
-        synchronized (mBatchedScanResults) {
-            List<BatchedScanResult> batchedScanList =
-                    new ArrayList<BatchedScanResult>(mBatchedScanResults.size());
-            for (BatchedScanResult result : mBatchedScanResults) {
-                batchedScanList.add(new BatchedScanResult(result));
-            }
-            return batchedScanList;
-        }
-    }
-
-    public void requestBatchedScanPoll() {
-        sendMessage(CMD_POLL_BATCHED_SCAN);
-    }
-
-    private void startBatchedScan() {
-        if (mBatchedScanSettings == null) return;
-
-        if (mDhcpActive) {
-            if (DBG) log("not starting Batched Scans due to DHCP");
-            return;
-        }
-
-        // first grab any existing data
-        retrieveBatchedScanData();
-
-        if (PDBG) loge("try  starting Batched Scans due to DHCP");
-
-
-        mAlarmManager.cancel(mBatchedScanIntervalIntent);
-
-        String scansExpected = mWifiNative.setBatchedScanSettings(mBatchedScanSettings);
-        try {
-            mExpectedBatchedScans = Integer.parseInt(scansExpected);
-            setNextBatchedAlarm(mExpectedBatchedScans);
-            if (mExpectedBatchedScans > 0) noteBatchedScanStart();
-        } catch (NumberFormatException e) {
-            stopBatchedScan();
-            loge("Exception parsing WifiNative.setBatchedScanSettings response " + e);
-        }
-    }
-
     // called from BroadcastListener
-    private void startNextBatchedScanAsync() {
-        sendMessage(CMD_START_NEXT_BATCHED_SCAN);
-    }
-
-    private void startNextBatchedScan() {
-        // first grab any existing data
-        retrieveBatchedScanData();
-
-        setNextBatchedAlarm(mExpectedBatchedScans);
-    }
-
-    private void handleBatchedScanPollRequest() {
-        if (DBG) {
-            log("handleBatchedScanPoll Request - mBatchedScanMinPollTime=" +
-                    mBatchedScanMinPollTime + " , mBatchedScanSettings=" +
-                    mBatchedScanSettings);
-        }
-        // if there is no appropriate PollTime that's because we either aren't
-        // batching or we've already set a time for a poll request
-        if (mBatchedScanMinPollTime == 0) return;
-        if (mBatchedScanSettings == null) return;
-
-        long now = System.currentTimeMillis();
-
-        if (now > mBatchedScanMinPollTime) {
-            // do the poll and reset our timers
-            startNextBatchedScan();
-        } else {
-            mAlarmManager.setExact(AlarmManager.RTC_WAKEUP, mBatchedScanMinPollTime,
-                    mBatchedScanIntervalIntent);
-            mBatchedScanMinPollTime = 0;
-        }
-    }
-
-    // return true if new/different
-    private boolean recordBatchedScanSettings(int responsibleUid, int csph, Bundle bundle) {
-        BatchedScanSettings settings = bundle.getParcelable(BATCHED_SETTING);
-        WorkSource responsibleWorkSource = bundle.getParcelable(BATCHED_WORKSOURCE);
-
-        if (DBG) {
-            log("set batched scan to " + settings + " for uid=" + responsibleUid +
-                    ", worksource=" + responsibleWorkSource);
-        }
-        if (settings != null) {
-            if (settings.equals(mBatchedScanSettings)) return false;
-        } else {
-            if (mBatchedScanSettings == null) return false;
-        }
-        mBatchedScanSettings = settings;
-        if (responsibleWorkSource == null) responsibleWorkSource = new WorkSource(responsibleUid);
-        mBatchedScanWorkSource = responsibleWorkSource;
-        mBatchedScanCsph = csph;
-        return true;
-    }
-
-    private void stopBatchedScan() {
-        mAlarmManager.cancel(mBatchedScanIntervalIntent);
-        retrieveBatchedScanData();
-        mWifiNative.setBatchedScanSettings(null);
-        noteBatchedScanStop();
-    }
-
-    private void setNextBatchedAlarm(int scansExpected) {
-
-        if (mBatchedScanSettings == null || scansExpected < 1) return;
-
-        mBatchedScanMinPollTime = System.currentTimeMillis() +
-                mBatchedScanSettings.scanIntervalSec * 1000;
-
-        if (mBatchedScanSettings.maxScansPerBatch < scansExpected) {
-            scansExpected = mBatchedScanSettings.maxScansPerBatch;
-        }
-
-        int secToFull = mBatchedScanSettings.scanIntervalSec;
-        secToFull *= scansExpected;
-
-        int debugPeriod = SystemProperties.getInt("wifi.batchedScan.pollPeriod", 0);
-        if (debugPeriod > 0) secToFull = debugPeriod;
-
-        // set the alarm to do the next poll.  We set it a little short as we'd rather
-        // wake up wearly than miss a scan due to buffer overflow
-        mAlarmManager.setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis()
-                        + ((secToFull - (mBatchedScanSettings.scanIntervalSec / 2)) * 1000),
-                mBatchedScanIntervalIntent);
-    }
 
     /**
      * Start reading new scan data
@@ -1657,156 +1481,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * "----"
      */
     private final static boolean DEBUG_PARSE = false;
-
-    private void retrieveBatchedScanData() {
-        String rawData = mWifiNative.getBatchedScanResults();
-        if (DEBUG_PARSE) log("rawData = " + rawData);
-        mBatchedScanMinPollTime = 0;
-        if (rawData == null || rawData.equalsIgnoreCase("OK")) {
-            loge("Unexpected BatchedScanResults :" + rawData);
-            return;
-        }
-
-        int scanCount = 0;
-        final String END_OF_BATCHES = "----";
-        final String SCANCOUNT = "scancount=";
-        final String TRUNCATED = "trunc";
-        final String AGE = "age=";
-        final String DIST = "dist=";
-        final String DISTSD = "distSd=";
-
-        String splitData[] = rawData.split("\n");
-        int n = 0;
-        if (splitData[n].startsWith(SCANCOUNT)) {
-            try {
-                scanCount = Integer.parseInt(splitData[n++].substring(SCANCOUNT.length()));
-            } catch (NumberFormatException e) {
-                loge("scancount parseInt Exception from " + splitData[n]);
-            }
-        } else log("scancount not found");
-        if (scanCount == 0) {
-            loge("scanCount==0 - aborting");
-            return;
-        }
-
-        final Intent intent = new Intent(WifiManager.BATCHED_SCAN_RESULTS_AVAILABLE_ACTION);
-        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-
-        synchronized (mBatchedScanResults) {
-            mBatchedScanResults.clear();
-            BatchedScanResult batchedScanResult = new BatchedScanResult();
-
-            String bssid = null;
-            WifiSsid wifiSsid = null;
-            int level = 0;
-            int freq = 0;
-            int dist, distSd;
-            long tsf = 0;
-            dist = distSd = ScanResult.UNSPECIFIED;
-            final long now = SystemClock.elapsedRealtime();
-            final int bssidStrLen = BSSID_STR.length();
-
-            while (true) {
-                while (n < splitData.length) {
-                    if (DEBUG_PARSE) logd("parsing " + splitData[n]);
-                    if (splitData[n].equals(END_OF_BATCHES)) {
-                        if (n + 1 != splitData.length) {
-                            loge("didn't consume " + (splitData.length - n));
-                        }
-                        if (mBatchedScanResults.size() > 0) {
-                            mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
-                        }
-                        logd("retrieveBatchedScanResults X");
-                        return;
-                    }
-                    if ((splitData[n].equals(END_STR)) || splitData[n].equals(DELIMITER_STR)) {
-                        if (bssid != null) {
-                            batchedScanResult.scanResults.add(new ScanResult(
-                                    wifiSsid, bssid, null,
-                                    level, freq, tsf, dist, distSd));
-                            wifiSsid = null;
-                            bssid = null;
-                            level = 0;
-                            freq = 0;
-                            tsf = 0;
-                            dist = distSd = ScanResult.UNSPECIFIED;
-                        }
-                        if (splitData[n].equals(END_STR)) {
-                            if (batchedScanResult.scanResults.size() != 0) {
-                                mBatchedScanResults.add(batchedScanResult);
-                                batchedScanResult = new BatchedScanResult();
-                            } else {
-                                logd("Found empty batch");
-                            }
-                        }
-                    } else if (splitData[n].equals(TRUNCATED)) {
-                        batchedScanResult.truncated = true;
-                    } else if (splitData[n].startsWith(BSSID_STR)) {
-                        bssid = new String(splitData[n].getBytes(), bssidStrLen,
-                                splitData[n].length() - bssidStrLen);
-                    } else if (splitData[n].startsWith(FREQ_STR)) {
-                        try {
-                            freq = Integer.parseInt(splitData[n].substring(FREQ_STR.length()));
-                        } catch (NumberFormatException e) {
-                            loge("Invalid freqency: " + splitData[n]);
-                            freq = 0;
-                        }
-                    } else if (splitData[n].startsWith(AGE)) {
-                        try {
-                            tsf = now - Long.parseLong(splitData[n].substring(AGE.length()));
-                            tsf *= 1000; // convert mS -> uS
-                        } catch (NumberFormatException e) {
-                            loge("Invalid timestamp: " + splitData[n]);
-                            tsf = 0;
-                        }
-                    } else if (splitData[n].startsWith(SSID_STR)) {
-                        wifiSsid = WifiSsid.createFromAsciiEncoded(
-                                splitData[n].substring(SSID_STR.length()));
-                    } else if (splitData[n].startsWith(LEVEL_STR)) {
-                        try {
-                            level = Integer.parseInt(splitData[n].substring(LEVEL_STR.length()));
-                            if (level > 0) level -= 256;
-                        } catch (NumberFormatException e) {
-                            loge("Invalid level: " + splitData[n]);
-                            level = 0;
-                        }
-                    } else if (splitData[n].startsWith(DIST)) {
-                        try {
-                            dist = Integer.parseInt(splitData[n].substring(DIST.length()));
-                        } catch (NumberFormatException e) {
-                            loge("Invalid distance: " + splitData[n]);
-                            dist = ScanResult.UNSPECIFIED;
-                        }
-                    } else if (splitData[n].startsWith(DISTSD)) {
-                        try {
-                            distSd = Integer.parseInt(splitData[n].substring(DISTSD.length()));
-                        } catch (NumberFormatException e) {
-                            loge("Invalid distanceSd: " + splitData[n]);
-                            distSd = ScanResult.UNSPECIFIED;
-                        }
-                    } else {
-                        loge("Unable to parse batched scan result line: " + splitData[n]);
-                    }
-                    n++;
-                }
-                rawData = mWifiNative.getBatchedScanResults();
-                if (DEBUG_PARSE) log("reading more data:\n" + rawData);
-                if (rawData == null) {
-                    loge("Unexpected null BatchedScanResults");
-                    return;
-                }
-                splitData = rawData.split("\n");
-                if (splitData.length == 0 || splitData[0].equals("ok")) {
-                    loge("batch scan results just ended!");
-                    if (mBatchedScanResults.size() > 0) {
-                        mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
-                    }
-                    return;
-                }
-                n = 0;
-            }
-        }
-    }
 
     private long mDisconnectedTimeStamp = 0;
 
@@ -1999,47 +1673,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 log(e.toString());
             } finally {
                 mScanWorkSource = null;
-            }
-        }
-    }
-
-    private void noteBatchedScanStart() {
-        if (PDBG) loge("noteBatchedScanstart()");
-        // note the end of a previous scan set
-        if (mNotedBatchedScanWorkSource != null &&
-                (mNotedBatchedScanWorkSource.equals(mBatchedScanWorkSource) == false ||
-                        mNotedBatchedScanCsph != mBatchedScanCsph)) {
-            try {
-                mBatteryStats.noteWifiBatchedScanStoppedFromSource(mNotedBatchedScanWorkSource);
-            } catch (RemoteException e) {
-                log(e.toString());
-            } finally {
-                mNotedBatchedScanWorkSource = null;
-                mNotedBatchedScanCsph = 0;
-            }
-        }
-        // note the start of the new
-        try {
-            mBatteryStats.noteWifiBatchedScanStartedFromSource(mBatchedScanWorkSource,
-                    mBatchedScanCsph);
-            mNotedBatchedScanWorkSource = mBatchedScanWorkSource;
-            mNotedBatchedScanCsph = mBatchedScanCsph;
-        } catch (RemoteException e) {
-            log(e.toString());
-        }
-    }
-
-    private void noteBatchedScanStop() {
-        if (PDBG) loge("noteBatchedScanstop()");
-
-        if (mNotedBatchedScanWorkSource != null) {
-            try {
-                mBatteryStats.noteWifiBatchedScanStoppedFromSource(mNotedBatchedScanWorkSource);
-            } catch (RemoteException e) {
-                log(e.toString());
-            } finally {
-                mNotedBatchedScanWorkSource = null;
-                mNotedBatchedScanCsph = 0;
             }
         }
     }
@@ -2700,6 +2333,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mUntrustedNetworkFactory.dump(fd, pw, args);
         pw.println();
         mWifiConfigStore.dump(fd, pw, args);
+        pw.println("FW Version is: " + mWifiLogger.getFirmwareVersion());
+        pw.println("Driver Version is: " + mWifiLogger.getDriverVersion());
+        WifiLogger.RingBufferStatus[] status = mWifiLogger.getRingBufferStatus();
+        for (WifiLogger.RingBufferStatus element : status) {
+            pw.println("Ring buffer status: " + element);
+        }
+        mWifiLogger.getAllRingBufferData();
+        pw.println("Start fw memory dump:-----------------------------------------------");
+        String fwDump = mWifiLogger.getFwMemoryDump();
+        if(fwDump != null) {
+            pw.println(fwDump);
+        } else {
+            pw.println("Fail to get FW memory dump");
+        }
+        pw.println("End fw memory dump:--------------------------------------------------");
     }
 
     /**
@@ -3304,6 +2952,85 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     }
 
+    // In associated more, lazy roam will be looking for 5GHz roam candidate
+    private boolean configureLazyRoam() {
+        boolean status;
+        if (!mAlwaysOnPnoSupported || (!mWifiConfigStore.enableHalBasedPno.get())) return false;
+
+        WifiNative.WifiLazyRoamParams params = mWifiNative.new WifiLazyRoamParams();
+        params.A_band_boost_threshold = mWifiConfigStore.bandPreferenceBoostThreshold5.get();
+        params.A_band_penalty_threshold = mWifiConfigStore.bandPreferencePenaltyThreshold5.get();
+        params.A_band_boost_factor = mWifiConfigStore.bandPreferenceBoostFactor5;
+        params.A_band_penalty_factor = mWifiConfigStore.bandPreferencePenaltyFactor5;
+        params.A_band_max_boost = 50;
+        params.lazy_roam_hysteresis = 25;
+        params.alert_roam_rssi_trigger = -75;
+
+        loge("startLazyRoam " + params.toString());
+
+        if (!WifiNative.setLazyRoam(true, params)) {
+
+            loge("startLazyRoam couldnt program params");
+
+            return false;
+        }
+        return true;
+    }
+
+    // This function sends a background scan request for the current configuration
+    private boolean setScanSettingsForLazyRoam() {
+
+        WifiConfiguration config = getCurrentWifiConfiguration();
+        HashSet<Integer> channels = mWifiConfigStore.makeChannelList(config,
+                ONE_HOUR_MILLI, false);
+        if (channels != null && channels.size() != 0) {
+
+            // then send a scan background request so as firmware
+            // starts looking for our networks
+            WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
+            settings.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
+            settings.channels = new WifiScanner.ChannelSpec[channels.size()];
+            int i = 0;
+
+            StringBuilder sb = new StringBuilder();
+            for (Integer channel : channels) {
+                settings.channels[i++] = new WifiScanner.ChannelSpec(channel);
+                sb.append(" " + channel);
+            }
+
+            // TODO, fix the scan interval logic
+            if (mScreenOn)
+                settings.periodInMs = mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
+            else
+                settings.periodInMs = mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
+
+            settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL;
+            log("startLazyRoam: scan interval " + settings.periodInMs
+                    + " screen " + mScreenOn
+                    + " channels " + channels.size() + " : " + sb.toString());
+
+            mWifiScanner.startBackgroundScan(settings, mWifiScanListener);
+
+
+        } else {
+            if (DBG) loge("WifiStateMachine no channels for " + config.configKey());
+            return false;
+        }
+
+
+
+
+        return true;
+    }
+
+    // In associated more, lazy roam will be looking for 5GHz roam candidate
+    private boolean stopLazyRoam() {
+        boolean status;
+        if (!mAlwaysOnPnoSupported || (!mWifiConfigStore.enableHalBasedPno.get())) return false;
+
+        return WifiNative.setLazyRoam(false, null);
+    }
+
     private boolean startPno() {
         if (!mAlwaysOnPnoSupported || (!mWifiConfigStore.enableHalBasedPno.get())) return false;
 
@@ -3319,46 +3046,46 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         List<WifiNative.WifiPnoNetwork> llist
                 = mWifiAutoJoinController.getPnoList(getCurrentWifiConfiguration());
-        if (llist != null) {
-            log("startPno: got llist size " + llist.size());
+        if (llist == null) {
+            log("startPno: couldnt get PNO list ");
+            return false;
+        }
+        log("startPno: got llist size " + llist.size());
 
-            // first program the network we want to look for thru the pno API
-            WifiNative.WifiPnoNetwork list[]
+        // first program the network we want to look for thru the pno API
+        WifiNative.WifiPnoNetwork list[]
                     = (WifiNative.WifiPnoNetwork[]) llist.toArray(new WifiNative.WifiPnoNetwork[0]);
 
-            if (!WifiNative.setPnoList(list, WifiStateMachine.this)) {
-                Log.e(TAG, "Failed to set pno, length = " + list.length);
-            }
+        if (!WifiNative.setPnoList(list, WifiStateMachine.this)) {
+            Log.e(TAG, "Failed to set pno, length = " + list.length);
+        }
 
-            // then send a scan background request so as firmware
-            // starts looking for our networks
-            WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
-            settings.band = WifiScanner.WIFI_BAND_BOTH;
+        // then send a scan background request so as firmware
+        // starts looking for our networks
+        WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
+        settings.band = WifiScanner.WIFI_BAND_BOTH;
 
-            // TODO, fix the scan interval logic
-            if (mScreenOn)
+        // TODO, fix the scan interval logic
+        if (mScreenOn)
                 settings.periodInMs = mDefaultFrameworkScanIntervalMs;
-            else
+        else
                 settings.periodInMs = mWifiConfigStore.wifiDisconnectedScanIntervalMs.get();
 
-            settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL;
-            log("startPno: settings BOTH_BANDS, length = " + list.length);
+        settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL;
+        log("startPno: settings BOTH_BANDS, length = " + list.length);
 
-            mWifiScanner.startBackgroundScan(settings, mWifiScanListener);
+        mWifiScanner.startBackgroundScan(settings, mWifiScanListener);
 //            mWifiScannerChannel.sendMessage
 //                  (WifiScanner.CMD_START_BACKGROUND_SCAN, settings);
-            if (DBG) {
-                StringBuilder sb = new StringBuilder();
-                sb.append(" list: ");
-                for (WifiNative.WifiPnoNetwork net : llist) {
-                    sb.append(" ").append(net.SSID).append(" auth ").append(net.auth);
-                }
-                sendMessage(CMD_STARTED_PNO_DBG, 1, 0, sb.toString());
+        if (DBG) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(" list: ");
+            for (WifiNative.WifiPnoNetwork net : llist) {
+                sb.append(" ").append(net.SSID).append(" auth ").append(net.auth);
             }
-            return true;
+            sendMessage(CMD_STARTED_PNO_DBG, 1, 0, sb.toString());
         }
-        log("startPno: couldnt get PNO list ");
-        return false;
+        return true;
     }
 
     private void handleScreenStateChanged(boolean screenOn, boolean startBackgroundScanIfNeeded) {
@@ -3385,7 +3112,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         getWifiLinkLayerStats(false);
         mOnTimeScreenStateChange = mOnTime;
         lastScreenStateChangeTimeStamp = lastLinkLayerStatsUpdate;
-        mEnableBackgroundScan = false;
+        mEnableBackgroundScan = mScreenOn == false;
         cancelDelayedScan();
 
         if (screenOn) {
@@ -4770,9 +4497,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         setSuspendOptimizationsNative(SUSPEND_DUE_TO_DHCP, false);
         mWifiNative.setPowerSave(false);
 
-        // stopBatchedScan();
-        WifiNative.pauseScan();
-
         // Update link layer stats
         getWifiLinkLayerStats(false);
 
@@ -4836,9 +4560,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mWifiNative.BLUETOOTH_COEXISTENCE_MODE_SENSE);
 
         mDhcpActive = false;
-
-        // startBatchedScan();
-        WifiNative.restartScan();
     }
 
     void connectScanningService() {
@@ -5244,15 +4965,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_BOOT_COMPLETED:
                     maybeRegisterNetworkFactory();
                     break;
-                case CMD_SET_BATCHED_SCAN:
-                    recordBatchedScanSettings(message.arg1, message.arg2, (Bundle)message.obj);
-                    break;
-                case CMD_POLL_BATCHED_SCAN:
-                    handleBatchedScanPollRequest();
-                    break;
-                case CMD_START_NEXT_BATCHED_SCAN:
-                    startNextBatchedScan();
-                    break;
                 case CMD_SCREEN_STATE_CHANGED:
                     handleScreenStateChanged(message.arg1 != 0,
                             /* startBackgroundScanIfNeeded = */ false);
@@ -5417,7 +5129,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         @Override
         public void enter() {
             mWifiNative.unloadDriver();
-
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
                 mWifiP2pChannel.connect(mContext, getHandler(),
@@ -5876,6 +5587,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (PDBG) {
                 loge("DriverStartedState enter");
             }
+            if (VDBG) {
+                mWifiLogger.startLoggingAllBuffer(3, 0, 60, 0);
+                mWifiLogger.getAllRingBufferData();
+            }
             mIsRunning = true;
             mInDelayedStop = false;
             mDelayedStopCounter++;
@@ -5902,8 +5617,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
 
             mDhcpActive = false;
-
-            startBatchedScan();
 
             if (mOperationalMode != CONNECT_MODE) {
                 mWifiNative.disconnect();
@@ -5973,16 +5686,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             switch(message.what) {
                 case CMD_START_SCAN:
                     handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
-                    break;
-                case CMD_SET_BATCHED_SCAN:
-                    if (recordBatchedScanSettings(message.arg1, message.arg2,
-                            (Bundle) message.obj)) {
-                        if (mBatchedScanSettings != null) {
-                            startBatchedScan();
-                        } else {
-                            stopBatchedScan();
-                        }
-                    }
                     break;
                 case CMD_SET_FREQUENCY_BAND:
                     int band =  message.arg1;
@@ -6116,8 +5819,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mIsRunning = false;
             updateBatteryWorkSource(null);
             mScanResults = new ArrayList<>();
-
-            stopBatchedScan();
 
             final Intent intent = new Intent(WifiManager.WIFI_SCAN_AVAILABLE);
             intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
@@ -6475,15 +6176,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case CMD_NO_NETWORKS_PERIODIC_SCAN:
                 s = "CMD_NO_NETWORKS_PERIODIC_SCAN";
-                break;
-            case CMD_SET_BATCHED_SCAN:
-                s = "CMD_SET_BATCHED_SCAN";
-                break;
-            case CMD_START_NEXT_BATCHED_SCAN:
-                s = "CMD_START_NEXT_BATCHED_SCAN";
-                break;
-            case CMD_POLL_BATCHED_SCAN:
-                s = "CMD_POLL_BATCHED_SCAN";
                 break;
             case CMD_UPDATE_LINKPROPERTIES:
                 s = "CMD_UPDATE_LINKPROPERTIES";
@@ -8337,11 +8029,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             String address;
             updateDefaultRouteMacAddress(1000);
             if (DBG) {
-                log("ConnectedState Enter "
+                log("ConnectedState EEnter "
                         + " mScreenOn=" + mScreenOn
                         + " scanperiod="
                         + Integer.toString(mWifiConfigStore.associatedPartialScanPeriodMilli.get()) );
             }
+
+            configureLazyRoam();
             if (mScreenOn
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
                 if (mAlwaysOnPnoSupported) {
@@ -8373,6 +8067,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiConfigStore.enableAllNetworks();
 
             mLastDriverRoamAttempt = 0;
+
+            //startLazyRoam();
         }
         @Override
         public boolean processMessage(Message message) {
@@ -8569,6 +8265,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             loge("WifiStateMachine: Leaving Connected state");
             setScanAlarm(false);
             mLastDriverRoamAttempt = 0;
+
+            stopLazyRoam();
         }
     }
 
