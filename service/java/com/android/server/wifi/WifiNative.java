@@ -1207,7 +1207,7 @@ public class WifiNative {
             debugLog = debugLog + " - " + elements[i].getMethodName();
         }
 
-        Log.i(TAG,debugLog);
+        if (DBG) mLocalLog.log(debugLog);
 
         synchronized (mLock) {
             if (sHalFailed)

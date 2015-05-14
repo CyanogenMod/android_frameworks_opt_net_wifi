@@ -74,7 +74,7 @@ public class SupplicantBridge {
                 }
             }
             catch (ProtocolException pe) {
-                Log.e("HS2J", "Failed to parse ANQP: " + pe);
+                Log.e(Utils.hs2LogTag(SupplicantBridge.class), "Failed to parse ANQP: " + pe);
             }
         }
         return elements;
@@ -87,7 +87,7 @@ public class SupplicantBridge {
         }
         String result = mSupplicantHook.doCustomCommand(anqpGet);
         if (!result.startsWith("OK")) {
-            Log.d("HS2J", scanDetail.getSSID() + " ANQP result: " + result);
+            Log.d(Utils.hs2LogTag(getClass()), scanDetail.getSSID() + " ANQP result: " + result);
         }
     }
 
@@ -105,12 +105,12 @@ public class SupplicantBridge {
         try {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
             if (!elements.isEmpty()) {
-                Log.d("HS2J", String.format("Parsed ANQP for %016x: %s", bssid, elements));
+                Log.d(Utils.hs2LogTag(getClass()), String.format("Parsed ANQP for %016x: %s", bssid, elements));
                 mConfigStore.notifyANQPResponse(scanDetail, elements);
             }
         }
         catch (IOException ioe) {
-            Log.e("HS2J", ioe.toString());
+            Log.e(Utils.hs2LogTag(getClass()), ioe.toString());
         }
         mConfigStore.notifyANQPResponse(scanDetail, null);
     }
@@ -304,7 +304,7 @@ public class SupplicantBridge {
             payload = Utils.hexToBytes(text.substring(separator + 1));
         }
         catch (NumberFormatException nfe) {
-            Log.e("HS2J", "Failed to parse hex string");
+            Log.e(Utils.hs2LogTag(SupplicantBridge.class), "Failed to parse hex string");
             return null;
         }
         return Constants.getANQPElementID(elementType) != null ?

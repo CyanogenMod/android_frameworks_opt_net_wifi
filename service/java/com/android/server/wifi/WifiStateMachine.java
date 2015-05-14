@@ -83,8 +83,6 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
 import android.net.wifi.WpsResult.Status;
 import android.net.wifi.p2p.IWifiP2pManager;
-import android.net.wifi.passpoint.IWifiPasspointManager;
-import android.net.wifi.IWifiScanner;
 import android.os.BatteryStats;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -116,6 +114,7 @@ import com.android.internal.util.StateMachine;
 import com.android.server.net.NetlinkTracker;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
+import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
 import java.io.BufferedReader;
@@ -126,8 +125,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.SocketException;
-import java.nio.BufferUnderflowException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
@@ -138,7 +135,6 @@ import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -3514,13 +3510,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                     new NetworkDetail(bssid, infoElements, anqpLines, freq);
 
                             String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
-                            if (!xssid.equals(networkDetail.getSSID())) {
-                                Log.d("HS2J", "Inconsistency: SSID: '" + xssid +
-                                        "' vs '" + networkDetail.getSSID() + "': " + infoElements);
+                            if (!xssid.equals(networkDetail.getTrimmedSSID())) {
+                                Log.d(Utils.hs2LogTag(getClass()),
+                                        String.format("Inconsistent SSID on BSSID '%s':" +
+                                                        " '%s' vs '%s': %s",
+                                        bssid, xssid, networkDetail.getSSID(), infoElements));
                             }
 
                             if (networkDetail.hasInterworking()) {
-                                Log.d("HS2J", "HSNwk: '" + networkDetail);
+                                Log.d(Utils.hs2LogTag(getClass()), "HSNwk: '" + networkDetail);
                             }
 
                             ScanDetail scanDetail = mScanResultCache.get(networkDetail);
@@ -3537,9 +3535,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             // as part of this scan's processing
                             mScanResults.add(scanDetail);
                         } catch (IllegalArgumentException iae) {
-                            Log.d("HS2J", "Failed to parse information elements: " + iae);
-                        } catch (BufferUnderflowException bue) {
-                            Log.d("HS2J", "Failed to parse information elements: " + bue);
+                            Log.d(TAG, "Failed to parse information elements: " + iae);
                         }
                     }
                     bssid = null;
@@ -5805,7 +5801,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case WifiMonitor.ANQP_DONE_EVENT:
-                    Log.d("HS2J", String.format("WFSM: ANQP for %016x %s",
+                    Log.d(Utils.hs2LogTag(getClass()), String.format("WFSM: ANQP for %016x %s",
                             (Long)message.obj, message.arg1 != 0 ? "success" : "fail"));
                     mWifiConfigStore.notifyANQPDone((Long) message.obj, message.arg1 != 0);
                     break;

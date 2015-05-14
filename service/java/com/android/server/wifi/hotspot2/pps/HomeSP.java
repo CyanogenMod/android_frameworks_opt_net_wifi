@@ -89,7 +89,7 @@ public class HomeSP {
         if (mSSIDs.containsKey(networkDetail.getSSID())) {
             Long hessid = mSSIDs.get(networkDetail.getSSID());
             if (hessid == null || networkDetail.getHESSID() == hessid) {
-                Log.d("HS2J", "match SSID");
+                Log.d(Utils.hs2LogTag(getClass()), "match SSID");
                 return PasspointMatch.HomeProvider;
             }
         }

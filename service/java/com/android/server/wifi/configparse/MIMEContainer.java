@@ -122,7 +122,8 @@ public class MIMEContainer {
         }
         mBase64 = base64;
 
-        Log.d("WFII", String.format("%s MIME container, boundary '%s', type '%s', encoding %s",
+        Log.d(Utils.hs2LogTag(getClass()),
+                String.format("%s MIME container, boundary '%s', type '%s', encoding %s",
                 multiPart ? "multipart" : "plain", boundary, mContentType, encoding));
 
         AtomicBoolean eof = new AtomicBoolean();
