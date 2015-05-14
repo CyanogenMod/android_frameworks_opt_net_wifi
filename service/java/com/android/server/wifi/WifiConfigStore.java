@@ -51,6 +51,7 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.provider.Settings;
 import android.security.Credentials;
 import android.security.KeyChain;
@@ -4195,7 +4196,10 @@ public class WifiConfigStore extends IpConfigStore {
                 DevicePolicyManagerInternal.class);
         if (dpmi != null && dpmi.isActiveAdminWithPolicy(config.creatorUid,
                 DeviceAdminInfo.USES_POLICY_DEVICE_OWNER)) {
-            return uid == config.creatorUid;
+            UserManager um = UserManager.get(mContext);
+            if (!um.hasUserRestriction(UserManager.DISALLOW_CONFIG_WIFI)) {
+                return uid == config.creatorUid;
+            }
         }
 
         if (config.lastUpdateName == null) {
