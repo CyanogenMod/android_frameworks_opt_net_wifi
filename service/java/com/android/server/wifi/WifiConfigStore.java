@@ -927,7 +927,7 @@ public class WifiConfigStore extends IpConfigStore {
                 encodeSSID(ssid));
     }
 
-    private boolean updateLastConnectUid(WifiConfiguration config, int uid) {
+    public boolean updateLastConnectUid(WifiConfiguration config, int uid) {
         if (config != null) {
             if (config.lastConnectUid != uid) {
                 config.lastConnectUid = uid;
