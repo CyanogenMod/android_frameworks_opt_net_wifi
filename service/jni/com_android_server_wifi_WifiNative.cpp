@@ -478,7 +478,7 @@ static jboolean android_net_wifi_startScan(
         JNIEnv *env, jclass cls, jint iface, jint id, jobject settings) {
 
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("starting scan on interface[%d] = %p", iface, handle);
+    // ALOGD("starting scan on interface[%d] = %p", iface, handle);
 
     wifi_scan_cmd_params params;
     memset(&params, 0, sizeof(params));
@@ -497,7 +497,7 @@ static jboolean android_net_wifi_startScan(
     jobjectArray buckets = (jobjectArray)getObjectField(env, settings, "buckets", bucket_array_type);
     params.num_buckets = getIntField(env, settings, "num_buckets");
 
-    ALOGD("Initialized num_buckets to %d", params.num_buckets);
+    // ALOGD("Initialized num_buckets to %d", params.num_buckets);
 
     for (int i = 0; i < params.num_buckets; i++) {
         jobject bucket = getObjectArrayField(env, settings, "buckets", bucket_array_type, i);
@@ -506,19 +506,17 @@ static jboolean android_net_wifi_startScan(
         params.buckets[i].band = (wifi_band) getIntField(env, bucket, "band");
         params.buckets[i].period = getIntField(env, bucket, "period_ms");
 
-        ALOGD("Initialized common bucket fields %d:%d:%d", params.buckets[i].bucket,
-                params.buckets[i].band, params.buckets[i].period);
-
         int report_events = getIntField(env, bucket, "report_events");
         params.buckets[i].report_events = report_events;
 
-        ALOGD("Initialized report events to %d", params.buckets[i].report_events);
+        ALOGD("bucket[%d] = %d:%d:%d:%d", i, params.buckets[i].bucket,
+                params.buckets[i].band, params.buckets[i].period, report_events);
 
         jobjectArray channels = (jobjectArray)getObjectField(
                 env, bucket, "channels", channel_array_type);
 
         params.buckets[i].num_channels = getIntField(env, bucket, "num_channels");
-        ALOGD("Initialized num_channels to %d", params.buckets[i].num_channels);
+        // ALOGD("Initialized num_channels to %d", params.buckets[i].num_channels);
 
         for (int j = 0; j < params.buckets[i].num_channels; j++) {
             jobject channel = getObjectArrayField(env, bucket, "channels", channel_array_type, j);
@@ -546,7 +544,7 @@ static jboolean android_net_wifi_startScan(
 
 static jboolean android_net_wifi_stopScan(JNIEnv *env, jclass cls, jint iface, jint id) {
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("stopping scan on interface[%d] = %p", iface, handle);
+    // ALOGD("stopping scan on interface[%d] = %p", iface, handle);
 
     return hal_fn.wifi_stop_gscan(id, handle)  == WIFI_SUCCESS;
 }
@@ -1622,7 +1620,8 @@ static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls,
 
 static void on_ring_buffer_data(char *ring_name, char *buffer, int buffer_size,
         wifi_ring_buffer_status *status) {
-    if (!ring_name || !buffer || !status || buffer_size <= sizeof(wifi_ring_buffer_entry)) {
+    if (!ring_name || !buffer || !status ||
+            (unsigned int)buffer_size <= sizeof(wifi_ring_buffer_entry)) {
         ALOGE("Error input for on_ring_buffer_data!");
     }
     JNIEnv *env = NULL;

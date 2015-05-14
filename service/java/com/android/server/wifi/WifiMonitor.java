@@ -27,7 +27,6 @@ import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pProvDiscEvent;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Message;
-import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -786,7 +785,7 @@ public class WifiMonitor {
                     handleAnqpResult(eventStr);
                 }
                 catch (IllegalArgumentException iae) {
-                    Log.e("HS2J", "Bad ANQP event string: '" + eventStr + "': " + iae);
+                    Log.e(TAG, "Bad ANQP event string: '" + eventStr + "': " + iae);
                 }
             } else if (eventStr.startsWith(GAS_QUERY_PREFIX_STR)) {        // !!! clean >>End
                 handleGasQueryEvents(eventStr);
@@ -1168,7 +1167,7 @@ public class WifiMonitor {
         int result = eventStr.substring(
                 resPos + RESULT_STRING.length(), eoresult).equalsIgnoreCase("success") ? 1 : 0;
 
-        Log.d("HS2J", String.format("ANQP Done for %016x, status %d",
+        Log.d(Utils.hs2LogTag(getClass()), String.format("ANQP Done for %016x, status %d",
                 bssid, result));
         mStateMachine.sendMessage(ANQP_DONE_EVENT, result, 0, bssid);
     }
