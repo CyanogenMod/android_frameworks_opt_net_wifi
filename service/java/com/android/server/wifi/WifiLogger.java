@@ -45,23 +45,36 @@ import java.io.PrintWriter;
  * - detect a failed WPA handshake that loops indefinitely
  * - authentication failure handling
  */
-class WifiLogger extends StateMachine {
+class WifiLogger  {
 
     private static final String TAG = "WifiLogger";
     private static boolean DBG = true;
-
-    private final WifiStateMachine mWifiStateMachine;
-
-    private final Context mContext;
-
-    private final State mEnabledState = new EnabledState();
-    private final State mDefaultState = new DefaultState();
-
+    private int mSupportedLoggerFeatures;
+    private RingBufferStatus[] mRingBufferStatuses;
 
     /* The base for wifi message types */
     static final int BASE = Protocol.BASE_WIFI_LOGGER;
     /* receive log data */
     static final int LOG_DATA                 = BASE + 1;
+
+    public static class RingBufferStatus{
+        String name;
+        int flag;
+        int ringBufferId;
+        int ringBufferByteSize;
+        int verboseLevel;
+        int writtenBytes;
+        int readBytes;
+        int writtenRecords;
+
+        @Override
+        public String toString() {
+            return "name: " + name + " flag: " + flag + " ringBufferId: " + ringBufferId +
+                    " ringBufferByteSize: " +ringBufferByteSize + " verboseLevel: " +verboseLevel +
+                    " writtenBytes: " + writtenBytes + " readBytes: " + readBytes +
+                    " writtenRecords: " + writtenRecords;
+        }
+    }
 
     void enableVerboseLogging(int verbose) {
         if (verbose > 0) {
@@ -71,64 +84,119 @@ class WifiLogger extends StateMachine {
         }
     }
 
-    private WifiNative.WifiLoggerEventHandler mEventHandler
-            = new WifiNative.WifiLoggerEventHandler() {
-        @Override
-        public void onDataAvailable(char data[], int len) {
-            sendMessage(LOG_DATA, data);
+
+
+    public  WifiLogger() {}
+
+    public int getSupportedFeatureSet() {
+        if(mSupportedLoggerFeatures == 0) {
+            mSupportedLoggerFeatures = WifiNative.getSupportedLoggerFeatureSet();
         }
-    };
 
-    public WifiLogger(Context c, WifiStateMachine wsm) {
-        super(TAG);
-
-        mContext = c;
-        mWifiStateMachine = wsm;
-        addState(mDefaultState);
-            addState(mEnabledState, mDefaultState);
-
-        setInitialState(mEnabledState);
-        setLogRecSize(50);
-        setLogOnlyTransitions(true);
-        //start the state machine
-        start();
+        if(DBG) Log.d(TAG, "Supported Logger features is: " + mSupportedLoggerFeatures);
+        return mSupportedLoggerFeatures;
     }
 
-    /********************************************************
-     * HSM states
-     *******************************************************/
+    public String getDriverVersion() {
+        String driverVersion = WifiNative.getDriverVersion();
+        if(DBG) Log.d(TAG, "Driver Version is: " + driverVersion);
+        return driverVersion;
+    }
 
-    class DefaultState extends State {
-        @Override
-         public void enter() {
-             if (DBG) Log.d(TAG, getName() + "\n");
-         }
-        @Override
-        public boolean processMessage(Message message) {
-            if (DBG) Log.d(TAG, getName() + message.toString() + "\n");
-            switch (message.what) {
-                case LOG_DATA:
-                    break;
+    public String getFirmwareVersion() {
+        String firmwareVersion = WifiNative.getFirmwareVersion();
+        if(DBG) Log.d(TAG, "Firmware Version is: " + firmwareVersion);
+        return firmwareVersion;
+    }
 
-                default:
-                    Log.e(TAG, "Ignoring " + message);
-                    break;
+    public RingBufferStatus[] getRingBufferStatus() {
+
+        mRingBufferStatuses = WifiNative.getRingBufferStatus();
+        if (mRingBufferStatuses != null) {
+            if(DBG) {
+                for (RingBufferStatus element : mRingBufferStatuses) {
+                    Log.d(TAG, "RingBufferStatus is: \n" + element);
+                }
             }
-            return HANDLED;
+        } else {
+            Log.e(TAG, "get empty RingBufferStatus");
         }
+
+        return mRingBufferStatuses;
     }
 
-    class EnabledState extends State {
-        @Override
-         public void enter() {
-             if (DBG) Log.d(TAG, getName() + "\n");
-         }
+    public static final int VERBOSE_NO_LOG = 0;
+    public static final int VERBOSE_NORMAL_LOG = 1;
+    /** Be careful since this one can affect performance and power */
+    public static final int VERBOSE_DETAILED_LOG  = 2;
+
+    /**
+     * start both logging and alert collection
+     * @param verboseLevel please check the definition above
+     * @param flags   TBD not used now
+     * @param maxInterval maximum interval in seconds for driver to report, ignore if zero
+     * @param minDataSize minimum data size in buffer for driver to report, ignore if zer0
+     * @param ringName  The name of the ring you'd like to report
+     * @return true -- successful false --failed
+     */
+    public boolean startLoggingRingBuffer(int verboseLevel, int flags, int maxInterval,
+            int minDataSize, String ringName) {
+        boolean result = WifiNative.startLoggingRingBuffer(verboseLevel,flags, maxInterval,
+                minDataSize, ringName);
+        if (DBG) Log.d("TAG", "RingBuffer- " + ringName + "'s verbose level is:" +
+                verboseLevel + (result ? "Successful" : "failed"));
+        return result;
     }
 
-    @Override
-    public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-        super.dump(fd, pw, args);
+    public boolean startLoggingAllBuffer(int verboseLevel, int flags, int maxInterval,
+                                         int minDataSize){
+        Log.e(TAG, "startLoggingAllBuffer");
+        if (mRingBufferStatuses == null) {
+            getRingBufferStatus();
+            if(mRingBufferStatuses == null) {
+                Log.e(TAG, "Can not get Ring Buffer Status. Can not start Logging!");
+                return false;
+            }
+        }
 
-        pw.println();
+        for (RingBufferStatus element : mRingBufferStatuses){
+            boolean result = startLoggingRingBuffer(verboseLevel, flags, maxInterval, minDataSize,
+                    element.name);
+            if(!result) {
+                return false;
+            }
+        }
+
+        getRingBufferStatus();
+        return true;
     }
+
+    public boolean getRingBufferData(String ringName) {
+        return WifiNative.getRingBufferData(ringName);
+    }
+
+    public boolean getAllRingBufferData() {
+        if (mRingBufferStatuses == null) {
+            getRingBufferStatus();
+            if(mRingBufferStatuses == null) {
+                Log.e(TAG, "Can not get Ring Buffer Status. Can not collect data!");
+                return false;
+            }
+        }
+
+        for (RingBufferStatus element : mRingBufferStatuses){
+            boolean result = getRingBufferData(element.name);
+            if(!result) {
+                Log.e(TAG, "Fail to get ring buffer data of: " + element.name);
+                return false;
+            }
+        }
+        Log.d(TAG, "getAllRingBufferData Successfully!");
+        return true;
+    }
+
+    public String getFwMemoryDump() {
+        return WifiNative.getFwMemoryDump();
+    }
+
 }

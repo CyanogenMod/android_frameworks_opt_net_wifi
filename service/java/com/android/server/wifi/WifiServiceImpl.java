@@ -134,8 +134,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     /* Tracks the persisted states for wi-fi & airplane mode */
     final WifiSettingsStore mSettingsStore;
 
-    final boolean mBatchedScanSupported;
-
     /**
      * Asynchronous channel to WifiStateMachine
      */
@@ -318,9 +316,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         mClientHandler = new ClientHandler(wifiThread.getLooper());
         mWifiStateMachineHandler = new WifiStateMachineHandler(wifiThread.getLooper());
         mWifiController = new WifiController(mContext, this, wifiThread.getLooper());
-
-        mBatchedScanSupported = mContext.getResources().getBoolean(
-                R.bool.config_wifi_batched_scan_supported);
     }
 
 
@@ -454,44 +449,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 settings, workSource);
     }
 
-    private class BatchedScanRequest extends DeathRecipient {
-        final BatchedScanSettings settings;
-        final int uid;
-        final int pid;
-        final WorkSource workSource;
-
-        BatchedScanRequest(BatchedScanSettings settings, IBinder binder, WorkSource ws) {
-            super(0, null, binder, null);
-            this.settings = settings;
-            this.uid = getCallingUid();
-            this.pid = getCallingPid();
-            workSource = ws;
-        }
-        public void binderDied() {
-            stopBatchedScan(settings, uid, pid);
-        }
-        public String toString() {
-            return "BatchedScanRequest{settings=" + settings + ", binder=" + mBinder + "}";
-        }
-
-        public boolean isSameApp(int uid, int pid) {
-            return (this.uid == uid && this.pid == pid);
-        }
-    }
-
-    private final List<BatchedScanRequest> mBatchedScanners = new ArrayList<BatchedScanRequest>();
-    boolean mInIdleMode;
-    boolean mScanPending;
-
     public boolean isBatchedScanSupported() {
-        return mBatchedScanSupported;
+        return false;
     }
 
-    public void pollBatchedScan() {
-        enforceChangePermission();
-        if (mBatchedScanSupported == false) return;
-        mWifiStateMachine.requestBatchedScanPoll();
-    }
+    public void pollBatchedScan() { }
 
     public String getWpsNfcConfigurationToken(int netId) {
         enforceConnectivityInternalPermission();
@@ -503,146 +465,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public boolean requestBatchedScan(BatchedScanSettings requested, IBinder binder,
             WorkSource workSource) {
-        enforceChangePermission();
-        if (workSource != null) {
-            enforceWorkSourcePermission();
-            // WifiManager currently doesn't use names, so need to clear names out of the
-            // supplied WorkSource to allow future WorkSource combining.
-            workSource.clearNames();
-        }
-        if (mBatchedScanSupported == false) return false;
-        requested = new BatchedScanSettings(requested);
-        if (requested.isInvalid()) return false;
-        BatchedScanRequest r = new BatchedScanRequest(requested, binder, workSource);
-        synchronized(mBatchedScanners) {
-            mBatchedScanners.add(r);
-            resolveBatchedScannersLocked();
-        }
-        return true;
+        return false;
     }
 
     public List<BatchedScanResult> getBatchedScanResults(String callingPackage) {
-        enforceAccessPermission();
-        if (mBatchedScanSupported == false) return new ArrayList<BatchedScanResult>();
-        int uid = Binder.getCallingUid();
-        int userId = UserHandle.getCallingUserId();
-        boolean hasInteractUsersFull = checkInteractAcrossUsersFull();
-        long ident = Binder.clearCallingIdentity();
-        try {
-            if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return new ArrayList<BatchedScanResult>();
-            }
-            if (!isCurrentProfile(userId) && !hasInteractUsersFull) {
-                return new ArrayList<BatchedScanResult>();
-            }
-            return mWifiStateMachine.syncGetBatchedScanResultsList();
-        } finally {
-            Binder.restoreCallingIdentity(ident);
-        }
+        return null;
     }
 
-    public void stopBatchedScan(BatchedScanSettings settings) {
-        enforceChangePermission();
-        if (mBatchedScanSupported == false) return;
-        stopBatchedScan(settings, getCallingUid(), getCallingPid());
-    }
-
-    private void stopBatchedScan(BatchedScanSettings settings, int uid, int pid) {
-        ArrayList<BatchedScanRequest> found = new ArrayList<BatchedScanRequest>();
-        synchronized(mBatchedScanners) {
-            for (BatchedScanRequest r : mBatchedScanners) {
-                if (r.isSameApp(uid, pid) && (settings == null || settings.equals(r.settings))) {
-                    found.add(r);
-                    if (settings != null) break;
-                }
-            }
-            for (BatchedScanRequest r : found) {
-                mBatchedScanners.remove(r);
-            }
-            if (found.size() != 0) {
-                resolveBatchedScannersLocked();
-            }
-        }
-    }
-
-    private void resolveBatchedScannersLocked() {
-        BatchedScanSettings setting = new BatchedScanSettings();
-        WorkSource responsibleWorkSource = null;
-        int responsibleUid = 0;
-        double responsibleCsph = 0; // Channel Scans Per Hour
-
-        if (mBatchedScanners.size() == 0 || mInIdleMode) {
-            mWifiStateMachine.setBatchedScanSettings(null, 0, 0, null);
-            return;
-        }
-        for (BatchedScanRequest r : mBatchedScanners) {
-            BatchedScanSettings s = r.settings;
-
-            // evaluate responsibility
-            int currentChannelCount;
-            int currentScanInterval;
-            double currentCsph;
-
-            if (s.channelSet == null || s.channelSet.isEmpty()) {
-                // all channels - 11 B and 9 A channels roughly.
-                currentChannelCount = 9 + 11;
-            } else {
-                currentChannelCount = s.channelSet.size();
-                // these are rough est - no real need to correct for reg-domain;
-                if (s.channelSet.contains("A")) currentChannelCount += (9 - 1);
-                if (s.channelSet.contains("B")) currentChannelCount += (11 - 1);
-
-            }
-            if (s.scanIntervalSec == BatchedScanSettings.UNSPECIFIED) {
-                currentScanInterval = BatchedScanSettings.DEFAULT_INTERVAL_SEC;
-            } else {
-                currentScanInterval = s.scanIntervalSec;
-            }
-            currentCsph = 60 * 60 * currentChannelCount / currentScanInterval;
-
-            if (currentCsph > responsibleCsph) {
-                responsibleUid = r.uid;
-                responsibleWorkSource = r.workSource;
-                responsibleCsph = currentCsph;
-            }
-
-            if (s.maxScansPerBatch != BatchedScanSettings.UNSPECIFIED &&
-                    s.maxScansPerBatch < setting.maxScansPerBatch) {
-                setting.maxScansPerBatch = s.maxScansPerBatch;
-            }
-            if (s.maxApPerScan != BatchedScanSettings.UNSPECIFIED &&
-                    (setting.maxApPerScan == BatchedScanSettings.UNSPECIFIED ||
-                    s.maxApPerScan > setting.maxApPerScan)) {
-                setting.maxApPerScan = s.maxApPerScan;
-            }
-            if (s.scanIntervalSec != BatchedScanSettings.UNSPECIFIED &&
-                    s.scanIntervalSec < setting.scanIntervalSec) {
-                setting.scanIntervalSec = s.scanIntervalSec;
-            }
-            if (s.maxApForDistance != BatchedScanSettings.UNSPECIFIED &&
-                    (setting.maxApForDistance == BatchedScanSettings.UNSPECIFIED ||
-                    s.maxApForDistance > setting.maxApForDistance)) {
-                setting.maxApForDistance = s.maxApForDistance;
-            }
-            if (s.channelSet != null && s.channelSet.size() != 0) {
-                if (setting.channelSet == null || setting.channelSet.size() != 0) {
-                    if (setting.channelSet == null) setting.channelSet = new ArrayList<String>();
-                    for (String i : s.channelSet) {
-                        if (setting.channelSet.contains(i) == false) setting.channelSet.add(i);
-                    }
-                } // else, ignore the constraint - we already use all channels
-            } else {
-                if (setting.channelSet == null || setting.channelSet.size() != 0) {
-                    setting.channelSet = new ArrayList<String>();
-                }
-            }
-        }
-
-        setting.constrain();
-        mWifiStateMachine.setBatchedScanSettings(setting, responsibleUid, (int)responsibleCsph,
-                responsibleWorkSource);
-    }
+    public void stopBatchedScan(BatchedScanSettings settings) { }
 
     void handleIdleModeChanged() {
         boolean doScan = false;
