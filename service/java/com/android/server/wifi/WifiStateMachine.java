@@ -6545,6 +6545,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 // Set the last selected configuration so as to allow the system to
                                 // stick the last user choice without persisting the choice
                                 mWifiConfigStore.setLastSelectedConfiguration(res);
+                                mWifiConfigStore.updateLastConnectUid(config, message.sendingUid);
+                                mWifiConfigStore.writeKnownNetworkHistory(false);
 
                                 // Remember time of last connection attempt
                                 lastConnectAttempt = System.currentTimeMillis();
@@ -6806,8 +6808,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // Make sure the network is enabled, since supplicant will not reenable it
                     mWifiConfigStore.enableNetworkWithoutBroadcast(netId, false);
 
+                    // If we're autojoining a network that the user or an app explicitly selected,
+                    // keep track of the UID that selected it.
+                    int lastConnectUid = mWifiConfigStore.isLastSelectedConfiguration(config) ?
+                            config.lastConnectUid : WifiConfiguration.UNKNOWN_UID;
+
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
-                            WifiConfiguration.UNKNOWN_UID) && mWifiNative.reconnect()) {
+                            lastConnectUid) && mWifiNative.reconnect()) {
                         lastConnectAttempt = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
                         config = mWifiConfigStore.getWifiConfiguration(netId);
@@ -7056,6 +7063,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             // Did this connect come from settings
                             boolean persistConnect =
                                 mWifiConfigStore.checkConfigOverridePermission(message.sendingUid);
+
+                            if (user) {
+                                mWifiConfigStore.updateLastConnectUid(config, message.sendingUid);
+                                mWifiConfigStore.writeKnownNetworkHistory(false);
+                            }
 
                             mWifiAutoJoinController.updateConfigurationHistory(result.getNetworkId()
                                     , user, persistConnect);
