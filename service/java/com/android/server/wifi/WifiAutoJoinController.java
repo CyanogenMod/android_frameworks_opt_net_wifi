@@ -109,6 +109,8 @@ public class WifiAutoJoinController {
 
     public static final int HIGH_THRESHOLD_MODIFIER = 5;
 
+    public static final int MAX_RSSI_DELTA = 50;
+
     // Below are AutoJoin wide parameters indicating if we should be aggressive before joining
     // weak network. Note that we cannot join weak network that are going to be marked as unanted by
     // ConnectivityService because this will trigger link flapping.
@@ -510,29 +512,16 @@ public class WifiAutoJoinController {
                         continue;
                     }
 
-                    // Compare RSSI values so as to evaluate the strength of the user preference
-                    int order = compareWifiConfigurationsRSSI(config, selected, null);
-
-                    if (order < -30) {
-                        // Selected configuration is worse than the visible configuration
-                        // hence register a strong choice so as autojoin cannot override this
-                        // for instance, the user has select a network
-                        // with 1 bar over a network with 3 bars...
-                        choice = 60;
-                    } else if (order < -20) {
-                        choice = 50;
-                    } else if (order < -10) {
-                        choice = 40;
-                    } else if (order < 20) {
-                        // Selected configuration is about same or has a slightly better RSSI
-                        // hence register a weaker choice, here a difference of at least +/-30 in
-                        // RSSI comparison triggered by autoJoin will override the choice
-                        choice = 30;
-                    } else {
-                        // Selected configuration is better than the visible configuration
-                        // hence we do not know if the user prefers this configuration strongly
-                        choice = 20;
+                    // If the selection was made while config was visible with reasonably good RSSI
+                    // then register the user preference, else ignore
+                    if (config.visibility == null ||
+                            (config.visibility.rssi24 < mWifiConfigStore.thresholdBadRssi24.get()
+                            && config.visibility.rssi5 < mWifiConfigStore.thresholdBadRssi5.get())
+                    ) {
+                        continue;
                     }
+
+                    choice = MAX_RSSI_DELTA + 10; // Make sure the choice overrides the RSSI diff
 
                     // The selected configuration was preferred over a recently seen config
                     // hence remember the user's choice:
@@ -546,11 +535,6 @@ public class WifiAutoJoinController {
                             + " over " + config.configKey(true)
                             + " choice " + Integer.toString(choice));
 
-                    Integer currentChoice = selected.connectChoices.get(config.configKey(true));
-                    if (currentChoice != null) {
-                        // User has made this choice multiple time in a row, so bump up a lot
-                        choice += currentChoice;
-                    }
                     // Add the visible config to the selected's connect choice list
                     selected.connectChoices.put(config.configKey(true), choice);
 
@@ -762,9 +746,9 @@ public class WifiAutoJoinController {
                 a.visibility, aRssiBoost, a.configKey(),
                 b.visibility, bRssiBoost, b.configKey());
 
-        // Normalize the order to [-50, +50]
-        if (order > 50) order = 50;
-        else if (order < -50) order = -50;
+        // Normalize the order to [-50, +50] = [ -MAX_RSSI_DELTA, MAX_RSSI_DELTA]
+        if (order > MAX_RSSI_DELTA) order = MAX_RSSI_DELTA;
+        else if (order < -MAX_RSSI_DELTA) order = -MAX_RSSI_DELTA;
 
         if (VDBG) {
             String prefer = " = ";
@@ -1912,34 +1896,11 @@ public class WifiAutoJoinController {
             }
         }
 
-        if (networkSwitchType == AUTO_JOIN_IDLE) {
+        if (networkSwitchType == AUTO_JOIN_IDLE && !mWifiConfigStore.enableHalBasedPno.get()) {
             String currentBSSID = mWifiStateMachine.getCurrentBSSID();
             // Attempt same WifiConfiguration roaming
             ScanResult roamCandidate =
                     attemptRoam(null, currentConfiguration, mScanResultAutoJoinAge, currentBSSID);
-            /**
-             *  TODO: (post L initial release)
-             *  consider handling linked configurations roaming (i.e. extended Roaming)
-             *  thru the attemptRoam function which makes use of the RSSI roaming threshold.
-             *  At the moment, extended roaming is only handled thru the attemptAutoJoin()
-             *  function which compare configurations.
-             *
-             *  The advantage of making use of attemptRoam function is that this function
-             *  will looks at all the BSSID of each configurations, instead of only looking
-             *  at WifiConfiguration.visibility which keeps trackonly of the RSSI/band of the
-             *  two highest BSSIDs.
-             */
-            // Attempt linked WifiConfiguration roaming
-            /* if (currentConfiguration != null
-                    && currentConfiguration.linkedConfigurations != null) {
-                for (String key : currentConfiguration.linkedConfigurations.keySet()) {
-                    WifiConfiguration link = mWifiConfigStore.getWifiConfiguration(key);
-                    if (link != null) {
-                        roamCandidate = attemptRoam(roamCandidate, link, mScanResultAutoJoinAge,
-                                currentBSSID);
-                    }
-                }
-            }*/
             if (roamCandidate != null && currentBSSID != null
                     && currentBSSID.equals(roamCandidate.BSSID)) {
                 roamCandidate = null;

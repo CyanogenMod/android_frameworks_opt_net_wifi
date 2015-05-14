@@ -25,7 +25,6 @@
 #include <ctype.h>
 #include <sys/socket.h>
 #include <linux/if.h>
-
 #include "wifi.h"
 #include "wifi_hal.h"
 #include "jni_helper.h"
@@ -79,6 +78,19 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_get_tdls_status = wifi_get_tdls_status_stub;
     hal_fn->wifi_get_tdls_capabilities = wifi_get_tdls_capabilities_stub;
     hal_fn->wifi_set_nodfs_flag = wifi_set_nodfs_flag_stub;
+    hal_fn->wifi_get_firmware_memory_dump = wifi_get_firmware_memory_dump_stub;
+    hal_fn->wifi_set_log_handler = wifi_set_log_handler_stub;
+    hal_fn->wifi_set_alert_handler = wifi_set_alert_handler_stub;
+    hal_fn->wifi_get_firmware_version = wifi_get_firmware_version_stub;
+    hal_fn->wifi_get_ring_buffers_status = wifi_get_ring_buffers_status_stub;
+    hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
+    hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
+    hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
+    hal_fn->wifi_set_ssid_white_list = wifi_set_ssid_white_list_stub;
+    hal_fn->wifi_set_gscan_roam_params = wifi_set_gscan_roam_params_stub;
+    hal_fn->wifi_set_bssid_preference = wifi_set_bssid_preference_stub;
+    hal_fn->wifi_enable_lazy_roam = wifi_enable_lazy_roam_stub;
+    hal_fn->wifi_set_bssid_blacklist = wifi_set_bssid_blacklist_stub;
     return 0;
 }
 
@@ -1487,20 +1499,312 @@ int buffer_size, wifi_ring_buffer_status *status) {
         0, 0);
 }
 
-static jboolean android_net_wifi_start_logging(JNIEnv *env, jclass cls, jint iface) {
-
+static jint android_net_wifi_get_supported_logger_feature(JNIEnv *env, jclass cls, jint iface){
+    //Not implemented yet
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("android_net_wifi_start_logging = %p", handle);
+    return -1;
+}
+
+static jobject android_net_wifi_get_driver_version(JNIEnv *env, jclass cls, jint iface) {
+     //Need to be fixed. The memory should be allocated from lower layer
+    //char *buffer = NULL;
+    int buffer_length =  256;
+    char *buffer = (char *)malloc(buffer_length);
+    if (!buffer) return NULL;
+    memset(buffer, 0, buffer_length);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    ALOGD("android_net_wifi_get_driver_version = %p", handle);
 
     if (handle == 0) {
-        return WIFI_ERROR_UNINITIALIZED;
+        return NULL;
     }
+
+    wifi_error result = hal_fn.wifi_get_driver_version(handle, buffer, buffer_length);
+
+    if (result == WIFI_SUCCESS) {
+        ALOGD("buffer is %p, length is %d", buffer, buffer_length);
+        jstring driver_version = env->NewStringUTF(buffer);
+        free(buffer);
+        return driver_version;
+    } else {
+        ALOGD("Fail to get driver version");
+        return NULL;
+    }
+}
+
+static jobject android_net_wifi_get_firmware_version(JNIEnv *env, jclass cls, jint iface) {
+
+    //char *buffer = NULL;
+    int buffer_length = 256;
+    char *buffer = (char *)malloc(buffer_length);
+    if (!buffer) return NULL;
+    memset(buffer, 0, buffer_length);
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    ALOGD("android_net_wifi_get_firmware_version = %p", handle);
+
+    if (handle == 0) {
+        return NULL;
+    }
+
+    wifi_error result = hal_fn.wifi_get_firmware_version(handle, buffer, buffer_length);
+
+    if (result == WIFI_SUCCESS) {
+        ALOGD("buffer is %p, length is %d", buffer, buffer_length);
+        jstring firmware_version = env->NewStringUTF(buffer);
+        free(buffer);
+        return firmware_version;
+    } else {
+        ALOGD("Fail to get Firmware version");
+        return NULL;
+    }
+}
+
+static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls, jint iface) {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    ALOGD(" android_net_wifi_get_ring_buffer_status = %p", handle);
+
+    if (handle == 0) {
+        return NULL;
+    }
+
+    //wifi_ring_buffer_status *status = NULL;
+    u32 num_rings = 10;
+    wifi_ring_buffer_status *status =
+        (wifi_ring_buffer_status *)malloc(sizeof(wifi_ring_buffer_status) * num_rings);
+    if (!status) return NULL;
+    memset(status, 0, sizeof(wifi_ring_buffer_status) * num_rings);
+    wifi_error result = hal_fn.wifi_get_ring_buffers_status(handle, &num_rings, status);
+    if (result == WIFI_SUCCESS) {
+        ALOGD("status is %p, number is %d", status, num_rings);
+        jclass clsRingBufferStatus =
+               (env)->FindClass("com/android/server/wifi/WifiLogger$RingBufferStatus");
+        if (clsRingBufferStatus == NULL) {
+            ALOGE("Error in accessing class");
+            free(status);
+            return NULL;
+        }
+        jobjectArray ringBuffersStatus = env->NewObjectArray(num_rings,clsRingBufferStatus, NULL);
+        wifi_ring_buffer_status *tmp = status;
+
+        for(u32 i = 0; i < num_rings; i++, tmp++) {
+            jobject ringStatus = createObject(env,
+                    "com/android/server/wifi/WifiLogger$RingBufferStatus");
+            if (ringStatus == NULL) {
+                ALOGE("Error in creating ringBufferStatus");
+                free(status);
+                return NULL;
+            }
+            char name[32];
+            for(int j = 0; j < 32; j++) {
+                name[j] = tmp->name[j];
+            }
+            setStringField(env, ringStatus, "name", name);
+            setIntField(env, ringStatus, "flag", tmp->flags);
+            setIntField(env, ringStatus, "ringBufferId", tmp->ring_id);
+            setIntField(env, ringStatus, "ringBufferByteSize", tmp->ring_buffer_byte_size);
+            setIntField(env, ringStatus, "verboseLevel", tmp->verbose_level);
+            setIntField(env, ringStatus, "writtenBytes", tmp->written_bytes);
+            setIntField(env, ringStatus, "readBytes", tmp->read_bytes);
+            setIntField(env, ringStatus, "writtenRecords", tmp->written_records);
+            env->SetObjectArrayElement(ringBuffersStatus, i, ringStatus);
+        }
+        free(status);
+        return ringBuffersStatus;
+    } else {
+        free(status);
+        return NULL;
+    }
+}
+
+static void on_ring_buffer_data(char *ring_name, char *buffer, int buffer_size,
+        wifi_ring_buffer_status *status) {
+    if (!ring_name || !buffer || !status || buffer_size <= sizeof(wifi_ring_buffer_entry)) {
+        ALOGE("Error input for on_ring_buffer_data!");
+    }
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+    ALOGD("on_ring_buffer_data called, vm = %p, obj = %p, env = %p buffer size = %d", mVM,
+            mCls, env, buffer_size);
+
+    jobject wifiLoggerEvent = createObject(env,
+            "com/android/server/wifi/WifiNative$WifiLoggerEvent");
+
+    //jstring reportBuffer = env->NewStringUTF(buffer);
+    //setStringField(env, wifiLoggerEvent, "buffer", buffer);
+
+    jobject ringStatus = createObject(env,
+                    "com/android/server/wifi/WifiLogger$RingBufferStatus");
+    if (status == NULL) {
+        ALOGE("Error in creating ringBufferStatus");
+        return;
+    }
+
+    char name[32];
+    for(int j = 0; j < 32; j++) {
+        name[j] = status->name[j];
+    }
+    setStringField(env, ringStatus, "name", name);
+    setIntField(env, ringStatus, "flag", status->flags);
+    setIntField(env, ringStatus, "ringBufferId", status->ring_id);
+    setIntField(env, ringStatus, "ringBufferByteSize", status->ring_buffer_byte_size);
+    setIntField(env, ringStatus, "verboseLevel", status->verbose_level);
+    setIntField(env, ringStatus, "writtenBytes", status->written_bytes);
+    setIntField(env, ringStatus, "readBytes", status->read_bytes);
+    setIntField(env, ringStatus, "writtenRecords", status->written_records);
+    setObjectField(env, wifiLoggerEvent, "status",
+            "Lcom/android/server/wifi/WifiLogger$RingBufferStatus;", ringStatus);
+    //set entry
+    wifi_ring_buffer_entry *buffer_entry = (wifi_ring_buffer_entry *) buffer;
+    setIntField(env,wifiLoggerEvent, "entrySize", buffer_entry->entry_size);
+    setIntField(env,wifiLoggerEvent, "flags", buffer_entry->flags);
+    setIntField(env,wifiLoggerEvent, "type", buffer_entry->type);
+    setLongField(env,wifiLoggerEvent, "timestamp", buffer_entry->timestamp);
+    //set records
+    int record_size = buffer_size - sizeof(wifi_ring_buffer_entry);
+    if (buffer_entry->entry_size > 0) {
+        jbyteArray records = env->NewByteArray(buffer_entry->entry_size);
+        jbyte *bytes = (jbyte *) (buffer_entry + 1);
+        env->SetByteArrayRegion(records, 0, buffer_entry->entry_size, bytes);
+        setObjectField(env,wifiLoggerEvent, "entry", "[B", records);
+        env->DeleteLocalRef(records);
+    }
+
+    reportEvent(env, mCls,"onWifiLoggerEvent",
+            "(Lcom/android/server/wifi/WifiNative$WifiLoggerEvent;)V", wifiLoggerEvent);
+
+    env->DeleteLocalRef(ringStatus);
+    env->DeleteLocalRef(wifiLoggerEvent);
+}
+
+static void on_alert_data(wifi_request_id id, char *buffer, int buffer_size, int err_code){
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+    ALOGD(" on_alert_data called, vm = %p, obj = %p, env = %p buffer_size = %d, error code = %d"
+            , mVM, mCls, env, buffer_size, err_code);
+
+    if (buffer_size > 0) {
+        jbyteArray records = env->NewByteArray(buffer_size);
+        jbyte *bytes = (jbyte *) buffer;
+        env->SetByteArrayRegion(records, 0,buffer_size, bytes);
+        reportEvent(env, mCls,"onWifiAlert","([B;I)V", records, err_code);
+        env->DeleteLocalRef(records);
+    } else {
+        reportEvent(env, mCls,"onWifiAlert","([B;I)V", NULL, err_code);
+    }
+}
+
+static jboolean android_net_wifi_start_logging_ring_buffer(JNIEnv *env, jclass cls, jint iface,
+        jint verbose_level,jint flags, jint max_interval,jint min_data_size, jstring ring_name) {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    ALOGD("android_net_wifi_start_logging_ring_buffer = %p", handle);
+
+    if (handle == 0) {
+        return false;
+    }
+
+    //set logging handler
+
+    //initialize the handler on first time
     wifi_ring_buffer_data_handler handler;
-    handler.on_ring_buffer_data = &onRingBufferData;
+    handler.on_ring_buffer_data = &on_ring_buffer_data;
+    int result = hal_fn.wifi_set_log_handler(0, handle, handler);
+    if (result != WIFI_SUCCESS) {
+        ALOGE("Fail to set logging handler");
+        return false;
+    } else {
+        ALOGE(" Successfully set on_ring_buffer_data");
+    }
+    //set alter handler
+    wifi_alert_handler alert_handler;
+    alert_handler.on_alert = &on_alert_data;
+    result = hal_fn.wifi_set_alert_handler(0, handle, alert_handler);
+    if (result != WIFI_SUCCESS) {
+        ALOGE(" Fail to set logging handler");
+        return false;
+    } else {
+        ALOGE(" Successfully set on_alert");
+    }
 
-    wifi_error result = WIFI_SUCCESS; //ifi_start_logging(handle, 1, 0, 5, 4*1024,(u8*)"wifi_connectivity_events", handler);
 
-    return result;
+    const char* ring_name_const_char = env->GetStringUTFChars(ring_name, JNI_FALSE);
+    int len;
+    for(len = 0; ring_name_const_char[len] != 0; len++);
+
+    char* ring_name_char = (char*) malloc(len+1);
+    memcpy(ring_name_char, ring_name_const_char, len+1);
+
+    int ret = hal_fn.wifi_start_logging(handle, verbose_level, flags, max_interval, min_data_size,
+            ring_name_char);
+
+    if (ret != WIFI_SUCCESS) {
+        ALOGE("Fail to start logging for ring %s", ring_name);
+    } else {
+        ALOGD("start logging for ring %s", ring_name);
+    }
+    env->ReleaseStringUTFChars(ring_name, ring_name_char);
+    return ret == WIFI_SUCCESS;
+}
+
+static jboolean android_net_wifi_get_ring_buffer_data(JNIEnv *env, jclass cls, jint iface,
+        jstring ring_name) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("android_net_wifi_get_ring_buffer_data = %p", handle);
+
+
+    const char* ring_name_const_char = env->GetStringUTFChars(ring_name, JNI_FALSE);
+    int len;
+    for(len = 0; ring_name_const_char[len] != 0; len++);
+    char* ring_name_char = (char*) malloc(len+1);
+    memcpy(ring_name_char, ring_name_const_char, len+1);
+
+    int result = hal_fn.wifi_get_ring_data(handle, ring_name_char);
+
+    if (result == WIFI_SUCCESS)
+        ALOGD("Get Ring data command success\n");
+    else
+        ALOGE("Failed to execute get ring data command\n");
+
+    env->ReleaseStringUTFChars(ring_name, ring_name_char);
+    return result == WIFI_SUCCESS;
+}
+
+
+void on_firmware_memory_dump(char *buffer, int buffer_size) {
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+    ALOGD("on_firmware_memory_dump called, vm = %p, obj = %p, env = %p buffer_size = %d"
+            , mVM, mCls, env, buffer_size);
+
+    if (buffer_size > 0) {
+        jbyteArray dump = env->NewByteArray(buffer_size);
+        jbyte *bytes = (jbyte *) (buffer);
+        env->SetByteArrayRegion(dump, 0, buffer_size, bytes);
+        reportEvent(env, mCls,"onWifiFwMemoryAvailable","([B)V", dump);
+        env->DeleteLocalRef(dump);
+    }
+
+}
+
+static jboolean android_net_wifi_get_fw_memory_dump(JNIEnv *env, jclass cls, jint iface){
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("android_net_wifi_get_fw_memory_dump = %p", handle);
+
+    if (handle == NULL) {
+        ALOGE("Can not get wifi_interface_handle");
+        return false;
+    }
+
+    wifi_firmware_memory_dump_handler fw_dump_handle;
+    fw_dump_handle.on_firmware_memory_dump = on_firmware_memory_dump;
+    int result = hal_fn.wifi_get_firmware_memory_dump(handle, fw_dump_handle);
+    return result == WIFI_SUCCESS;
+
 }
 
 // ----------------------------------------------------------------------------
@@ -1541,9 +1845,10 @@ static void onPnoNetworkFound(wifi_request_id id,
             env->SetObjectArrayElement(scanResults, i, scanResult);
         }
 
-        ALOGD("Scan result with ie length %d, i %u, <%s> rssi=%d %02x:%02x:%02x:%02x:%02x:%02x", results->ie_length, i,
-            results[i].ssid, results[i].rssi, results[i].bssid[0], results[i].bssid[1],
-            results[i].bssid[2], results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
+        ALOGD("Scan result with ie length %d, i %u, <%s> rssi=%d %02x:%02x:%02x:%02x:%02x:%02x",
+                results->ie_length, i, results[i].ssid, results[i].rssi, results[i].bssid[0],
+                results[i].bssid[1],results[i].bssid[2], results[i].bssid[3], results[i].bssid[4],
+                results[i].bssid[5]);
 
         /*elements = env->NewByteArray(results->ie_length);
         if (elements == NULL) {
@@ -1637,17 +1942,43 @@ static jboolean android_net_wifi_setPnoListNative(
         net_list[i].auth_bit_field = a;
         int f = getIntField(env, pno_net, "flags");
         net_list[i].flags = f;
-        ALOGE(
-            " setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]",
-            i, (signed)net_list[i].rssi_threshold,
-            net_list[i].rssi_threshold, net_list[i].auth_bit_field, a,
-            net_list[i].flags, f, net_list[i].ssid);
+        ALOGE(" setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]", i,
+                (signed)net_list[i].rssi_threshold, net_list[i].rssi_threshold,
+                net_list[i].auth_bit_field, a, net_list[i].flags, f, net_list[i].ssid);
     }
 
     int result = hal_fn.wifi_set_epno_list(id, handle, len, net_list, handler);
     ALOGE(" setPnoListNative: result %d", result);
 
     return result >= 0;
+}
+
+static jboolean android_net_wifi_setLazyRoam(
+        JNIEnv *env, jclass cls, jint iface, jint id, jboolean enabled, jobject roam_param)  {
+
+    jboolean status = true;
+    wifi_roam_params params;
+    memset(&params, 0, sizeof(params));
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("configure lazy roam request [%d] = %p", id, handle);
+
+    if (roam_param != NULL) {
+        params.A_band_boost_threshold  = getIntField(env, roam_param, "A_band_boost_threshold");
+        params.A_band_penalty_threshold  = getIntField(env, roam_param, "A_band_penalty_threshold");
+        params.A_band_boost_factor = getIntField(env, roam_param, "A_band_boost_factor");
+        params.A_band_penalty_factor  = getIntField(env, roam_param, "A_band_penalty_factor");
+        params.A_band_max_boost  = getIntField(env, roam_param, "A_band_max_boost");
+        params.lazy_roam_hysteresis = getIntField(env, roam_param, "lazy_roam_hysteresis");
+        params.alert_roam_rssi_trigger = getIntField(env, roam_param, "alert_roam_rssi_trigger");
+        status = hal_fn.wifi_set_gscan_roam_params(id, handle, &params);
+    }
+    if (status) {
+        int doEnable = enabled ? 1 : 0;
+        status = hal_fn.wifi_enable_lazy_roam(id, handle, doEnable);
+    }
+    ALOGE("android_net_wifi_setLazyRoam\n");
+    return status;
 }
 
 // ----------------------------------------------------------------------------
@@ -1704,7 +2035,6 @@ static JNINativeMethod gWifiMethods[] = {
     { "toggleInterfaceNative",    "(I)Z",  (void*) android_net_wifi_toggle_interface},
     { "getRttCapabilitiesNative", "(I)Landroid/net/wifi/RttManager$RttCapabilities;",
             (void*) android_net_wifi_get_rtt_capabilities},
-    { "startLogging", "(I)Z", (void*) android_net_wifi_start_logging},
     {"setCountryCodeHalNative", "(ILjava/lang/String;)Z",
             (void*) android_net_wifi_set_Country_Code_Hal},
     { "setPnoListNative", "(II[Lcom/android/server/wifi/WifiNative$WifiPnoNetwork;)Z",
@@ -1714,7 +2044,22 @@ static JNINativeMethod gWifiMethods[] = {
     {"getTdlsStatusNative", "(ILjava/lang/String;)Lcom/android/server/wifi/WifiNative$TdlsStatus;",
             (void*) android_net_wifi_get_tdls_status},
     {"getTdlsCapabilitiesNative", "(I)Lcom/android/server/wifi/WifiNative$TdlsCapabilities;",
-            (void*) android_net_wifi_get_tdls_capabilities}
+            (void*) android_net_wifi_get_tdls_capabilities},
+    {"getSupportedLoggerFeatureSetNative","(I)I",
+            (void*) android_net_wifi_get_supported_logger_feature},
+    {"getDriverVersionNative", "(I)Ljava/lang/String;",
+            (void*) android_net_wifi_get_driver_version},
+    {"getFirmwareVersionNative", "(I)Ljava/lang/String;",
+            (void*) android_net_wifi_get_firmware_version},
+    {"getRingBufferStatusNative", "(I)[Lcom/android/server/wifi/WifiLogger$RingBufferStatus;",
+            (void*) android_net_wifi_get_ring_buffer_status},
+    {"startLoggingRingBufferNative", "(IIIIILjava/lang/String;)Z",
+            (void*) android_net_wifi_start_logging_ring_buffer},
+    {"getRingBufferDataNative", "(ILjava/lang/String;)Z",
+            (void*) android_net_wifi_get_ring_buffer_data},
+    {"getFwMemoryDumpNative","(I)Z", (void*) android_net_wifi_get_fw_memory_dump},
+    { "setLazyRoam", "(IIZLcom/android/server/wifi/WifiNative$WifiLazyRoamParams;)Z",
+            (void*) android_net_wifi_setLazyRoam}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
