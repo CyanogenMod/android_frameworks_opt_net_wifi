@@ -389,15 +389,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     // Start a location scan.
     // L release: A location scan is implemented as a normal scan and avoids scanning DFS channels
+    // Deprecated: Will soon remove implementation
     public void startLocationRestrictedScan(WorkSource workSource) {
         enforceChangePermission();
         enforceLocationHardwarePermission();
-        synchronized (mBatchedScanners) {
-            if (mInIdleMode) {
-                mScanPending = true;
-                return;
-            }
-        }
         List<WifiChannel> channels = getChannelList();
         if (channels == null) {
             Slog.e(TAG, "startLocationRestrictedScan cant get channels");
@@ -426,7 +421,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public void startScan(ScanSettings settings, WorkSource workSource) {
         enforceChangePermission();
-        synchronized (mBatchedScanners) {
+        synchronized (this) {
             if (mInIdleMode) {
                 mScanPending = true;
                 return;
@@ -474,9 +469,12 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     public void stopBatchedScan(BatchedScanSettings settings) { }
 
+    boolean mInIdleMode;
+    boolean mScanPending;
+
     void handleIdleModeChanged() {
         boolean doScan = false;
-        synchronized (mBatchedScanners) {
+        synchronized (this) {
             boolean idle = mPowerManager.isDeviceIdleMode();
             if (mInIdleMode != idle) {
                 mInIdleMode = idle;
@@ -486,7 +484,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                         doScan = true;
                     }
                 }
-                resolveBatchedScannersLocked();
             }
         }
         if (doScan) {
