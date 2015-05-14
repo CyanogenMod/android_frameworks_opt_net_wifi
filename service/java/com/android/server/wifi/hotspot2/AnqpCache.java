@@ -148,12 +148,12 @@ public class AnqpCache implements AlarmHandler {
                     !data.isResolved() ||
                     data.getDomainID() != network.getAnqpDomainID() ||
                     data.recacheable(now)) {
-                Log.d("HS2J", "Updating " + key + " -> " + data);
+                Log.d(Utils.hs2LogTag(getClass()), "Updating " + key + " -> " + data);
                 data = new ANQPData(network, anqpElements);
                 mANQPCache.put(key, data);
             }
             else {
-                Log.d("HS2J", "Not recaching " + key + " -> " + data);
+                Log.d(Utils.hs2LogTag(getClass()), "Not recaching " + key + " -> " + data);
             }
         }
     }
@@ -195,7 +195,7 @@ public class AnqpCache implements AlarmHandler {
             }
             for (CacheKey key : regulars) {
                 mANQPCache.remove(key);
-                Log.d("HS2J", "Retired " + key);
+                Log.d(Utils.hs2LogTag(getClass()), "Retired " + key);
             }
         }
         mChronograph.addAlarm(CACHE_RECHECK, this, null);

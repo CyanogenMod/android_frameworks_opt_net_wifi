@@ -28,8 +28,13 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
+import java.security.cert.CertPath;
+import java.security.cert.CertPathValidator;
+import java.security.cert.CertPathValidatorException;
+import java.security.cert.CertPathValidatorResult;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
+import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,6 +46,8 @@ public class ConfigBuilder {
     private static final String ProfileTag = "application/x-passpoint-profile";
     private static final String KeyTag = "application/x-pkcs12";
     private static final String CATag = "application/x-x509-ca-cert";
+
+    private static String X509 = "X.509";
 
     private static final String TAG = "WCFG";
 
@@ -109,7 +116,7 @@ public class ConfigBuilder {
                     }
 
                     byte[] octets = Base64.decode(subContainer.getText(), Base64.DEFAULT);
-                    CertificateFactory factory = CertificateFactory.getInstance("X.509");
+                    CertificateFactory factory = CertificateFactory.getInstance(X509);
                     caCert = (X509Certificate) factory.generateCertificate(
                             new ByteArrayInputStream(octets));
                     Log.d(TAG, "Cert subject " + caCert.getSubjectX500Principal());
@@ -194,6 +201,30 @@ public class ConfigBuilder {
         }
 
         WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
+
+        if (caCert != null && (eapMethodID == EAP.EAPMethodID.EAP_TLS ||
+            eapMethodID == EAP.EAPMethodID.EAP_TTLS)) {
+            CertificateFactory factory = CertificateFactory.getInstance(X509);
+            CertPathValidator validator =
+                    CertPathValidator.getInstance(CertPathValidator.getDefaultType());
+            CertPath path = factory.generateCertPath(
+                    Arrays.asList(enterpriseConfig.getCaCertificate()));
+            Log.i(TAG, "Trying AndroidCAStore");
+            KeyStore ks = KeyStore.getInstance("AndroidCAStore");
+            ks.load(null, null);
+            PKIXParameters params = new PKIXParameters(ks);
+            params.setRevocationEnabled(false);
+            try {
+                validator.validate(path, params);
+                enterpriseConfig.setCaCertificate(caCert);
+                Log.d(TAG, "Cert validation succeeded");
+            }
+            catch (CertPathValidatorException cpve) {
+                Log.d(TAG, "Cert validation failed: " + cpve);
+                enterpriseConfig.setCaCertificate(null);
+            }
+        }
+
         enterpriseConfig.setAnonymousIdentity("anonymous@" + credential.getRealm());
         enterpriseConfig.setRealm(credential.getRealm());
         enterpriseConfig.setDomainSuffixMatch(homeSP.getFQDN());
@@ -223,9 +254,6 @@ public class ConfigBuilder {
         enterpriseConfig.setPhase2Method(remapInnerMethod(ttlsParam.getType()));
         enterpriseConfig.setIdentity(credential.getUserName());
         enterpriseConfig.setPassword(credential.getPassword());
-        if (caCert != null) {
-            enterpriseConfig.setCaCertificate(caCert);
-        }
 
         return config;
     }
@@ -267,9 +295,6 @@ public class ConfigBuilder {
         WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
         enterpriseConfig.setClientCertificateAlias(alias);
         enterpriseConfig.setClientKeyEntry(clientKey, clientCertificate);
-        if (caCert != null) {
-            enterpriseConfig.setCaCertificate(caCert);
-        }
 
         return config;
     }

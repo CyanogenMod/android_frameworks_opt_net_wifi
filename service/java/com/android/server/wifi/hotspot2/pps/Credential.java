@@ -145,7 +145,8 @@ public class Credential {
                 MessageDigest digester = MessageDigest.getInstance("SHA-256");
                 fingerPrint = digester.digest(enterpriseConfig.getClientCertificate().getEncoded());
             } catch (GeneralSecurityException gse) {
-                Log.e(Utils.HS20_TAG, "Failed to generate certificate fingerprint: " + gse);
+                Log.e(Utils.hs2LogTag(getClass()),
+                        "Failed to generate certificate fingerprint: " + gse);
                 fingerPrint = null;
             }
         } else if (enterpriseConfig.getClientCertificateAlias() != null) {
@@ -156,7 +157,7 @@ public class Credential {
                     MessageDigest digester = MessageDigest.getInstance("SHA-256");
                     fingerPrint = digester.digest(octets);
                 } catch (GeneralSecurityException gse) {
-                    Log.e("HS2J", "Failed to construct digest: " + gse);
+                    Log.e(Utils.hs2LogTag(getClass()), "Failed to construct digest: " + gse);
                     fingerPrint = null;
                 }
             } else // !!! The current alias is *not* derived from the fingerprint...
@@ -165,7 +166,7 @@ public class Credential {
                     fingerPrint = Base64.decode(enterpriseConfig.getClientCertificateAlias(),
                             Base64.DEFAULT);
                 } catch (IllegalArgumentException ie) {
-                    Log.e(Utils.HS20_TAG, "Bad base 64 alias");
+                    Log.e(Utils.hs2LogTag(getClass()), "Bad base 64 alias");
                     fingerPrint = null;
                 }
             }
