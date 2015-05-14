@@ -4100,7 +4100,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
-            mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
+            if (mLinkProperties != null) {
+                mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
+            } else {
+                mIpReachabilityMonitor.clearLinkProperties();
+            }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
