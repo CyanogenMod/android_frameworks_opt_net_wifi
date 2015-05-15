@@ -1040,19 +1040,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             loge("Couldn't register netlink tracker: " + e.toString());
         }
 
-        try {
-            mIpReachabilityMonitor = new IpReachabilityMonitor(
-                    mInterfaceName,
-                    new IpReachabilityMonitor.Callback() {
-                        @Override
-                        public void notifyLost(InetAddress ip, String logMsg) {
-                            sendMessage(CMD_IP_REACHABILITY_LOST, logMsg);
-                        }
-                    });
-        } catch (IllegalArgumentException e) {
-            loge("Failed to create IpReachabilityMonitor: ", e);
-        }
-
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
 
@@ -4101,11 +4088,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
             mLinkProperties = newLp;
             if (mIpReachabilityMonitor != null) {
-                if (mLinkProperties != null) {
-                    mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
-                } else {
-                    mIpReachabilityMonitor.clearLinkProperties();
-                }
+                mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
             }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
@@ -7374,10 +7357,28 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             // from this point on and having the BSSID specified in the network block would
             // cause the roam to faile and the device to disconnect
             clearCurrentConfigBSSID("L2ConnectedState");
+
+            try {
+                mIpReachabilityMonitor = new IpReachabilityMonitor(
+                        mInterfaceName,
+                        new IpReachabilityMonitor.Callback() {
+                            @Override
+                            public void notifyLost(InetAddress ip, String logMsg) {
+                                sendMessage(CMD_IP_REACHABILITY_LOST, logMsg);
+                            }
+                        });
+            } catch (IllegalArgumentException e) {
+                Log.wtf("Failed to create IpReachabilityMonitor", e);
+            }
         }
 
         @Override
         public void exit() {
+            if (mIpReachabilityMonitor != null) {
+                mIpReachabilityMonitor.stop();
+                mIpReachabilityMonitor = null;
+            }
+
             // This is handled by receiving a NETWORK_DISCONNECTION_EVENT in ConnectModeState
             // Bug: 15347363
             // For paranoia's sake, call handleNetworkDisconnect
