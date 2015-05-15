@@ -495,6 +495,12 @@ public class WifiConfigStore extends IpConfigStore {
     ArrayList<WifiNative.WifiPnoNetwork> mCachedPnoList
             = new ArrayList<WifiNative.WifiPnoNetwork>();
 
+    /*
+     * BSSID blacklist, i.e. list of BSSID we want to avoid
+     */
+    HashSet<String> mBssidBlacklist = new HashSet<String>();
+
+
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
     private final MOManager mMOManager;
@@ -4009,6 +4015,27 @@ public class WifiConfigStore extends IpConfigStore {
         return Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.WIFI_MAX_DHCP_RETRY_COUNT,
                 DEFAULT_MAX_DHCP_RETRIES);
+    }
+
+    void clearBssidBlacklist() {
+        mBssidBlacklist = new HashSet<String>();
+        mWifiNative.clearBlacklist();
+        mWifiNative.setBssidBlacklist(null);
+    }
+
+    void blackListBssid(String BSSID) {
+        if (BSSID == null)
+            return;
+        mBssidBlacklist.add(BSSID);
+        // Blacklist at wpa_supplicant
+        mWifiNative.addToBlacklist(BSSID);
+        // Blacklist at firmware
+        String list[] = new String[mBssidBlacklist.size()];
+        int count = 0;
+        for (String bssid : mBssidBlacklist) {
+            list[count++] = bssid;
+        }
+        mWifiNative.setBssidBlacklist(list);
     }
 
     void handleSSIDStateChange(int netId, boolean enabled, String message, String BSSID) {

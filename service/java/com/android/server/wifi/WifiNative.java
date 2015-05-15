@@ -2150,7 +2150,7 @@ public class WifiNative {
         }
     }
 
-    private native static boolean setLazyRoam(int iface, int id,
+    private native static boolean setLazyRoamNative(int iface, int id,
                                               boolean enabled, WifiLazyRoamParams param);
 
     synchronized public static boolean setLazyRoam(boolean enabled, WifiLazyRoamParams params) {
@@ -2158,10 +2158,31 @@ public class WifiNative {
             if (startHal()) {
                 sPnoCmdId = getNewCmdIdLocked();
 
-                return setLazyRoam(sWlan0Index, sPnoCmdId, enabled, params);
+                return setLazyRoamNative(sWlan0Index, sPnoCmdId, enabled, params);
             } else {
                 return false;
             }
         }
     }
+
+    private native static boolean setBssidBlacklistNative(int iface, int id,
+                                              String list[]);
+
+    synchronized public static boolean setBssidBlacklist(String list[]) {
+        int size = 0;
+        if (list != null) {
+            size = list.length;
+        }
+        Log.e(TAG, "setBssidBlacklist cmd " + sPnoCmdId + " size " + size);
+
+        synchronized (mLock) {
+            sPnoCmdId = getNewCmdIdLocked();
+
+            if (setBssidBlacklistNative(sWlan0Index, sPnoCmdId, list) == false) {
+                return false;
+            }
+            return true;
+        }
+    }
+
 }

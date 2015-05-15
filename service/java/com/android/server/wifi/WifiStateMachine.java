@@ -4691,7 +4691,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 // this will typically happen if the user walks away and come back to his arrea
                 // TODO: implement blacklisting based on a timer, i.e. keep BSSID blacklisted
                 // in supplicant for a couple of hours or a day
-                mWifiNative.clearBlacklist();
+                mWifiConfigStore.clearBssidBlacklist();
             }
         }
     }
@@ -6652,10 +6652,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case CMD_BLACKLIST_NETWORK:
-                    mWifiNative.addToBlacklist((String) message.obj);
+                    mWifiConfigStore.blackListBssid((String) message.obj);
                     break;
                 case CMD_CLEAR_BLACKLIST:
-                    mWifiNative.clearBlacklist();
+                    mWifiConfigStore.clearBssidBlacklist();
                     break;
                 case CMD_SAVE_CONFIG:
                     ok = mWifiConfigStore.saveConfig();

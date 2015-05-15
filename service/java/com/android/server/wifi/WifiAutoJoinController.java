@@ -1911,7 +1911,7 @@ public class WifiAutoJoinController {
 
     ArrayList<WifiNative.WifiPnoNetwork> getPnoList(WifiConfiguration current) {
         int size = -1;
-        ArrayList<WifiNative.WifiPnoNetwork> list = null;
+        ArrayList<WifiNative.WifiPnoNetwork> list = new ArrayList<WifiNative.WifiPnoNetwork>();
 
         if (mWifiConfigStore.mCachedPnoList != null) {
             size = mWifiConfigStore.mCachedPnoList.size();
@@ -1924,10 +1924,17 @@ public class WifiAutoJoinController {
              * If we are currently associated to a WifiConfiguration then include
              * only those networks that have a higher priority
              */
-            list = new ArrayList<WifiNative.WifiPnoNetwork>();
             for (WifiNative.WifiPnoNetwork network : mWifiConfigStore.mCachedPnoList) {
                 WifiConfiguration config = getWifiConfiguration(network);
-                if (config != null && !configKey.equals(network.configKey)) {
+                if (config == null) {
+                    continue;
+                }
+                if (config.autoJoinStatus
+                        >= WifiConfiguration.AUTO_JOIN_DISABLED_NO_CREDENTIALS) {
+                     continue;
+                }
+
+                if (!configKey.equals(network.configKey)) {
                     int choice = getConnectChoice(config, current);
                     if (choice > 0) {
                         // config is of higher priority
@@ -1937,7 +1944,18 @@ public class WifiAutoJoinController {
                 }
             }
         } else {
-            list = mWifiConfigStore.mCachedPnoList;
+            for (WifiNative.WifiPnoNetwork network : mWifiConfigStore.mCachedPnoList) {
+                WifiConfiguration config = getWifiConfiguration(network);
+                if (config == null) {
+                    continue;
+                }
+                if (config.autoJoinStatus
+                        >= WifiConfiguration.AUTO_JOIN_DISABLED_NO_CREDENTIALS) {
+                    continue;
+                }
+                list.add(network);
+                network.rssi_threshold = mWifiConfigStore.thresholdGoodRssi24.get();
+            }
         }
         return list;
     }

@@ -1983,6 +1983,52 @@ static jboolean android_net_wifi_setLazyRoam(
     return status >= 0;
 }
 
+static jboolean android_net_wifi_setBssidBlacklist(
+        JNIEnv *env, jclass cls, jint iface, jint id, jobject list)  {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("configure BSSID list request [%d] = %p", id, handle);
+
+    wifi_bssid_params params;
+    memset(&params, 0, sizeof(params));
+
+    if (list != NULL) {
+        size_t len = env->GetArrayLength((jobjectArray)list);
+        if (len > (size_t)MAX_BLACKLIST_BSSID) {
+            return false;
+        }
+        for (unsigned int i = 0; i < len; i++) {
+
+            jstring jbssid = (jstring)env->GetObjectArrayElement((jobjectArray)list, i);
+            if (jbssid == NULL) {
+                ALOGD("configure BSSID blacklist: could not get element %d", i);
+                continue;
+            }
+            const char *bssid = env->GetStringUTFChars(jbssid, NULL);
+            if (bssid == NULL) {
+                  ALOGE("Error getting bssid");
+                  return false;
+            }
+
+            mac_addr addr;
+            parseMacAddress(bssid, addr);
+            memcpy(params.bssids[i], addr, sizeof(mac_addr));
+
+            char bssidOut[32];
+            sprintf(bssidOut, "%0x:%0x:%0x:%0x:%0x:%0x", addr[0], addr[1],
+                addr[2], addr[3], addr[4], addr[5]);
+
+            ALOGD("BSSID blacklist: added bssid %s", bssidOut);
+
+            params.num_bssid++;
+
+        }
+    }
+
+    ALOGD("Added %d bssids", params.num_bssid);
+    return hal_fn.wifi_set_bssid_blacklist(id, handle, params) == WIFI_SUCCESS;
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -2060,8 +2106,10 @@ static JNINativeMethod gWifiMethods[] = {
     {"getRingBufferDataNative", "(ILjava/lang/String;)Z",
             (void*) android_net_wifi_get_ring_buffer_data},
     {"getFwMemoryDumpNative","(I)Z", (void*) android_net_wifi_get_fw_memory_dump},
-    { "setLazyRoam", "(IIZLcom/android/server/wifi/WifiNative$WifiLazyRoamParams;)Z",
-            (void*) android_net_wifi_setLazyRoam}
+    { "setLazyRoamNative", "(IIZLcom/android/server/wifi/WifiNative$WifiLazyRoamParams;)Z",
+            (void*) android_net_wifi_setLazyRoam},
+    { "setBssidBlacklistNative", "(II[Ljava/lang/String;)Z",
+            (void*)android_net_wifi_setBssidBlacklist}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
