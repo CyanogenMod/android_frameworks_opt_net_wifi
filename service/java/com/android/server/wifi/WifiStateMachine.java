@@ -2316,8 +2316,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         pw.println("FW Version is: " + mWifiLogger.getFirmwareVersion());
         pw.println("Driver Version is: " + mWifiLogger.getDriverVersion());
         WifiLogger.RingBufferStatus[] status = mWifiLogger.getRingBufferStatus();
-        for (WifiLogger.RingBufferStatus element : status) {
-            pw.println("Ring buffer status: " + element);
+        if (status != null) {
+            for (WifiLogger.RingBufferStatus element : status) {
+                pw.println("Ring buffer status: " + element);
+            }
         }
         mWifiLogger.getAllRingBufferData();
         pw.println("Start fw memory dump:-----------------------------------------------");
