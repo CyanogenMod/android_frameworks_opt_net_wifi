@@ -4100,10 +4100,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
-            if (mLinkProperties != null) {
-                mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
-            } else {
-                mIpReachabilityMonitor.clearLinkProperties();
+            if (mIpReachabilityMonitor != null) {
+                if (mLinkProperties != null) {
+                    mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
+                } else {
+                    mIpReachabilityMonitor.clearLinkProperties();
+                }
             }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
@@ -4221,7 +4223,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
         }
         mNetlinkTracker.clearLinkProperties();
-        mIpReachabilityMonitor.clearLinkProperties();
+        if (mIpReachabilityMonitor != null) {
+            mIpReachabilityMonitor.clearLinkProperties();
+        }
 
         // Now clear the merged link properties.
         mLinkProperties.clear();
@@ -4658,7 +4662,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private void handleIpReachabilityLost() {
         // No need to be told about any additional neighbors that might also
         // become unreachable--quiet them now while we start disconnecting.
-        mIpReachabilityMonitor.clearLinkProperties();
+        if (mIpReachabilityMonitor != null) {
+            mIpReachabilityMonitor.clearLinkProperties();
+        }
 
         mWifiInfo.setInetAddress(null);
         mWifiInfo.setMeteredHint(false);
