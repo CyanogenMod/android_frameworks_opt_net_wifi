@@ -2936,6 +2936,23 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         stopGScan();
     }
 
+
+    private boolean configureSsidWhiteList() {
+
+        String[] list = mWifiConfigStore.getWhiteListedSsids(getCurrentWifiConfiguration());
+        if (list == null || list.length == 0) {
+            return true;
+        }
+
+       if (!WifiNative.setSsidWhitelist(list)) {
+            loge("configureSsidWhiteList couldnt program SSID list, size " + list.length);
+            return false;
+        }
+
+        loge("configureSsidWhiteList success");
+        return true;
+    }
+
     // In associated more, lazy roam will be looking for 5GHz roam candidate
     private boolean configureLazyRoam() {
         boolean status;
@@ -7959,6 +7976,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             }
             configureLazyRoam();
+            configureSsidWhiteList();
             if (mScreenOn
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
                 if (useHalBasedAutoJoinOffload()) {

@@ -1312,6 +1312,40 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    String[] getWhiteListedSsids(WifiConfiguration config) {
+        int num_ssids = 0;
+        List<String> list = new ArrayList<String>();
+        if (config == null)
+            return null;
+        if (config.linkedConfigurations == null) {
+            return null;
+        }
+        for (String configKey : config.linkedConfigurations.keySet()) {
+
+            // Sanity check that the linked configuration is still valid
+            WifiConfiguration link = getWifiConfiguration(configKey);
+            if (link == null) {
+                continue;
+            }
+
+            if (link.autoJoinStatus != WifiConfiguration.AUTO_JOIN_ENABLED) {
+                continue;
+            }
+
+            if (link.hiddenSSID == true) {
+                continue;
+            }
+
+            if (link.SSID == null || TextUtils.isEmpty(config.SSID)) {
+                continue;
+            }
+
+            list.add(link.SSID);
+        }
+
+        return (String[])list.toArray();
+    }
+
     /**
      * Remove a network. Note that there is no saveConfig operation.
      * This function is retained for compatibility with the public

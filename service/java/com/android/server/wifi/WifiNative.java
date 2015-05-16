@@ -2185,4 +2185,23 @@ public class WifiNative {
         }
     }
 
+    private native static boolean setSsidWhitelistNative(int iface, int id, String list[]);
+
+    synchronized public static boolean setSsidWhitelist(String list[]) {
+        int size = 0;
+        if (list != null) {
+            size = list.length;
+        }
+        Log.e(TAG, "setSsidWhitelist cmd " + sPnoCmdId + " size " + size);
+
+        synchronized (mLock) {
+            sPnoCmdId = getNewCmdIdLocked();
+
+            if (setSsidWhitelistNative(sWlan0Index, sPnoCmdId, list) == false) {
+                return false;
+            }
+            return true;
+        }
+    }
+
 }
