@@ -574,7 +574,7 @@ public class WifiNative {
        // if (mSuspendOptEnabled == enabled) return true;
         mSuspendOptEnabled = enabled;
 
-        Log.e("native", "do suspend " + enabled);
+        if (DBG) Log.d("native", "do suspend " + enabled);
         if (enabled) {
             return doBooleanCommand("DRIVER SETSUSPENDMODE 1");
         } else {
@@ -588,10 +588,10 @@ public class WifiNative {
 
     public boolean enableBackgroundScan(boolean enable) {
         if (enable) {
-            Log.e(mTAG, "doBoolean: enable");
+            if (DBG) Log.d(mTAG, "doBoolean: enable");
             return doBooleanCommand("SET pno 1");
         } else {
-            Log.e(mTAG, "doBoolean: disable");
+            if (DBG) Log.d(mTAG, "doBoolean: disable");
             return doBooleanCommand("SET pno 0");
         }
     }
