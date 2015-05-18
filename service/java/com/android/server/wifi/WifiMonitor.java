@@ -28,6 +28,7 @@ import android.net.wifi.p2p.WifiP2pProvDiscEvent;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Message;
 import android.text.TextUtils;
+import android.util.LocalLog;
 import android.util.Log;
 
 import com.android.server.wifi.hotspot2.Utils;
@@ -66,9 +67,10 @@ public class WifiMonitor {
     private static final int ASSOC_REJECT = 9;
     private static final int SSID_TEMP_DISABLE = 10;
     private static final int SSID_REENABLE = 11;
-    private static final int BSS_ADDED = 12;
-    private static final int BSS_REMOVED = 13;
+    private static final int BSS_ADDED    = 12;
+    private static final int BSS_REMOVED  = 13;
     private static final int UNKNOWN      = 14;
+    private static final int SCAN_FAILED  = 15;
 
     /** All events coming from the supplicant start with this prefix */
     private static final String EVENT_PREFIX_STR = "CTRL-EVENT-";
@@ -155,6 +157,13 @@ public class WifiMonitor {
      * </pre>
      */
     private static final String SCAN_RESULTS_STR =  "SCAN-RESULTS";
+
+    /**
+     * <pre>
+     * CTRL-EVENT-SCAN-FAILED ret=code[ retry=1]
+     * </pre>
+     */
+    private static final String SCAN_FAILED_STR =  "SCAN-FAILED";
 
     /**
      * <pre>
@@ -450,6 +459,8 @@ public class WifiMonitor {
     /* Request SIM Auth */
     public static final int SUP_REQUEST_SIM_AUTH                 = BASE + 16;
 
+    public static final int SCAN_FAILED_EVENT                    = BASE + 17;
+
     /* P2P events */
     public static final int P2P_DEVICE_FOUND_EVENT               = BASE + 21;
     public static final int P2P_DEVICE_LOST_EVENT                = BASE + 22;
@@ -721,6 +732,7 @@ public class WifiMonitor {
     private static class MonitorThread extends Thread {
         private final WifiNative mWifiNative;
         private final WifiMonitorSingleton mWifiMonitorSingleton;
+        private final LocalLog mLocalLog = WifiNative.getLocalLog();
 
         public MonitorThread(WifiNative wifiNative, WifiMonitorSingleton wifiMonitorSingleton) {
             super("WifiMonitor");
@@ -733,9 +745,11 @@ public class WifiMonitor {
             for (;;) {
                 String eventStr = mWifiNative.waitForEvent();
 
-                // Skip logging the common but mostly uninteresting scan-results event
-                if (DBG && eventStr.indexOf(SCAN_RESULTS_STR) == -1) {
-                    Log.d(TAG, "Event [" + eventStr + "]");
+                // Skip logging the common but mostly uninteresting events
+                if (eventStr.indexOf(BSS_ADDED_STR) == -1
+                        && eventStr.indexOf(BSS_REMOVED_STR) == -1) {
+                    if (DBG) Log.d(TAG, "Event [" + eventStr + "]");
+                    mLocalLog.log("Event [" + eventStr + "]");
                 }
 
                 if (mWifiMonitorSingleton.dispatchEvent(eventStr)) {
@@ -829,6 +843,8 @@ public class WifiMonitor {
             event = STATE_CHANGE;
         else if (eventName.equals(SCAN_RESULTS_STR))
             event = SCAN_RESULTS;
+        else if (eventName.equals(SCAN_FAILED_STR))
+            event = SCAN_FAILED;
         else if (eventName.equals(LINK_SPEED_STR))
             event = LINK_SPEED;
         else if (eventName.equals(TERMINATING_STR))
@@ -978,6 +994,10 @@ public class WifiMonitor {
 
             case SCAN_RESULTS:
                 mStateMachine.sendMessage(SCAN_RESULTS_EVENT);
+                break;
+
+            case SCAN_FAILED:
+                mStateMachine.sendMessage(SCAN_FAILED_EVENT);
                 break;
 
             case UNKNOWN:

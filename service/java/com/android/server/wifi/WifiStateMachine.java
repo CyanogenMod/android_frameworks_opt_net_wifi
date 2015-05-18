@@ -2564,6 +2564,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(" last=").append(key);
                 }
                 break;
+            case WifiMonitor.SCAN_FAILED_EVENT:
+                break;
             case WifiMonitor.NETWORK_CONNECTION_EVENT:
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
@@ -5065,6 +5067,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case WifiMonitor.NETWORK_CONNECTION_EVENT:
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                 case WifiMonitor.SCAN_RESULTS_EVENT:
+                case WifiMonitor.SCAN_FAILED_EVENT:
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                 case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
@@ -5423,6 +5426,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sendMessageDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
+                case WifiMonitor.SCAN_FAILED_EVENT:
                     maybeRegisterNetworkFactory(); // Make sure our NetworkFactory is registered
                     closeRadioScanStats();
                     noteScanEnd();
@@ -5632,6 +5636,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     deferMessage(message);
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
+                case WifiMonitor.SCAN_FAILED_EVENT:
                     // Loose scan results obtained in Driver Starting state, they can only confuse
                     // the state machine
                     break;
@@ -6259,6 +6264,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
                 s = "SCAN_RESULTS_EVENT";
+                break;
+            case WifiMonitor.SCAN_FAILED_EVENT:
+                s = "SCAN_FAILED_EVENT";
                 break;
             case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                 s = "SUPPLICANT_STATE_CHANGE_EVENT";
@@ -8460,6 +8468,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
+                case WifiMonitor.SCAN_FAILED_EVENT:
                     /* Re-enable background scan when a pending scan result is received */
                     if (mEnableBackgroundScan && mIsScanOngoing) {
                         enableBackgroundScan(true);

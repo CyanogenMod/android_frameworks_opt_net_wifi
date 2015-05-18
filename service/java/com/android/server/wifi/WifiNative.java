@@ -139,7 +139,7 @@ public class WifiNative {
     // hold mLock before accessing mCmdIdLock
     private static int sCmdId;
 
-    public LocalLog getLocalLog() {
+    public static LocalLog getLocalLog() {
         return mLocalLog;
     }
 
