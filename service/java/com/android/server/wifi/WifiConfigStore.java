@@ -399,29 +399,38 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicBoolean enableAutoJoinScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableChipWakeUpWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableRssiPollWhenAssociated = new AtomicBoolean(true);
-    public final AtomicInteger thresholdInitialAutoJoinAttemptMin5RSSI = new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5);
-    public final AtomicInteger thresholdInitialAutoJoinAttemptMin24RSSI = new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24);
+    public final AtomicInteger thresholdInitialAutoJoinAttemptMin5RSSI =
+            new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5);
+    public final AtomicInteger thresholdInitialAutoJoinAttemptMin24RSSI =
+            new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24);
     public final AtomicInteger thresholdUnblacklistThreshold5Hard = new AtomicInteger();
     public final AtomicInteger thresholdUnblacklistThreshold5Soft = new AtomicInteger();
     public final AtomicInteger thresholdUnblacklistThreshold24Hard = new AtomicInteger();
     public final AtomicInteger thresholdUnblacklistThreshold24Soft = new AtomicInteger();
-    public final AtomicInteger thresholdGoodRssi5 = new AtomicInteger(WifiConfiguration.GOOD_RSSI_5);
+    public final AtomicInteger thresholdGoodRssi5 =
+            new AtomicInteger(WifiConfiguration.GOOD_RSSI_5);
     public final AtomicInteger thresholdLowRssi5 = new AtomicInteger(WifiConfiguration.LOW_RSSI_5);
     public final AtomicInteger thresholdBadRssi5 = new AtomicInteger(WifiConfiguration.BAD_RSSI_5);
-    public final AtomicInteger thresholdGoodRssi24 = new AtomicInteger(WifiConfiguration.GOOD_RSSI_24);
+    public final AtomicInteger thresholdGoodRssi24 =
+            new AtomicInteger(WifiConfiguration.GOOD_RSSI_24);
     public final AtomicInteger thresholdLowRssi24 = new AtomicInteger(WifiConfiguration.LOW_RSSI_24);
     public final AtomicInteger thresholdBadRssi24 = new AtomicInteger(WifiConfiguration.BAD_RSSI_24);
     public final AtomicInteger maxTxPacketForNetworkSwitching = new AtomicInteger(40);
     public final AtomicInteger maxRxPacketForNetworkSwitching = new AtomicInteger(80);
     public final AtomicInteger enableVerboseLogging = new AtomicInteger(0);
-    public final AtomicInteger bandPreferenceBoostThreshold5 = new AtomicInteger(WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD);
-    public final AtomicInteger associatedPartialScanPeriodMilli = new AtomicInteger();
-    public final AtomicInteger associatedFullScanBackoff = new AtomicInteger(12); // Will be divided by 8 by WifiStateMachine
-    public final AtomicInteger bandPreferencePenaltyThreshold5 = new AtomicInteger(WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD);
+    public final AtomicInteger bandPreferenceBoostThreshold5 =
+            new AtomicInteger(WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD);
+    public final AtomicInteger associatedFullScanBackoff =
+            new AtomicInteger(12); // Will be divided by 8 by WifiStateMachine
+    public final AtomicInteger bandPreferencePenaltyThreshold5 =
+            new AtomicInteger(WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD);
     public final AtomicInteger alwaysEnableScansWhileAssociated = new AtomicInteger(0);
     public final AtomicInteger maxNumPassiveChannelsForPartialScans = new AtomicInteger(2);
     public final AtomicInteger maxNumActiveChannelsForPartialScans = new AtomicInteger(6);
-    public final AtomicInteger wifiDisconnectedScanIntervalMs = new AtomicInteger(15000);
+    public final AtomicInteger wifiDisconnectedShortScanIntervalMilli = new AtomicInteger(15000);
+    public final AtomicInteger wifiDisconnectedLongScanIntervalMilli = new AtomicInteger(120000);
+    public final AtomicInteger wifiAssociatedShortScanIntervalMilli = new AtomicInteger(20000);
+    public final AtomicInteger wifiAssociatedLongScanIntervalMilli = new AtomicInteger(180000);
 
     private static final Map<String, Object> sKeyMap = new HashMap<>();
 
@@ -492,6 +501,12 @@ public class WifiConfigStore extends IpConfigStore {
      */
     private String lastSelectedConfiguration = null;
 
+    /**
+     * Cached PNO list, it is updated when WifiConfiguration changes due to user input.
+     */
+    ArrayList<WifiNative.WifiPnoNetwork> mCachedPnoList
+            = new ArrayList<WifiNative.WifiPnoNetwork>();
+
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
     private final MOManager mMOManager;
@@ -527,7 +542,9 @@ public class WifiConfigStore extends IpConfigStore {
         sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY, maxRxPacketForNetworkSwitching);
         sKeyMap.put(WIFI_VERBOSE_LOGS_KEY, enableVerboseLogging);
         sKeyMap.put(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferenceBoostThreshold5);
-        sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, associatedPartialScanPeriodMilli);
+        sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, wifiAssociatedShortScanIntervalMilli);
+        sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, wifiAssociatedShortScanIntervalMilli);
+
         sKeyMap.put(ASSOCIATED_FULL_SCAN_BACKOFF_KEY, associatedFullScanBackoff);
         sKeyMap.put(G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferencePenaltyThreshold5);
         sKeyMap.put(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY, alwaysEnableScansWhileAssociated);
@@ -544,13 +561,14 @@ public class WifiConfigStore extends IpConfigStore {
             mFileObserver = null;
         }
 
-        associatedPartialScanPeriodMilli.set(mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_associated_scan_interval));
-        loge("associatedPartialScanPeriodMilli set to " + associatedPartialScanPeriodMilli);
-
-
-        wifiDisconnectedScanIntervalMs.set(mContext.getResources().getInteger(
-                R.integer.config_wifi_disconnected_scan_interval));
+        wifiAssociatedShortScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_associated_short_scan_interval));
+        wifiAssociatedLongScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_associated_short_scan_interval));
+        wifiDisconnectedShortScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_disconnected_short_scan_interval));
+        wifiDisconnectedLongScanIntervalMilli.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_disconnected_long_scan_interval));
 
         onlyLinkSameCredentialConfigurations = mContext.getResources().getBoolean(
                 R.bool.config_wifi_only_link_same_credential_configurations);
@@ -699,7 +717,8 @@ public class WifiConfigStore extends IpConfigStore {
         return mConfiguredNetworks.size();
     }
 
-    private List<WifiConfiguration> getConfiguredNetworks(Map<String, String> pskMap) {
+    private List<WifiConfiguration>
+    getConfiguredNetworks(Map<String, String> pskMap) {
         List<WifiConfiguration> networks = new ArrayList<>();
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
             WifiConfiguration newConfig = new WifiConfiguration(config);
@@ -973,6 +992,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (updatePriorities) {
             config.priority = ++mLastPriority;
             setNetworkPriorityNative(config.networkId, config.priority);
+            buildPnoList();
         }
 
         if (config.isPasspoint()) {
@@ -1259,6 +1279,48 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         return result.getNetworkId();
+    }
+
+
+    /**
+     * Get the Wifi PNO list
+     *
+     * @return list of WifiNative.WifiPnoNetwork
+     */
+    private void buildPnoList() {
+        mCachedPnoList = new ArrayList<WifiNative.WifiPnoNetwork>();
+
+        ArrayList<WifiConfiguration> sortedWifiConfigurations
+                = new ArrayList<WifiConfiguration>(getConfiguredNetworks());
+        Log.e(TAG, "buildPnoList sortedWifiConfigurations size " + sortedWifiConfigurations.size());
+        if (sortedWifiConfigurations.size() != 0) {
+            // Sort by descending priority
+            Collections.sort(sortedWifiConfigurations, new Comparator() {
+                public int compare(Object o1, Object o2) {
+                    WifiConfiguration a = (WifiConfiguration) o1;
+                    WifiConfiguration b = (WifiConfiguration) o2;
+
+                    if (a.priority > b.priority) {
+                        return 1;
+                    }
+                    if (a.priority < b.priority) {
+                        return -1;
+                    }
+                    return 1; // cannot happen
+                }
+            });
+        }
+
+        for (WifiConfiguration config : sortedWifiConfigurations) {
+            // Initialize the RSSI threshold with sane value:
+            // Use the 2.4GHz threshold since most WifiConfigurations are dual bands
+            // There is very little penalty with triggering too soon, i.e. if PNO finds a network
+            // that has an RSSI too low for us to attempt joining it.
+            int threshold = thresholdInitialAutoJoinAttemptMin24RSSI.get();
+            Log.e(TAG, "found sortedWifiConfigurations : " + config.configKey());
+            WifiNative.WifiPnoNetwork network = mWifiNative.new WifiPnoNetwork(config, threshold);
+            mCachedPnoList.add(network);
+        }
     }
 
     /**
@@ -1733,6 +1795,8 @@ public class WifiConfigStore extends IpConfigStore {
         readIpAndProxyConfigurations();
         readNetworkHistory();
         readAutoJoinConfig();
+
+        buildPnoList();
 
         sendConfiguredNetworksChangedBroadcast();
 
@@ -3125,8 +3189,8 @@ public class WifiConfigStore extends IpConfigStore {
 
             if (doLink) {
                 if (VDBG) {
-                   loge("linkConfiguration: will link " + link.configKey()
-                           + " and " + config.configKey());
+                    loge("linkConfiguration: will link " + link.configKey()
+                            + " and " + config.configKey());
                 }
                 if (link.linkedConfigurations == null) {
                     link.linkedConfigurations = new HashMap<String, Integer>();
@@ -3163,149 +3227,6 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
         }
-    }
-
-    /*
-     * We try to link a scan result with a WifiConfiguration for which SSID and
-     * key management dont match,
-     * for instance, we try identify the 5GHz SSID of a DBDC AP,
-     * even though we know only of the 2.4GHz
-     *
-     * Obviously, this function is not optimal since it is used to compare every scan
-     * result with every Saved WifiConfiguration, with a string.equals operation.
-     * As a speed up, might be better to implement the mConfiguredNetworks store as a
-     * <String, WifiConfiguration> object instead of a <Integer, WifiConfiguration> object
-     * so as to speed this up. Also to prevent the tiny probability of hash collision.
-     *
-     */
-    public WifiConfiguration associateWithConfiguration(ScanDetail scanDetail) {
-
-        ScanResult result = scanDetail.getScanResult();
-        boolean doNotAdd = false;
-        String configKey = WifiConfiguration.configKey(result);
-        if (configKey == null) {
-            if (DBG) loge("associateWithConfiguration(): no config key " );
-            return null;
-        }
-
-        // Need to compare with quoted string
-        String SSID = "\"" + result.SSID + "\"";
-
-        if (VVDBG) {
-            loge("associateWithConfiguration(): try " + configKey);
-        }
-
-        Checksum csum = new CRC32();
-        csum.update(SSID.getBytes(), 0, SSID.getBytes().length);
-        if (mDeletedSSIDs.contains(csum.getValue())) {
-            doNotAdd = true;
-        }
-
-        WifiConfiguration config = null;
-        for (WifiConfiguration link : mConfiguredNetworks.values()) {
-            boolean doLink = false;
-
-            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.selfAdded ||
-                    link.ephemeral) {
-                if (VVDBG) loge("associateWithConfiguration(): skip selfadd " + link.configKey() );
-                // Make sure we dont associate the scan result to a deleted config
-                continue;
-            }
-
-            if (!link.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-                if (VVDBG) loge("associateWithConfiguration(): skip non-PSK " + link.configKey() );
-                // Make sure we dont associate the scan result to a non-PSK config
-                continue;
-            }
-
-            if (configKey.equals(link.configKey())) {
-                if (VVDBG) loge("associateWithConfiguration(): found it!!! " + configKey );
-                return link; // Found it exactly
-            }
-
-            ScanDetailCache linkedScanDetailCache = getScanDetailCache(link);
-            if (!doNotAdd
-                    && (linkedScanDetailCache != null) && (linkedScanDetailCache.size() <= 6)) {
-                for (String bssid : linkedScanDetailCache.keySet()) {
-                    if (result.BSSID.regionMatches(true, 0, bssid, 0, 16)
-                            && SSID.regionMatches(false, 0, link.SSID, 0, 4)) {
-                        // If first 16 ascii characters of BSSID matches, and first 3
-                        // characters of SSID match, we assume this is a home setup
-                        // and thus we will try to transfer the password from the known
-                        // BSSID/SSID to the recently found BSSID/SSID
-
-                        // If (VDBG)
-                        //    loge("associateWithConfiguration OK " );
-                        doLink = true;
-                        break;
-                    }
-                }
-            }
-
-            if (doLink) {
-                // Try to make a non verified WifiConfiguration, but only if the original
-                // configuration was not self already added
-                if (VDBG) {
-                    loge("associateWithConfiguration: try to create " +
-                            result.SSID + " and associate it with: " + link.SSID
-                            + " key " + link.configKey());
-                }
-                config = wifiConfigurationFromScanResult(scanDetail);
-                if (config != null) {
-                    config.selfAdded = true;
-                    config.didSelfAdd = true;
-                    config.dirty = true;
-                    config.peerWifiConfiguration = link.configKey();
-                    config.lastUpdateName = link.lastUpdateName;
-                    config.creatorName = link.creatorName;
-                    config.lastUpdateUid = link.lastUpdateUid;
-                    config.creatorUid = link.creatorUid;
-                    config.userApproved = link.userApproved;
-
-                    if (config.allowedKeyManagement.equals(link.allowedKeyManagement) &&
-                            config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-                        if (VDBG && config != null) {
-                            loge("associateWithConfiguration: got a config from beacon"
-                                    + config.SSID + " key " + config.configKey());
-                        }
-                        // Transfer the credentials from the configuration we are linking from
-                        String psk = readNetworkVariableFromSupplicantFile(link.SSID, "psk");
-                        if (psk != null) {
-                            config.preSharedKey = psk;
-                            if (VDBG) {
-                                if (config.preSharedKey != null)
-                                    loge(" transfer PSK : " + config.preSharedKey);
-                            }
-
-                            // Link configurations
-                            if (link.linkedConfigurations == null) {
-                                link.linkedConfigurations = new HashMap<String, Integer>();
-                            }
-                            if (config.linkedConfigurations == null) {
-                                config.linkedConfigurations = new HashMap<String, Integer>();
-                            }
-                            link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
-                            config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
-
-                            // Carry over the Ip configuration
-                            if (link.getIpConfiguration() != null) {
-                                config.setIpConfiguration(link.getIpConfiguration());
-                            }
-                        } else {
-                            config = null;
-                        }
-                    } else {
-                        config = null;
-                    }
-                    if (config != null) break;
-                }
-                if (VDBG && config != null) {
-                    loge("associateWithConfiguration: success, created: " + config.SSID
-                            + " key " + config.configKey());
-                }
-            }
-        }
-        return config;
     }
 
     public HashSet<Integer> makeChannelList(WifiConfiguration config, int age, boolean restrict) {
