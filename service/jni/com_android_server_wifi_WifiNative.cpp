@@ -1696,6 +1696,7 @@ static void on_alert_data(wifi_request_id id, char *buffer, int buffer_size, int
     }
 }
 
+
 static jboolean android_net_wifi_start_logging_ring_buffer(JNIEnv *env, jclass cls, jint iface,
         jint verbose_level,jint flags, jint max_interval,jint min_data_size, jstring ring_name) {
 
@@ -1887,7 +1888,7 @@ static jboolean android_net_wifi_setPnoListNative(
         // stop pno
         int result = hal_fn.wifi_set_epno_list(id, handle, 0, NULL, handler);
         ALOGE(" setPnoListNative: STOP result = %d", result);
-        return result;
+        return result >= 0;
     }
 
     wifi_epno_network net_list[MAX_PNO_SSID];
@@ -1972,12 +1973,14 @@ static jboolean android_net_wifi_setLazyRoam(
         params.alert_roam_rssi_trigger = getIntField(env, roam_param, "alert_roam_rssi_trigger");
         status = hal_fn.wifi_set_gscan_roam_params(id, handle, &params);
     }
-    if (status) {
+    ALOGE("android_net_wifi_setLazyRoam configured params status=%d\n", status);
+
+    if (status >= 0) {
         int doEnable = enabled ? 1 : 0;
         status = hal_fn.wifi_enable_lazy_roam(id, handle, doEnable);
+        ALOGE("android_net_wifi_setLazyRoam enabled roam status=%d\n", status);
     }
-    ALOGE("android_net_wifi_setLazyRoam\n");
-    return status;
+    return status >= 0;
 }
 
 // ----------------------------------------------------------------------------
