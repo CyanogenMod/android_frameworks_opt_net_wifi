@@ -73,7 +73,6 @@ import java.io.BufferedReader;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.EOFException;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
@@ -202,47 +201,49 @@ public class WifiConfigStore extends IpConfigStore {
             "/misc/wifi/autojoinconfig.txt";
 
     /* Network History Keys */
-    private static final String SSID_KEY = "SSID:  ";
-    private static final String CONFIG_KEY = "CONFIG:  ";
-    private static final String CHOICE_KEY = "CHOICE:  ";
-    private static final String LINK_KEY = "LINK:  ";
-    private static final String BSSID_KEY = "BSSID:  ";
-    private static final String BSSID_KEY_END = "/BSSID:  ";
-    private static final String RSSI_KEY = "RSSI:  ";
-    private static final String FREQ_KEY = "FREQ:  ";
-    private static final String DATE_KEY = "DATE:  ";
-    private static final String MILLI_KEY = "MILLI:  ";
-    private static final String BLACKLIST_MILLI_KEY = "BLACKLIST_MILLI:  ";
-    private static final String NETWORK_ID_KEY = "ID:  ";
-    private static final String PRIORITY_KEY = "PRIORITY:  ";
-    private static final String DEFAULT_GW_KEY = "DEFAULT_GW:  ";
-    private static final String AUTH_KEY = "AUTH:  ";
-    private static final String SEPARATOR_KEY = "\n";
-    private static final String STATUS_KEY = "AUTO_JOIN_STATUS:  ";
-    private static final String BSSID_STATUS_KEY = "BSSID_STATUS:  ";
-    private static final String SELF_ADDED_KEY = "SELF_ADDED:  ";
-    private static final String FAILURE_KEY = "FAILURE:  ";
-    private static final String DID_SELF_ADD_KEY = "DID_SELF_ADD:  ";
-    private static final String PEER_CONFIGURATION_KEY = "PEER_CONFIGURATION:  ";
-    private static final String CREATOR_UID_KEY = "CREATOR_UID_KEY:  ";
-    private static final String CONNECT_UID_KEY = "CONNECT_UID_KEY:  ";
-    private static final String UPDATE_UID_KEY = "UPDATE_UID:  ";
-    private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS:  ";
-    private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON:  ";
-    private static final String FQDN_KEY = "FQDN:  ";
-    private static final String NUM_CONNECTION_FAILURES_KEY = "CONNECT_FAILURES:  ";
-    private static final String NUM_IP_CONFIG_FAILURES_KEY = "IP_CONFIG_FAILURES:  ";
-    private static final String NUM_AUTH_FAILURES_KEY = "AUTH_FAILURES:  ";
-    private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE:  ";
-    private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH:  ";
-    private static final String VALIDATED_INTERNET_ACCESS_KEY = "VALIDATED_INTERNET_ACCESS:  ";
-    private static final String NO_INTERNET_ACCESS_REPORTS_KEY = "NO_INTERNET_ACCESS_REPORTS :   ";
-    private static final String EPHEMERAL_KEY = "EPHEMERAL:   ";
-    private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION:  ";
-    private static final String DELETED_CRC32_KEY = "DELETED_CRC32:  ";
-    private static final String DELETED_EPHEMERAL_KEY = "DELETED_EPHEMERAL:  ";
+    private static final String SSID_KEY = "SSID";
+    private static final String CONFIG_KEY = "CONFIG";
+    private static final String CHOICE_KEY = "CHOICE";
+    private static final String LINK_KEY = "LINK";
+    private static final String BSSID_KEY = "BSSID";
+    private static final String BSSID_KEY_END = "/BSSID";
+    private static final String RSSI_KEY = "RSSI";
+    private static final String FREQ_KEY = "FREQ";
+    private static final String DATE_KEY = "DATE";
+    private static final String MILLI_KEY = "MILLI";
+    private static final String BLACKLIST_MILLI_KEY = "BLACKLIST_MILLI";
+    private static final String NETWORK_ID_KEY = "ID";
+    private static final String PRIORITY_KEY = "PRIORITY";
+    private static final String DEFAULT_GW_KEY = "DEFAULT_GW";
+    private static final String AUTH_KEY = "AUTH";
+    private static final String STATUS_KEY = "AUTO_JOIN_STATUS";
+    private static final String BSSID_STATUS_KEY = "BSSID_STATUS";
+    private static final String SELF_ADDED_KEY = "SELF_ADDED";
+    private static final String FAILURE_KEY = "FAILURE";
+    private static final String DID_SELF_ADD_KEY = "DID_SELF_ADD";
+    private static final String PEER_CONFIGURATION_KEY = "PEER_CONFIGURATION";
+    private static final String CREATOR_UID_KEY = "CREATOR_UID_KEY";
+    private static final String CONNECT_UID_KEY = "CONNECT_UID_KEY";
+    private static final String UPDATE_UID_KEY = "UPDATE_UID";
+    private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS";
+    private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON";
+    private static final String FQDN_KEY = "FQDN";
+    private static final String NUM_CONNECTION_FAILURES_KEY = "CONNECT_FAILURES";
+    private static final String NUM_IP_CONFIG_FAILURES_KEY = "IP_CONFIG_FAILURES";
+    private static final String NUM_AUTH_FAILURES_KEY = "AUTH_FAILURES";
+    private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE";
+    private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH";
+    private static final String VALIDATED_INTERNET_ACCESS_KEY = "VALIDATED_INTERNET_ACCESS";
+    private static final String NO_INTERNET_ACCESS_REPORTS_KEY = "NO_INTERNET_ACCESS_REPORTS";
+    private static final String EPHEMERAL_KEY = "EPHEMERAL";
+    private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION";
+    private static final String DELETED_CRC32_KEY = "DELETED_CRC32";
+    private static final String DELETED_EPHEMERAL_KEY = "DELETED_EPHEMERAL";
+    private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST";
 
-    private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST:  ";
+    private static final String SEPARATOR = ":  ";
+    private static final String NL = "\n";
+    
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
             = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G:  ";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY
@@ -962,7 +963,9 @@ public class WifiConfigStore extends IpConfigStore {
      * a call to enableAllNetworks() needs to be issued upon a connection
      * or a failure event from supplicant
      *
-     * @param netId network to select for connection
+     * @param config network to select for connection
+     * @param updatePriorities makes config highest priority network
+     * @param uid the UID that is requesting this connection
      * @return false if the network id is invalid
      */
     boolean selectNetwork(WifiConfiguration config, boolean updatePriorities) {
@@ -1651,7 +1654,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     /**
      * Fetch the proxy properties for a given network id
-     * @param network id
+     * @param netId id
      * @return ProxyInfo for the network id
      */
     ProxyInfo getProxyProperties(int netId) {
@@ -1664,7 +1667,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     /**
      * Return if the specified network is using static IP
-     * @param network id
+     * @param netId id
      * @return {@code true} if using static ip for netId
      */
     boolean isUsingStaticIp(int netId) {
@@ -2025,7 +2028,7 @@ public class WifiConfigStore extends IpConfigStore {
                                 + " nid:" + Integer.toString(config.networkId));
                     }
 
-                    if (config.isValid() == false)
+                    if (!config.isValid())
                         continue;
 
                     if (config.SSID == null) {
@@ -2037,76 +2040,72 @@ public class WifiConfigStore extends IpConfigStore {
                     if (VDBG) {
                         loge("writeKnownNetworkHistory write config " + config.configKey());
                     }
-                    out.writeUTF(CONFIG_KEY + config.configKey() + SEPARATOR_KEY);
+                    out.writeUTF(CONFIG_KEY + SEPARATOR + config.configKey() + NL);
 
-                    out.writeUTF(SSID_KEY + config.SSID + SEPARATOR_KEY);
-                    out.writeUTF(FQDN_KEY + config.FQDN + SEPARATOR_KEY);
-
-                    out.writeUTF(PRIORITY_KEY + Integer.toString(config.priority) + SEPARATOR_KEY);
-                    out.writeUTF(STATUS_KEY + Integer.toString(config.autoJoinStatus)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(SUPPLICANT_STATUS_KEY + Integer.toString(config.status)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(SUPPLICANT_DISABLE_REASON_KEY
-                            + Integer.toString(config.disableReason)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(NETWORK_ID_KEY + Integer.toString(config.networkId)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(SELF_ADDED_KEY + Boolean.toString(config.selfAdded)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(DID_SELF_ADD_KEY + Boolean.toString(config.didSelfAdd)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(NO_INTERNET_ACCESS_REPORTS_KEY
-                            + Integer.toString(config.numNoInternetAccessReports)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(VALIDATED_INTERNET_ACCESS_KEY
-                            + Boolean.toString(config.validatedInternetAccess)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(EPHEMERAL_KEY
-                            + Boolean.toString(config.ephemeral)
-                            + SEPARATOR_KEY);
-                    if (config.peerWifiConfiguration != null) {
-                        out.writeUTF(PEER_CONFIGURATION_KEY + config.peerWifiConfiguration
-                                + SEPARATOR_KEY);
+                    if (config.SSID != null) {
+                        out.writeUTF(SSID_KEY + SEPARATOR + config.SSID + NL);
                     }
-                    out.writeUTF(NUM_CONNECTION_FAILURES_KEY
-                            + Integer.toString(config.numConnectionFailures)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(NUM_AUTH_FAILURES_KEY
-                            + Integer.toString(config.numAuthFailures)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(NUM_IP_CONFIG_FAILURES_KEY
-                            + Integer.toString(config.numIpConfigFailures)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(SCORER_OVERRIDE_KEY + Integer.toString(config.numScorerOverride)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(SCORER_OVERRIDE_AND_SWITCH_KEY
-                            + Integer.toString(config.numScorerOverrideAndSwitchedNetwork)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(NUM_ASSOCIATION_KEY
-                            + Integer.toString(config.numAssociation)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(JOIN_ATTEMPT_BOOST_KEY
-                            + Integer.toString(config.autoJoinUseAggressiveJoinAttemptThreshold)
-                            + SEPARATOR_KEY);
-                    //out.writeUTF(BLACKLIST_MILLI_KEY + Long.toString(config.blackListTimestamp)
-                    //        + SEPARATOR_KEY);
-                    out.writeUTF(CREATOR_UID_KEY + Integer.toString(config.creatorUid)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(CONNECT_UID_KEY + Integer.toString(config.lastConnectUid)
-                            + SEPARATOR_KEY);
-                    out.writeUTF(UPDATE_UID_KEY + Integer.toString(config.lastUpdateUid)
-                            + SEPARATOR_KEY);
+                    if (config.FQDN != null) {
+                        out.writeUTF(FQDN_KEY + SEPARATOR + config.FQDN + NL);
+                    }
+
+                    out.writeUTF(PRIORITY_KEY + SEPARATOR +
+                            Integer.toString(config.priority) + NL);
+                    out.writeUTF(STATUS_KEY + SEPARATOR +
+                            Integer.toString(config.autoJoinStatus) + NL);
+                    out.writeUTF(SUPPLICANT_STATUS_KEY + SEPARATOR +
+                            Integer.toString(config.status) + NL);
+                    out.writeUTF(SUPPLICANT_DISABLE_REASON_KEY + SEPARATOR +
+                            Integer.toString(config.disableReason) + NL);
+                    out.writeUTF(NETWORK_ID_KEY + SEPARATOR +
+                            Integer.toString(config.networkId) + NL);
+                    out.writeUTF(SELF_ADDED_KEY + SEPARATOR +
+                            Boolean.toString(config.selfAdded) + NL);
+                    out.writeUTF(DID_SELF_ADD_KEY + SEPARATOR +
+                            Boolean.toString(config.didSelfAdd) + NL);
+                    out.writeUTF(NO_INTERNET_ACCESS_REPORTS_KEY + SEPARATOR +
+                            Integer.toString(config.numNoInternetAccessReports) + NL);
+                    out.writeUTF(VALIDATED_INTERNET_ACCESS_KEY + SEPARATOR +
+                            Boolean.toString(config.validatedInternetAccess) + NL);
+                    out.writeUTF(EPHEMERAL_KEY + SEPARATOR +
+                            Boolean.toString(config.ephemeral) + NL);
+                    if (config.peerWifiConfiguration != null) {
+                        out.writeUTF(PEER_CONFIGURATION_KEY + SEPARATOR +
+                                config.peerWifiConfiguration + NL);
+                    }
+                    out.writeUTF(NUM_CONNECTION_FAILURES_KEY + SEPARATOR +
+                            Integer.toString(config.numConnectionFailures) + NL);
+                    out.writeUTF(NUM_AUTH_FAILURES_KEY + SEPARATOR +
+                            Integer.toString(config.numAuthFailures) + NL);
+                    out.writeUTF(NUM_IP_CONFIG_FAILURES_KEY + SEPARATOR +
+                            Integer.toString(config.numIpConfigFailures) + NL);
+                    out.writeUTF(SCORER_OVERRIDE_KEY + SEPARATOR +
+                            Integer.toString(config.numScorerOverride) + NL);
+                    out.writeUTF(SCORER_OVERRIDE_AND_SWITCH_KEY + SEPARATOR +
+                            Integer.toString(config.numScorerOverrideAndSwitchedNetwork) + NL);
+                    out.writeUTF(NUM_ASSOCIATION_KEY + SEPARATOR +
+                            Integer.toString(config.numAssociation) + NL);
+                    out.writeUTF(JOIN_ATTEMPT_BOOST_KEY + SEPARATOR +
+                            Integer.toString(config.autoJoinUseAggressiveJoinAttemptThreshold)+ NL);
+                    //out.writeUTF(BLACKLIST_MILLI_KEY + SEPARATOR +
+                    // Long.toString(config.blackListTimestamp) + NL);
+                    out.writeUTF(CREATOR_UID_KEY + SEPARATOR +
+                            Integer.toString(config.creatorUid) + NL);
+                    out.writeUTF(CONNECT_UID_KEY + SEPARATOR +
+                            Integer.toString(config.lastConnectUid) + NL);
+                    out.writeUTF(UPDATE_UID_KEY + SEPARATOR +
+                            Integer.toString(config.lastUpdateUid) + NL);
                     String allowedKeyManagementString =
                             makeString(config.allowedKeyManagement,
                                     WifiConfiguration.KeyMgmt.strings);
-                    out.writeUTF(AUTH_KEY + allowedKeyManagementString + SEPARATOR_KEY);
+                    out.writeUTF(AUTH_KEY + SEPARATOR +
+                            allowedKeyManagementString + NL);
 
                     if (config.connectChoices != null) {
                         for (String key : config.connectChoices.keySet()) {
                             Integer choice = config.connectChoices.get(key);
-                            out.writeUTF(CHOICE_KEY + key + "="
-                                    + choice.toString() + SEPARATOR_KEY);
+                            out.writeUTF(CHOICE_KEY + SEPARATOR +
+                                    key + "=" + choice.toString() + NL);
                         }
                     }
                     if (config.linkedConfigurations != null) {
@@ -2114,57 +2113,57 @@ public class WifiConfigStore extends IpConfigStore {
                                 + config.linkedConfigurations.size());
 
                         for (String key : config.linkedConfigurations.keySet()) {
-                            out.writeUTF(LINK_KEY + key + SEPARATOR_KEY);
+                            out.writeUTF(LINK_KEY + SEPARATOR + key + NL);
                         }
                     }
 
                     String macAddress = config.defaultGwMacAddress;
                     if (macAddress != null) {
-                        out.writeUTF(DEFAULT_GW_KEY + macAddress + SEPARATOR_KEY);
+                        out.writeUTF(DEFAULT_GW_KEY + SEPARATOR + macAddress + NL);
                     }
 
                     if (getScanDetailCache(config) != null) {
                         for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
                             ScanResult result = scanDetail.getScanResult();
-                            out.writeUTF(BSSID_KEY + result.BSSID + SEPARATOR_KEY);
+                            out.writeUTF(BSSID_KEY + SEPARATOR +
+                                    result.BSSID + NL);
 
-                            out.writeUTF(FREQ_KEY + Integer.toString(result.frequency)
-                                    + SEPARATOR_KEY);
+                            out.writeUTF(FREQ_KEY + SEPARATOR +
+                                    Integer.toString(result.frequency) + NL);
 
-                            out.writeUTF(RSSI_KEY + Integer.toString(result.level)
-                                    + SEPARATOR_KEY);
+                            out.writeUTF(RSSI_KEY + SEPARATOR +
+                                    Integer.toString(result.level) + NL);
 
-                            out.writeUTF(BSSID_STATUS_KEY
-                                    + Integer.toString(result.autoJoinStatus)
-                                    + SEPARATOR_KEY);
+                            out.writeUTF(BSSID_STATUS_KEY + SEPARATOR +
+                                    Integer.toString(result.autoJoinStatus) + NL);
 
                             //if (result.seen != 0) {
-                            //    out.writeUTF(MILLI_KEY + Long.toString(result.seen)
-                            //            + SEPARATOR_KEY);
+                            //    out.writeUTF(MILLI_KEY + SEPARATOR + Long.toString(result.seen)
+                            //            + NL);
                             //}
-                            out.writeUTF(BSSID_KEY_END + SEPARATOR_KEY);
+                            out.writeUTF(BSSID_KEY_END + NL);
                         }
                     }
                     if (config.lastFailure != null) {
-                        out.writeUTF(FAILURE_KEY + config.lastFailure + SEPARATOR_KEY);
+                        out.writeUTF(FAILURE_KEY + SEPARATOR + config.lastFailure + NL);
                     }
-                    out.writeUTF(SEPARATOR_KEY);
+                    out.writeUTF(NL);
                     // Add extra blank lines for clarity
-                    out.writeUTF(SEPARATOR_KEY);
-                    out.writeUTF(SEPARATOR_KEY);
+                    out.writeUTF(NL);
+                    out.writeUTF(NL);
                 }
                 if (mDeletedSSIDs != null && mDeletedSSIDs.size() > 0) {
                     for (Long i : mDeletedSSIDs) {
                         out.writeUTF(DELETED_CRC32_KEY);
                         out.writeUTF(String.valueOf(i));
-                        out.writeUTF(SEPARATOR_KEY);
+                        out.writeUTF(NL);
                     }
                 }
                 if (mDeletedEphemeralSSIDs != null && mDeletedEphemeralSSIDs.size() > 0) {
                     for (String ssid : mDeletedEphemeralSSIDs) {
                         out.writeUTF(DELETED_EPHEMERAL_KEY);
                         out.writeUTF(ssid);
-                        out.writeUTF(SEPARATOR_KEY);
+                        out.writeUTF(NL);
                     }
                 }
             }
@@ -2208,44 +2207,54 @@ public class WifiConfigStore extends IpConfigStore {
         if (showNetworks) {
             localLog("readNetworkHistory() path:" + networkHistoryConfigFile);
         }
-        DataInputStream in = null;
-        try {
-            in = new DataInputStream(new BufferedInputStream(new FileInputStream(
-                    networkHistoryConfigFile)));
+
+        try (DataInputStream in =
+                     new DataInputStream(new BufferedInputStream(
+                             new FileInputStream(networkHistoryConfigFile)))) {
+
+            String bssid = null;
+            String ssid = null;
+
+            int freq = 0;
+            int status = 0;
+            long seen = 0;
+            int rssi = WifiConfiguration.INVALID_RSSI;
+            String caps = null;
+
             WifiConfiguration config = null;
             while (true) {
-                int id = -1;
-                String key = in.readUTF();
-                String bssid = null;
-                String ssid = null;
+                String line = in.readUTF();
+                if (line == null) {
+                    break;
+                }
+                int colon = line.indexOf(':');
+                if (colon < 0) {
+                    continue;
+                }
 
-                int freq = 0;
-                int status = 0;
-                long seen = 0;
-                int rssi = WifiConfiguration.INVALID_RSSI;
-                String caps = null;
-                if (key.startsWith(CONFIG_KEY)) {
+                String key = line.substring(0, colon).trim();
+                String value = line.substring(colon+1).trim();
+
+                if (key.equals(CONFIG_KEY)) {
 
                     if (config != null) {
                         config = null;
                     }
-                    String configKey = key.replace(CONFIG_KEY, "");
-                    configKey = configKey.replace(SEPARATOR_KEY, "");
                     // get the networkId for that config Key
-                    Integer n = mNetworkIds.get(configKey.hashCode());
+                    Integer n = mNetworkIds.get(value.hashCode());
                     // skip reading that configuration data
                     // since we don't have a corresponding network ID
                     if (n == null) {
                         localLog("readNetworkHistory didnt find netid for hash="
-                                + Integer.toString(configKey.hashCode())
-                                + " key: " + configKey);
+                                + Integer.toString(value.hashCode())
+                                + " key: " + value);
                         continue;
                     }
                     config = mConfiguredNetworks.get(n);
                     if (config == null) {
                         localLog("readNetworkHistory didnt find config for netid="
                                 + n.toString()
-                                + " key: " + configKey);
+                                + " key: " + value);
                     }
                     status = 0;
                     ssid = null;
@@ -2256,227 +2265,146 @@ public class WifiConfigStore extends IpConfigStore {
                     caps = null;
 
                 } else if (config != null) {
-                    if (key.startsWith(SSID_KEY)) {
-                        ssid = key.replace(SSID_KEY, "");
-                        ssid = ssid.replace(SEPARATOR_KEY, "");
-                        if (config.SSID != null && !config.SSID.equals(ssid)) {
-                            loge("Error parsing network history file, mismatched SSIDs");
-                            config = null; //error
-                            ssid = null;
-                        } else {
-                            config.SSID = ssid;
-                        }
-                    }
-
-                    if (key.startsWith(FQDN_KEY)) {
-                        String fqdn = key.replace(FQDN_KEY, "");
-                        fqdn = fqdn.replace(SEPARATOR_KEY, "");
-                        config.FQDN = fqdn;
-                    }
-
-                    if (key.startsWith(DEFAULT_GW_KEY)) {
-                        String gateway = key.replace(DEFAULT_GW_KEY, "");
-                        gateway = gateway.replace(SEPARATOR_KEY, "");
-                        config.defaultGwMacAddress = gateway;
-                    }
-
-                    if (key.startsWith(STATUS_KEY)) {
-                        String st = key.replace(STATUS_KEY, "");
-                        st = st.replace(SEPARATOR_KEY, "");
-                        config.autoJoinStatus = Integer.parseInt(st);
-                    }
-
-                    if (key.startsWith(SUPPLICANT_DISABLE_REASON_KEY)) {
-                        String reason = key.replace(SUPPLICANT_DISABLE_REASON_KEY, "");
-                        reason = reason.replace(SEPARATOR_KEY, "");
-                        config.disableReason = Integer.parseInt(reason);
-                    }
-
-                    if (key.startsWith(SELF_ADDED_KEY)) {
-                        String selfAdded = key.replace(SELF_ADDED_KEY, "");
-                        selfAdded = selfAdded.replace(SEPARATOR_KEY, "");
-                        config.selfAdded = Boolean.parseBoolean(selfAdded);
-                    }
-
-                    if (key.startsWith(DID_SELF_ADD_KEY)) {
-                        String didSelfAdd = key.replace(DID_SELF_ADD_KEY, "");
-                        didSelfAdd = didSelfAdd.replace(SEPARATOR_KEY, "");
-                        config.didSelfAdd = Boolean.parseBoolean(didSelfAdd);
-                    }
-
-                    if (key.startsWith(NO_INTERNET_ACCESS_REPORTS_KEY)) {
-                        String access = key.replace(NO_INTERNET_ACCESS_REPORTS_KEY, "");
-                        access = access.replace(SEPARATOR_KEY, "");
-                        config.numNoInternetAccessReports = Integer.parseInt(access);
-                    }
-
-                    if (key.startsWith(VALIDATED_INTERNET_ACCESS_KEY)) {
-                        String access = key.replace(VALIDATED_INTERNET_ACCESS_KEY, "");
-                        access = access.replace(SEPARATOR_KEY, "");
-                        config.validatedInternetAccess = Boolean.parseBoolean(access);
-                    }
-
-                    if (key.startsWith(EPHEMERAL_KEY)) {
-                        String access = key.replace(EPHEMERAL_KEY, "");
-                        access = access.replace(SEPARATOR_KEY, "");
-                        config.ephemeral = Boolean.parseBoolean(access);
-                    }
-
-                    if (key.startsWith(CREATOR_UID_KEY)) {
-                        String uid = key.replace(CREATOR_UID_KEY, "");
-                        uid = uid.replace(SEPARATOR_KEY, "");
-                        config.creatorUid = Integer.parseInt(uid);
-                    }
-
-                    if (key.startsWith(BLACKLIST_MILLI_KEY)) {
-                        String milli = key.replace(BLACKLIST_MILLI_KEY, "");
-                        milli = milli.replace(SEPARATOR_KEY, "");
-                        config.blackListTimestamp = Long.parseLong(milli);
-                    }
-
-                    if (key.startsWith(NUM_CONNECTION_FAILURES_KEY)) {
-                        String num = key.replace(NUM_CONNECTION_FAILURES_KEY, "");
-                        num = num.replace(SEPARATOR_KEY, "");
-                        config.numConnectionFailures = Integer.parseInt(num);
-                    }
-
-                    if (key.startsWith(NUM_IP_CONFIG_FAILURES_KEY)) {
-                        String num = key.replace(NUM_IP_CONFIG_FAILURES_KEY, "");
-                        num = num.replace(SEPARATOR_KEY, "");
-                        config.numIpConfigFailures = Integer.parseInt(num);
-                    }
-
-                    if (key.startsWith(NUM_AUTH_FAILURES_KEY)) {
-                        String num = key.replace(NUM_AUTH_FAILURES_KEY, "");
-                        num = num.replace(SEPARATOR_KEY, "");
-                        config.numIpConfigFailures = Integer.parseInt(num);
-                    }
-
-                    if (key.startsWith(SCORER_OVERRIDE_KEY)) {
-                        String num = key.replace(SCORER_OVERRIDE_KEY, "");
-                        num = num.replace(SEPARATOR_KEY, "");
-                        config.numScorerOverride = Integer.parseInt(num);
-                    }
-
-                    if (key.startsWith(SCORER_OVERRIDE_AND_SWITCH_KEY)) {
-                        String num = key.replace(SCORER_OVERRIDE_AND_SWITCH_KEY, "");
-                        num = num.replace(SEPARATOR_KEY, "");
-                        config.numScorerOverrideAndSwitchedNetwork = Integer.parseInt(num);
-                    }
-
-                    if (key.startsWith(NUM_ASSOCIATION_KEY)) {
-                        String num = key.replace(NUM_ASSOCIATION_KEY, "");
-                        num = num.replace(SEPARATOR_KEY, "");
-                        config.numAssociation = Integer.parseInt(num);
-                    }
-
-                    if (key.startsWith(JOIN_ATTEMPT_BOOST_KEY)) {
-                        String num = key.replace(JOIN_ATTEMPT_BOOST_KEY, "");
-                        num = num.replace(SEPARATOR_KEY, "");
-                        config.autoJoinUseAggressiveJoinAttemptThreshold = Integer.parseInt(num);
-                    }
-
-                    if (key.startsWith(CONNECT_UID_KEY)) {
-                        String uid = key.replace(CONNECT_UID_KEY, "");
-                        uid = uid.replace(SEPARATOR_KEY, "");
-                        config.lastConnectUid = Integer.parseInt(uid);
-                    }
-
-                    if (key.startsWith(UPDATE_UID_KEY)) {
-                        String uid = key.replace(UPDATE_UID_KEY, "");
-                        uid = uid.replace(SEPARATOR_KEY, "");
-                        config.lastUpdateUid = Integer.parseInt(uid);
-                    }
-
-                    if (key.startsWith(FAILURE_KEY)) {
-                        config.lastFailure = key.replace(FAILURE_KEY, "");
-                        config.lastFailure = config.lastFailure.replace(SEPARATOR_KEY, "");
-                    }
-
-                    if (key.startsWith(PEER_CONFIGURATION_KEY)) {
-                        config.peerWifiConfiguration = key.replace(PEER_CONFIGURATION_KEY, "");
-                        config.peerWifiConfiguration =
-                                config.peerWifiConfiguration.replace(SEPARATOR_KEY, "");
-                    }
-
-                    if (key.startsWith(CHOICE_KEY)) {
-                        String choiceStr = key.replace(CHOICE_KEY, "");
-                        choiceStr = choiceStr.replace(SEPARATOR_KEY, "");
-                        String configKey = "";
-                        int choice = 0;
-                        Matcher match = mConnectChoice.matcher(choiceStr);
-                        if (!match.find()) {
-                            if (DBG) Log.d(TAG, "WifiConfigStore: connectChoice: " +
-                                    " Couldnt match pattern : " + choiceStr);
-                        } else {
-                            configKey = match.group(1);
-                            try {
-                                choice = Integer.parseInt(match.group(2));
-                            } catch (NumberFormatException e) {
-                                choice = 0;
+                    switch (key) {
+                        case SSID_KEY:
+                            ssid = value;
+                            if (config.SSID != null && !config.SSID.equals(ssid)) {
+                                loge("Error parsing network history file, mismatched SSIDs");
+                                config = null; //error
+                                ssid = null;
+                            } else {
+                                config.SSID = ssid;
                             }
-                            if (choice > 0) {
-                                if (config.connectChoices == null) {
-                                    config.connectChoices = new HashMap<String, Integer>();
+                            break;
+                        case FQDN_KEY:
+                            // Check for literal 'null' to be backwards compatible.
+                            config.FQDN = value.equals("null") ? null : value;
+                            break;
+                        case DEFAULT_GW_KEY:
+                            config.defaultGwMacAddress = value;
+                            break;
+                        case STATUS_KEY:
+                            config.autoJoinStatus = Integer.parseInt(value);
+                            break;
+                        case SUPPLICANT_DISABLE_REASON_KEY:
+                            config.disableReason = Integer.parseInt(value);
+                            break;
+                        case SELF_ADDED_KEY:
+                            config.selfAdded = Boolean.parseBoolean(value);
+                            break;
+                        case DID_SELF_ADD_KEY:
+                            config.didSelfAdd = Boolean.parseBoolean(value);
+                            break;
+                        case NO_INTERNET_ACCESS_REPORTS_KEY:
+                            config.numNoInternetAccessReports = Integer.parseInt(value);
+                            break;
+                        case VALIDATED_INTERNET_ACCESS_KEY:
+                            config.validatedInternetAccess = Boolean.parseBoolean(value);
+                            break;
+                        case EPHEMERAL_KEY:
+                            config.ephemeral = Boolean.parseBoolean(value);
+                            break;
+                        case CREATOR_UID_KEY:
+                            config.creatorUid = Integer.parseInt(value);
+                            break;
+                        case BLACKLIST_MILLI_KEY:
+                            config.blackListTimestamp = Long.parseLong(value);
+                            break;
+                        case NUM_CONNECTION_FAILURES_KEY:
+                            config.numConnectionFailures = Integer.parseInt(value);
+                            break;
+                        case NUM_IP_CONFIG_FAILURES_KEY:
+                            config.numIpConfigFailures = Integer.parseInt(value);
+                            break;
+                        case NUM_AUTH_FAILURES_KEY:
+                            config.numIpConfigFailures = Integer.parseInt(value);
+                            break;
+                        case SCORER_OVERRIDE_KEY:
+                            config.numScorerOverride = Integer.parseInt(value);
+                            break;
+                        case SCORER_OVERRIDE_AND_SWITCH_KEY:
+                            config.numScorerOverrideAndSwitchedNetwork = Integer.parseInt(value);
+                            break;
+                        case NUM_ASSOCIATION_KEY:
+                            config.numAssociation = Integer.parseInt(value);
+                            break;
+                        case JOIN_ATTEMPT_BOOST_KEY:
+                            config.autoJoinUseAggressiveJoinAttemptThreshold =
+                                    Integer.parseInt(value);
+                            break;
+                        case CONNECT_UID_KEY:
+                            config.lastConnectUid = Integer.parseInt(value);
+                            break;
+                        case UPDATE_UID_KEY:
+                            config.lastUpdateUid = Integer.parseInt(value);
+                            break;
+                        case FAILURE_KEY:
+                            config.lastFailure = value;
+                            break;
+                        case PEER_CONFIGURATION_KEY:
+                            config.peerWifiConfiguration = value;
+                            break;
+                        case CHOICE_KEY:
+                            String configKey = "";
+                            int choice = 0;
+                            Matcher match = mConnectChoice.matcher(value);
+                            if (!match.find()) {
+                                if (DBG) Log.d(TAG, "WifiConfigStore: connectChoice: " +
+                                        " Couldnt match pattern : " + value);
+                            } else {
+                                configKey = match.group(1);
+                                try {
+                                    choice = Integer.parseInt(match.group(2));
+                                } catch (NumberFormatException e) {
+                                    choice = 0;
                                 }
-                                config.connectChoices.put(configKey, choice);
+                                if (choice > 0) {
+                                    if (config.connectChoices == null) {
+                                        config.connectChoices = new HashMap<>();
+                                    }
+                                    config.connectChoices.put(configKey, choice);
+                                }
                             }
-                        }
-                    }
-
-                    if (key.startsWith(LINK_KEY)) {
-                        String configKey = key.replace(LINK_KEY, "");
-                        configKey = configKey.replace(SEPARATOR_KEY, "");
-                        if (config.linkedConfigurations == null) {
-                            config.linkedConfigurations = new HashMap<String, Integer>();
-                        }
-                        if (config.linkedConfigurations != null) {
-                            config.linkedConfigurations.put(configKey, -1);
-                        }
-                    }
-
-                    if (key.startsWith(BSSID_KEY)) {
-                        if (key.startsWith(BSSID_KEY)) {
-                            bssid = key.replace(BSSID_KEY, "");
-                            bssid = bssid.replace(SEPARATOR_KEY, "");
+                            break;
+                        case LINK_KEY:
+                            if (config.linkedConfigurations == null) {
+                                config.linkedConfigurations = new HashMap<>();
+                            }
+                            if (config.linkedConfigurations != null) {
+                                config.linkedConfigurations.put(value, -1);
+                            }
+                            break;
+                        case BSSID_KEY:
+                            status = 0;
+                            ssid = null;
+                            bssid = null;
                             freq = 0;
                             seen = 0;
                             rssi = WifiConfiguration.INVALID_RSSI;
                             caps = "";
-                            status = 0;
-                        }
-
-                        if (key.startsWith(RSSI_KEY)) {
-                            String lvl = key.replace(RSSI_KEY, "");
-                            lvl = lvl.replace(SEPARATOR_KEY, "");
-                            rssi = Integer.parseInt(lvl);
-                        }
-
-                        if (key.startsWith(BSSID_STATUS_KEY)) {
-                            String st = key.replace(BSSID_STATUS_KEY, "");
-                            st = st.replace(SEPARATOR_KEY, "");
-                            status = Integer.parseInt(st);
-                        }
-
-                        if (key.startsWith(FREQ_KEY)) {
-                            String channel = key.replace(FREQ_KEY, "");
-                            channel = channel.replace(SEPARATOR_KEY, "");
-                            freq = Integer.parseInt(channel);
-                        }
-
-                        if (key.startsWith(DATE_KEY)) {
-                        /*
-                         * when reading the configuration from file we don't update the date
-                         * so as to avoid reading back stale or non-sensical data that would
-                         * depend on network time.
-                         * The date of a WifiConfiguration should only come from actual scan result.
-                         *
-                        String s = key.replace(FREQ_KEY, "");
-                        seen = Integer.getInteger(s);
-                        */
-                        }
-
-                        if (key.startsWith(BSSID_KEY_END)) {
+                            break;
+                        case RSSI_KEY:
+                            rssi = Integer.parseInt(value);
+                            Log.d("ZXZ", "rssi set to " + rssi);
+                            break;
+                        case BSSID_STATUS_KEY:
+                            status = Integer.parseInt(value);
+                            break;
+                        case FREQ_KEY:
+                            freq = Integer.parseInt(value);
+                            break;
+                        case DATE_KEY:
+                            /*
+                             * when reading the configuration from file we don't update the date
+                             * so as to avoid reading back stale or non-sensical data that would
+                             * depend on network time.
+                             * The date of a WifiConfiguration should only come from actual scan result.
+                             *
+                            String s = key.replace(FREQ_KEY, "");
+                            seen = Integer.getInteger(s);
+                            */
+                            break;
+                        case BSSID_KEY_END:
                             if ((bssid != null) && (ssid != null)) {
 
                                 if (getScanDetailCache(config) != null) {
@@ -2487,41 +2415,20 @@ public class WifiConfigStore extends IpConfigStore {
                                     scanDetail.getScanResult().autoJoinStatus = status;
                                 }
                             }
-                        }
-
-                        if (key.startsWith(DELETED_CRC32_KEY)) {
-                            String crc = key.replace(DELETED_CRC32_KEY, "");
-                            Long c = Long.parseLong(crc);
-                            mDeletedSSIDs.add(c);
-                        }
-                        if (key.startsWith(DELETED_EPHEMERAL_KEY)) {
-                            String s = key.replace(DELETED_EPHEMERAL_KEY, "");
-                            if (!TextUtils.isEmpty(s)) {
-                                s = s.replace(SEPARATOR_KEY, "");
-                                mDeletedEphemeralSSIDs.add(s);
+                            break;
+                        case DELETED_CRC32_KEY:
+                            mDeletedSSIDs.add(Long.parseLong(value));
+                            break;
+                        case DELETED_EPHEMERAL_KEY:
+                            if (!TextUtils.isEmpty(value)) {
+                                mDeletedEphemeralSSIDs.add(value);
                             }
-                        }
+                            break;
                     }
-                }
-            }
-        } catch (EOFException ignore) {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (Exception e) {
-                    loge("readNetworkHistory: Error reading file" + e);
                 }
             }
         } catch (IOException e) {
             loge("readNetworkHistory: No config file, revert to default" + e);
-        }
-
-        if(in!=null) {
-            try {
-                in.close();
-            } catch (Exception e) {
-                loge("readNetworkHistory: Error closing file" + e);
-            }
         }
     }
 
