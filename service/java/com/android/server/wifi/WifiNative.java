@@ -53,7 +53,7 @@ import java.util.zip.Deflater;
  */
 public class WifiNative {
 
-    private static boolean DBG = true;
+    private static boolean DBG = false;
     private final String mTAG;
     private static final int DEFAULT_GROUP_OWNER_INTENT     = 6;
 
