@@ -66,14 +66,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final String TAG = "WifiScanningService";
     private static final boolean DBG = true;
     private static final boolean VDBG = false;
-    
+
     private static final int INVALID_KEY = 0;                               // same as WifiScanner
     private static final int MIN_PERIOD_PER_CHANNEL_MS = 200;               // DFS needs 120 ms
     private static final int UNKNOWN_PID = -1;
 
     private static final LocalLog mLocalLog = new LocalLog(500);
 
-    private static void log(String message) {
+    private static void localLog(String message) {
         mLocalLog.log(message);
     }
 
@@ -125,7 +125,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         @Override
         public void handleMessage(Message msg) {
 
-            if (DBG) log("ClientHandler got" + msg);
+            if (DBG) localLog("ClientHandler got" + msg);
 
             switch (msg.what) {
 
@@ -137,7 +137,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 case AsyncChannel.CMD_CHANNEL_FULL_CONNECTION:
                     AsyncChannel ac = new AsyncChannel();
                     ac.connect(mContext, this, msg.replyTo);
-                    if (DBG) log("New client connected : " + msg.sendingUid + msg.replyTo);
+                    if (DBG) localLog("New client connected : " + msg.sendingUid + msg.replyTo);
                     ClientInfo cInfo = new ClientInfo(msg.sendingUid, ac, msg.replyTo);
                     mClients.put(msg.replyTo, cInfo);
                     return;
@@ -145,12 +145,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     if (msg.arg1 == AsyncChannel.STATUS_SEND_UNSUCCESSFUL) {
                         loge("Send failed, client connection lost");
                     } else {
-                        if (DBG) log("Client connection lost with reason: " + msg.arg1);
+                        if (DBG) localLog("Client connection lost with reason: " + msg.arg1);
                     }
-                    if (DBG) log("closing client " + msg.replyTo);
+                    if (DBG) localLog("closing client " + msg.replyTo);
                     ClientInfo ci = mClients.remove(msg.replyTo);
                     if (ci != null) {                       /* can be null if send failed above */
-                        if (DBG) log("closing client " + ci.mUid);
+                        if (DBG) localLog("closing client " + ci.mUid);
                         ci.cleanup();
                     }
                     return;
@@ -159,7 +159,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             try {
                 enforceLocationHardwarePermission(msg.sendingUid);
             } catch (SecurityException e) {
-                log("failed to authorize app: " + e);
+                localLog("failed to authorize app: " + e);
                 replyFailed(msg, WifiScanner.REASON_NOT_AUTHORIZED, "Not authorized");
                 return;
             }
@@ -240,7 +240,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     public void onReceive(Context context, Intent intent) {
                         int state = intent.getIntExtra(
                                 WifiManager.EXTRA_SCAN_AVAILABLE, WifiManager.WIFI_STATE_DISABLED);
-                        if (DBG) log("SCAN_AVAILABLE : " + state);
+                        if (DBG) localLog("SCAN_AVAILABLE : " + state);
                         if (state == WifiManager.WIFI_STATE_ENABLED) {
                             mStateMachine.sendMessage(CMD_DRIVER_LOADED);
                         } else if (state == WifiManager.WIFI_STATE_DISABLED) {
@@ -276,19 +276,19 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         @Override
         public void onScanResultsAvailable() {
-            if (DBG) log("onScanResultAvailable event received");
+            if (DBG) localLog("onScanResultAvailable event received");
             sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
         }
 
         @Override
         public void onScanStatus() {
-            if (DBG) log("onScanStatus event received");
+            if (DBG) localLog("onScanStatus event received");
             sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
         }
 
         @Override
         public void onFullScanResult(ScanResult fullScanResult) {
-            if (DBG) log("Full scanresult received");
+            if (DBG) localLog("Full scanresult received");
             sendMessage(CMD_FULL_SCAN_RESULTS, 0, 0, fullScanResult);
         }
 
@@ -304,31 +304,31 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         @Override
         public void onHotlistApFound(ScanResult[] results) {
-            if (DBG) log("HotlistApFound event received");
+            if (DBG) localLog("HotlistApFound event received");
             sendMessage(CMD_HOTLIST_AP_FOUND, 0, 0, results);
         }
 
         @Override
         public void onHotlistApLost(ScanResult[] results) {
-            if (DBG) log("HotlistApLost event received");
+            if (DBG) localLog("HotlistApLost event received");
             sendMessage(CMD_HOTLIST_AP_LOST, 0, 0, results);
         }
 
         @Override
         public void onChangesFound(ScanResult[] results) {
-            if (DBG) log("onWifiChangesFound event received");
+            if (DBG) localLog("onWifiChangesFound event received");
             sendMessage(CMD_WIFI_CHANGE_DETECTED, 0, 0, results);
         }
 
         class DefaultState extends State {
             @Override
             public void enter() {
-                if (DBG) log("DefaultState");
+                if (DBG) localLog("DefaultState");
             }
             @Override
             public boolean processMessage(Message msg) {
 
-                if (DBG) log("DefaultState got" + msg);
+                if (DBG) localLog("DefaultState got" + msg);
 
                 ClientInfo ci = mClients.get(msg.replyTo);
 
@@ -361,11 +361,11 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         break;
 
                     case CMD_SCAN_RESULTS_AVAILABLE:
-                        if (DBG) log("ignored scan results available event");
+                        if (DBG) localLog("ignored scan results available event");
                         break;
 
                     case CMD_FULL_SCAN_RESULTS:
-                        if (DBG) log("ignored full scan result event");
+                        if (DBG) localLog("ignored full scan result event");
                         break;
 
                     default:
@@ -380,13 +380,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             @Override
             public void enter() {
-                if (DBG) log("StartedState");
+                if (DBG) localLog("StartedState");
             }
 
             @Override
             public boolean processMessage(Message msg) {
 
-                if (DBG) log("StartedState got" + msg);
+                if (DBG) localLog("StartedState got" + msg);
 
                 ClientInfo ci = mClients.get(msg.replyTo);
 
@@ -422,7 +422,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         removeScanRequest(ci, msg.arg2);
                         break;
                     case CMD_STOP_SCAN_INTERNAL:
-                        log("Removing single shot scan");
+                        localLog("Removing single shot scan");
                         removeScanRequest((ClientInfo) msg.obj, msg.arg2);
                         break;
                     case WifiScanner.CMD_SET_HOTLIST:
@@ -452,7 +452,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         break;
                     case CMD_FULL_SCAN_RESULTS: {
                             ScanResult result = (ScanResult) msg.obj;
-                            if (DBG) log("reporting fullscan result for " + result.SSID);
+                            if (DBG) localLog("reporting fullscan result for " + result.SSID);
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportFullScanResult(result);
@@ -462,7 +462,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                     case CMD_HOTLIST_AP_FOUND: {
                             ScanResult[] results = (ScanResult[])msg.obj;
-                            if (DBG) log("Found " + results.length + " results");
+                            if (DBG) localLog("Found " + results.length + " results");
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportHotlistResults(WifiScanner.CMD_AP_FOUND, results);
@@ -471,7 +471,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         break;
                     case CMD_HOTLIST_AP_LOST: {
                             ScanResult[] results = (ScanResult[])msg.obj;
-                            if (DBG) log("Lost " + results.length + " results");
+                            if (DBG) localLog("Lost " + results.length + " results");
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportHotlistResults(WifiScanner.CMD_AP_LOST, results);
@@ -508,13 +508,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         class PausedState extends State {
             @Override
             public void enter() {
-                if (DBG) log("PausedState");
+                if (DBG) localLog("PausedState");
             }
 
             @Override
             public boolean processMessage(Message msg) {
 
-                if (DBG) log("PausedState got" + msg);
+                if (DBG) localLog("PausedState got" + msg);
 
                 switch (msg.what) {
                     case CMD_SCAN_RESTARTED:
@@ -559,7 +559,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             mMessenger = m;
             mUid = uid;
             mWorkSource = new WorkSource(uid, TAG);
-            if (DBG) log("New client, channel: " + c + " messenger: " + m);
+            if (DBG) localLog("New client, channel: " + c + " messenger: " + m);
         }
 
         void reportBatchedScanStart() {
@@ -570,7 +570,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             try {
                 mBatteryStats.noteWifiBatchedScanStartedFromSource(mWorkSource, csph);
-                log("started scanning for UID " + mUid + ", csph = " + csph);
+                localLog("started scanning for UID " + mUid + ", csph = " + csph);
             } catch (RemoteException e) {
                 logw("failed to report scan work: " + e.toString());
             }
@@ -582,7 +582,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             try {
                 mBatteryStats.noteWifiBatchedScanStoppedFromSource(mWorkSource);
-                log("stopped scanning for UID " + mUid);
+                localLog("stopped scanning for UID " + mUid);
             } catch (RemoteException e) {
                 logw("failed to cleanup scan work: " + e.toString());
             }
@@ -706,7 +706,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 }
             }
 
-            log("results = " + results.length + ", num_results = " + num_results);
+            localLog("results = " + results.length + ", num_results = " + num_results);
 
             ScanData results2[] = new ScanData[num_results];
             int index = 0;
@@ -726,14 +726,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                 if (copyScanData) {
                     if (VDBG) {
-                        log("adding at " + index);
+                        localLog("adding at " + index);
                     }
                     results2[index] = new WifiScanner.ScanData(result);
                     index++;
                 }
             }
             
-            log("delivering results, num = " + results2.length);
+            localLog("delivering results, num = " + results2.length);
 
             deliverScanResults(handler, results2);
             if (settings.periodInMs == 0) {
@@ -766,7 +766,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                                 ScanResult.UNSPECIFIED, ScanResult.UNSPECIFIED,result.channelWidth,
                                 result.centerFreq0, result.centerFreq1,
                                 result.is80211McRTTResponder);
-                        if (DBG) log("sending it to " + handler);
+                        if (DBG) localLog("sending it to " + handler);
                         newResult.informationElements = result.informationElements.clone();
                         mChannel.sendMessage(
                                 WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, newResult);
@@ -889,7 +889,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
 
             mSignificantWifiHandlers.clear();
-            log("Successfully stopped all requests for client " + this);
+            localLog("Successfully stopped all requests for client " + this);
         }
     }
 
@@ -1024,13 +1024,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 for (ChannelSpec desiredChannelSpec : channels) {
                     mChannelToBucketMap.put(desiredChannelSpec.frequency, mostFrequentBucketIndex);
                 }
-                log("returning mf bucket number " + mostFrequentBucketIndex);
+                localLog("returning mf bucket number " + mostFrequentBucketIndex);
                 return mostFrequentBucketIndex;
             } else if (bestBucketIndex != -1) {
                 for (ChannelSpec desiredChannelSpec : channels) {
                     mChannelToBucketMap.put(desiredChannelSpec.frequency, bestBucketIndex);
                 }
-                log("returning best bucket number " + bestBucketIndex);
+                localLog("returning best bucket number " + bestBucketIndex);
                 return bestBucketIndex;
             }
 
@@ -1064,19 +1064,19 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
 
             // merge the channel lists for these buckets
-            log("merging " + desiredChannels.length + " channels "
+            localLog("merging " + desiredChannels.length + " channels "
                     + " for period " + settings.periodInMs
                     + " maxScans " + settings.maxScansToCache);
 
             WifiNative.BucketSettings bucket = mSettings.buckets[bucketIndex];
             boolean added = (bucket.num_channels == 0)
                     && (bucket.band == WifiScanner.WIFI_BAND_UNSPECIFIED);
-            log("existing " + bucket.num_channels + " channels ");
+            localLog("existing " + bucket.num_channels + " channels ");
 
             HashSet<ChannelSpec> newChannels = new HashSet<ChannelSpec>();
             for (ChannelSpec desiredChannelSpec : desiredChannels) {
 
-                log("desired channel " + desiredChannelSpec.frequency);
+                localLog("desired channel " + desiredChannelSpec.frequency);
 
                 boolean found = false;
                 for (WifiNative.ChannelSettings existingChannelSpec : bucket.channels) {
@@ -1089,7 +1089,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 if (!found) {
                     newChannels.add(desiredChannelSpec);
                 } else {
-                    if (DBG) log("Already scanning channel " + desiredChannelSpec.frequency);
+                    if (DBG) localLog("Already scanning channel " + desiredChannelSpec.frequency);
                 }
             }
 
@@ -1100,11 +1100,11 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 bucket.band = getBandFromChannels(bucket.channels)
                         | getBandFromChannels(desiredChannels);
                 bucket.channels = new WifiNative.ChannelSettings[0];
-                log("switching to using band " + bucket.band);
+                localLog("switching to using band " + bucket.band);
             } else {
                 for (ChannelSpec desiredChannelSpec : newChannels) {
 
-                    log("adding new channel spec " + desiredChannelSpec.frequency);
+                    localLog("adding new channel spec " + desiredChannelSpec.frequency);
 
                     WifiNative.ChannelSettings channelSettings = bucket.channels[bucket.num_channels];
                     channelSettings.frequency = desiredChannelSpec.frequency;
@@ -1114,10 +1114,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
 
             if (bucket.report_events < settings.reportEvents) {
-                if (DBG) log("setting report_events to " + settings.reportEvents);
+                if (DBG) localLog("setting report_events to " + settings.reportEvents);
                 bucket.report_events = settings.reportEvents;
             } else {
-                if (DBG) log("report_events is " + settings.reportEvents);
+                if (DBG) localLog("report_events is " + settings.reportEvents);
             }
 
             if (added) {
@@ -1183,7 +1183,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 ScanSettings s = entry.getValue();
                 int newPeriodInMs = c.addScanRequestToBucket(s);
                 if (newPeriodInMs  == -1) {
-                    if (DBG) log("could not find a good bucket");
+                    if (DBG) localLog("could not find a good bucket");
                     return false;
                 }
                 if (newPeriodInMs != s.periodInMs) {
@@ -1196,12 +1196,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         WifiNative.ScanSettings s = c.getComputedSettings();
         if (s.num_buckets == 0) {
-            if (DBG) log("Stopping scan because there are no buckets");
+            if (DBG) localLog("Stopping scan because there are no buckets");
             WifiNative.stopScan();
             return true;
         } else {
             if (WifiNative.startScan(s, mStateMachine)) {
-                log("Successfully started scan of " + s.num_buckets + " buckets at"
+                localLog("Successfully started scan of " + s.num_buckets + " buckets at"
                         + "time = " + SystemClock.elapsedRealtimeNanos() / 1000 + " period "
                         + s.base_period_ms);
                 return true;
@@ -1215,7 +1215,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     boolean addScanRequest(ClientInfo ci, int handler, ScanSettings settings) {
         // sanity check the input
         if (settings.periodInMs < WifiScanner.MIN_SCAN_PERIOD_MS) {
-            log("Failing scan request because periodInMs is " + settings.periodInMs);
+            localLog("Failing scan request because periodInMs is " + settings.periodInMs);
             return false;
         }
 
@@ -1238,7 +1238,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         if (settings.periodInMs < minSupportedPeriodMs) {
-            log("Failing scan request because minSupportedPeriodMs is "
+            localLog("Failing scan request because minSupportedPeriodMs is "
                     + minSupportedPeriodMs + " but the request wants " + settings.periodInMs);
             return false;
         }
@@ -1248,7 +1248,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return true;
         } else {
             ci.removeScanRequest(handler);
-            log("Failing scan request because failed to reset scan");
+            localLog("Failing scan request because failed to reset scan");
             return false;
         }
     }
@@ -1267,7 +1267,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return true;
         } else {
             ci.removeScanRequest(handler);
-            log("Failing scan request because failed to reset scan");
+            localLog("Failing scan request because failed to reset scan");
             return false;
         }
     }
@@ -1441,12 +1441,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         class DefaultState extends State {
             @Override
             public void enter() {
-                if (DBG) log("Entering IdleState");
+                if (DBG) localLog("Entering IdleState");
             }
 
             @Override
             public boolean processMessage(Message msg) {
-                if (DBG) log("DefaultState state got " + msg);
+                if (DBG) localLog("DefaultState state got " + msg);
                 switch (msg.what) {
                     case WIFI_CHANGE_CMD_ENABLE :
                         transitionTo(mMovingState);
@@ -1471,24 +1471,24 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         class StationaryState extends State {
             @Override
             public void enter() {
-                if (DBG) log("Entering StationaryState");
+                if (DBG) localLog("Entering StationaryState");
                 reportWifiStabilized(mCurrentBssids);
             }
 
             @Override
             public boolean processMessage(Message msg) {
-                if (DBG) log("Stationary state got " + msg);
+                if (DBG) localLog("Stationary state got " + msg);
                 switch (msg.what) {
                     case WIFI_CHANGE_CMD_ENABLE :
                         // do nothing
                         break;
                     case WIFI_CHANGE_CMD_CHANGE_DETECTED:
-                        if (DBG) log("Got wifi change detected");
+                        if (DBG) localLog("Got wifi change detected");
                         reportWifiChanged((ScanResult[])msg.obj);
                         transitionTo(mMovingState);
                         break;
                     case WIFI_CHANGE_CMD_DISABLE:
-                        if (DBG) log("Got Disable Wifi Change");
+                        if (DBG) localLog("Got Disable Wifi Change");
                         mCurrentBssids = null;
                         removeScanRequest();
                         untrackSignificantWifiChange();
@@ -1511,28 +1511,28 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             @Override
             public void enter() {
-                if (DBG) log("Entering MovingState");
+                if (DBG) localLog("Entering MovingState");
                 issueFullScan();
             }
 
             @Override
             public boolean processMessage(Message msg) {
-                if (DBG) log("MovingState state got " + msg);
+                if (DBG) localLog("MovingState state got " + msg);
                 switch (msg.what) {
                     case WIFI_CHANGE_CMD_ENABLE :
                         // do nothing
                         break;
                     case WIFI_CHANGE_CMD_DISABLE:
-                        if (DBG) log("Got Disable Wifi Change");
+                        if (DBG) localLog("Got Disable Wifi Change");
                         mCurrentBssids = null;
                         removeScanRequest();
                         untrackSignificantWifiChange();
                         transitionTo(mDefaultState);
                         break;
                     case WIFI_CHANGE_CMD_NEW_SCAN_RESULTS:
-                        if (DBG) log("Got scan results");
+                        if (DBG) localLog("Got scan results");
                         if (mScanResultsPending) {
-                            if (DBG) log("reconfiguring scan");
+                            if (DBG) localLog("reconfiguring scan");
                             reconfigureScan((ScanData[])msg.obj,
                                     STATIONARY_SCAN_PERIOD_MS);
                             mWifiChangeDetected = false;
@@ -1543,7 +1543,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         }
                         break;
                     case WIFI_CHANGE_CMD_CONFIGURE:
-                        if (DBG) log("Got configuration from app");
+                        if (DBG) localLog("Got configuration from app");
                         WifiScanner.WifiChangeSettings settings =
                                 (WifiScanner.WifiChangeSettings) msg.obj;
                         reconfigureScan(settings);
@@ -1555,14 +1555,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                                 mTimeoutIntent);
                         break;
                     case WIFI_CHANGE_CMD_CHANGE_DETECTED:
-                        if (DBG) log("Change detected");
+                        if (DBG) localLog("Change detected");
                         mAlarmManager.cancel(mTimeoutIntent);
                         reportWifiChanged((ScanResult[])msg.obj);
                         mWifiChangeDetected = true;
                         issueFullScan();
                         break;
                     case WIFI_CHANGE_CMD_CHANGE_TIMEOUT:
-                        if (DBG) log("Got timeout event");
+                        if (DBG) localLog("Got timeout event");
                         if (mWifiChangeDetected == false) {
                             transitionTo(mStationaryState);
                         }
@@ -1579,7 +1579,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
 
             void issueFullScan() {
-                if (DBG) log("Issuing full scan");
+                if (DBG) localLog("Issuing full scan");
                 ScanSettings settings = new ScanSettings();
                 settings.band = WifiScanner.WIFI_BAND_BOTH;
                 settings.periodInMs = MOVING_SCAN_PERIOD_MS;
@@ -1593,7 +1593,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         void reconfigureScan(ScanData[] results, int period) {
             // find brightest APs and set them as sentinels
             if (results.length < MAX_APS_TO_TRACK) {
-                log("too few APs (" + results.length + ") available to track wifi change");
+                localLog("too few APs (" + results.length + ") available to track wifi change");
                 return;
             }
 
@@ -1640,7 +1640,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 }
             }
 
-            if (DBG) log("Found " + channels.size() + " channels");
+            if (DBG) localLog("Found " + channels.size() + " channels");
 
             // set scanning schedule
             ScanSettings settings = new ScanSettings();
@@ -1668,7 +1668,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 BssidInfo.high = brightest[i].level + threshold;
                 settings2.bssidInfos[i] = BssidInfo;
 
-                if (DBG) log("Setting bssid=" + BssidInfo.bssid + ", " +
+                if (DBG) localLog("Setting bssid=" + BssidInfo.bssid + ", " +
                         "low=" + BssidInfo.low + ", high=" + BssidInfo.high);
             }
 
@@ -1679,12 +1679,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         void reconfigureScan(WifiScanner.WifiChangeSettings settings) {
 
             if (settings.bssidInfos.length < MAX_APS_TO_TRACK) {
-                log("too few APs (" + settings.bssidInfos.length
+                localLog("too few APs (" + settings.bssidInfos.length
                         + ") available to track wifi change");
                 return;
             }
 
-            if (DBG) log("Setting configuration specified by app");
+            if (DBG) localLog("Setting configuration specified by app");
 
             mCurrentBssids = new ScanResult[settings.bssidInfos.length];
             HashSet<Integer> channels = new HashSet<Integer>();
@@ -1721,7 +1721,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
             @Override
             void deliverScanResults(int handler, ScanData results[]) {
-                if (DBG) log("Delivering messages directly");
+                if (DBG) localLog("Delivering messages directly");
                 sendMessage(WIFI_CHANGE_CMD_NEW_SCAN_RESULTS, 0, 0, results);
             }
             @Override
@@ -1739,7 +1739,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         private static final int SCAN_COMMAND_ID = 1;
 
         void addScanRequest(ScanSettings settings) {
-            if (DBG) log("Starting scans");
+            if (DBG) localLog("Starting scans");
             Message msg = Message.obtain();
             msg.what = WifiScanner.CMD_START_BACKGROUND_SCAN;
             msg.arg2 = SCAN_COMMAND_ID;
@@ -1748,7 +1748,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         void removeScanRequest() {
-            if (DBG) log("Stopping scans");
+            if (DBG) localLog("Stopping scans");
             Message msg = Message.obtain();
             msg.what = WifiScanner.CMD_STOP_BACKGROUND_SCAN;
             msg.arg2 = SCAN_COMMAND_ID;
