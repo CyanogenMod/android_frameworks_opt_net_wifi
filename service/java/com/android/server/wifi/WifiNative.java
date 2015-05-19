@@ -35,9 +35,12 @@ import android.util.Base64;
 import android.util.LocalLog;
 import android.util.Log;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.zip.Deflater;
 
 /**
  * Native calls for bring up/shut down of the supplicant daemon and for
@@ -50,7 +53,7 @@ import java.util.Locale;
  */
 public class WifiNative {
 
-    private static boolean DBG = false;
+    private static boolean DBG = true;
     private final String mTAG;
     private static final int DEFAULT_GROUP_OWNER_INTENT     = 6;
 
@@ -2002,19 +2005,58 @@ public class WifiNative {
         }
     }
 
-    public static String mFwMemoryDump;
+    static private byte[] mFwMemoryDump;
     private static void onWifiFwMemoryAvailable(byte[] buffer) {
-        Log.d(TAG, "onWifiFwMemoryAvailable is called");
-        mFwMemoryDump =  android.util.Base64.encodeToString(buffer, Base64.DEFAULT);
+        mFwMemoryDump = buffer;
+        if (DBG) {
+            Log.d(TAG, "onWifiFwMemoryAvailable is called and buffer length is: " +
+                    (buffer == null ? 0 :  buffer.length));
+        }
     }
     private static native boolean getFwMemoryDumpNative(int iface);
     synchronized public static String getFwMemoryDump() {
         synchronized (mLock) {
             if (startHal()) {
                 if(getFwMemoryDumpNative(sWlan0Index)) {
-                    String tmp = mFwMemoryDump;
+                    if(mFwMemoryDump == null || mFwMemoryDump.length == 0) {
+                         return null;
+                    }
+                    String result;
+                    //compress
+                    Deflater compressor = new Deflater();
+                    compressor.setLevel(Deflater.BEST_COMPRESSION);
+                    compressor.setInput(mFwMemoryDump);
+                    compressor.finish();
+                    ByteArrayOutputStream bos = new ByteArrayOutputStream(mFwMemoryDump.length);
+                    final byte[] buf = new byte[1024];
+
+                    while (!compressor.finished()) {
+                        int count = compressor.deflate(buf);
+                         bos.write(buf, 0, count);
+                    }
+
+                    try {
+                        bos.close();
+                    } catch (IOException e) {
+                        Log.e(TAG, "ByteArrayOutputStream close error");
+                        result =  android.util.Base64.encodeToString(mFwMemoryDump, Base64.DEFAULT);
+                        return result;
+                    }
+
+                    byte[] compressData = bos.toByteArray();
+                    if(DBG) {
+                        Log.d(TAG," length is:" + (compressData == null? "0" :
+                                compressData.length));
+                    }
+                    //encode
+                    result =  android.util.Base64.encodeToString(compressData.length <
+                            mFwMemoryDump.length ? compressData :mFwMemoryDump , Base64.DEFAULT);
+                    if(DBG) {
+                        Log.d(TAG, "FwMemoryDump length is :" + result.length());
+                    }
+
                     mFwMemoryDump = null;
-                    return tmp;
+                    return result;
                 } else {
                     return null;
                 }
