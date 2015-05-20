@@ -4457,9 +4457,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         return address;
     }
 
-    private void sendScanResultsAvailableBroadcast() {
+    void sendScanResultsAvailableBroadcast(boolean scanSucceeded) {
         Intent intent = new Intent(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+        intent.putExtra(WifiManager.EXTRA_RESULTS_UPDATED, scanSucceeded);
         mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
     }
 
@@ -5582,7 +5583,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     setScanResults();
                     if (mIsFullScanOngoing || mSendScanResultsBroadcast) {
                         /* Just updated results from full scan, let apps know about this */
-                        sendScanResultsAvailableBroadcast();
+                        boolean scanSucceeded = message.what == WifiMonitor.SCAN_RESULTS_EVENT;
+                        sendScanResultsAvailableBroadcast(scanSucceeded);
                     }
                     mSendScanResultsBroadcast = false;
                     mIsScanOngoing = false;
