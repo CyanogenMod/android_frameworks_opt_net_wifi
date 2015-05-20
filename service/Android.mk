@@ -76,43 +76,6 @@ else ifeq ($(BOARD_WLAN_DEVICE), MediaTek)
   LIB_WIFI_HAL := libwifi-hal-mt66xx
 endif
 
-# Build the HalUtil
-# ============================================================
-
-include $(CLEAR_VARS)
-
-LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
-
-LOCAL_CFLAGS += -Wno-unused-parameter -Wno-int-to-pointer-cast
-LOCAL_CFLAGS += -Wno-maybe-uninitialized -Wno-parentheses
-LOCAL_CPPFLAGS += -Wno-conversion-null
-
-LOCAL_C_INCLUDES += \
-	$(LOCAL_PATH)/jni \
-	external/stlport/stlport \
-    	bionic \
-	$(call include-path-for, libhardware)/hardware \
-	$(call include-path-for, libhardware_legacy)/hardware_legacy \
-	libcore/include
-
-LOCAL_SHARED_LIBRARIES += \
-	libcutils \
-	libnl \
-	libandroid_runtime \
-    	libstlport \
-	libutils \
-	libdl
-
-LOCAL_STATIC_LIBRARIES += libwifi-hal-stub
-LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
-
-LOCAL_SRC_FILES := \
-	tools/halutil/halutil.cpp
-
-LOCAL_MODULE := halutil
-
-include $(BUILD_EXECUTABLE)
-
 # Make the JNI part
 # ============================================================
 include $(CLEAR_VARS)
