@@ -382,6 +382,7 @@ public class WifiConfigStore extends IpConfigStore {
     public static final int maxNumScanCacheEntries = 128;
 
     public final AtomicBoolean enableHalBasedPno = new AtomicBoolean(true);
+    public final AtomicBoolean enableSsidWhitelist = new AtomicBoolean(true);
     public final AtomicBoolean enableAutoJoinWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableFullBandScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableAutoJoinScanWhenAssociated = new AtomicBoolean(true);
@@ -545,6 +546,7 @@ public class WifiConfigStore extends IpConfigStore {
         sKeyMap.put(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumPassiveChannelsForPartialScans);
         sKeyMap.put(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumActiveChannelsForPartialScans);
         sKeyMap.put(ENABLE_HAL_BASED_PNO, enableHalBasedPno);
+        sKeyMap.put(ENABLE_HAL_BASED_PNO, enableSsidWhitelist);
 
         if (showNetworks) {
             mLocalLog = mWifiNative.getLocalLog();
@@ -645,6 +647,12 @@ public class WifiConfigStore extends IpConfigStore {
 
         enableHalBasedPno.set(mContext.getResources().getBoolean(
                         R.bool.config_wifi_hal_pno_enable));
+
+        enableSsidWhitelist.set(mContext.getResources().getBoolean(
+                R.bool.config_wifi_ssid_white_list_enable));
+        if (!enableHalBasedPno.get() && enableSsidWhitelist.get()) {
+            enableSsidWhitelist.set(false);
+        }
 
         Chronograph chronograph = new Chronograph();
         mMOManager = new MOManager(new File(PPS_FILE));
@@ -1314,6 +1322,8 @@ public class WifiConfigStore extends IpConfigStore {
 
     String[] getWhiteListedSsids(WifiConfiguration config) {
         int num_ssids = 0;
+        if (enableSsidWhitelist.get() == false)
+            return null;
         List<String> list = new ArrayList<String>();
         if (config == null)
             return null;
@@ -1343,7 +1353,7 @@ public class WifiConfigStore extends IpConfigStore {
             list.add(link.SSID);
         }
 
-        return (String[])list.toArray();
+        return (String[])list.toArray(new String[0]);
     }
 
     /**

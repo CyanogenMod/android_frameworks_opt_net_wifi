@@ -1178,6 +1178,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         // enabling HAl based PNO dynamically is not safe and not a normal operation
         mHalBasedPnoEnableInDevSettings = enabled > 0;
         mWifiConfigStore.enableHalBasedPno.set(mHalBasedPnoEnableInDevSettings);
+        mWifiConfigStore.enableSsidWhitelist.set(mHalBasedPnoEnableInDevSettings);
         sendMessage(CMD_DISCONNECT);
     }
 
