@@ -423,6 +423,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceChangePermission();
         synchronized (this) {
             if (mInIdleMode) {
+                // Need to send an immediate scan result broadcast in case the
+                // caller is waiting for a result ..
+                mWifiStateMachine.sendScanResultsAvailableBroadcast(/* scanSucceeded = */ false);
                 mScanPending = true;
                 return;
             }
