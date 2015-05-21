@@ -1330,6 +1330,9 @@ public class WifiConfigStore extends IpConfigStore {
         if (config.linkedConfigurations == null) {
             return null;
         }
+        if (config.SSID == null || TextUtils.isEmpty(config.SSID)) {
+            return null;
+        }
         for (String configKey : config.linkedConfigurations.keySet()) {
 
             // Sanity check that the linked configuration is still valid
@@ -1346,11 +1349,15 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            if (link.SSID == null || TextUtils.isEmpty(config.SSID)) {
+            if (link.SSID == null || TextUtils.isEmpty(link.SSID)) {
                 continue;
             }
 
             list.add(link.SSID);
+        }
+
+        if (list.size() != 0) {
+            list.add(config.SSID);
         }
 
         return (String[])list.toArray(new String[0]);

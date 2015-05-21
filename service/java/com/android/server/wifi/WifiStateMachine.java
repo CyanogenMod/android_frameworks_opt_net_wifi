@@ -1205,11 +1205,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     boolean allowFullBandScanAndAssociated() {
-        if (getAllowScansWithTraffic() == 0) {
-            return false;
-        }
 
         if (!mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
+            if (DBG) {
+                Log.e(TAG, "allowFullBandScanAndAssociated: "
+                        + " enableAutoJoinScanWhenAssociated : disallow");
+            }
             return false;
         }
 
@@ -1217,11 +1218,22 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mWifiConfigStore.maxTxPacketForFullScans
                 || mWifiInfo.rxSuccessRate >
                 mWifiConfigStore.maxRxPacketForFullScans) {
+            if (DBG) {
+                Log.e(TAG, "allowFullBandScanAndAssociated: packet rate tx"
+                        + mWifiInfo.txSuccessRate + "  rx "
+                        + mWifiInfo.rxSuccessRate
+                        + " allow scan with traffic " + getAllowScansWithTraffic());
+            }
             // Too much traffic at the interface, hence no full band scan
-            return false;
+            if (getAllowScansWithTraffic() == 0) {
+                return false;
+            }
         }
 
         if (getCurrentState() != mConnectedState) {
+            if (DBG) {
+                Log.e(TAG, "allowFullBandScanAndAssociated: getCurrentState() : disallow");
+            }
             return false;
         }
 
@@ -1241,12 +1253,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             long now = System.currentTimeMillis();
             if (mConnectedModeGScanOffloadStarted && !allowed) {
+                if (DBG) {
+                    Log.e(TAG, " useHalBasedAutoJoinOffload stop offload");
+                }
                 stopGscanOffload();
             }
             if (!mConnectedModeGScanOffloadStarted && allowed) {
                 if ((now - lastScanPermissionUpdate) > SCAN_PERMISSION_UPDATE_THROTTLE_MILLI) {
                     // Re-enable Gscan offload, this will trigger periodic scans and allow firmware
                     // to look for 5GHz BSSIDs and better networks
+                    if (DBG) {
+                        Log.e(TAG, " useHalBasedAutoJoinOffload restart offload");
+                    }
                     startGScanConnectedModeOffload();
                 }
             }
@@ -2677,6 +2695,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 if (wifiScoringReport != null) {
                     sb.append(wifiScoringReport);
                 }
+                if (mConnectedModeGScanOffloadStarted) {
+                    sb.append(" offload-started periodMilli " + mGScanPeriodMilli);
+                } else {
+                    sb.append(" offload-stopped");
+                }
                 break;
             case CMD_AUTO_CONNECT:
             case WifiManager.CONNECT_NETWORK:
@@ -2970,7 +2993,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         params.lazy_roam_hysteresis = 25;
         params.alert_roam_rssi_trigger = -75;
 
-        loge("configureLazyRoam " + params.toString());
+        if (DBG) {
+            loge("configureLazyRoam " + params.toString());
+        }
 
         if (!WifiNative.setLazyRoam(true, params)) {
 
@@ -2978,8 +3003,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             return false;
         }
-        loge("configureLazyRoam success");
-
+        if (DBG) {
+            loge("configureLazyRoam success");
+        }
         return true;
     }
 
@@ -2992,6 +3018,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private boolean startGScanConnectedModeOffload() {
+        if (DBG) {
+            loge("startGScanConnectedModeOffload");
+        }
         stopGScan();
         if (!mScreenOn) return false;
 
@@ -3006,12 +3035,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiNative.restartScan();
             return false;
         }
+        if (mWifiConfigStore.getLastSelectedConfiguration() == null) {
+            configureSsidWhiteList();
+        }
         if (!startConnectedGScan()) {
             mWifiNative.restartScan();
             return false;
         }
         mWifiNative.restartScan();
         mConnectedModeGScanOffloadStarted = true;
+        if (DBG) {
+            loge("startGScanConnectedModeOffload success");
+        }
         return true;
     }
 
@@ -5211,6 +5246,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 wifiApConfigStore.loadApConfiguration();
                 mWifiApConfigChannel.connectSync(mContext, getHandler(),
                         wifiApConfigStore.getMessenger());
+            }
+
+            if (mWifiConfigStore.enableHalBasedPno.get()) {
+                // make sure developper Settings are in sync with the config option
+                mHalBasedPnoEnableInDevSettings = true;
             }
         }
         @Override
@@ -7983,11 +8023,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                        + " scanperiod="
                        + Integer.toString(mWifiConfigStore.wifiAssociatedShortScanIntervalMilli.get())
                        + " useGscan=" + mHalBasedPnoDriverSupported + "/"
-                        + mWifiConfigStore.enableHalBasedPno.get());
-
+                        + mWifiConfigStore.enableHalBasedPno.get()
+                        + " mHalBasedPnoEnableInDevSettings " + mHalBasedPnoEnableInDevSettings);
             }
-            configureLazyRoam();
-            configureSsidWhiteList();
             if (mScreenOn
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
                 if (useHalBasedAutoJoinOffload()) {

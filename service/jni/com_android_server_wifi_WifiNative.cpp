@@ -2064,6 +2064,7 @@ static jboolean android_net_wifi_setSsidWhitelist(
                 }
 
                 memcpy(ssids[i].ssid, ssid, slen);
+                num_ssids++;
                 ALOGD("SSID white list: added ssid %s", ssid);
             }
         }
