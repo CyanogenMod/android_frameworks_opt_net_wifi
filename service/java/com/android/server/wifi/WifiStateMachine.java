@@ -4222,23 +4222,24 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     /**
-     * Updates mLinkProperties by merging information from various sources.
+     * Creates a new LinkProperties object by merging information from various sources.
      * <p/>
      * This is needed because the information in mLinkProperties comes from multiple sources (DHCP,
      * netlink, static configuration, ...). When one of these sources of information has updated
      * link properties, we can't just assign them to mLinkProperties or we'd lose track of the
      * information that came from other sources. Instead, when one of those sources has new
      * information, we update the object that tracks the information from that source and then
-     * call this method to apply the change to mLinkProperties.
+     * call this method to integrate the change into a new LinkProperties object for subsequent
+     * comparison with mLinkProperties.
      * <p/>
-     * The information in mLinkProperties is currently obtained as follows:
-     * - Interface name: set in the constructor.
-     * - IPv4 and IPv6 addresses: netlink, passed in by mNetlinkTracker.
-     * - IPv4 routes, DNS servers, and domains: DHCP.
-     * - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
-     * - HTTP proxy: the wifi config store.
+     * The information used to build LinkProperties is currently obtained as follows:
+     *     - Interface name: set in the constructor.
+     *     - IPv4 and IPv6 addresses: netlink, passed in by mNetlinkTracker.
+     *     - IPv4 routes, DNS servers, and domains: DHCP.
+     *     - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
+     *     - HTTP proxy: the wifi config store.
      */
-    private void updateLinkProperties(int reason) {
+    private LinkProperties makeLinkProperties() {
         LinkProperties newLp = new LinkProperties();
 
         // Interface name, proxy, and TCP buffer sizes are locally configured.
@@ -4272,6 +4273,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 newLp.setDomains(mDhcpResults.domains);
             }
         }
+
+        return newLp;
+    }
+
+    private void updateLinkProperties(int reason) {
+        LinkProperties newLp = makeLinkProperties();
 
         final boolean linkChanged = !newLp.equals(mLinkProperties);
         final boolean wasProvisioned = isProvisioned(mLinkProperties);
