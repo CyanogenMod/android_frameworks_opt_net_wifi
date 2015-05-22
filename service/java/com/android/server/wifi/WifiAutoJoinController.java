@@ -71,7 +71,7 @@ public class WifiAutoJoinController {
     private WifiNetworkScoreCache mNetworkScoreCache;
 
     private static final String TAG = "WifiAutoJoinController ";
-    private static boolean DBG = false;
+    private static boolean DBG = true;
     private static boolean VDBG = false;
     private static final boolean mStaStaSupported = false;
 

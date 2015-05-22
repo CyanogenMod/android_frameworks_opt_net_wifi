@@ -392,10 +392,14 @@ public class WifiConfigStore extends IpConfigStore {
             new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5);
     public final AtomicInteger thresholdInitialAutoJoinAttemptMin24RSSI =
             new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24);
-    public final AtomicInteger thresholdUnblacklistThreshold5Hard = new AtomicInteger();
-    public final AtomicInteger thresholdUnblacklistThreshold5Soft = new AtomicInteger();
-    public final AtomicInteger thresholdUnblacklistThreshold24Hard = new AtomicInteger();
-    public final AtomicInteger thresholdUnblacklistThreshold24Soft = new AtomicInteger();
+    public final AtomicInteger thresholdUnblacklistThreshold5Hard
+            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_5_HARD);
+    public final AtomicInteger thresholdUnblacklistThreshold5Soft
+            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_5_SOFT);
+    public final AtomicInteger thresholdUnblacklistThreshold24Hard
+            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_24_HARD);
+    public final AtomicInteger thresholdUnblacklistThreshold24Soft
+            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT);
     public final AtomicInteger thresholdGoodRssi5 =
             new AtomicInteger(WifiConfiguration.GOOD_RSSI_5);
     public final AtomicInteger thresholdLowRssi5 = new AtomicInteger(WifiConfiguration.LOW_RSSI_5);
