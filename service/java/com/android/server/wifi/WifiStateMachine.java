@@ -6753,6 +6753,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         handleNetworkDisconnect();
                         transitionTo(mDisconnectedState);
                     }
+
+                    // If we have COMPLETED a connection to a BSSID, start doing
+                    // DNAv4/DNAv6 -style probing for on-link neighbors of
+                    // interest (e.g. routers); harmless if none are configured.
+                    if (state == SupplicantState.COMPLETED) {
+                        if (mIpReachabilityMonitor != null) {
+                            mIpReachabilityMonitor.probeAll();
+                        }
+                    }
                     break;
                 case WifiP2pServiceImpl.DISCONNECT_WIFI_REQUEST:
                     if (message.arg1 == 1) {
