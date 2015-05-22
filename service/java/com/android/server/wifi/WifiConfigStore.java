@@ -87,6 +87,7 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
@@ -2409,7 +2410,6 @@ public class WifiConfigStore extends IpConfigStore {
                             break;
                         case RSSI_KEY:
                             rssi = Integer.parseInt(value);
-                            Log.d("ZXZ", "rssi set to " + rssi);
                             break;
                         case BSSID_STATUS_KEY:
                             status = Integer.parseInt(value);
@@ -2460,8 +2460,12 @@ public class WifiConfigStore extends IpConfigStore {
                     }
                 }
             }
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "readNetworkHistory: failed to read, revert to default, " + e, e);
+        } catch (EOFException e) {
+            // do nothing
         } catch (IOException e) {
-            loge("readNetworkHistory: No config file, revert to default" + e);
+            Log.e(TAG, "readNetworkHistory: No config file, revert to default, " + e, e);
         }
     }
 
