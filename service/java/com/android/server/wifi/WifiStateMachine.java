@@ -5253,7 +5253,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_DISCONNECTING_WATCHDOG_TIMER:
                 case CMD_ROAM_WATCHDOG_TIMER:
                 case CMD_DISABLE_EPHEMERAL_NETWORK:
-                case CMD_GET_MATCHING_CONFIG:
                 case CMD_RESTART_AUTOJOIN_OFFLOAD:
                 case CMD_STARTED_PNO_DBG:
                 case CMD_STARTED_GSCAN_DBG:
@@ -5327,6 +5326,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 /* Link configuration (IP address, DNS, ...) changes notified via netlink */
                 case CMD_UPDATE_LINKPROPERTIES:
                     updateLinkProperties(CMD_UPDATE_LINKPROPERTIES);
+                    break;
+                case CMD_GET_MATCHING_CONFIG:
+                    replyToMessage(message, message.what);
                     break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                 case CMD_IP_CONFIGURATION_LOST:
