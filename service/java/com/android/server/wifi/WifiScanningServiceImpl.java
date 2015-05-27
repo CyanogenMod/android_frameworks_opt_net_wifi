@@ -335,7 +335,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                 switch (msg.what) {
                     case CMD_DRIVER_LOADED:
-                        if (WifiNative.startHal() && WifiNative.getInterfaces() != 0) {
+                        if (WifiNative.getInterfaces() != 0) {
                             WifiNative.ScanCapabilities capabilities =
                                     new WifiNative.ScanCapabilities();
                             if (WifiNative.getScanCapabilities(capabilities)) {

@@ -359,8 +359,11 @@ static void android_net_wifi_stopHal(JNIEnv* env, jclass cls) {
     ALOGD("In wifi stop Hal");
 
     wifi_handle halHandle = getWifiHandle(env, cls);
+    if (halHandle == NULL)
+        return;
+
+    ALOGD("halHandle = %p, mVM = %p, mCls = %p", halHandle, mVM, mCls);
     hal_fn.wifi_cleanup(halHandle, android_net_wifi_hal_cleaned_up_handler);
-    set_iface_flags("wlan0", 0);
 }
 
 static void android_net_wifi_waitForHalEvents(JNIEnv* env, jclass cls) {
@@ -369,6 +372,7 @@ static void android_net_wifi_waitForHalEvents(JNIEnv* env, jclass cls) {
 
     wifi_handle halHandle = getWifiHandle(env, cls);
     hal_fn.wifi_event_loop(halHandle);
+    set_iface_flags("wlan0", 0);
 }
 
 static int android_net_wifi_getInterfaces(JNIEnv *env, jclass cls) {
@@ -1956,7 +1960,7 @@ static jboolean android_net_wifi_setPnoListNative(
 static jboolean android_net_wifi_setLazyRoam(
         JNIEnv *env, jclass cls, jint iface, jint id, jboolean enabled, jobject roam_param)  {
 
-    jboolean status = true;
+    wifi_error status = WIFI_SUCCESS;
     wifi_roam_params params;
     memset(&params, 0, sizeof(params));
 

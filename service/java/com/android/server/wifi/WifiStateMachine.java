@@ -5288,12 +5288,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             WifiManager.BUSY);
                     break;
                 case CMD_GET_SUPPORTED_FEATURES:
-                    if (WifiNative.startHal()) {
-                        int featureSet = WifiNative.getSupportedFeatureSet();
-                        replyToMessage(message, message.what, featureSet);
-                    } else {
-                        replyToMessage(message, message.what, 0);
-                    }
+                    int featureSet = WifiNative.getSupportedFeatureSet();
+                    replyToMessage(message, message.what, featureSet);
                     break;
                 case CMD_GET_LINK_LAYER_STATS:
                     // Not supported hence reply with error message
@@ -5329,6 +5325,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     class InitialState extends State {
         @Override
         public void enter() {
+            WifiNative.stopHal();
             mWifiNative.unloadDriver();
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
@@ -5346,7 +5343,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
 
             if (mWifiConfigStore.enableHalBasedPno.get()) {
-                // make sure developper Settings are in sync with the config option
+                // make sure developer Settings are in sync with the config option
                 mHalBasedPnoEnableInDevSettings = true;
             }
         }
@@ -5375,10 +5372,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             // Set privacy extensions
                             mNwService.setInterfaceIpv6PrivacyExtensions(mInterfaceName, true);
 
-                           // IPv6 is enabled only as long as access point is connected since:
-                           // - IPv6 addresses and routes stick around after disconnection
-                           // - kernel is unaware when connected and fails to start IPv6 negotiation
-                           // - kernel can start autoconfiguration when 802.1x is not complete
+                            // IPv6 is enabled only as long as access point is connected since:
+                            // - IPv6 addresses and routes stick around after disconnection
+                            // - kernel is unaware when connected and fails to start IPv6 negotiation
+                            // - kernel can start autoconfiguration when 802.1x is not complete
                             mNwService.disableIpv6(mInterfaceName);
                         } catch (RemoteException re) {
                             loge("Unable to change interface settings: " + re);
@@ -5391,7 +5388,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         * on a running supplicant properly.
                         */
                         mWifiMonitor.killSupplicant(mP2pSupported);
-                        if(mWifiNative.startSupplicant(mP2pSupported)) {
+
+                        if (WifiNative.startHal() == false) {
+                            /* starting HAL is optional */
+                            loge("Failed to start HAL");
+                        }
+
+                        if (mWifiNative.startSupplicant(mP2pSupported)) {
                             setWifiState(WIFI_STATE_ENABLING);
                             if (DBG) log("Supplicant start successful");
                             mWifiMonitor.startMonitoring();
@@ -5404,11 +5407,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case CMD_START_AP:
-                    if (mWifiNative.loadDriver()) {
+                    if (mWifiNative.loadDriver() == false) {
+                        loge("Failed to load driver for softap");
+                    } else {
+
+                        if (WifiNative.startHal() == false) {
+                            /* starting HAL is optional */
+                            loge("Failed to start HAL");
+                        }
+
                         setWifiApState(WIFI_AP_STATE_ENABLING);
                         transitionTo(mSoftApStartingState);
-                    } else {
-                        loge("Failed to load driver for softap");
                     }
                     break;
                 default:
@@ -5870,12 +5879,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_ENABLED);
             mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
 
-            if (WifiNative.startHal()) {
-                mHalFeatureSet = WifiNative.getSupportedFeatureSet();
-                if ((mHalFeatureSet & WifiManager.WIFI_FEATURE_HAL_EPNO)
-                        == WifiManager.WIFI_FEATURE_HAL_EPNO) {
-                    mHalBasedPnoDriverSupported = true;
-                }
+            mHalFeatureSet = WifiNative.getSupportedFeatureSet();
+            if ((mHalFeatureSet & WifiManager.WIFI_FEATURE_HAL_EPNO)
+                    == WifiManager.WIFI_FEATURE_HAL_EPNO) {
+                mHalBasedPnoDriverSupported = true;
             }
 
             if (PDBG) {
