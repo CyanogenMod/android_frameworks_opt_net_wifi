@@ -19,6 +19,7 @@ package com.android.server.wifi;
 import android.app.AppGlobals;
 import android.app.admin.DeviceAdminInfo;
 import android.app.admin.DevicePolicyManagerInternal;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -3988,44 +3989,67 @@ public class WifiConfigStore extends IpConfigStore {
     /**
      * Checks if uid has access to modify the configuration corresponding to networkId.
      *
-     * uid has access only if was the last to modify this network, or holds the
-     *   OVERRIDE_WIFI_CONFIG permission.
+     * Factors involved in modifiability of a config are as follows.
+     *    If uid is a Device Owner app then it has full control over the device, including WiFi
+     * configs.
+     *    If the modification is only for administrative annotation (e.g. when connecting) or the
+     * config is not lockdown eligible (currently that means any config not last updated by the DO)
+     * then the creator of config or an app holding OVERRIDE_CONFIG_WIFI can modify the config.
+     *    If the config is lockdown eligible and the modification is substantial (not annotation)
+     * then the requirement to be able to modify the config by the uid is as follows:
+     *    a) the uid has to hold OVERRIDE_CONFIG_WIFI and
+     *    b) the lockdown feature should be disabled.
      */
-    boolean canModifyNetwork(int uid, int networkId) {
+    boolean canModifyNetwork(int uid, int networkId, boolean onlyAnnotate) {
         WifiConfiguration config = mConfiguredNetworks.get(networkId);
-
-        String currentApp = mContext.getPackageManager().getNameForUid(uid);
 
         if (config == null) {
             loge("canModifyNetwork: cannot find config networkId " + networkId);
-            return false;
-        } if (currentApp == null) {
-            loge("canModifyNetwork: unkown uid " + uid);
             return false;
         }
 
         final DevicePolicyManagerInternal dpmi = LocalServices.getService(
                 DevicePolicyManagerInternal.class);
-        if (dpmi != null && dpmi.isActiveAdminWithPolicy(config.creatorUid,
-                DeviceAdminInfo.USES_POLICY_DEVICE_OWNER)) {
-            UserManager um = UserManager.get(mContext);
-            if (!um.hasUserRestriction(UserManager.DISALLOW_CONFIG_WIFI)) {
-                return uid == config.creatorUid;
-            }
+
+        final boolean isUidDeviceOwner = dpmi != null && dpmi.isActiveAdminWithPolicy(uid,
+                DeviceAdminInfo.USES_POLICY_DEVICE_OWNER);
+
+        if (isUidDeviceOwner) {
+            // Device Owner has full control over the device, including WiFi Configs
+            return true;
         }
 
-        if (config.lastUpdateName == null) {
-            Log.e(TAG, "Last update name should not be null");
-            return checkConfigOverridePermission(uid);
+        final boolean isCreator = (config.creatorUid == uid);
+
+        if (onlyAnnotate) {
+            return isCreator || checkConfigOverridePermission(uid);
         }
 
-        return config.lastUpdateName.equals( currentApp ) || checkConfigOverridePermission(uid);
+        // Check if device has DPM capability. If it has and dpmi is still null, then we
+        // treat this case with suspicion and bail out.
+        if (mContext.getPackageManager().hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN)
+                && dpmi == null) {
+            return false;
+        }
+
+        // WiFi config lockdown related logic. At this point we know uid NOT to be a Device Owner.
+
+        final boolean isConfigEligibleForLockdown = dpmi != null && dpmi.isActiveAdminWithPolicy(
+                config.creatorUid, DeviceAdminInfo.USES_POLICY_DEVICE_OWNER);
+        if (!isConfigEligibleForLockdown) {
+            return isCreator || checkConfigOverridePermission(uid);
+        }
+
+        final ContentResolver resolver = mContext.getContentResolver();
+        final boolean isLockdownFeatureEnabled = Settings.Global.getInt(resolver,
+                Settings.Global.WIFI_DEVICE_OWNER_CONFIGS_LOCKDOWN, 0) != 0;
+        return !isLockdownFeatureEnabled && checkConfigOverridePermission(uid);
     }
 
     /**
      * Checks if uid has access to modify config.
      */
-    boolean canModifyNetwork(int uid, WifiConfiguration config) {
+    boolean canModifyNetwork(int uid, WifiConfiguration config, boolean onlyAnnotate) {
         if (config == null) {
             loge("canModifyNetowrk recieved null configuration");
             return false;
@@ -4044,7 +4068,7 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
-        return canModifyNetwork(uid, netid);
+        return canModifyNetwork(uid, netid, onlyAnnotate);
     }
 
     boolean checkConfigOverridePermission(int uid) {
