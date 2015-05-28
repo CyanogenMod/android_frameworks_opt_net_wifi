@@ -149,6 +149,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static boolean VDBG = false;
     private static boolean DRIVERDBG = false;
     private static boolean VVDBG = false;
+    private static boolean USE_PAUSE_SCANS = false;
     private static boolean mLogMessages = false;
     private static final String TAG = "WifiStateMachine";
 
@@ -3066,25 +3067,35 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         stopGScan("startGScanConnectedModeOffload " + reason);
         if (!mScreenOn) return false;
 
-        mWifiNative.pauseScan();
+        if (USE_PAUSE_SCANS) {
+            mWifiNative.pauseScan();
+        }
         mPnoEnabled = configurePno();
         if (mPnoEnabled == false) {
-            mWifiNative.restartScan();
+            if (USE_PAUSE_SCANS) {
+                mWifiNative.restartScan();
+            }
             return false;
         }
         mLazyRoamEnabled = configureLazyRoam();
         if (mLazyRoamEnabled == false) {
-            mWifiNative.restartScan();
+            if (USE_PAUSE_SCANS) {
+                mWifiNative.restartScan();
+            }
             return false;
         }
         if (mWifiConfigStore.getLastSelectedConfiguration() == null) {
             configureSsidWhiteList();
         }
         if (!startConnectedGScan(reason)) {
-            mWifiNative.restartScan();
+            if (USE_PAUSE_SCANS) {
+                mWifiNative.restartScan();
+            }
             return false;
         }
-        mWifiNative.restartScan();
+        if (USE_PAUSE_SCANS) {
+            mWifiNative.restartScan();
+        }
         mConnectedModeGScanOffloadStarted = true;
         if (DBG) {
             loge("startGScanConnectedModeOffload success");
@@ -3097,17 +3108,25 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             loge("startGScanDisconnectedModeOffload " + reason);
         }
         stopGScan("startGScanDisconnectedModeOffload " + reason);
-        mWifiNative.pauseScan();
+        if (USE_PAUSE_SCANS) {
+            mWifiNative.pauseScan();
+        }
         mPnoEnabled = configurePno();
         if (mPnoEnabled == false) {
-            mWifiNative.restartScan();
+            if (USE_PAUSE_SCANS) {
+                mWifiNative.restartScan();
+            }
             return false;
         }
         if (!startDisconnectedGScan(reason)) {
-            mWifiNative.restartScan();
+            if (USE_PAUSE_SCANS) {
+                mWifiNative.restartScan();
+            }
             return false;
         }
-        mWifiNative.restartScan();
+        if (USE_PAUSE_SCANS) {
+            mWifiNative.restartScan();
+        }
         return true;
     }
 
