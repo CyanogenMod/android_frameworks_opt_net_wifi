@@ -567,13 +567,19 @@ public class WifiAutoJoinController {
 
         if (source.connectChoices != null
                 && source.connectChoices.containsKey(target.configKey(true))) {
-            choice = source.connectChoices.get(target.configKey(true));
+            Integer val = source.connectChoices.get(target.configKey(true));
+            if (val != null) {
+                choice = val;
+            }
         } else if (source.linkedConfigurations != null) {
             for (String key : source.linkedConfigurations.keySet()) {
                 WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(key);
                 if (config != null) {
                     if (config.connectChoices != null) {
-                        choice = config.connectChoices.get(target.configKey(true));
+                        Integer val = config.connectChoices.get(target.configKey(true));
+                        if (val != null) {
+                            choice = val;
+                        }
                     }
                 }
             }
@@ -610,6 +616,9 @@ public class WifiAutoJoinController {
          */
         aRssiBoost5 = rssiBoostFrom5GHzRssi(a.rssi5, dbgA + "->");
         bRssiBoost5 = rssiBoostFrom5GHzRssi(b.rssi5, dbgB + "->");
+
+//        aRssiBoost5 = -100;
+//        bRssiBoost5 = -100;
 
         // Select which band to use for a
         if (a.rssi5 + aRssiBoost5 > a.rssi24) {

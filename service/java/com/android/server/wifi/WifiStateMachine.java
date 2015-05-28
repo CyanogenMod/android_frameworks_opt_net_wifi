@@ -2448,10 +2448,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sb.append(" scanAllowed=").append(allowFullBandScanAndAssociated());
                 sb.append(" autojoinAllowed=");
                 sb.append(mWifiConfigStore.enableAutoJoinScanWhenAssociated.get());
-                sb.append("/").append(getAllowScansWithTraffic());
-                sb.append("tx=").append(mWifiInfo.txSuccessRate);
+                sb.append(" withTraffic=").append(getAllowScansWithTraffic());
+                sb.append(" tx=").append(mWifiInfo.txSuccessRate);
                 sb.append("/").append(mWifiConfigStore.maxTxPacketForFullScans);
-                sb.append("rx=").append(mWifiInfo.rxSuccessRate);
+                sb.append(" rx=").append(mWifiInfo.rxSuccessRate);
                 sb.append("/").append(mWifiConfigStore.maxRxPacketForFullScans);
                 sb.append(" -> ").append(mConnectedModeGScanOffloadStarted);
                 break;
