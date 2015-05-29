@@ -71,7 +71,7 @@ public class WifiAutoJoinController {
     private WifiNetworkScoreCache mNetworkScoreCache;
 
     private static final String TAG = "WifiAutoJoinController ";
-    private static boolean DBG = true;
+    private static boolean DBG = false;
     private static boolean VDBG = false;
     private static final boolean mStaStaSupported = false;
 
@@ -1465,7 +1465,7 @@ public class WifiAutoJoinController {
                 mWifiConfigStore.getRecentConfiguredNetworks(mScanResultAutoJoinAge, false);
         if (list == null) {
             if (VDBG) logDbg("attemptAutoJoin nothing known=" +
-                    mWifiConfigStore.getConfiguredNetworkSize());
+                    mWifiConfigStore.getConfiguredNetworksSize());
             return false;
         }
 

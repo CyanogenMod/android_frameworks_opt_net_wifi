@@ -188,10 +188,12 @@ public class HomeSP {
                 List<String> anRealmLabels = Utils.splitDomain(anRealm);
                 match = mDomainMatcher.isSubDomain(anRealmLabels);
                 if (match != DomainMatcher.Match.None) {
+                    Log.d(Utils.hs2LogTag(getClass()), "+++ Direct sub-domain of " + anRealm + ": " + match);
                     break;
                 }
                 if (DomainMatcher.arg2SubdomainOfArg1(credRealm, anRealmLabels)) {
                     match = DomainMatcher.Match.Secondary;
+                    Log.d(Utils.hs2LogTag(getClass()), "+++ Realm " + mCredential.getRealm() + " sub-domain of " + anRealm + ": " + match);
                     break;
                 }
             }
@@ -208,6 +210,7 @@ public class HomeSP {
                             AuthMatch authMatch =
                                     naiRealmData.matchEAPMethods(mCredential.getEAPMethod());
                             if (authMatch != AuthMatch.None) {
+                                Log.d(Utils.hs2LogTag(getClass()), "+++ IMSI " + mCredential.getImsi() + " match " + network + ": " + authMatch);
                                 return authMatch;
                             }
                         }
@@ -218,6 +221,7 @@ public class HomeSP {
                         // Note: Something more intelligent could be done here based on the
                         // authMatch value. It may be useful to have a secondary score to
                         // distinguish more predictable EAP method/parameter matching.
+                        Log.d(Utils.hs2LogTag(getClass()), "+++ Auth match " + mCredential.getEAPMethod());
                         return authMatch;
                     }
                 }

@@ -132,7 +132,7 @@ public class MOManager {
     }
 
     public Map<String, HomeSP> getLoadedSPs() {
-        return mSPs;
+        return Collections.unmodifiableMap(mSPs);
     }
 
     public List<HomeSP> loadAllSPs() throws IOException {
@@ -206,13 +206,18 @@ public class MOManager {
         return sp;
     }
 
-    public void saveAllSps(Collection<HomeSP> homeSPs) throws IOException {
+    public HomeSP getHomeSP(String fqdn) {
+        return mSPs.get(fqdn);
+    }
+
+    public void saveAllSps(Map<String, HomeSP> homeSPs) throws IOException {
 
         Map<String, HomeSP> obsolete = new HashMap<>(mSPs);
+
         List<HomeSP> resultSet = new ArrayList<>(homeSPs.size());
         int additions = 0;
 
-        for (HomeSP newSP : homeSPs) {
+        for (HomeSP newSP : homeSPs.values()) {
             HomeSP existing = obsolete.remove(newSP.getFQDN());
             if (existing == null) {
                 resultSet.add(newSP);
@@ -226,12 +231,32 @@ public class MOManager {
 
         if (!obsolete.isEmpty() || additions > 0) {
             Log.d(Utils.hs2LogTag(getClass()), String.format("MO change: %s -> %s: %s",
-                    fqdnList(mSPs.values()), fqdnList(homeSPs), fqdnList(resultSet)));
+                    fqdnList(mSPs.values()), fqdnList(homeSPs.values()), fqdnList(resultSet)));
             rewriteMO(resultSet, mSPs, mPpsFile);
         }
         else {
             Log.d(Utils.hs2LogTag(getClass()), "Not persisting MO");
         }
+    }
+
+    public void addSP(HomeSP homeSP) throws IOException {
+        if (mSPs.containsKey(homeSP.getFQDN())) {
+            Log.d(Utils.hs2LogTag(getClass()), "HS20 profile for " +
+                    homeSP.getFQDN() + " already exists");
+            return;
+        }
+        Log.d(Utils.hs2LogTag(getClass()), "Adding new HS20 profile for " + homeSP.getFQDN());
+        mSPs.put(homeSP.getFQDN(), homeSP);
+        writeMO(mSPs.values(), mPpsFile);
+    }
+
+    public void removeSP(String fqdn) throws IOException {
+        if (mSPs.remove(fqdn) == null) {
+            Log.d(Utils.hs2LogTag(getClass()), "No HS20 profile to delete for " + fqdn);
+            return;
+        }
+        Log.d(Utils.hs2LogTag(getClass()), "Deleting HS20 profile for " + fqdn);
+        writeMO(mSPs.values(), mPpsFile);
     }
 
     public void updateAndSaveAllSps(Collection<HomeSP> homeSPs) throws IOException {
@@ -283,6 +308,22 @@ public class MOManager {
         for (HomeSP homeSP : homeSPs) {
             buildHomeSPTree(homeSP, ppsNode, instance++);
             current.put(homeSP.getFQDN(), homeSP);
+        }
+
+        MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", ppsNode);
+        try (BufferedOutputStream out =
+                     new BufferedOutputStream(new FileOutputStream(f, false))) {
+            tree.marshal(out);
+            out.flush();
+        }
+    }
+
+    private static void writeMO(Collection<HomeSP> homeSPs, File f) throws IOException {
+
+        OMAConstructed ppsNode = new OMAConstructed(null, TAG_PerProviderSubscription, null);
+        int instance = 0;
+        for (HomeSP homeSP : homeSPs) {
+            buildHomeSPTree(homeSP, ppsNode, instance++);
         }
 
         MOTree tree = new MOTree(OMAConstants.LOC_PPS + ":1.0", "1.2", ppsNode);
