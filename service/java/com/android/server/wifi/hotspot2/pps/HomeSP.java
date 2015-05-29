@@ -1,6 +1,5 @@
 package com.android.server.wifi.hotspot2.pps;
 
-import android.telephony.SubscriptionManager;
 import android.util.Log;
 
 import com.android.server.wifi.SIMAccessor;
@@ -96,7 +95,7 @@ public class HomeSP {
             }
         }
 
-        Set<Long> anOIs = new HashSet<Long>();
+        Set<Long> anOIs = new HashSet<>();
 
         if (networkDetail.getRoamingConsortiums() != null) {
             for (long oi : networkDetail.getRoamingConsortiums()) {
