@@ -2,6 +2,7 @@ package com.android.server.wifi.hotspot2.pps;
 
 import android.util.Log;
 
+import com.android.server.wifi.SIMAccessor;
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.DomainNameElement;
@@ -84,7 +85,7 @@ public class HomeSP {
 
     public PasspointMatch match(NetworkDetail networkDetail,
                                 Map<ANQPElementType, ANQPElement> anqpElementMap,
-                                List<String> imsis) {
+                                SIMAccessor simAccessor) {
 
         if (mSSIDs.containsKey(networkDetail.getSSID())) {
             Long hessid = mSSIDs.get(networkDetail.getSSID());
@@ -94,7 +95,7 @@ public class HomeSP {
             }
         }
 
-        Set<Long> anOIs = new HashSet<Long>();
+        Set<Long> anOIs = new HashSet<>();
 
         if (networkDetail.getRoamingConsortiums() != null) {
             for (long oi : networkDetail.getRoamingConsortiums()) {
@@ -157,13 +158,11 @@ public class HomeSP {
                     return PasspointMatch.HomeProvider;
                 }
 
-                String mccMnc = Utils.getMccMnc(anLabels);
-                if (mccMnc != null) {
-                    for (String imsi : imsis) {
-                        if (imsi.startsWith(mccMnc)) {
-                            return PasspointMatch.HomeProvider;
-                        }
-                    }
+                String imsi = simAccessor.getMatchingImsi(Utils.getMccMnc(anLabels));
+                if (imsi != null) {
+                    Log.d(Utils.hs2LogTag(getClass()), "Domain " + domain +
+                            " matches IMSI " + imsi);
+                    return PasspointMatch.HomeProvider;
                 }
             }
         }

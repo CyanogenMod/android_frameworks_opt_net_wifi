@@ -511,7 +511,7 @@ public class WifiConfigStore extends IpConfigStore {
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
     private final MOManager mMOManager;
-    private final List<String> mImsis;
+    private final SIMAccessor mSIMAccessor;
 
     WifiConfigStore(Context c, WifiNative wn) {
         mContext = c;
@@ -666,14 +666,7 @@ public class WifiConfigStore extends IpConfigStore {
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap<>();
 
-        TelephonyManager tm = TelephonyManager.from(mContext);
-        SubscriptionManager sub = SubscriptionManager.from(mContext);
-
-        mImsis = new ArrayList<>();
-        for (int subId : sub.getActiveSubscriptionIdList()) {
-            mImsis.add(tm.getSubscriberId(subId));
-        }
-        Log.d(TAG, "Active IMSIs " + mImsis);
+        mSIMAccessor = new SIMAccessor(mContext);
     }
 
     public void clearANQPCache() {
@@ -3194,7 +3187,7 @@ public class WifiConfigStore extends IpConfigStore {
                 ", anqp " + ( anqpData != null ? "present" : "missing" ) +
                 ", query " + query + ", home sps: " + homeSPs.size());
         for (HomeSP homeSP : homeSPs) {
-            PasspointMatch match = homeSP.match(networkDetail, anqpElements, mImsis);
+            PasspointMatch match = homeSP.match(networkDetail, anqpElements, mSIMAccessor);
 
             if (match == PasspointMatch.Incomplete && networkDetail.isInterworking() && !queried) {
                 if (mAnqpCache.initiate(networkDetail)) {
