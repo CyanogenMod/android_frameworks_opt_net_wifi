@@ -147,7 +147,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String NETWORKTYPE_UNTRUSTED = "WIFI_UT";
     private static boolean DBG = true;
     private static boolean VDBG = false;
-    private static boolean DRIVERDBG = false;
     private static boolean VVDBG = false;
     private static boolean USE_PAUSE_SCANS = false;
     private static boolean mLogMessages = false;
@@ -1185,6 +1184,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mLogMessages = false;
             mWifiNative.setSupplicantLogLevel("INFO");
         }
+        mWifiLogger.startLogging(mVerboseLoggingLevel > 0);
         mWifiAutoJoinController.enableVerboseLogging(verbose);
         mWifiMonitor.enableVerboseLogging(verbose);
         mWifiNative.enableVerboseLogging(verbose);
@@ -2362,23 +2362,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mUntrustedNetworkFactory.dump(fd, pw, args);
         pw.println();
         mWifiConfigStore.dump(fd, pw, args);
-        pw.println("FW Version is: " + mWifiLogger.getFirmwareVersion());
-        pw.println("Driver Version is: " + mWifiLogger.getDriverVersion());
-        WifiLogger.RingBufferStatus[] status = mWifiLogger.getRingBufferStatus();
-        if (status != null) {
-            for (WifiLogger.RingBufferStatus element : status) {
-                pw.println("Ring buffer status: " + element);
-            }
-        }
-        mWifiLogger.getAllRingBufferData();
-        pw.println("Start fw memory dump:-----------------------------------------------");
-        String fwDump = mWifiLogger.getFwMemoryDump();
-        if(fwDump != null) {
-            pw.println(fwDump);
-        } else {
-            pw.println("Fail to get FW memory dump");
-        }
-        pw.println("End fw memory dump:--------------------------------------------------");
+        pw.println();
+        mWifiLogger.dump(fd, pw, args);
     }
 
     /**
@@ -5801,10 +5786,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (PDBG) {
                 loge("DriverStartedState enter");
             }
-            if (DRIVERDBG) {
-                mWifiLogger.startLoggingAllBuffer(1, 0, 60, 0);
-                mWifiLogger.getAllRingBufferData();
-            }
+
+            mWifiLogger.startLogging(mVerboseLoggingLevel > 0);
             mIsRunning = true;
             mInDelayedStop = false;
             mDelayedStopCounter++;
@@ -6028,6 +6011,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
         @Override
         public void exit() {
+
+            mWifiLogger.stopLogging();
+
             mIsRunning = false;
             updateBatteryWorkSource(null);
             mScanResults = new ArrayList<>();
@@ -6673,6 +6659,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             switch (message.what) {
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
+                    mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_ASSOC_FAILURE);
                     didBlackListBSSID = false;
                     bssid = (String) message.obj;
                     if (bssid == null || TextUtils.isEmpty(bssid)) {
@@ -6689,6 +6676,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mSupplicantStateTracker.sendMessage(WifiMonitor.ASSOCIATION_REJECTION_EVENT);
                     break;
                 case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
+                    mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_AUTH_FAILURE);
                     mSupplicantStateTracker.sendMessage(WifiMonitor.AUTHENTICATION_FAILURE_EVENT);
                     break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
@@ -7505,6 +7493,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                       // We advance to mVerifyingLinkState because handleIPv4Success will call
                       // updateLinkProperties, which then sends CMD_IP_CONFIGURATION_SUCCESSFUL.
                   } else if (message.arg1 == DhcpStateMachine.DHCP_FAILURE) {
+                      mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_DHCP_FAILURE);
                       if (DBG) {
                           int count = -1;
                           WifiConfiguration config = getCurrentWifiConfiguration();
@@ -8002,6 +7991,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_IP_CONFIGURATION_LOST:
                     config = getCurrentWifiConfiguration();
                     if (config != null) {
+                        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_AUTOROAM_FAILURE);
                         mWifiConfigStore.noteRoamingFailure(config,
                                 WifiConfiguration.ROAMING_FAILURE_IP_CONFIG);
                     }
@@ -8094,6 +8084,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (message.arg1 == mLastNetworkId) {
                         config = getCurrentWifiConfiguration();
                         if (config != null) {
+                            mWifiLogger.captureBugReportData(
+                                    WifiLogger.REPORT_REASON_AUTOROAM_FAILURE);
                             mWifiConfigStore.noteRoamingFailure(config,
                                     WifiConfiguration.ROAMING_FAILURE_AUTH_FAILURE);
                         }
@@ -8249,6 +8241,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         // Calculate time since last driver roam attempt
                         lastRoam = System.currentTimeMillis() - mLastDriverRoamAttempt;
                         mLastDriverRoamAttempt = 0;
+                    }
+                    if (unexpectedDisconnectedReason(message.arg2)) {
+                        mWifiLogger.captureBugReportData(
+                                WifiLogger.REPORT_REASON_UNEXPECTED_DISCONNECT);
                     }
                     config = getCurrentWifiConfiguration();
                     if (mScreenOn
@@ -9333,5 +9329,24 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         String response = sb.toString();
         logv("Supplicant Response -" + response);
         mWifiNative.simAuthResponse(requestData.networkId, res_type, response);
+    }
+
+    /**
+     * @param reason reason code from supplicant on network disconnected event
+     * @return true if this is a suspicious disconnect
+     */
+    static boolean unexpectedDisconnectedReason(int reason) {
+        return reason == 2              // PREV_AUTH_NOT_VALID
+                || reason == 6          // CLASS2_FRAME_FROM_NONAUTH_STA
+                || reason == 7          // FRAME_FROM_NONASSOC_STA
+                || reason == 8          // STA_HAS_LEFT
+                || reason == 9          // STA_REQ_ASSOC_WITHOUT_AUTH
+                || reason == 14         // MICHAEL_MIC_FAILURE
+                || reason == 15         // 4WAY_HANDSHAKE_TIMEOUT
+                || reason == 16         // GROUP_KEY_UPDATE_TIMEOUT
+                || reason == 18         // GROUP_CIPHER_NOT_VALID
+                || reason == 19         // PAIRWISE_CIPHER_NOT_VALID
+                || reason == 23         // IEEE_802_1X_AUTH_FAILED
+                || reason == 34;        // DISASSOC_LOW_ACK
     }
 }

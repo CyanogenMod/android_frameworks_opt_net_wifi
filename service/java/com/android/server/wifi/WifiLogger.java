@@ -16,187 +16,410 @@
 
 package com.android.server.wifi;
 
-import android.os.BatteryStats;
-import android.os.RemoteException;
-import android.os.ServiceManager;
-import android.util.Slog;
 import com.android.internal.app.IBatteryStats;
 import com.android.internal.util.Protocol;
-import com.android.internal.util.State;
-import com.android.internal.util.StateMachine;
 
-import android.content.Context;
-import android.content.Intent;
-import android.net.wifi.SupplicantState;
-import android.net.wifi.WifiConfiguration;
-import android.net.wifi.WifiManager;
-import android.os.Handler;
-import android.os.Message;
-import android.os.Parcelable;
-import android.os.UserHandle;
+import android.support.v4.util.CircularArray;
+import android.util.Base64;
+import android.util.LocalLog;
 import android.util.Log;
 
+import java.io.ByteArrayOutputStream;
 import java.io.FileDescriptor;
+import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.Calendar;
+import java.util.HashMap;
+import java.util.zip.Deflater;
 
 /**
- * Tracks the state changes in supplicant and provides functionality
- * that is based on these state changes:
- * - detect a failed WPA handshake that loops indefinitely
- * - authentication failure handling
+ * Tracks various logs for framework
  */
 class WifiLogger  {
 
     private static final String TAG = "WifiLogger";
-    private static boolean DBG = true;
-    private int mSupportedLoggerFeatures;
-    private RingBufferStatus[] mRingBufferStatuses;
+    private static final boolean DBG = true;
+
+    /** log level flags; keep these consistent with wifi_logger.h */
+
+    /** No logs whatsoever */
+    public static final int VERBOSE_NO_LOG = 0;
+    /** No logs whatsoever */
+    public static final int VERBOSE_NORMAL_LOG = 1;
+    /** Be careful since this one can affect performance and power */
+    public static final int VERBOSE_LOG_WITH_WAKEUP  = 2;
+    /** Be careful since this one can affect performance and power and memory */
+    public static final int VERBOSE_DETAILED_LOG_WITH_WAKEUP  = 3;
+
+    /** ring buffer flags; keep these consistent with wifi_logger.h */
+    public static final int RING_BUFFER_FLAG_HAS_BINARY_ENTRIES     = 0x00000001;
+    public static final int RING_BUFFER_FLAG_HAS_ASCII_ENTRIES      = 0x00000002;
+    public static final int RING_BUFFER_FLAG_HAS_PER_PACKET_ENTRIES = 0x00000004;
+
+    /** various reason codes */
+    public static final int REPORT_REASON_NONE                      = 0;
+    public static final int REPORT_REASON_ASSOC_FAILURE             = 1;
+    public static final int REPORT_REASON_AUTH_FAILURE              = 2;
+    public static final int REPORT_REASON_AUTOROAM_FAILURE          = 3;
+    public static final int REPORT_REASON_DHCP_FAILURE              = 4;
+    public static final int REPORT_REASON_UNEXPECTED_DISCONNECT     = 5;
+    public static final int REPORT_REASON_SCAN_FAILURE              = 6;
+
+    /** number of ring buffer entries to cache */
+    public static final int MAX_RING_BUFFERS                        = 10;
+
+    /** number of bug reports to hold */
+    public static final int MAX_BUG_REPORTS                         = 4;
+
+    /** number of alerts to hold */
+    public static final int MAX_ALERT_REPORTS                       = 1;
+
+    /** minimum wakeup interval for each of the log levels */
+    private static final int MinWakeupIntervals[] = new int[] { 0, 3600, 60, 10 };
+    /** minimum buffer size for each of the log levels */
+    private static final int MinBufferSizes[] = new int[] { 0, 16384, 16384, 65536 };
+
+    private int mLogLevel = VERBOSE_NO_LOG;
+    private String mFirmwareVersion;
+    private String mDriverVersion;
+    private int mSupportedFeatureSet;
+    private WifiNative.RingBufferStatus[] mRingBuffers;
+    private WifiNative.RingBufferStatus mPerPacketRingBuffer;
 
     /* The base for wifi message types */
     static final int BASE = Protocol.BASE_WIFI_LOGGER;
     /* receive log data */
     static final int LOG_DATA                 = BASE + 1;
 
-    public static class RingBufferStatus{
-        String name;
-        int flag;
-        int ringBufferId;
-        int ringBufferByteSize;
-        int verboseLevel;
-        int writtenBytes;
-        int readBytes;
-        int writtenRecords;
+    public WifiLogger() {}
+
+    public synchronized void startLogging(boolean verboseEnabled) {
+        WifiNative.setLoggingEventHandler(mHandler);
+        if (verboseEnabled) {
+            mLogLevel = VERBOSE_LOG_WITH_WAKEUP;
+        } else {
+            mLogLevel = VERBOSE_NORMAL_LOG;
+        }
+        mFirmwareVersion = WifiNative.getFirmwareVersion();
+        mDriverVersion = WifiNative.getDriverVersion();
+        mSupportedFeatureSet = WifiNative.getSupportedLoggerFeatureSet();
+        if (mRingBuffers == null) {
+            if (fetchRingBuffers()) {
+                startLoggingAllExceptPerPacketBuffers();
+            }
+        }
+    }
+
+    public synchronized void startPacketLog() {
+        if (mPerPacketRingBuffer != null) {
+            startLoggingRingBuffer(mPerPacketRingBuffer);
+        } else {
+            if (DBG) Log.d(TAG, "There is no per packet ring buffer");
+        }
+    }
+
+    public synchronized void stopPacketLog() {
+        if (mPerPacketRingBuffer != null) {
+            stopLoggingRingBuffer(mPerPacketRingBuffer);
+        } else {
+            if (DBG) Log.d(TAG, "There is no per packet ring buffer");
+        }
+    }
+
+    public synchronized void stopLogging() {
+        WifiNative.setLoggingEventHandler(null);
+        stopLoggingAllBuffers();
+        mRingBuffers = null;
+        mLogLevel = VERBOSE_NO_LOG;
+    }
+
+    public synchronized void captureBugReportData(int reason) {
+        BugReport report = captureBugreport(reason);
+        mLastBugReports.addLast(report);
+    }
+
+    public synchronized void captureAlertData(int errorCode, byte[] alertData) {
+        BugReport report = captureBugreport(errorCode);
+        report.alertData = alertData;
+        mLastAlerts.addLast(report);
+    }
+
+    public synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+        pw.println("Chipset information :-----------------------------------------------");
+        pw.println("FW Version is: " + mFirmwareVersion);
+        pw.println("Driver Version is: " + mDriverVersion);
+        pw.println("Supported Feature set: " + mSupportedFeatureSet);
+
+        for (int i = 0; i < mLastAlerts.size(); i++) {
+            pw.println("--------------------------------------------------------------------");
+            pw.println("Alert dump " + i);
+            pw.print(mLastAlerts.get(i));
+            pw.println("--------------------------------------------------------------------");
+        }
+
+        for (int i = 0; i < mLastBugReports.size(); i++) {
+            pw.println("--------------------------------------------------------------------");
+            pw.println("Bug dump " + i);
+            pw.print(mLastBugReports.get(i));
+            pw.println("--------------------------------------------------------------------");
+        }
+
+        pw.println("--------------------------------------------------------------------");
+    }
+
+    /* private methods and data */
+    private static class BugReport {
+        long time;
+        int errorCode;
+        HashMap<String, byte[][]> ringBuffers = new HashMap();
+        byte[] fwMemoryDump;
+        byte[] alertData;
+
+        public String toString() {
+            StringBuilder builder = new StringBuilder();
+
+            Calendar c = Calendar.getInstance();
+            c.setTimeInMillis(time);
+            builder.append("time = ").append(
+                    String.format("%tm-%td %tH:%tM:%tS.%tL", c, c, c, c, c, c)).append("\n");
+
+            if (alertData == null)
+                builder.append("reason = ").append(errorCode).append("\n");
+            else {
+                builder.append("errorCode = ").append(errorCode);
+                builder.append("data \n");
+                builder.append(compressToBase64(alertData)).append("\n");
+            }
+
+            for (HashMap.Entry<String, byte[][]> e : ringBuffers.entrySet()) {
+                String ringName = e.getKey();
+                byte[][] buffers = e.getValue();
+                builder.append("ring-buffer = ").append(ringName).append("\n");
+
+                int size = 0;
+                for (int i = 0; i < buffers.length; i++) {
+                    size += buffers[i].length;
+                }
+
+                byte[] buffer = new byte[size];
+                int index = 0;
+                for (int i = 0; i < buffers.length; i++) {
+                    System.arraycopy(buffers[i], 0, buffer, index, buffers[i].length);
+                    index += buffers[i].length;
+                }
+
+                builder.append(compressToBase64(buffer));
+                builder.append("\n");
+            }
+
+            if (fwMemoryDump != null) {
+                builder.append("FW Memory dump \n");
+                builder.append(compressToBase64(fwMemoryDump));
+            }
+
+            return builder.toString();
+        }
+    }
+
+    static class LimitedCircularArray<E> {
+        private CircularArray<E> mArray;
+        private int mMax;
+        LimitedCircularArray(int max) {
+            mArray = new CircularArray<E>();
+            mMax = max;
+        }
+
+        public final void addLast(E e) {
+            if (mArray.size() >= mMax)
+                mArray.popFirst();
+            mArray.addLast(e);
+        }
+
+        public final int size() {
+            return mArray.size();
+        }
+
+        public final E get(int i) {
+            return mArray.get(i);
+        }
+    }
+
+    private final LimitedCircularArray<BugReport> mLastAlerts =
+            new LimitedCircularArray<BugReport>(MAX_ALERT_REPORTS);
+    private final LimitedCircularArray<BugReport> mLastBugReports =
+            new LimitedCircularArray<BugReport>(MAX_BUG_REPORTS);
+    private final HashMap<String, LimitedCircularArray<byte[]>> mRingBufferData = new HashMap();
+
+    private final WifiNative.WifiLoggerEventHandler mHandler =
+            new WifiNative.WifiLoggerEventHandler() {
+        @Override
+        public void onRingBufferData(WifiNative.RingBufferStatus status, byte[] buffer) {
+            WifiLogger.this.onRingBufferData(status, buffer);
+        }
 
         @Override
-        public String toString() {
-            return "name: " + name + " flag: " + flag + " ringBufferId: " + ringBufferId +
-                    " ringBufferByteSize: " +ringBufferByteSize + " verboseLevel: " +verboseLevel +
-                    " writtenBytes: " + writtenBytes + " readBytes: " + readBytes +
-                    " writtenRecords: " + writtenRecords;
+        public void onWifiAlert(int errorCode, byte[] buffer) {
+            WifiLogger.this.onWifiAlert(errorCode, buffer);
+        }
+    };
+
+    synchronized void onRingBufferData(WifiNative.RingBufferStatus status, byte[] buffer) {
+        LimitedCircularArray<byte[]> ring = mRingBufferData.get(status.name);
+        if (ring != null) {
+            ring.addLast(buffer);
         }
     }
 
-    void enableVerboseLogging(int verbose) {
-        if (verbose > 0) {
-            DBG = true;
-        } else {
-            DBG = false;
-        }
+    synchronized void onWifiAlert(int errorCode, byte[] buffer) {
+        /* TODO: Send this to WifiStateMachine; so it can call capture bugreport */
     }
 
+    private boolean fetchRingBuffers() {
+        if (mRingBuffers != null) return true;
 
-
-    public  WifiLogger() {}
-
-    public int getSupportedFeatureSet() {
-        if(mSupportedLoggerFeatures == 0) {
-            mSupportedLoggerFeatures = WifiNative.getSupportedLoggerFeatureSet();
-        }
-
-        if(DBG) Log.d(TAG, "Supported Logger features is: " + mSupportedLoggerFeatures);
-        return mSupportedLoggerFeatures;
-    }
-
-    public String getDriverVersion() {
-        String driverVersion = WifiNative.getDriverVersion();
-        if(DBG) Log.d(TAG, "Driver Version is: " + driverVersion);
-        return driverVersion;
-    }
-
-    public String getFirmwareVersion() {
-        String firmwareVersion = WifiNative.getFirmwareVersion();
-        if(DBG) Log.d(TAG, "Firmware Version is: " + firmwareVersion);
-        return firmwareVersion;
-    }
-
-    public RingBufferStatus[] getRingBufferStatus() {
-
-        mRingBufferStatuses = WifiNative.getRingBufferStatus();
-        if (mRingBufferStatuses != null) {
-            if(DBG) {
-                for (RingBufferStatus element : mRingBufferStatuses) {
-                    Log.d(TAG, "RingBufferStatus is: \n" + element);
+        mRingBuffers = WifiNative.getRingBufferStatus();
+        if (mRingBuffers != null) {
+            for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
+                if (DBG) Log.d(TAG, "RingBufferStatus is: \n" + buffer.name);
+                if (mRingBufferData.containsKey(buffer.name) == false) {
+                    mRingBufferData.put(buffer.name,
+                            new LimitedCircularArray<byte[]>(MAX_RING_BUFFERS));
+                }
+                if ((buffer.flag & RING_BUFFER_FLAG_HAS_PER_PACKET_ENTRIES) != 0) {
+                    mPerPacketRingBuffer = buffer;
                 }
             }
         } else {
-            Log.e(TAG, "get empty RingBufferStatus");
+            Log.e(TAG, "no ring buffers found");
         }
 
-        return mRingBufferStatuses;
+        return mRingBuffers != null;
     }
 
-    public static final int VERBOSE_NO_LOG = 0;
-    public static final int VERBOSE_NORMAL_LOG = 1;
-    /** Be careful since this one can affect performance and power */
-    public static final int VERBOSE_DETAILED_LOG  = 2;
+    private boolean startLoggingAllExceptPerPacketBuffers() {
 
-    /**
-     * start both logging and alert collection
-     * @param verboseLevel please check the definition above
-     * @param flags   TBD not used now
-     * @param maxInterval maximum interval in seconds for driver to report, ignore if zero
-     * @param minDataSize minimum data size in buffer for driver to report, ignore if zer0
-     * @param ringName  The name of the ring you'd like to report
-     * @return true -- successful false --failed
-     */
-    public boolean startLoggingRingBuffer(int verboseLevel, int flags, int maxInterval,
-            int minDataSize, String ringName) {
-        boolean result = WifiNative.startLoggingRingBuffer(verboseLevel,flags, maxInterval,
-                minDataSize, ringName);
-        if (DBG) Log.d("TAG", "RingBuffer- " + ringName + "'s verbose level is:" +
-                verboseLevel + (result ? "Successful" : "failed"));
-        return result;
-    }
-
-    public boolean startLoggingAllBuffer(int verboseLevel, int flags, int maxInterval,
-                                         int minDataSize){
-        Log.e(TAG, "startLoggingAllBuffer");
-        if (mRingBufferStatuses == null) {
-            getRingBufferStatus();
-            if(mRingBufferStatuses == null) {
-                Log.e(TAG, "Can not get Ring Buffer Status. Can not start Logging!");
-                return false;
-            }
+        if (mRingBuffers == null) {
+            if (DBG) Log.d(TAG, "No ring buffers to log anything!");
+            return false;
         }
 
-        for (RingBufferStatus element : mRingBufferStatuses){
-            boolean result = startLoggingRingBuffer(verboseLevel, flags, maxInterval, minDataSize,
-                    element.name);
-            if(!result) {
-                return false;
+        for (WifiNative.RingBufferStatus buffer : mRingBuffers){
+
+            if ((buffer.flag & RING_BUFFER_FLAG_HAS_PER_PACKET_ENTRIES) != 0) {
+                /* skip per-packet-buffer */
+                if (DBG) Log.d(TAG, "skipped per packet logging ring " + buffer.name);
+                continue;
             }
+
+            startLoggingRingBuffer(buffer);
         }
 
-        getRingBufferStatus();
         return true;
     }
 
-    public boolean getRingBufferData(String ringName) {
-        return WifiNative.getRingBufferData(ringName);
-    }
+    private boolean startLoggingRingBuffer(WifiNative.RingBufferStatus buffer) {
 
-    public boolean getAllRingBufferData() {
-        if (mRingBufferStatuses == null) {
-            getRingBufferStatus();
-            if(mRingBufferStatuses == null) {
-                Log.e(TAG, "Can not get Ring Buffer Status. Can not collect data!");
-                return false;
-            }
+        int minInterval = MinWakeupIntervals[mLogLevel];
+        int minDataSize = MinBufferSizes[mLogLevel];
+
+        if (WifiNative.startLoggingRingBuffer(
+                mLogLevel, 0, minInterval, minDataSize, buffer.name) == false) {
+            if (DBG) Log.e(TAG, "Could not start logging ring " + buffer.name);
+            return false;
         }
 
-        for (RingBufferStatus element : mRingBufferStatuses){
-            boolean result = getRingBufferData(element.name);
-            if(!result) {
+        return true;
+    }
+
+    private boolean stopLoggingRingBuffer(WifiNative.RingBufferStatus buffer) {
+        if (WifiNative.startLoggingRingBuffer(0, 0, 0, 0, buffer.name) == false) {
+            if (DBG) Log.e(TAG, "Could not stop logging ring " + buffer.name);
+        }
+        return true;
+    }
+
+    private boolean stopLoggingAllBuffers() {
+        for (WifiNative.RingBufferStatus buffer : mRingBuffers){
+            stopLoggingRingBuffer(buffer);
+        }
+        return true;
+    }
+
+    private boolean getAllRingBufferData() {
+        if (mRingBuffers == null) {
+            Log.e(TAG, "Not ring buffers available to collect data!");
+            return false;
+        }
+
+        for (WifiNative.RingBufferStatus element : mRingBuffers){
+            boolean result = WifiNative.getRingBufferData(element.name);
+            if (!result) {
                 Log.e(TAG, "Fail to get ring buffer data of: " + element.name);
                 return false;
             }
         }
+
         Log.d(TAG, "getAllRingBufferData Successfully!");
         return true;
     }
 
-    public String getFwMemoryDump() {
-        return WifiNative.getFwMemoryDump();
+    private BugReport captureBugreport(int errorCode) {
+        BugReport report = new BugReport();
+        report.errorCode = errorCode;
+        report.time = System.currentTimeMillis();
+
+        for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
+            /* this will push data in mRingBuffers */
+            WifiNative.getRingBufferData(buffer.name);
+            LimitedCircularArray<byte[]> data = mRingBufferData.get(buffer.name);
+            byte[][] buffers = new byte[data.size()][];
+            for (int i = 0; i < data.size(); i++) {
+                buffers[i] = data.get(i).clone();
+            }
+            report.ringBuffers.put(buffer.name, buffers);
+        }
+
+        report.fwMemoryDump = WifiNative.getFwMemoryDump();
+        return report;
     }
 
+    private static String compressToBase64(byte[] input) {
+        String result;
+        //compress
+        Deflater compressor = new Deflater();
+        compressor.setLevel(Deflater.BEST_COMPRESSION);
+        compressor.setInput(input);
+        compressor.finish();
+        ByteArrayOutputStream bos = new ByteArrayOutputStream(input.length);
+        final byte[] buf = new byte[1024];
+
+        while (!compressor.finished()) {
+            int count = compressor.deflate(buf);
+            bos.write(buf, 0, count);
+        }
+
+        try {
+            compressor.end();
+            bos.close();
+        } catch (IOException e) {
+            Log.e(TAG, "ByteArrayOutputStream close error");
+            result =  android.util.Base64.encodeToString(input, Base64.DEFAULT);
+            return result;
+        }
+
+        byte[] compressed = bos.toByteArray();
+        if (DBG) {
+            Log.d(TAG," length is:" + (compressed == null? "0" : compressed.length));
+        }
+
+        //encode
+        result = android.util.Base64.encodeToString(
+                compressed.length < input.length ? compressed : input , Base64.DEFAULT);
+
+        if (DBG) {
+            Log.d(TAG, "FwMemoryDump length is :" + result.length());
+        }
+
+        return result;
+    }
 }
