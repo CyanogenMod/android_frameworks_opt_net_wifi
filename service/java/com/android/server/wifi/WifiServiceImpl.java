@@ -68,7 +68,15 @@ import java.net.InetAddress;
 import java.net.Inet4Address;
 import java.net.URISyntaxException;
 import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.cert.CertPath;
+import java.security.cert.CertPathValidator;
+import java.security.cert.CertPathValidatorException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.PKIXParameters;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import com.android.internal.R;
@@ -504,7 +512,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     private void enforceChangePermission() {
         mContext.enforceCallingOrSelfPermission(android.Manifest.permission.CHANGE_WIFI_STATE,
-                                                "WifiService");
+                "WifiService");
     }
 
     private void enforceLocationHardwarePermission() {
@@ -792,8 +800,30 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
-        if (config.isValid()) {
-            Slog.e("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
+        if (isValid(config)) {
+        
+            WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
+
+            if (config.isPasspoint() &&
+                    (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
+                enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
+                try {
+                    verifyCert(enterpriseConfig.getCaCertificate());
+                } catch (CertPathValidatorException cpve) {
+                    Slog.e(TAG, "CA Cert " +
+                            enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
+                            " untrusted: " + cpve.getMessage());
+                    return -1;
+                } catch (GeneralSecurityException | IOException e) {
+                    Slog.e(TAG, "Failed to verify certificate" +
+                            enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
+                            ": " + e);
+                    return -1;
+                }
+            }
+
+            //TODO: pass the Uid the WifiStateMachine as a message parameter
+            Slog.i("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
                     + " SSID " + config.SSID
                     + " nid=" + Integer.toString(config.networkId));
             if (config.networkId == WifiConfiguration.INVALID_NETWORK_ID) {
@@ -813,7 +843,22 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         }
     }
 
-     /**
+    public static void verifyCert(X509Certificate caCert)
+            throws GeneralSecurityException, IOException {
+        CertificateFactory factory = CertificateFactory.getInstance("X.509");
+        CertPathValidator validator =
+                CertPathValidator.getInstance(CertPathValidator.getDefaultType());
+        CertPath path = factory.generateCertPath(
+                Arrays.asList(caCert));
+        KeyStore ks = KeyStore.getInstance("AndroidCAStore");
+        ks.load(null, null);
+        PKIXParameters params = new PKIXParameters(ks);
+        params.setRevocationEnabled(false);
+        Log.d("HS2J", "CA Cert: " + caCert.getSubjectX500Principal());
+        validator.validate(path, params);
+    }
+
+    /**
      * See {@link android.net.wifi.WifiManager#removeNetwork(int)}
      * @param netId the integer that identifies the network configuration
      * to the supplicant
@@ -1868,10 +1913,74 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             }
         }
     }
+    
+    /* private methods */
+    static boolean logAndReturnFalse(String s) {
+        Log.d(TAG, s);
+        return false;
+    }
+
+    public static boolean isValid(WifiConfiguration config) {
+        String validity = checkValidity(config);
+        return validity == null || logAndReturnFalse(validity);
+    }
+
+    public static String checkValidity(WifiConfiguration config) {
+        if (config.allowedKeyManagement == null)
+            return "allowed kmgmt";
+
+        if (config.allowedKeyManagement.cardinality() > 1) {
+            if (config.allowedKeyManagement.cardinality() != 2) {
+                return "cardinality != 2";
+            }
+            if (!config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_EAP)) {
+                return "not WPA_EAP";
+            }
+            if ((!config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.IEEE8021X))
+                    && (!config.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.WPA_PSK))) {
+                return "not PSK or 8021X";
+            }
+        }
+
+        if (!TextUtils.isEmpty(config.FQDN)) {
+            /* this is passpoint configuration; it must not have an SSID */
+            if (!TextUtils.isEmpty(config.SSID)) {
+                return "SSID not expected for Passpoint: '" + config.SSID +
+                        "' FQDN " + toHexString(config.FQDN);
+            }
+            /* this is passpoint configuration; it must have a providerFriendlyName */
+            if (TextUtils.isEmpty(config.providerFriendlyName)) {
+                return "no provider friendly name";
+            }
+            /* this is passpoint configuration; it must have enterprise config */
+            if (config.enterpriseConfig == null
+                    ||config. enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.NONE ) {
+                return "no enterprise config";
+            }
+            if (config.enterpriseConfig.getCaCertificate() == null) {
+                return "no CA certificate";
+            }
+        }
+
+        // TODO: Add more checks
+        return null;
+    }
 
     public Network getCurrentNetwork() {
         enforceAccessPermission();
         return mWifiStateMachine.getCurrentNetwork();
+    }
+
+    public static String toHexString(String s) {
+        if (s == null) {
+            return "null";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append('\'').append(s).append('\'');
+        for (int n = 0; n < s.length(); n++) {
+            sb.append(String.format(" %02x", s.charAt(n) & 0xffff));
+        }
+        return sb.toString();
     }
 
 }

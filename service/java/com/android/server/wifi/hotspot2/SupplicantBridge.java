@@ -64,8 +64,7 @@ public class SupplicantBridge {
         if (lines == null) {
             return null;
         }
-        Map<Constants.ANQPElementType, ANQPElement> elements =
-                new HashMap<Constants.ANQPElementType, ANQPElement>(lines.size());
+        Map<Constants.ANQPElementType, ANQPElement> elements = new HashMap<>(lines.size());
         for (String line : lines) {
             try {
                 ANQPElement element = buildElement(line);
@@ -86,8 +85,12 @@ public class SupplicantBridge {
             mRequestMap.put(scanDetail.getNetworkDetail().getBSSID(), scanDetail);
         }
         String result = mSupplicantHook.doCustomCommand(anqpGet);
-        if (!result.startsWith("OK")) {
-            Log.d(Utils.hs2LogTag(getClass()), scanDetail.getSSID() + " ANQP result: " + result);
+        if (result.startsWith("OK")) {
+            Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail.getSSID());
+        }
+        else {
+            Log.d(Utils.hs2LogTag(getClass()), "ANQP failed on " +
+                    scanDetail.getSSID() + ": " + result);
         }
     }
 
