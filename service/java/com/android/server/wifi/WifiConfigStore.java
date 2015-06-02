@@ -3917,20 +3917,7 @@ public class WifiConfigStore extends IpConfigStore {
             return (mConfiguredNetworks.get(config.networkId) != null);
         }
 
-        Integer savedNetId = mNetworkIds.get(configKey(config));
-        if (savedNetId == null) {
-            for (WifiConfiguration test : mConfiguredNetworks.values()) {
-                if (test.configKey().equals(config.configKey())) {
-                    Log.d(TAG, "isNetworkConfigured " + config.configKey()
-                            + " was found, but no network Id");
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        return true;
+        return (mConfiguredNetworks.getByConfigKey(config.configKey()) != null);
     }
 
     /**
@@ -3984,24 +3971,11 @@ public class WifiConfigStore extends IpConfigStore {
         if (config.networkId != INVALID_NETWORK_ID){
             netid = config.networkId;
         } else {
-            Integer savedNetId = mNetworkIds.get(configKey(config));
-            if (savedNetId == null) {
-                netid = INVALID_NETWORK_ID;
-
-                for (WifiConfiguration test : mConfiguredNetworks.values()) {
-                    // This should never happen.
-                    if (test.configKey().equals(config.configKey())) {
-                        loge("canModifyNetwork found WifiConfiguration " + config.configKey()
-                                + " , but not saved in configuredNetworks");
-                        netid = test.networkId;
-                    }
-                }
-
-                if (netid == INVALID_NETWORK_ID) {
-                    return false;
-                }
+            WifiConfiguration test = mConfiguredNetworks.getByConfigKey(config.configKey());
+            if (test == null) {
+                return false;
             } else {
-                netid = savedNetId;
+                netid = test.networkId;
             }
         }
 
