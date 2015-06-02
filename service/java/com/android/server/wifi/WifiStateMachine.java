@@ -4797,24 +4797,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             loge("link address " + dhcpResults.ipAddress);
         }
 
+        Inet4Address addr;
         synchronized (mDhcpResultsLock) {
             mDhcpResults = dhcpResults;
+            addr = (Inet4Address) dhcpResults.ipAddress.getAddress();
         }
 
-        Inet4Address addr = (Inet4Address) dhcpResults.ipAddress.getAddress();
         if (isRoaming()) {
-            if (addr instanceof Inet4Address) {
-                int previousAddress = mWifiInfo.getIpAddress();
-                int newAddress = NetworkUtils.inetAddressToInt(addr);
-                if (previousAddress != newAddress) {
-                    loge("handleIPv4Success, roaming and address changed" +
-                            mWifiInfo + " got: " + addr);
-                } else {
-
-                }
-            } else {
-                loge("handleIPv4Success, roaming and didnt get an IPv4 address" +
-                        addr.toString());
+            int previousAddress = mWifiInfo.getIpAddress();
+            int newAddress = NetworkUtils.inetAddressToInt(addr);
+            if (previousAddress != newAddress) {
+                loge("handleIPv4Success, roaming and address changed" +
+                        mWifiInfo + " got: " + addr);
             }
         }
         mWifiInfo.setInetAddress(addr);
