@@ -1287,6 +1287,8 @@ public class WifiConfigStore extends IpConfigStore {
 
     String[] getWhiteListedSsids(WifiConfiguration config) {
         int num_ssids = 0;
+        String nonQuoteSSID;
+        int length;
         if (enableSsidWhitelist.get() == false)
             return null;
         List<String> list = new ArrayList<String>();
@@ -1318,11 +1320,26 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            list.add(link.SSID);
+            length = link.SSID.length();
+            if (length > 2 && (link.SSID.charAt(0) == '"') && link.SSID.charAt(length - 1) == '"') {
+                nonQuoteSSID = link.SSID.substring(1, length - 1);
+            } else {
+                nonQuoteSSID = link.SSID;
+            }
+
+            list.add(nonQuoteSSID);
         }
 
         if (list.size() != 0) {
-            list.add(config.SSID);
+            length = config.SSID.length();
+            if (length > 2 && (config.SSID.charAt(0) == '"')
+                    && config.SSID.charAt(length - 1) == '"') {
+                nonQuoteSSID = config.SSID.substring(1, length - 1);
+            } else {
+                nonQuoteSSID = config.SSID;
+            }
+
+            list.add(nonQuoteSSID);
         }
 
         return (String[])list.toArray(new String[0]);

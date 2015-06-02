@@ -617,9 +617,6 @@ public class WifiAutoJoinController {
         aRssiBoost5 = rssiBoostFrom5GHzRssi(a.rssi5, dbgA + "->");
         bRssiBoost5 = rssiBoostFrom5GHzRssi(b.rssi5, dbgB + "->");
 
-//        aRssiBoost5 = -100;
-//        bRssiBoost5 = -100;
-
         // Select which band to use for a
         if (a.rssi5 + aRssiBoost5 > a.rssi24) {
             // Prefer a's 5GHz
