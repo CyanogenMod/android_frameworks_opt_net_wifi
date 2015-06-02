@@ -1550,7 +1550,7 @@ public class WifiNative {
             }
 
             sHotlistEventHandler = eventHandler;
-            if (setHotlistNative(sWlan0Index, sScanCmdId, settings) == false) {
+            if (setHotlistNative(sWlan0Index, sHotlistCmdId, settings) == false) {
                 sHotlistEventHandler = null;
                 return false;
             }
