@@ -1165,7 +1165,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     boolean resetBuckets() {
-        loge("resetBuckets num clients: " + mClients.size());
         SettingsComputer c = new SettingsComputer();
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci : clients) {
