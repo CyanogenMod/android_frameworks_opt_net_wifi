@@ -804,6 +804,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      */
     private final int mDefaultFrameworkScanIntervalMs;
 
+
+    /**
+     * Scan period for the NO_NETWORKS_PERIIDOC_SCAN_FEATURE
+     */
+    private final int mNoNetworksPeriodicScan;
+
     /**
      * Supplicant scan interval in milliseconds.
      * Comes from {@link Settings.Global#WIFI_SUPPLICANT_SCAN_INTERVAL_MS} or
@@ -1081,6 +1087,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             period = frameworkMinScanIntervalSaneValue;
         }
         mDefaultFrameworkScanIntervalMs = period;
+
+        mNoNetworksPeriodicScan = mContext.getResources().getInteger(
+                R.integer.config_wifi_no_network_periodic_scan_interval);
+
         mDriverStopDelayMs = mContext.getResources().getInteger(
                 R.integer.config_wifi_driver_stop_delay);
 
@@ -5440,12 +5450,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             WifiManager.BUSY);
                     break;
                 case CMD_GET_SUPPORTED_FEATURES:
-                    if (WifiNative.startHal()) {
-                        int featureSet = WifiNative.getSupportedFeatureSet();
-                        replyToMessage(message, message.what, featureSet);
-                    } else {
-                        replyToMessage(message, message.what, 0);
-                    }
+                    int featureSet = WifiNative.getSupportedFeatureSet();
+                    replyToMessage(message, message.what, featureSet);
                     break;
                 case CMD_GET_LINK_LAYER_STATS:
                     // Not supported hence reply with error message
@@ -5491,6 +5497,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     class InitialState extends State {
         @Override
         public void enter() {
+            WifiNative.stopHal();
             mWifiNative.unloadDriver();
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
@@ -5508,7 +5515,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
 
             if (mWifiConfigStore.enableHalBasedPno.get()) {
-                // make sure developper Settings are in sync with the config option
+                // make sure developer Settings are in sync with the config option
                 mHalBasedPnoEnableInDevSettings = true;
             }
         }
@@ -5537,10 +5544,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             // Set privacy extensions
                             mNwService.setInterfaceIpv6PrivacyExtensions(mInterfaceName, true);
 
-                           // IPv6 is enabled only as long as access point is connected since:
-                           // - IPv6 addresses and routes stick around after disconnection
-                           // - kernel is unaware when connected and fails to start IPv6 negotiation
-                           // - kernel can start autoconfiguration when 802.1x is not complete
+                            // IPv6 is enabled only as long as access point is connected since:
+                            // - IPv6 addresses and routes stick around after disconnection
+                            // - kernel is unaware when connected and fails to start IPv6 negotiation
+                            // - kernel can start autoconfiguration when 802.1x is not complete
                             mNwService.disableIpv6(mInterfaceName);
                         } catch (RemoteException re) {
                             loge("Unable to change interface settings: " + re);
@@ -5553,7 +5560,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         * on a running supplicant properly.
                         */
                         mWifiMonitor.killSupplicant(mP2pSupported);
-                        if(mWifiNative.startSupplicant(mP2pSupported)) {
+
+                        if (WifiNative.startHal() == false) {
+                            /* starting HAL is optional */
+                            loge("Failed to start HAL");
+                        }
+
+                        if (mWifiNative.startSupplicant(mP2pSupported)) {
                             setWifiState(WIFI_STATE_ENABLING);
                             if (DBG) log("Supplicant start successful");
                             mWifiMonitor.startMonitoring();
@@ -5566,11 +5579,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case CMD_START_AP:
-                    if (mWifiNative.loadDriver()) {
+                    if (mWifiNative.loadDriver() == false) {
+                        loge("Failed to load driver for softap");
+                    } else {
+
+                        if (WifiNative.startHal() == false) {
+                            /* starting HAL is optional */
+                            loge("Failed to start HAL");
+                        }
+
                         setWifiApState(WIFI_AP_STATE_ENABLING);
                         transitionTo(mSoftApStartingState);
-                    } else {
-                        loge("Failed to load driver for softap");
                     }
                     break;
                 default:
@@ -6033,12 +6052,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_ENABLED);
             mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
 
-            if (WifiNative.startHal()) {
-                mHalFeatureSet = WifiNative.getSupportedFeatureSet();
-                if ((mHalFeatureSet & WifiManager.WIFI_FEATURE_HAL_EPNO)
-                        == WifiManager.WIFI_FEATURE_HAL_EPNO) {
-                    mHalBasedPnoDriverSupported = true;
-                }
+            mHalFeatureSet = WifiNative.getSupportedFeatureSet();
+            if ((mHalFeatureSet & WifiManager.WIFI_FEATURE_HAL_EPNO)
+                    == WifiManager.WIFI_FEATURE_HAL_EPNO) {
+                mHalBasedPnoDriverSupported = true;
             }
 
             if (PDBG) {
@@ -8837,9 +8854,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
              * The scans are useful to notify the user of the presence of an open network.
              * Note that these are not wake up scans.
              */
-            if (!mP2pConnected.get() && mWifiConfigStore.getConfiguredNetworks().size() == 0) {
+            if (mNoNetworksPeriodicScan != 0 && !mP2pConnected.get()
+                    && mWifiConfigStore.getConfiguredNetworks().size() == 0) {
                 sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
-                        ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
+                        ++mPeriodicScanToken, 0), mNoNetworksPeriodicScan);
             }
 
             mDisconnectedTimeStamp = System.currentTimeMillis();
@@ -8854,11 +8872,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             switch (message.what) {
                 case CMD_NO_NETWORKS_PERIODIC_SCAN:
                     if (mP2pConnected.get()) break;
-                    if (message.arg1 == mPeriodicScanToken &&
+                    if (mNoNetworksPeriodicScan != 0 && message.arg1 == mPeriodicScanToken &&
                             mWifiConfigStore.getConfiguredNetworks().size() == 0) {
                         startScan(UNKNOWN_SCAN_SOURCE, -1, null, null);
                         sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
-                                    ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
+                                    ++mPeriodicScanToken, 0), mNoNetworksPeriodicScan);
                     }
                     break;
                 case WifiManager.FORGET_NETWORK:
@@ -8869,7 +8887,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // the handled delayed message will determine if there is a need to
                     // scan and continue
                     sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
-                                ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
+                                ++mPeriodicScanToken, 0), mNoNetworksPeriodicScan);
                     ret = NOT_HANDLED;
                     break;
                 case CMD_SET_OPERATIONAL_MODE:
@@ -8999,7 +9017,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     } else if (mWifiConfigStore.getConfiguredNetworks().size() == 0) {
                         if (DBG) log("Turn on scanning after p2p disconnected");
                         sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
-                                    ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
+                                    ++mPeriodicScanToken, 0), mNoNetworksPeriodicScan);
                     } else {
                         // If P2P is not connected and there are saved networks, then restart
                         // scanning at the normal period. This is necessary because scanning might
