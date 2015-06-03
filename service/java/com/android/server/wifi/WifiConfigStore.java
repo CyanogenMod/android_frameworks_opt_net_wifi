@@ -248,71 +248,71 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String NL = "\n";
 
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
-            = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G:  ";
+            = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G";
     private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY
-            = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G:  ";
+            = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G";
     private static final String THRESHOLD_UNBLACKLIST_HARD_5G_KEY
-            = "THRESHOLD_UNBLACKLIST_HARD_5G:  ";
+            = "THRESHOLD_UNBLACKLIST_HARD_5G";
     private static final String THRESHOLD_UNBLACKLIST_SOFT_5G_KEY
-            = "THRESHOLD_UNBLACKLIST_SOFT_5G:  ";
+            = "THRESHOLD_UNBLACKLIST_SOFT_5G";
     private static final String THRESHOLD_UNBLACKLIST_HARD_24G_KEY
-            = "THRESHOLD_UNBLACKLIST_HARD_24G:  ";
+            = "THRESHOLD_UNBLACKLIST_HARD_24G";
     private static final String THRESHOLD_UNBLACKLIST_SOFT_24G_KEY
-            = "THRESHOLD_UNBLACKLIST_SOFT_24G:  ";
+            = "THRESHOLD_UNBLACKLIST_SOFT_24G";
     private static final String THRESHOLD_GOOD_RSSI_5_KEY
-            = "THRESHOLD_GOOD_RSSI_5:  ";
+            = "THRESHOLD_GOOD_RSSI_5";
     private static final String THRESHOLD_LOW_RSSI_5_KEY
-            = "THRESHOLD_LOW_RSSI_5:  ";
+            = "THRESHOLD_LOW_RSSI_5";
     private static final String THRESHOLD_BAD_RSSI_5_KEY
-            = "THRESHOLD_BAD_RSSI_5:  ";
+            = "THRESHOLD_BAD_RSSI_5";
     private static final String THRESHOLD_GOOD_RSSI_24_KEY
-            = "THRESHOLD_GOOD_RSSI_24:  ";
+            = "THRESHOLD_GOOD_RSSI_24";
     private static final String THRESHOLD_LOW_RSSI_24_KEY
-            = "THRESHOLD_LOW_RSSI_24:  ";
+            = "THRESHOLD_LOW_RSSI_24";
     private static final String THRESHOLD_BAD_RSSI_24_KEY
-            = "THRESHOLD_BAD_RSSI_24:  ";
+            = "THRESHOLD_BAD_RSSI_24";
 
     private static final String THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY
-            = "THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING:   ";
+            = "THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING";
     private static final String THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY
-            = "THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING:   ";
+            = "THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING";
 
     private static final String THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY
-            = "THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS:   ";
+            = "THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS";
     private static final String THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY
-            = "THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS:   ";
+            = "THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS";
 
     private static final String THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY
-            = "THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS:   ";
+            = "THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS";
     private static final String THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY
-            = "THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS:   ";
+            = "THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS";
 
     private static final String MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY
-            = "MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS:   ";
+            = "MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS";
     private static final String MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY
-            = "MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS:   ";
+            = "MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS";
 
     private static final String A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW_KEY =
-            "A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW:   ";
+            "A_BAND_PREFERENCE_RSSI_THRESHOLD_LOW";
     private static final String A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY =
-            "A_BAND_PREFERENCE_RSSI_THRESHOLD:   ";
+            "A_BAND_PREFERENCE_RSSI_THRESHOLD";
     private static final String G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY =
-            "G_BAND_PREFERENCE_RSSI_THRESHOLD:   ";
+            "G_BAND_PREFERENCE_RSSI_THRESHOLD";
 
     private static final String ENABLE_AUTOJOIN_WHILE_ASSOCIATED_KEY
             = "ENABLE_AUTOJOIN_WHILE_ASSOCIATED:   ";
 
     private static final String ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY
-            = "ASSOCIATED_PARTIAL_SCAN_PERIOD:   ";
+            = "ASSOCIATED_PARTIAL_SCAN_PERIOD";
     private static final String ASSOCIATED_FULL_SCAN_BACKOFF_KEY
-            = "ASSOCIATED_FULL_SCAN_BACKOFF_PERIOD:   ";
+            = "ASSOCIATED_FULL_SCAN_BACKOFF_PERIOD";
     private static final String ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY
-            = "ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED:   ";
+            = "ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED";
     private static final String ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS_KEY
-            = "ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS:   ";
+            = "ONLY_LINK_SAME_CREDENTIAL_CONFIGURATIONS";
 
     private static final String ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY
-            = "ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED:   ";
+            = "ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED";
 
     private static final String ENABLE_HAL_BASED_PNO
             = "ENABLE_HAL_BASED_PNO";
@@ -320,13 +320,13 @@ public class WifiConfigStore extends IpConfigStore {
     // The three below configurations are mainly for power stats and CPU usage tracking
     // allowing to incrementally disable framework features
     private static final String ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY
-            = "ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED:   ";
+            = "ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED";
     private static final String ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY
-            = "ENABLE_AUTO_JOIN_WHILE_ASSOCIATED:   ";
+            = "ENABLE_AUTO_JOIN_WHILE_ASSOCIATED";
     private static final String ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY
-            = "ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED:   ";
+            = "ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED";
     private static final String ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY
-            = "ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY:   ";
+            = "ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY";
 
     public static final String idStringVarName = "id_str";
 
@@ -1303,6 +1303,8 @@ public class WifiConfigStore extends IpConfigStore {
 
     String[] getWhiteListedSsids(WifiConfiguration config) {
         int num_ssids = 0;
+        String nonQuoteSSID;
+        int length;
         if (enableSsidWhitelist.get() == false)
             return null;
         List<String> list = new ArrayList<String>();
@@ -1334,11 +1336,26 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            list.add(link.SSID);
+            length = link.SSID.length();
+            if (length > 2 && (link.SSID.charAt(0) == '"') && link.SSID.charAt(length - 1) == '"') {
+                nonQuoteSSID = link.SSID.substring(1, length - 1);
+            } else {
+                nonQuoteSSID = link.SSID;
+            }
+
+            list.add(nonQuoteSSID);
         }
 
         if (list.size() != 0) {
-            list.add(config.SSID);
+            length = config.SSID.length();
+            if (length > 2 && (config.SSID.charAt(0) == '"')
+                    && config.SSID.charAt(length - 1) == '"') {
+                nonQuoteSSID = config.SSID.substring(1, length - 1);
+            } else {
+                nonQuoteSSID = config.SSID;
+            }
+
+            list.add(nonQuoteSSID);
         }
 
         return (String[])list.toArray(new String[0]);
