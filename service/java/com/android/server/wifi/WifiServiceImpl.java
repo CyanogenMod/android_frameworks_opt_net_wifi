@@ -205,7 +205,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                                 + mContext.getPackageManager().getNameForUid(msg.sendingUid));
                     }
 
-                    if (config != null && config.isValid()) {
+                    if (config != null && isValid(config)) {
                         if (DBG) Slog.d(TAG, "Connect with config" + config);
                         mWifiStateMachine.sendMessage(Message.obtain(msg));
                     } else if (config == null
@@ -602,7 +602,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             throw new SecurityException("DISALLOW_CONFIG_TETHERING is enabled for this user.");
         }
         // null wifiConfig is a meaningful input for CMD_SET_AP
-        if (wifiConfig == null || wifiConfig.isValid()) {
+        if (wifiConfig == null || isValid(wifiConfig)) {
             mWifiController.obtainMessage(CMD_SET_AP, enabled ? 1 : 0, 0, wifiConfig).sendToTarget();
         } else {
             Slog.e(TAG, "Invalid WifiConfiguration");
@@ -658,7 +658,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceChangePermission();
         if (wifiConfig == null)
             return;
-        if (wifiConfig.isValid()) {
+        if (isValid(wifiConfig)) {
             mWifiStateMachine.setWifiApConfiguration(wifiConfig);
         } else {
             Slog.e(TAG, "Invalid WifiConfiguration");
