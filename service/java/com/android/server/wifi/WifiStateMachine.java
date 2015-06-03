@@ -3050,6 +3050,23 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         stopGScan();
     }
 
+
+    private boolean configureSsidWhiteList() {
+
+        String[] list = mWifiConfigStore.getWhiteListedSsids(getCurrentWifiConfiguration());
+        if (list == null || list.length == 0) {
+            return true;
+        }
+
+       if (!WifiNative.setSsidWhitelist(list)) {
+            loge("configureSsidWhiteList couldnt program SSID list, size " + list.length);
+            return false;
+        }
+
+        loge("configureSsidWhiteList success");
+        return true;
+    }
+
     // In associated more, lazy roam will be looking for 5GHz roam candidate
     private boolean configureLazyRoam() {
         boolean status;
@@ -4677,11 +4694,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mLastNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
     }
 
-    private void handleSupplicantConnectionLoss() {
+    private void handleSupplicantConnectionLoss(boolean killSupplicant) {
         /* Socket connection can be lost when we do a graceful shutdown
         * or when the driver is hung. Ensure supplicant is stopped here.
         */
-        mWifiMonitor.killSupplicant(mP2pSupported);
+        if (killSupplicant) {
+            mWifiMonitor.killSupplicant(mP2pSupported);
+        }
         mWifiNative.closeSupplicantConnection();
         sendSupplicantConnectionChangedBroadcast(false);
         setWifiState(WIFI_STATE_DISABLED);
@@ -4839,7 +4858,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 // this will typically happen if the user walks away and come back to his arrea
                 // TODO: implement blacklisting based on a timer, i.e. keep BSSID blacklisted
                 // in supplicant for a couple of hours or a day
-                mWifiNative.clearBlacklist();
+                mWifiConfigStore.clearBssidBlacklist();
             }
         }
     }
@@ -5568,7 +5587,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case WifiMonitor.SUP_DISCONNECTION_EVENT:  /* Supplicant connection lost */
                     loge("Connection lost, restart supplicant");
-                    handleSupplicantConnectionLoss();
+                    handleSupplicantConnectionLoss(true);
                     handleNetworkDisconnect();
                     mSupplicantStateTracker.sendMessage(CMD_RESET_SUPPLICANT_STATE);
                     if (mP2pSupported) {
@@ -5698,13 +5717,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case WifiMonitor.SUP_DISCONNECTION_EVENT:
                     if (DBG) log("Supplicant connection lost");
-                    handleSupplicantConnectionLoss();
+                    handleSupplicantConnectionLoss(false);
                     transitionTo(mInitialState);
                     break;
                 case CMD_STOP_SUPPLICANT_FAILED:
                     if (message.arg1 == mSupplicantStopFailureToken) {
                         loge("Timed out on a supplicant stop, kill and proceed");
-                        handleSupplicantConnectionLoss();
+                        handleSupplicantConnectionLoss(true);
                         transitionTo(mInitialState);
                     }
                     break;
@@ -6876,10 +6895,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case CMD_BLACKLIST_NETWORK:
-                    mWifiNative.addToBlacklist((String) message.obj);
+                    mWifiConfigStore.blackListBssid((String) message.obj);
                     break;
                 case CMD_CLEAR_BLACKLIST:
-                    mWifiNative.clearBlacklist();
+                    mWifiConfigStore.clearBssidBlacklist();
                     break;
                 case CMD_SAVE_CONFIG:
                     ok = mWifiConfigStore.saveConfig();
@@ -8308,6 +8327,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             }
             configureLazyRoam();
+            configureSsidWhiteList();
             if (mScreenOn
                     && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
                 if (useHalBasedAutoJoinOffload()) {
