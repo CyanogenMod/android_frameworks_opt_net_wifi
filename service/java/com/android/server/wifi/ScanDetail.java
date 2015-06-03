@@ -126,4 +126,9 @@ public class ScanDetail {
         }
         return list;
     }
+
+    @Override
+    public String toString() {
+        return mScanResult.SSID;
+    }
 }

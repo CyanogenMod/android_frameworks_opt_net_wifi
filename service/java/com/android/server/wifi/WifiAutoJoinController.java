@@ -71,7 +71,7 @@ public class WifiAutoJoinController {
     private WifiNetworkScoreCache mNetworkScoreCache;
 
     private static final String TAG = "WifiAutoJoinController ";
-    private static boolean DBG = true;
+    private static boolean DBG = false;
     private static boolean VDBG = false;
     private static final boolean mStaStaSupported = false;
 
@@ -360,7 +360,7 @@ public class WifiAutoJoinController {
      * For instance if the candidate is a home network versus an unknown public wifi,
      * the delta will be infinite, else compare Kepler scores etc…
      * Negatve return values from this functions are meaningless per se, just trying to
-     * keep them distinct for debug purpose (i.e. -1, -2 etc...)
+     * keep t````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````hem distinct for debug purpose (i.e. -1, -2 etc...)
      */
     private int compareNetwork(WifiConfiguration candidate,
                                String lastSelectedConfiguration) {
@@ -559,35 +559,37 @@ public class WifiAutoJoinController {
         }
     }
 
-    int getConnectChoice(WifiConfiguration source, WifiConfiguration target) {
-        Integer choice = null;
+    int getConnectChoice(WifiConfiguration source, WifiConfiguration target, boolean strict) {
+        int choice = 0;
         if (source == null || target == null) {
             return 0;
         }
 
         if (source.connectChoices != null
                 && source.connectChoices.containsKey(target.configKey(true))) {
-            choice = source.connectChoices.get(target.configKey(true));
+            Integer val = source.connectChoices.get(target.configKey(true));
+            if (val != null) {
+                choice = val;
+            }
         } else if (source.linkedConfigurations != null) {
             for (String key : source.linkedConfigurations.keySet()) {
                 WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(key);
                 if (config != null) {
                     if (config.connectChoices != null) {
-                        choice = config.connectChoices.get(target.configKey(true));
+                        Integer val = config.connectChoices.get(target.configKey(true));
+                        if (val != null) {
+                            choice = val;
+                        }
                     }
                 }
             }
         }
 
-        if (choice == null) {
+        if (!strict && choice == 0) {
             // We didn't find the connect choice; fallback to some default choices
             int sourceScore = getSecurityScore(source);
             int targetScore = getSecurityScore(target);
             choice = sourceScore - targetScore;
-        }
-
-        if (choice < 0) {
-            choice = 20; // Compatibility with older files
         }
 
         return choice;
@@ -614,6 +616,9 @@ public class WifiAutoJoinController {
          */
         aRssiBoost5 = rssiBoostFrom5GHzRssi(a.rssi5, dbgA + "->");
         bRssiBoost5 = rssiBoostFrom5GHzRssi(b.rssi5, dbgB + "->");
+
+//        aRssiBoost5 = -100;
+//        bRssiBoost5 = -100;
 
         // Select which band to use for a
         if (a.rssi5 + aRssiBoost5 > a.rssi24) {
@@ -872,7 +877,7 @@ public class WifiAutoJoinController {
         if (!linked) {
             int choice;
 
-            choice = getConnectChoice(a, b);
+            choice = getConnectChoice(a, b, false);
             if (choice > 0) {
                 // a is of higher priority - descending
                 order = order - choice;
@@ -888,7 +893,7 @@ public class WifiAutoJoinController {
                 }
             }
 
-            choice = getConnectChoice(b, a);
+            choice = getConnectChoice(b, a, false);
             if (choice > 0) {
                 // a is of lower priority - ascending
                 order = order + choice;
@@ -1460,7 +1465,7 @@ public class WifiAutoJoinController {
                 mWifiConfigStore.getRecentConfiguredNetworks(mScanResultAutoJoinAge, false);
         if (list == null) {
             if (VDBG) logDbg("attemptAutoJoin nothing known=" +
-                    mWifiConfigStore.getConfiguredNetworkSize());
+                    mWifiConfigStore.getConfiguredNetworksSize());
             return false;
         }
 
@@ -1543,21 +1548,33 @@ public class WifiAutoJoinController {
 
             // Try to unblacklist based on good visibility
             if (underSoftThreshold(config)) {
-                logDenial("attemptAutoJoin do not unblacklist due to low visibility ", config);
+                if (DBG) {
+                    logDbg("attemptAutoJoin do not unblacklist due to low visibility " +
+                            config.configKey() + " status=" + config.autoJoinStatus);
+                }
             } else if (underHardThreshold(config)) {
                 // If the network is simply temporary disabled, don't allow reconnect until
                 // RSSI becomes good enough
                 config.setAutoJoinStatus(config.autoJoinStatus - 1);
-                logDenial("attemptAutoJoin good candidate seen, bumped soft -> status=", config);
+                if (DBG) {
+                    logDbg("attemptAutoJoin good candidate seen, bumped soft -> status=" +
+                            config.configKey() + " status=" + config.autoJoinStatus);
+                }
             } else {
                 config.setAutoJoinStatus(config.autoJoinStatus - 3);
-                logDenial("attemptAutoJoin good candidate seen, bumped hard -> status=", config);
+                if (DBG) {
+                    logDbg("attemptAutoJoin good candidate seen, bumped hard -> status=" +
+                            config.configKey() + " status=" + config.autoJoinStatus);
+                }
             }
 
             if (config.autoJoinStatus >=
                     WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED) {
                 // Network is blacklisted, skip
-                logDenial("attemptAutoJoin skip blacklisted -> status=", config);
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip blacklisted -> status=" +
+                            config.configKey() + " status=" + config.autoJoinStatus);
+                }
                 continue;
             }
             if (config.networkId == currentNetId) {
@@ -1602,7 +1619,9 @@ public class WifiAutoJoinController {
                     mWifiConfigStore.thresholdInitialAutoJoinAttemptMin24RSSI.get() - boost,
                     mWifiConfigStore.thresholdInitialAutoJoinAttemptMin5RSSI.get() - boost)) {
 
-                logDenial("attemptAutoJoin skip due to low visibility -> status=", config);
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip due to low visibility " + config.configKey());
+                }
 
                 // Don't try to autojoin a network that is too far but
                 // If that configuration is a user's choice however, try anyway
@@ -1925,8 +1944,14 @@ public class WifiAutoJoinController {
         if (mWifiConfigStore.mCachedPnoList != null) {
             size = mWifiConfigStore.mCachedPnoList.size();
         }
-        Log.d(TAG, " get Pno List total size:" + size);
 
+        if (DBG) {
+            String s = "";
+            if (current != null) {
+                s = " for: " + current.configKey();
+            }
+            Log.e(TAG, " get Pno List total size:" + size + s);
+        }
         if (current != null) {
             String configKey = current.configKey();
             /**
@@ -1944,9 +1969,13 @@ public class WifiAutoJoinController {
                 }
 
                 if (!configKey.equals(network.configKey)) {
-                    int choice = getConnectChoice(config, current);
+                    int choice = getConnectChoice(config, current, true);
                     if (choice > 0) {
                         // config is of higher priority
+                        if (DBG) {
+                            Log.e(TAG, " Pno List adding:" + network.configKey
+                                    + " choice " + choice);
+                        }
                         list.add(network);
                         network.rssi_threshold = mWifiConfigStore.thresholdGoodRssi24.get();
                     }

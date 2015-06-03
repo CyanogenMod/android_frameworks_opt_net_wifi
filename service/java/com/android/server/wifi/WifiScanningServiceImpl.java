@@ -299,6 +299,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         @Override
         public void onScanRestarted() {
+            if (DBG) localLog("onScanRestarted() event received");
             sendMessage(CMD_SCAN_RESTARTED);
         }
 

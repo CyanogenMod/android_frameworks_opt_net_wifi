@@ -1,5 +1,7 @@
 package com.android.server.wifi.hotspot2.pps;
 
+import android.util.Log;
+
 import com.android.server.wifi.hotspot2.Utils;
 
 import java.util.ArrayList;
@@ -7,6 +9,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 
 public class DomainMatcher {
@@ -99,8 +102,8 @@ public class DomainMatcher {
             return false;
         }
 
-        Iterator<String> l1 = arg1.listIterator(arg1.size());
-        Iterator<String> l2 = arg2.listIterator(arg2.size());
+        Iterator<String> l1 = arg1.iterator();
+        Iterator<String> l2 = arg2.iterator();
 
         while(l1.hasNext()) {
             if (!l1.next().equals(l2.next())) {
