@@ -15,7 +15,7 @@ public abstract class Utils {
 
     public static final long UNSET_TIME = -1;
 
-    private static final String[] PLMNText = { "wlan", "mnc*", "mcc*", "3gppnetwork", "org" };
+    private static final String[] PLMNText = {"org", "3gppnetwork", "mcc*", "mnc*", "wlan" };
 
     public static String hs2LogTag(Class c) {
         return "HS20";
@@ -56,11 +56,11 @@ public abstract class Utils {
     }
 
     public static String getMccMnc(List<String> domain) {
-        if (domain.size() != 5) {
+        if (domain.size() != PLMNText.length) {
             return null;
         }
 
-        for (int n = 4; n >= 0; n-- ) {
+        for (int n = 0; n < PLMNText.length; n++ ) {
             String expect = PLMNText[n];
             int len = expect.endsWith("*") ? expect.length() - 1 : expect.length();
             if (!domain.get(n).regionMatches(0, expect, 0, len)) {
@@ -68,7 +68,7 @@ public abstract class Utils {
             }
         }
 
-        String prefix = domain.get(1).substring(3) + domain.get(2).substring(3);
+        String prefix = domain.get(2).substring(3) + domain.get(3).substring(3);
         for (int n = 0; n < prefix.length(); n++) {
             char ch = prefix.charAt(n);
             if (ch < '0' || ch > '9') {

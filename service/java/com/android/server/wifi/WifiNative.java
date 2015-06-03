@@ -1508,7 +1508,11 @@ public class WifiNative {
     synchronized public static void restartScan() {
         synchronized (mLock) {
             if (sScanCmdId == 0 && sScanSettings != null && sScanEventHandler != null) {
-                Log.d(TAG, "Restarting scan");
+                if (DBG) {
+                    Log.e(TAG, "Restarting scan");
+                } else {
+                    Log.d(TAG, "Restarting scan");
+                }
                 ScanEventHandler handler = sScanEventHandler;
                 ScanSettings settings = sScanSettings;
                 if (startScan(sScanSettings, sScanEventHandler)) {

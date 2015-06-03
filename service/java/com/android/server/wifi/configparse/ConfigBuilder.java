@@ -31,7 +31,6 @@ import java.security.PrivateKey;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
 import java.security.cert.CertPathValidatorException;
-import java.security.cert.CertPathValidatorResult;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
@@ -71,7 +70,8 @@ public class ConfigBuilder {
         MIMEContainer inner;
         if (mimeContainer.getContentType().equals(WifiConfigType)) {
             byte[] wrappedContent = Base64.decode(mimeContainer.getText(), Base64.DEFAULT);
-            Log.d(TAG, "Building container from '" + new String(wrappedContent, StandardCharsets.ISO_8859_1) + "'");
+            Log.d(TAG, "Building container from '" +
+                    new String(wrappedContent, StandardCharsets.ISO_8859_1) + "'");
             inner = new MIMEContainer(new LineNumberReader(
                     new InputStreamReader(new ByteArrayInputStream(wrappedContent),
                             StandardCharsets.ISO_8859_1)), null);
@@ -182,10 +182,10 @@ public class ConfigBuilder {
                 if (key != null || clientChain != null) {
                     Log.w(TAG, "Client cert and/or key included with EAP-TTLS profile");
                 }
-                config = buildTTLSConfig(homeSP, caCert);
+                config = buildTTLSConfig(homeSP);
                 break;
             case EAP_TLS:
-                config = buildTLSConfig(homeSP, caCert, clientChain, key);
+                config = buildTLSConfig(homeSP, clientChain, key);
                 break;
             case EAP_AKA:
             case EAP_AKAPrim:
@@ -202,29 +202,7 @@ public class ConfigBuilder {
 
         WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
-        if (caCert != null && (eapMethodID == EAP.EAPMethodID.EAP_TLS ||
-            eapMethodID == EAP.EAPMethodID.EAP_TTLS)) {
-            CertificateFactory factory = CertificateFactory.getInstance(X509);
-            CertPathValidator validator =
-                    CertPathValidator.getInstance(CertPathValidator.getDefaultType());
-            CertPath path = factory.generateCertPath(
-                    Arrays.asList(enterpriseConfig.getCaCertificate()));
-            Log.i(TAG, "Trying AndroidCAStore");
-            KeyStore ks = KeyStore.getInstance("AndroidCAStore");
-            ks.load(null, null);
-            PKIXParameters params = new PKIXParameters(ks);
-            params.setRevocationEnabled(false);
-            try {
-                validator.validate(path, params);
-                enterpriseConfig.setCaCertificate(caCert);
-                Log.d(TAG, "Cert validation succeeded");
-            }
-            catch (CertPathValidatorException cpve) {
-                Log.d(TAG, "Cert validation failed: " + cpve);
-                enterpriseConfig.setCaCertificate(null);
-            }
-        }
-
+        enterpriseConfig.setCaCertificate(caCert);
         enterpriseConfig.setAnonymousIdentity("anonymous@" + credential.getRealm());
         enterpriseConfig.setRealm(credential.getRealm());
         enterpriseConfig.setDomainSuffixMatch(homeSP.getFQDN());
@@ -232,7 +210,29 @@ public class ConfigBuilder {
         return config;
     }
 
-    private static WifiConfiguration buildTTLSConfig(HomeSP homeSP, X509Certificate caCert)
+    // Retain for debugging purposes
+    private static void xIterateCerts(KeyStore ks, X509Certificate caCert)
+            throws GeneralSecurityException {
+        Enumeration<String> aliases = ks.aliases();
+        while (aliases.hasMoreElements()) {
+            String alias = aliases.nextElement();
+            Certificate cert = ks.getCertificate(alias);
+            Log.d("HS2J", "Checking " + alias);
+            if (cert instanceof X509Certificate) {
+                X509Certificate x509Certificate = (X509Certificate) cert;
+                boolean sm = x509Certificate.getSubjectX500Principal().equals(
+                        caCert.getSubjectX500Principal());
+                boolean eq = false;
+                if (sm) {
+                    eq = Arrays.equals(x509Certificate.getEncoded(), caCert.getEncoded());
+                }
+                Log.d("HS2J", "Subject: " + x509Certificate.getSubjectX500Principal() +
+                        ": " + sm + "/" + eq);
+            }
+        }
+    }
+
+    private static WifiConfiguration buildTTLSConfig(HomeSP homeSP)
             throws IOException {
         Credential credential = homeSP.getCredential();
 
@@ -258,7 +258,7 @@ public class ConfigBuilder {
         return config;
     }
 
-    private static WifiConfiguration buildTLSConfig(HomeSP homeSP, X509Certificate caCert,
+    private static WifiConfiguration buildTLSConfig(HomeSP homeSP,
                                                     List<X509Certificate> clientChain,
                                                     PrivateKey clientKey)
             throws IOException, GeneralSecurityException {
