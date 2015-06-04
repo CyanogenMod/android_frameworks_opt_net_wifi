@@ -2438,6 +2438,13 @@ public class WifiStateMachine extends StateMachine {
         }
     }
 
+    /**
+     * Returns the operational country code
+     */
+    public String getCountryCode() {
+        return mLastSetCountryCode;
+    }
+
     public int syncIsIbssSupported(AsyncChannel channel) {
         Message resultMsg = channel.sendMessageSynchronously(CMD_GET_IBSS_SUPPORTED);
         int result = resultMsg.arg1;
