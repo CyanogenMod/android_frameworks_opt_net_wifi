@@ -1365,8 +1365,6 @@ public class WifiNative {
     private static int WIFI_SCAN_COMPLETE = 1;
 
     synchronized static void onScanStatus(int status) {
-        Log.i(TAG, "Got a scan status changed event, status = " + status);
-
         if (status == WIFI_SCAN_BUFFER_FULL) {
             /* we have a separate event to take care of this */
         } else if (status == WIFI_SCAN_COMPLETE) {
