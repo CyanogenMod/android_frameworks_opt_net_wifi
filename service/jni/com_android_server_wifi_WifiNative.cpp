@@ -433,7 +433,7 @@ static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
-    ALOGD("onScanResultsAvailable called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+    // ALOGD("onScanResultsAvailable called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
     reportEvent(env, mCls, "onScanResultsAvailable", "(I)V", id);
 }
@@ -442,7 +442,7 @@ static void onScanEvent(wifi_scan_event event, unsigned status) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
 
-    ALOGD("onScanStatus called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+    // ALOGD("onScanStatus called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
     reportEvent(env, mCls, "onScanStatus", "(I)V", event);
 }
@@ -630,7 +630,7 @@ static jobject android_net_wifi_getScanResults(
             env->SetObjectArrayElement(scanData, i, data);
         }
 
-        ALOGD("retrieved %d scan data from interface[%d] = %p", num_scan_data, iface, handle);
+        // ALOGD("retrieved %d scan data from interface[%d] = %p", num_scan_data, iface, handle);
         return scanData;
     } else {
         return NULL;
