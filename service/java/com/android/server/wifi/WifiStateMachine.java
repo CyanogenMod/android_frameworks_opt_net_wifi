@@ -1712,7 +1712,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mRxTime = stats.rx_time;
                 mRunningBeaconCount = stats.beacon_rx;
                 if (dbg) {
-                    loge(stats.toString());
+                    // loge(stats.toString());
                 }
             }
         }
