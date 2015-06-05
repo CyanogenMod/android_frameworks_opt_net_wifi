@@ -1583,7 +1583,7 @@ static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls,
     if (result == WIFI_SUCCESS) {
         ALOGD("status is %p, number is %d", status, num_rings);
         jclass clsRingBufferStatus =
-               (env)->FindClass("com/android/server/wifi/WifiLogger$RingBufferStatus");
+               (env)->FindClass("com/android/server/wifi/WifiNative$RingBufferStatus");
         if (clsRingBufferStatus == NULL) {
             ALOGE("Error in accessing class");
             free(status);
@@ -1594,7 +1594,7 @@ static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls,
 
         for(u32 i = 0; i < num_rings; i++, tmp++) {
             jobject ringStatus = createObject(env,
-                    "com/android/server/wifi/WifiLogger$RingBufferStatus");
+                    "com/android/server/wifi/WifiNative$RingBufferStatus");
             if (ringStatus == NULL) {
                 ALOGE("Error in creating ringBufferStatus");
                 free(status);
@@ -1624,33 +1624,26 @@ static jobject android_net_wifi_get_ring_buffer_status (JNIEnv *env, jclass cls,
 
 static void on_ring_buffer_data(char *ring_name, char *buffer, int buffer_size,
         wifi_ring_buffer_status *status) {
+
     if (!ring_name || !buffer || !status ||
             (unsigned int)buffer_size <= sizeof(wifi_ring_buffer_entry)) {
         ALOGE("Error input for on_ring_buffer_data!");
+        return;
     }
+
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
     ALOGD("on_ring_buffer_data called, vm = %p, obj = %p, env = %p buffer size = %d", mVM,
             mCls, env, buffer_size);
 
-    jobject wifiLoggerEvent = createObject(env,
-            "com/android/server/wifi/WifiNative$WifiLoggerEvent");
-
-    //jstring reportBuffer = env->NewStringUTF(buffer);
-    //setStringField(env, wifiLoggerEvent, "buffer", buffer);
-
     jobject ringStatus = createObject(env,
-                    "com/android/server/wifi/WifiLogger$RingBufferStatus");
+                    "com/android/server/wifi/WifiNative$RingBufferStatus");
     if (status == NULL) {
         ALOGE("Error in creating ringBufferStatus");
         return;
     }
 
-    char name[32];
-    for(int j = 0; j < 32; j++) {
-        name[j] = status->name[j];
-    }
-    setStringField(env, ringStatus, "name", name);
+    setStringField(env, ringStatus, "name", ring_name);
     setIntField(env, ringStatus, "flag", status->flags);
     setIntField(env, ringStatus, "ringBufferId", status->ring_id);
     setIntField(env, ringStatus, "ringBufferByteSize", status->ring_buffer_byte_size);
@@ -1658,29 +1651,15 @@ static void on_ring_buffer_data(char *ring_name, char *buffer, int buffer_size,
     setIntField(env, ringStatus, "writtenBytes", status->written_bytes);
     setIntField(env, ringStatus, "readBytes", status->read_bytes);
     setIntField(env, ringStatus, "writtenRecords", status->written_records);
-    setObjectField(env, wifiLoggerEvent, "status",
-            "Lcom/android/server/wifi/WifiLogger$RingBufferStatus;", ringStatus);
-    //set entry
-    wifi_ring_buffer_entry *buffer_entry = (wifi_ring_buffer_entry *) buffer;
-    setIntField(env,wifiLoggerEvent, "entrySize", buffer_entry->entry_size);
-    setIntField(env,wifiLoggerEvent, "flags", buffer_entry->flags);
-    setIntField(env,wifiLoggerEvent, "type", buffer_entry->type);
-    setLongField(env,wifiLoggerEvent, "timestamp", buffer_entry->timestamp);
-    //set records
-    int record_size = buffer_size - sizeof(wifi_ring_buffer_entry);
-    if (buffer_entry->entry_size > 0) {
-        jbyteArray records = env->NewByteArray(buffer_entry->entry_size);
-        jbyte *bytes = (jbyte *) (buffer_entry + 1);
-        env->SetByteArrayRegion(records, 0, buffer_entry->entry_size, bytes);
-        setObjectField(env,wifiLoggerEvent, "entry", "[B", records);
-        env->DeleteLocalRef(records);
-    }
 
-    reportEvent(env, mCls,"onWifiLoggerEvent",
-            "(Lcom/android/server/wifi/WifiNative$WifiLoggerEvent;)V", wifiLoggerEvent);
+    jbyteArray bytes = env->NewByteArray(buffer_size);
+    env->SetByteArrayRegion(bytes, 0, buffer_size, (jbyte*)buffer);
 
+    reportEvent(env, mCls,"onRingBufferData",
+            "(Lcom/android/server/wifi/WifiNative$RingBufferStatus;[B)V", ringStatus, bytes);
+
+    env->DeleteLocalRef(bytes);
     env->DeleteLocalRef(ringStatus);
-    env->DeleteLocalRef(wifiLoggerEvent);
 }
 
 static void on_alert_data(wifi_request_id id, char *buffer, int buffer_size, int err_code){
@@ -2148,7 +2127,7 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_get_driver_version},
     {"getFirmwareVersionNative", "(I)Ljava/lang/String;",
             (void*) android_net_wifi_get_firmware_version},
-    {"getRingBufferStatusNative", "(I)[Lcom/android/server/wifi/WifiLogger$RingBufferStatus;",
+    {"getRingBufferStatusNative", "(I)[Lcom/android/server/wifi/WifiNative$RingBufferStatus;",
             (void*) android_net_wifi_get_ring_buffer_status},
     {"startLoggingRingBufferNative", "(IIIIILjava/lang/String;)Z",
             (void*) android_net_wifi_start_logging_ring_buffer},
