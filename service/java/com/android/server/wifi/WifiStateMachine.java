@@ -4745,20 +4745,31 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         mWifiInfo.setBSSID(stateChangeResult.BSSID);
 
-        if (stateChangeResult.wifiSsid != null) {
+        if (mWhiteListedSsids != null
+                && mWhiteListedSsids.length > 0
+                && stateChangeResult.wifiSsid != null) {
             String SSID = stateChangeResult.wifiSsid.toString();
             String currentSSID = mWifiInfo.getSSID();
             if (SSID != null
                     && currentSSID != null
-                    && !SSID.equals(WifiSsid.NONE)
-                    && !SSID.equals(currentSSID)) {
-                if (getCurrentState() == mConnectedState) {
-                    lastConnectAttempt = System.currentTimeMillis();
-                    targetWificonfiguration
+                    && !SSID.equals(WifiSsid.NONE)) {
+                    // Remove quote before comparing
+                    if (SSID.length() >= 2 && SSID.charAt(0) == '"'
+                            && SSID.charAt(SSID.length() - 1) == '"')
+                    {
+                        SSID = SSID.substring(1, SSID.length() - 1);
+                    }
+                    if (currentSSID.length() >= 2 && currentSSID.charAt(0) == '"'
+                            && currentSSID.charAt(currentSSID.length() - 1) == '"') {
+                        currentSSID = currentSSID.substring(1, currentSSID.length() - 1);
+                    }
+                    if ((!SSID.equals(currentSSID)) && (getCurrentState() == mConnectedState)) {
+                        lastConnectAttempt = System.currentTimeMillis();
+                        targetWificonfiguration
                             = mWifiConfigStore.getWifiConfiguration(mWifiInfo.getNetworkId());
-                    transitionTo(mRoamingState);
-                }
-            }
+                        transitionTo(mRoamingState);
+                    }
+             }
         }
 
         mWifiInfo.setSSID(stateChangeResult.wifiSsid);
