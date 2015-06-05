@@ -107,6 +107,7 @@ import static com.android.server.wifi.WifiController.CMD_WIFI_TOGGLED;
 public final class WifiServiceImpl extends IWifiManager.Stub {
     private static final String TAG = "WifiService";
     private static final boolean DBG = true;
+    private static final boolean VDBG = false;
 
     final WifiStateMachine mWifiStateMachine;
 
@@ -736,14 +737,26 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                      mContext.getResources().getInteger(
                              com.android.internal.R.integer.config_wifi_operating_voltage_mv);
                 int rxIdleTime = stats.on_time - stats.tx_time - stats.rx_time;
-
-                int energyUsed = (stats.tx_time * txCurrent + stats.rx_time * rxCurrent
-                        + rxIdleTime * rxIdleCurrent ) * voltage / 1000;
+                long energyUsed = ((long)stats.tx_time * txCurrent + (long)stats.rx_time * rxCurrent
+                        + (long)rxIdleTime * rxIdleCurrent ) * (long)voltage / 1000;
+                if (VDBG) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(" rxIdleCur=" + rxIdleCurrent);
+                    sb.append(" rxCur=" + rxCurrent);
+                    sb.append(" txCur=" + txCurrent);
+                    sb.append(" voltage=" + voltage);
+                    sb.append(" on_time=" + stats.on_time);
+                    sb.append(" tx_time=" + stats.tx_time);
+                    sb.append(" rx_time=" + stats.rx_time);
+                    sb.append(" rxIdleTime=" + rxIdleTime);
+                    sb.append(" energy=" + energyUsed);
+                    Log.e(TAG, " reportActivityInfo: " + sb.toString());
+                }
 
                 // Convert the LinkLayerStats into EnergyActivity
                 energyInfo = new WifiActivityEnergyInfo(SystemClock.elapsedRealtime(),
                         WifiActivityEnergyInfo.STACK_STATE_STATE_IDLE, stats.tx_time,
-                        stats.rx_time, rxIdleTime, energyUsed);
+                        stats.rx_time, rxIdleTime, (int)energyUsed);
             }
             return energyInfo;
         } else {

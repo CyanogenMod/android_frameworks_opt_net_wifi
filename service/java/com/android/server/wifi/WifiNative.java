@@ -1937,53 +1937,30 @@ public class WifiNative {
     public static native boolean startLogging(int iface);
 
     public static interface WifiLoggerEventHandler {
-        void onDataAvailable(char data[], int len);
+        void onRingBufferData(RingBufferStatus status, byte[] buffer);
+        void onWifiAlert(int errorCode, byte[] buffer);
     }
 
     private static WifiLoggerEventHandler sWifiLoggerEventHandler = null;
 
-    public static class WifiLoggerEvent {
-        WifiLogger.RingBufferStatus status;
-        int entrySize;
-        int flags;
-        int type;
-        long timestamp;
-        byte[] entry;
-
-        public String toString() {
-            StringBuilder str =  new StringBuilder();
-            str.append(status + "\n entry size: " + entrySize + " flags: " + flags);
-            str.append(" type: " + type + " timestamp: " + timestamp +"\n");
-            if (entry != null) {
-                str.append(android.util.Base64.encodeToString(entry, Base64.DEFAULT));
-            } else {
-                str.append(" empty bytes[]");
-            }
-            str.append("\n\n");
-            return str.toString();
-        }
-    }
-
-    private static void onWifiLoggerEvent(WifiLoggerEvent event) {
-        if (event != null) {
-            Log.d(TAG, "Logger Event:" + event);
-        }
+    private static void onRingBufferData(RingBufferStatus status, byte[] buffer) {
+        if (sWifiLoggerEventHandler != null)
+            sWifiLoggerEventHandler.onRingBufferData(status, buffer);
     }
 
     private static void onWifiAlert(byte[] buffer, int errorCode) {
-        Log.d(TAG, "Logger Alert error code:" + errorCode);
-        if (buffer != null) {
-            StringBuilder str =  new StringBuilder();
-            str.append(android.util.Base64.encodeToString(buffer, android.util.Base64.NO_WRAP));
-            Log.e(TAG,"Logger Alert event:");
-            Log.e(TAG, str.toString());
-        } else {
-            Log.e(TAG," empty Alert");
+        if (sWifiLoggerEventHandler != null)
+            sWifiLoggerEventHandler.onWifiAlert(errorCode, buffer);
+    }
+
+    synchronized public static void setLoggingEventHandler(WifiLoggerEventHandler handler) {
+        synchronized (mLock) {
+            sWifiLoggerEventHandler = handler;
         }
     }
 
     private static native boolean startLoggingRingBufferNative(int iface, int verboseLevel,
-            int flags, int maxInterval,int minDataSize, String ringName);
+            int flags, int minIntervalSec ,int minDataSize, String ringName);
     synchronized public static boolean startLoggingRingBuffer(int verboseLevel, int flags, int maxInterval,
             int minDataSize, String ringName){
         synchronized (mLock) {
@@ -2030,8 +2007,27 @@ public class WifiNative {
         }
     }
 
-    private static native WifiLogger.RingBufferStatus[] getRingBufferStatusNative(int iface);
-    synchronized public static WifiLogger.RingBufferStatus[] getRingBufferStatus() {
+    public static class RingBufferStatus{
+        String name;
+        int flag;
+        int ringBufferId;
+        int ringBufferByteSize;
+        int verboseLevel;
+        int writtenBytes;
+        int readBytes;
+        int writtenRecords;
+
+        @Override
+        public String toString() {
+            return "name: " + name + " flag: " + flag + " ringBufferId: " + ringBufferId +
+                    " ringBufferByteSize: " +ringBufferByteSize + " verboseLevel: " +verboseLevel +
+                    " writtenBytes: " + writtenBytes + " readBytes: " + readBytes +
+                    " writtenRecords: " + writtenRecords;
+        }
+    }
+
+    private static native RingBufferStatus[] getRingBufferStatusNative(int iface);
+    synchronized public static RingBufferStatus[] getRingBufferStatus() {
         synchronized (mLock) {
             if (sWifiHalHandle != 0) {
                 return getRingBufferStatusNative(sWlan0Index);
@@ -2061,49 +2057,15 @@ public class WifiNative {
         }
     }
     private static native boolean getFwMemoryDumpNative(int iface);
-    synchronized public static String getFwMemoryDump() {
+    synchronized public static byte[] getFwMemoryDump() {
         synchronized (mLock) {
             if (sWifiHalHandle != 0) {
-                if (getFwMemoryDumpNative(sWlan0Index)) {
-                    if (mFwMemoryDump == null || mFwMemoryDump.length == 0) {
-                        return null;
-                    }
-                    String result;
-                    //compress
-                    Deflater compressor = new Deflater();
-                    compressor.setLevel(Deflater.BEST_COMPRESSION);
-                    compressor.setInput(mFwMemoryDump);
-                    compressor.finish();
-                    ByteArrayOutputStream bos = new ByteArrayOutputStream(mFwMemoryDump.length);
-                    final byte[] buf = new byte[1024];
-
-                    while (!compressor.finished()) {
-                        int count = compressor.deflate(buf);
-                        bos.write(buf, 0, count);
-                    }
-
-                    try {
-                        bos.close();
-                    } catch (IOException e) {
-                        Log.e(TAG, "ByteArrayOutputStream close error");
-                        result = android.util.Base64.encodeToString(mFwMemoryDump, Base64.DEFAULT);
-                        return result;
-                    }
-
-                    byte[] compressData = bos.toByteArray();
-                    if (DBG) {
-                        Log.d(TAG, " length is:" + (compressData == null ? "0" :
-                                compressData.length));
-                    }
-                    //encode
-                    result = android.util.Base64.encodeToString(compressData.length <
-                            mFwMemoryDump.length ? compressData : mFwMemoryDump, Base64.DEFAULT);
-                    if (DBG) {
-                        Log.d(TAG, "FwMemoryDump length is :" + result.length());
-                    }
-
+                if(getFwMemoryDumpNative(sWlan0Index)) {
+                    byte[] fwMemoryDump = mFwMemoryDump;
                     mFwMemoryDump = null;
-                    return result;
+                    return fwMemoryDump;
+                } else {
+                    return null;
                 }
             }
 
