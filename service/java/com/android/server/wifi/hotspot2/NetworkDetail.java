@@ -132,7 +132,7 @@ public class NetworkDetail {
             throw new IllegalArgumentException("No element separator");
         }
 
-        mBSSID = parseMac(bssid);
+        mBSSID = Utils.parseMac(bssid);
 
         ByteBuffer data = ByteBuffer.wrap(Utils.hexToBytes(infoElements.substring(separator + 1)))
                 .order(ByteOrder.LITTLE_ENDIAN);
@@ -433,23 +433,6 @@ public class NetworkDetail {
 
     public NetworkDetail complete(Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
         return new NetworkDetail(this, anqpElements);
-    }
-
-    private static long parseMac(String s) {
-
-        long mac = 0;
-        int count = 0;
-        for (int n = 0; n < s.length(); n++) {
-            int nibble = Utils.fromHex(s.charAt(n), true);
-            if (nibble >= 0) {
-                mac = (mac << 4) | nibble;
-                count++;
-            }
-        }
-        if (count < 12 || (count&1) == 1) {
-            throw new IllegalArgumentException("Bad MAC address: '" + s + "'");
-        }
-        return mac;
     }
 
     public boolean hasInterworking() {

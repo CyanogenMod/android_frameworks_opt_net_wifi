@@ -1183,13 +1183,16 @@ public class WifiMonitor {
             eoresult = eventStr.length();
         }
 
-        long bssid = Utils.parseMac(eventStr.substring(addrPos + ADDR_STRING.length(), eoaddr));
-        int result = eventStr.substring(
-                resPos + RESULT_STRING.length(), eoresult).equalsIgnoreCase("success") ? 1 : 0;
+        try {
+            long bssid = Utils.parseMac(eventStr.substring(addrPos + ADDR_STRING.length(), eoaddr));
+            int result = eventStr.substring(
+                    resPos + RESULT_STRING.length(), eoresult).equalsIgnoreCase("success") ? 1 : 0;
 
-        Log.d(Utils.hs2LogTag(getClass()), String.format("ANQP Done for %016x, status %d",
-                bssid, result));
-        mStateMachine.sendMessage(ANQP_DONE_EVENT, result, 0, bssid);
+            mStateMachine.sendMessage(ANQP_DONE_EVENT, result, 0, bssid);
+        }
+        catch (IllegalArgumentException iae) {
+            Log.e(TAG, "Bad MAC address in ANQP response: " + iae.getMessage());
+        }
     }
 
     /**

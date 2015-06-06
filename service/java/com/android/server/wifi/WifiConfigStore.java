@@ -24,19 +24,16 @@ import android.net.IpConfiguration.ProxySettings;
 import android.net.NetworkInfo.DetailedState;
 import android.net.ProxyInfo;
 import android.net.StaticIpConfiguration;
+import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
 import android.net.wifi.WifiConfiguration.Status;
-import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
-
 import android.net.wifi.WifiEnterpriseConfig;
+import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.WpsResult;
-import android.net.wifi.ScanResult;
-import android.net.wifi.WifiInfo;
-
 import android.os.Environment;
 import android.os.FileObserver;
 import android.os.Process;
@@ -46,16 +43,14 @@ import android.provider.Settings;
 import android.security.Credentials;
 import android.security.KeyChain;
 import android.security.KeyStore;
-import android.telephony.SubscriptionManager;
-import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
 import android.util.SparseArray;
 
+import com.android.internal.R;
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.net.IpConfigStore;
-import com.android.internal.R;
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.hotspot2.ANQPData;
@@ -69,29 +64,41 @@ import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
-import java.io.BufferedReader;
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.*;
-import java.util.zip.Checksum;
 import java.util.zip.CRC32;
+import java.util.zip.Checksum;
+
+import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
 
 
 /**
@@ -651,6 +658,7 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         Chronograph chronograph = new Chronograph();
+        chronograph.start();
         mMOManager = new MOManager(new File(PPS_FILE));
         mAnqpCache = new AnqpCache(chronograph);
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
@@ -3054,18 +3062,17 @@ public class WifiConfigStore extends IpConfigStore {
         return channels;
     }
 
-    // !!! JNo >>
-
-    // !!! Call from addToScanCache
     private Map<HomeSP, PasspointMatch> matchPasspointNetworks(ScanDetail scanDetail) {
+        if (mMOManager.getLoadedSPs().isEmpty()) {
+            return null;
+        }
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();
         if (!networkDetail.hasInterworking()) {
             return null;
         }
         updateAnqpCache(scanDetail, networkDetail.getANQPElements());
 
-        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail,
-                networkDetail.getANQPElements() == null);
+        Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, true);
         Log.d(Utils.hs2LogTag(getClass()), scanDetail.getSSID() +
                 " pass 1 matches: " + toMatchString(matches));
         return matches;
@@ -3111,9 +3118,10 @@ public class WifiConfigStore extends IpConfigStore {
                                    Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
 
         updateAnqpCache(scanDetail, anqpElements);
-        if (anqpElements == null) {
+        if (anqpElements == null || anqpElements.isEmpty()) {
             return;
         }
+        scanDetail.propagateANQPInfo(anqpElements);
 
         Map<HomeSP, PasspointMatch> matches = matchNetwork(scanDetail, false);
         Log.d(Utils.hs2LogTag(getClass()), scanDetail.getSSID() +
@@ -3129,6 +3137,7 @@ public class WifiConfigStore extends IpConfigStore {
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();
 
         if (anqpElements == null) {
+            // Try to pull cached data if query failed.
             ANQPData data = mAnqpCache.getEntry(networkDetail);
             if (data != null) {
                 scanDetail.propagateANQPInfo(data.getANQPElements());
@@ -3137,8 +3146,6 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         mAnqpCache.update(networkDetail, anqpElements);
-
-        scanDetail.propagateANQPInfo(anqpElements);
     }
 
     private static String toMatchString(Map<HomeSP, PasspointMatch> matches) {
@@ -3148,8 +3155,6 @@ public class WifiConfigStore extends IpConfigStore {
         }
         return sb.toString();
     }
-
-    // !!! << JNo
 
     private void cacheScanResultForPasspointConfigs(ScanDetail scanDetail,
                                            Map<HomeSP,PasspointMatch> matches) {
@@ -3259,8 +3264,10 @@ public class WifiConfigStore extends IpConfigStore {
 
         if (networkDetail.hasInterworking()) {
             Map<HomeSP, PasspointMatch> matches = matchPasspointNetworks(scanDetail);
-            cacheScanResultForPasspointConfigs(scanDetail, matches);
-            return matches.size() != 0;
+            if (matches != null) {
+                cacheScanResultForPasspointConfigs(scanDetail, matches);
+                return matches.size() != 0;
+            }
         }
 
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
