@@ -339,8 +339,10 @@ class WifiLogger  {
     }
 
     private boolean stopLoggingAllBuffers() {
-        for (WifiNative.RingBufferStatus buffer : mRingBuffers){
-            stopLoggingRingBuffer(buffer);
+        if (mRingBuffers != null) {
+            for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
+                stopLoggingRingBuffer(buffer);
+            }
         }
         return true;
     }
