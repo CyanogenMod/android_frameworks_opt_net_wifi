@@ -85,13 +85,11 @@ class WifiLogger  {
     private int mSupportedFeatureSet;
     private WifiNative.RingBufferStatus[] mRingBuffers;
     private WifiNative.RingBufferStatus mPerPacketRingBuffer;
+    private WifiStateMachine mWifiStateMachine;
 
-    /* The base for wifi message types */
-    static final int BASE = Protocol.BASE_WIFI_LOGGER;
-    /* receive log data */
-    static final int LOG_DATA                 = BASE + 1;
-
-    public WifiLogger() {}
+    public WifiLogger(WifiStateMachine wifiStateMachine) {
+        mWifiStateMachine = wifiStateMachine;
+    }
 
     public synchronized void startLogging(boolean verboseEnabled) {
         WifiNative.setLoggingEventHandler(mHandler);
@@ -134,12 +132,13 @@ class WifiLogger  {
     }
 
     public synchronized void captureBugReportData(int reason) {
-        BugReport report = captureBugreport(reason);
+        boolean captureFWDump = (mLogLevel > VERBOSE_LOG_WITH_WAKEUP);
+        BugReport report = captureBugreport(reason, captureFWDump);
         mLastBugReports.addLast(report);
     }
 
     public synchronized void captureAlertData(int errorCode, byte[] alertData) {
-        BugReport report = captureBugreport(errorCode);
+        BugReport report = captureBugreport(errorCode, /* captureFWDump = */ true);
         report.alertData = alertData;
         mLastAlerts.addLast(report);
     }
@@ -271,7 +270,10 @@ class WifiLogger  {
     }
 
     synchronized void onWifiAlert(int errorCode, byte[] buffer) {
-        /* TODO: Send this to WifiStateMachine; so it can call capture bugreport */
+        if (mWifiStateMachine != null) {
+            mWifiStateMachine.sendMessage(
+                    WifiStateMachine.CMD_FIRMWARE_ALERT, errorCode, 0, buffer);
+        }
     }
 
     private boolean fetchRingBuffers() {
@@ -365,7 +367,7 @@ class WifiLogger  {
         return true;
     }
 
-    private BugReport captureBugreport(int errorCode) {
+    private BugReport captureBugreport(int errorCode, boolean captureFWDump) {
         BugReport report = new BugReport();
         report.errorCode = errorCode;
         report.time = System.currentTimeMillis();
@@ -381,7 +383,9 @@ class WifiLogger  {
             report.ringBuffers.put(buffer.name, buffers);
         }
 
-        report.fwMemoryDump = WifiNative.getFwMemoryDump();
+        if (captureFWDump) {
+            report.fwMemoryDump = WifiNative.getFwMemoryDump();
+        }
         return report;
     }
 

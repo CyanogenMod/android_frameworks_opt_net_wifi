@@ -152,7 +152,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private static final String NETWORKTYPE = "WIFI";
     private static final String NETWORKTYPE_UNTRUSTED = "WIFI_UT";
-    private static boolean DBG = true;
+    private static boolean DBG = false;
     private static boolean VDBG = false;
     private static boolean VVDBG = false;
     private static boolean USE_PAUSE_SCANS = false;
@@ -540,87 +540,87 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     /* The base for wifi message types */
     static final int BASE = Protocol.BASE_WIFI;
     /* Start the supplicant */
-    static final int CMD_START_SUPPLICANT = BASE + 11;
+    static final int CMD_START_SUPPLICANT                               = BASE + 11;
     /* Stop the supplicant */
-    static final int CMD_STOP_SUPPLICANT = BASE + 12;
+    static final int CMD_STOP_SUPPLICANT                                = BASE + 12;
     /* Start the driver */
-    static final int CMD_START_DRIVER = BASE + 13;
+    static final int CMD_START_DRIVER                                   = BASE + 13;
     /* Stop the driver */
-    static final int CMD_STOP_DRIVER = BASE + 14;
+    static final int CMD_STOP_DRIVER                                    = BASE + 14;
     /* Indicates Static IP succeeded */
-    static final int CMD_STATIC_IP_SUCCESS = BASE + 15;
+    static final int CMD_STATIC_IP_SUCCESS                              = BASE + 15;
     /* Indicates Static IP failed */
-    static final int CMD_STATIC_IP_FAILURE = BASE + 16;
+    static final int CMD_STATIC_IP_FAILURE                              = BASE + 16;
     /* Indicates supplicant stop failed */
-    static final int CMD_STOP_SUPPLICANT_FAILED = BASE + 17;
+    static final int CMD_STOP_SUPPLICANT_FAILED                         = BASE + 17;
     /* Delayed stop to avoid shutting down driver too quick*/
-    static final int CMD_DELAYED_STOP_DRIVER = BASE + 18;
+    static final int CMD_DELAYED_STOP_DRIVER                            = BASE + 18;
     /* A delayed message sent to start driver when it fail to come up */
-    static final int CMD_DRIVER_START_TIMED_OUT = BASE + 19;
+    static final int CMD_DRIVER_START_TIMED_OUT                         = BASE + 19;
 
     /* Start the soft access point */
-    static final int CMD_START_AP = BASE + 21;
+    static final int CMD_START_AP                                       = BASE + 21;
     /* Indicates soft ap start succeeded */
-    static final int CMD_START_AP_SUCCESS = BASE + 22;
+    static final int CMD_START_AP_SUCCESS                               = BASE + 22;
     /* Indicates soft ap start failed */
-    static final int CMD_START_AP_FAILURE = BASE + 23;
+    static final int CMD_START_AP_FAILURE                               = BASE + 23;
     /* Stop the soft access point */
-    static final int CMD_STOP_AP = BASE + 24;
+    static final int CMD_STOP_AP                                        = BASE + 24;
     /* Set the soft access point configuration */
-    static final int CMD_SET_AP_CONFIG = BASE + 25;
+    static final int CMD_SET_AP_CONFIG                                  = BASE + 25;
     /* Soft access point configuration set completed */
-    static final int CMD_SET_AP_CONFIG_COMPLETED = BASE + 26;
+    static final int CMD_SET_AP_CONFIG_COMPLETED                        = BASE + 26;
     /* Request the soft access point configuration */
-    static final int CMD_REQUEST_AP_CONFIG = BASE + 27;
+    static final int CMD_REQUEST_AP_CONFIG                              = BASE + 27;
     /* Response to access point configuration request */
-    static final int CMD_RESPONSE_AP_CONFIG = BASE + 28;
+    static final int CMD_RESPONSE_AP_CONFIG                             = BASE + 28;
     /* Invoked when getting a tether state change notification */
-    static final int CMD_TETHER_STATE_CHANGE = BASE + 29;
+    static final int CMD_TETHER_STATE_CHANGE                            = BASE + 29;
     /* A delayed message sent to indicate tether state change failed to arrive */
-    static final int CMD_TETHER_NOTIFICATION_TIMED_OUT = BASE + 30;
+    static final int CMD_TETHER_NOTIFICATION_TIMED_OUT                  = BASE + 30;
 
-    static final int CMD_BLUETOOTH_ADAPTER_STATE_CHANGE = BASE + 31;
+    static final int CMD_BLUETOOTH_ADAPTER_STATE_CHANGE                 = BASE + 31;
 
     /* Supplicant commands */
     /* Is supplicant alive ? */
-    static final int CMD_PING_SUPPLICANT = BASE + 51;
+    static final int CMD_PING_SUPPLICANT                                = BASE + 51;
     /* Add/update a network configuration */
-    static final int CMD_ADD_OR_UPDATE_NETWORK = BASE + 52;
+    static final int CMD_ADD_OR_UPDATE_NETWORK                          = BASE + 52;
     /* Delete a network */
-    static final int CMD_REMOVE_NETWORK = BASE + 53;
+    static final int CMD_REMOVE_NETWORK                                 = BASE + 53;
     /* Enable a network. The device will attempt a connection to the given network. */
-    static final int CMD_ENABLE_NETWORK = BASE + 54;
+    static final int CMD_ENABLE_NETWORK                                 = BASE + 54;
     /* Enable all networks */
-    static final int CMD_ENABLE_ALL_NETWORKS = BASE + 55;
+    static final int CMD_ENABLE_ALL_NETWORKS                            = BASE + 55;
     /* Blacklist network. De-prioritizes the given BSSID for connection. */
-    static final int CMD_BLACKLIST_NETWORK = BASE + 56;
+    static final int CMD_BLACKLIST_NETWORK                              = BASE + 56;
     /* Clear the blacklist network list */
-    static final int CMD_CLEAR_BLACKLIST = BASE + 57;
+    static final int CMD_CLEAR_BLACKLIST                                = BASE + 57;
     /* Save configuration */
-    static final int CMD_SAVE_CONFIG = BASE + 58;
+    static final int CMD_SAVE_CONFIG                                    = BASE + 58;
     /* Get configured networks */
-    static final int CMD_GET_CONFIGURED_NETWORKS = BASE + 59;
+    static final int CMD_GET_CONFIGURED_NETWORKS                        = BASE + 59;
     /* Get available frequencies */
-    static final int CMD_GET_CAPABILITY_FREQ = BASE + 60;
+    static final int CMD_GET_CAPABILITY_FREQ                            = BASE + 60;
     /* Get adaptors */
-    static final int CMD_GET_SUPPORTED_FEATURES = BASE + 61;
+    static final int CMD_GET_SUPPORTED_FEATURES                         = BASE + 61;
     /* Get configured networks with real preSharedKey */
-    static final int CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS = BASE + 62;
+    static final int CMD_GET_PRIVILEGED_CONFIGURED_NETWORKS             = BASE + 62;
     /* Get Link Layer Stats thru HAL */
-    static final int CMD_GET_LINK_LAYER_STATS = BASE + 63;
+    static final int CMD_GET_LINK_LAYER_STATS                           = BASE + 63;
     /* Supplicant commands after driver start*/
     /* Initiate a scan */
-    static final int CMD_START_SCAN = BASE + 71;
+    static final int CMD_START_SCAN                                     = BASE + 71;
     /* Set operational mode. CONNECT, SCAN ONLY, SCAN_ONLY with Wi-Fi off mode */
-    static final int CMD_SET_OPERATIONAL_MODE = BASE + 72;
+    static final int CMD_SET_OPERATIONAL_MODE                           = BASE + 72;
     /* Disconnect from a network */
-    static final int CMD_DISCONNECT = BASE + 73;
+    static final int CMD_DISCONNECT                                     = BASE + 73;
     /* Reconnect to a network */
-    static final int CMD_RECONNECT = BASE + 74;
+    static final int CMD_RECONNECT                                      = BASE + 74;
     /* Reassociate to a network */
-    static final int CMD_REASSOCIATE = BASE + 75;
+    static final int CMD_REASSOCIATE                                    = BASE + 75;
     /* Get Connection Statistis */
-    static final int CMD_GET_CONNECTION_STATISTICS = BASE + 76;
+    static final int CMD_GET_CONNECTION_STATISTICS                      = BASE + 76;
 
     /* Controls suspend mode optimizations
      *
@@ -633,26 +633,27 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * - turn off roaming
      * - DTIM wake up settings
      */
-    static final int CMD_SET_HIGH_PERF_MODE = BASE + 77;
+    static final int CMD_SET_HIGH_PERF_MODE                             = BASE + 77;
     /* Set the country code */
-    static final int CMD_SET_COUNTRY_CODE = BASE + 80;
+    static final int CMD_SET_COUNTRY_CODE                               = BASE + 80;
     /* Enables RSSI poll */
-    static final int CMD_ENABLE_RSSI_POLL = BASE + 82;
+    static final int CMD_ENABLE_RSSI_POLL                               = BASE + 82;
     /* RSSI poll */
-    static final int CMD_RSSI_POLL = BASE + 83;
+    static final int CMD_RSSI_POLL                                      = BASE + 83;
     /* Set up packet filtering */
-    static final int CMD_START_PACKET_FILTERING = BASE + 84;
+    static final int CMD_START_PACKET_FILTERING                         = BASE + 84;
     /* Clear packet filter */
-    static final int CMD_STOP_PACKET_FILTERING = BASE + 85;
+    static final int CMD_STOP_PACKET_FILTERING                          = BASE + 85;
     /* Enable suspend mode optimizations in the driver */
-    static final int CMD_SET_SUSPEND_OPT_ENABLED = BASE + 86;
+    static final int CMD_SET_SUSPEND_OPT_ENABLED                        = BASE + 86;
     /* Delayed NETWORK_DISCONNECT */
-    static final int CMD_DELAYED_NETWORK_DISCONNECT = BASE + 87;
+    static final int CMD_DELAYED_NETWORK_DISCONNECT                     = BASE + 87;
     /* When there are no saved networks, we do a periodic scan to notify user of
      * an open network */
-    static final int CMD_NO_NETWORKS_PERIODIC_SCAN = BASE + 88;
+    static final int CMD_NO_NETWORKS_PERIODIC_SCAN                      = BASE + 88;
     /* Test network Disconnection NETWORK_DISCONNECT */
-    static final int CMD_TEST_NETWORK_DISCONNECT = BASE + 89;
+    static final int CMD_TEST_NETWORK_DISCONNECT                        = BASE + 89;
+
     private int testNetworkDisconnectCounter = 0;
 
     /* arg1 values to CMD_STOP_PACKET_FILTERING and CMD_START_PACKET_FILTERING */
@@ -660,15 +661,38 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     static final int MULTICAST_V4 = 0;
 
     /* Set the frequency band */
-    static final int CMD_SET_FREQUENCY_BAND = BASE + 90;
+    static final int CMD_SET_FREQUENCY_BAND                             = BASE + 90;
     /* Enable TDLS on a specific MAC address */
-    static final int CMD_ENABLE_TDLS = BASE + 92;
+    static final int CMD_ENABLE_TDLS                                    = BASE + 92;
     /* DHCP/IP configuration watchdog */
-    static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER    = BASE + 93;
+    static final int CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER            = BASE + 93;
+
+    /**
+     * Watchdog for protecting against b/16823537
+     * Leave time for 4-way handshake to succeed
+     */
+    static final int ROAM_GUARD_TIMER_MSEC = 15000;
+
+    int roamWatchdogCount = 0;
+    /* Roam state watchdog */
+    static final int CMD_ROAM_WATCHDOG_TIMER                            = BASE + 94;
+    /* Screen change intent handling */
+    static final int CMD_SCREEN_STATE_CHANGED                           = BASE + 95;
+
+    /* Disconnecting state watchdog */
+    static final int CMD_DISCONNECTING_WATCHDOG_TIMER                   = BASE + 96;
+
     /* Remove a packages associated configrations */
-    static final int CMD_REMOVE_APP_CONFIGURATIONS        = BASE + 97;
-    /* Remove a packages associated configrations */
-    static final int CMD_REMOVE_USER_CONFIGURATIONS       = BASE + 152;
+    static final int CMD_REMOVE_APP_CONFIGURATIONS                      = BASE + 97;
+    
+    /* Disable an ephemeral network */
+    static final int CMD_DISABLE_EPHEMERAL_NETWORK                      = BASE + 98;
+
+    /* Get matching network */
+    static final int CMD_GET_MATCHING_CONFIG                            = BASE + 99;
+
+    /* alert from firmware */
+    static final int CMD_FIRMWARE_ALERT                                 = BASE + 100;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
@@ -681,92 +705,72 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* Commands from/to the SupplicantStateTracker */
     /* Reset the supplicant state tracker */
-    static final int CMD_RESET_SUPPLICANT_STATE = BASE + 111;
-
-
-    /**
-     * Watchdog for protecting against b/16823537
-     * Leave time for 4-way handshake to succeed
-     */
-    static final int ROAM_GUARD_TIMER_MSEC = 15000;
-
-    int roamWatchdogCount = 0;
-    /* Roam state watchdog */
-    static final int CMD_ROAM_WATCHDOG_TIMER = BASE + 94;
-    /* Screen change intent handling */
-    static final int CMD_SCREEN_STATE_CHANGED = BASE + 95;
+    static final int CMD_RESET_SUPPLICANT_STATE                         = BASE + 111;
 
     int disconnectingWatchdogCount = 0;
     static final int DISCONNECTING_GUARD_TIMER_MSEC = 5000;
 
-    /* Disconnecting state watchdog */
-    static final int CMD_DISCONNECTING_WATCHDOG_TIMER = BASE + 96;
-
-    /* Disable an ephemeral network */
-    static final int CMD_DISABLE_EPHEMERAL_NETWORK = BASE + 98;
-
-    /* Get matching network */
-    static final int CMD_GET_MATCHING_CONFIG              = BASE + 99;
-
     /* P2p commands */
     /* We are ok with no response here since we wont do much with it anyway */
-    public static final int CMD_ENABLE_P2P = BASE + 131;
+    public static final int CMD_ENABLE_P2P                              = BASE + 131;
     /* In order to shut down supplicant cleanly, we wait till p2p has
      * been disabled */
-    public static final int CMD_DISABLE_P2P_REQ = BASE + 132;
-    public static final int CMD_DISABLE_P2P_RSP = BASE + 133;
+    public static final int CMD_DISABLE_P2P_REQ                         = BASE + 132;
+    public static final int CMD_DISABLE_P2P_RSP                         = BASE + 133;
 
-    public static final int CMD_BOOT_COMPLETED = BASE + 134;
+    public static final int CMD_BOOT_COMPLETED                          = BASE + 134;
 
     /* We now have a valid IP configuration. */
-    static final int CMD_IP_CONFIGURATION_SUCCESSFUL = BASE + 138;
+    static final int CMD_IP_CONFIGURATION_SUCCESSFUL                    = BASE + 138;
     /* We no longer have a valid IP configuration. */
-    static final int CMD_IP_CONFIGURATION_LOST = BASE + 139;
+    static final int CMD_IP_CONFIGURATION_LOST                          = BASE + 139;
     /* Link configuration (IP address, DNS, ...) changes notified via netlink */
-    static final int CMD_UPDATE_LINKPROPERTIES = BASE + 140;
+    static final int CMD_UPDATE_LINKPROPERTIES                          = BASE + 140;
 
     /* Supplicant is trying to associate to a given BSSID */
-    static final int CMD_TARGET_BSSID = BASE + 141;
+    static final int CMD_TARGET_BSSID                                   = BASE + 141;
 
     /* Reload all networks and reconnect */
-    static final int CMD_RELOAD_TLS_AND_RECONNECT = BASE + 142;
+    static final int CMD_RELOAD_TLS_AND_RECONNECT                       = BASE + 142;
 
-    static final int CMD_AUTO_CONNECT = BASE + 143;
+    static final int CMD_AUTO_CONNECT                                   = BASE + 143;
 
     static final int network_status_unwanted_disconnect = 0;
     static final int network_status_unwanted_disable_autojoin = 1;
 
-    static final int CMD_UNWANTED_NETWORK = BASE + 144;
+    static final int CMD_UNWANTED_NETWORK                               = BASE + 144;
 
-    static final int CMD_AUTO_ROAM = BASE + 145;
+    static final int CMD_AUTO_ROAM                                      = BASE + 145;
 
-    static final int CMD_AUTO_SAVE_NETWORK = BASE + 146;
+    static final int CMD_AUTO_SAVE_NETWORK                              = BASE + 146;
 
-    static final int CMD_ASSOCIATED_BSSID = BASE + 147;
+    static final int CMD_ASSOCIATED_BSSID                               = BASE + 147;
 
-    static final int CMD_NETWORK_STATUS                   = BASE + 148;
+    static final int CMD_NETWORK_STATUS                                 = BASE + 148;
 
     /* A layer 3 neighbor on the Wi-Fi link became unreachable. */
-    static final int CMD_IP_REACHABILITY_LOST = BASE + 149;
+    static final int CMD_IP_REACHABILITY_LOST                           = BASE + 149;
 
-    /* Note: BASE + 152 in use by CMD_REMOVE_USER_CONFIGURATIONS */
+    /* Remove a packages associated configrations */
+    static final int CMD_REMOVE_USER_CONFIGURATIONS                     = BASE + 152;
 
-    static final int CMD_ACCEPT_UNVALIDATED               = BASE + 153;
-    static final int CMD_START_PNO = BASE + 154; /* used to restart PNO when it was
+    static final int CMD_ACCEPT_UNVALIDATED                             = BASE + 153;
 
-    static final int CMD_RESTART_AUTOJOIN_OFFLOAD = BASE + 149; /* used to restart PNO when it was
-                                                    stopped due to association attempt */
+    /* used to restart PNO when it was stopped due to association attempt */
+    static final int CMD_RESTART_AUTOJOIN_OFFLOAD                       = BASE + 154;
+
     static int mRestartAutoJoinOffloadCounter = 0;
 
-    static final int CMD_STARTED_PNO_DBG = BASE + 155; /* used to log if PNO was started */
+    /* used to log if PNO was started */
+    static final int CMD_STARTED_PNO_DBG                                = BASE + 155;
 
-    static final int CMD_PNO_NETWORK_FOUND = BASE + 156;
+    static final int CMD_PNO_NETWORK_FOUND                              = BASE + 156;
 
-    static final int CMD_RESTART_AUTOJOIN_OFFLOAD = BASE + 157; /* used to restart PNO when it was
-                                                    stopped due to association attempt */
-    static final int CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION = BASE + 158;
+    /* used to log if PNO was started */
+    static final int CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION              = BASE + 158;
 
-    static final int CMD_STARTED_GSCAN_DBG = BASE + 159; /* used to log if GSCAN was started */
+    /* used to log if GSCAN was started */
+    static final int CMD_STARTED_GSCAN_DBG                              = BASE + 159;
 
 
     /* Wifi state machine modes of operation */
@@ -1048,7 +1052,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
-        mWifiLogger = new WifiLogger();
+        mWifiLogger = new WifiLogger(this);
 
         mWifiInfo = new WifiInfo();
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
@@ -1440,7 +1444,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private void cancelDelayedScan() {
         mDelayedScanCounter.incrementAndGet();
-        loge("cancelDelayedScan -> " + mDelayedScanCounter);
     }
 
     private boolean checkAndRestartDelayedScan(int counter, boolean restart, int milli,
@@ -5448,6 +5451,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_GET_SUPPORTED_FEATURES:
                     int featureSet = WifiNative.getSupportedFeatureSet();
                     replyToMessage(message, message.what, featureSet);
+                    break;
+                case CMD_FIRMWARE_ALERT:
+                    if (mWifiLogger != null) {
+                        byte[] buffer = (byte[])message.obj;
+                        mWifiLogger.captureAlertData(message.arg1, buffer);
+                    }
                     break;
                 case CMD_GET_LINK_LAYER_STATS:
                     // Not supported hence reply with error message
