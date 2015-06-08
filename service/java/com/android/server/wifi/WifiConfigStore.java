@@ -4233,7 +4233,7 @@ public class WifiConfigStore extends IpConfigStore {
             ret = putCertInKeyStore(userCertName, config.getClientCertificate());
             if (ret == false) {
                 // Remove private key installed
-                mKeyStore.delKey(privKeyName, Process.WIFI_UID);
+                mKeyStore.delete(privKeyName, Process.WIFI_UID);
                 return ret;
             }
         }
@@ -4243,7 +4243,7 @@ public class WifiConfigStore extends IpConfigStore {
             if (ret == false) {
                 if (config.getClientCertificate() != null) {
                     // Remove client key+cert
-                    mKeyStore.delKey(privKeyName, Process.WIFI_UID);
+                    mKeyStore.delete(privKeyName, Process.WIFI_UID);
                     mKeyStore.delete(userCertName, Process.WIFI_UID);
                 }
                 return ret;
@@ -4282,7 +4282,7 @@ public class WifiConfigStore extends IpConfigStore {
         // a valid client certificate is configured
         if (!TextUtils.isEmpty(client)) {
             if (DBG) Log.d(TAG, "removing client private key and user cert");
-            mKeyStore.delKey(Credentials.USER_PRIVATE_KEY + client, Process.WIFI_UID);
+            mKeyStore.delete(Credentials.USER_PRIVATE_KEY + client, Process.WIFI_UID);
             mKeyStore.delete(Credentials.USER_CERTIFICATE + client, Process.WIFI_UID);
         }
 
