@@ -17,6 +17,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.ProtocolException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.CharBuffer;
@@ -106,7 +107,6 @@ public class SupplicantBridge {
         }
 
         String bssData = mSupplicantHook.scanResult(scanDetail.getBSSIDString());
-        //Log.d("HS2J", "BSS data for " + scanDetail.getBSSIDString() + ": " + bssData);
         try {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
             Log.d(Utils.hs2LogTag(getClass()), String.format("%s ANQP response for %012x: %s",
@@ -114,7 +114,12 @@ public class SupplicantBridge {
             mConfigStore.notifyANQPResponse(scanDetail, elements);
         }
         catch (IOException ioe) {
-            Log.e(Utils.hs2LogTag(getClass()), ioe.toString());
+            Log.e(Utils.hs2LogTag(getClass()), "Failed to parse ANQP: " +
+                    ioe.toString() + ": " + bssData);
+        }
+        catch (RuntimeException rte) {
+            Log.e(Utils.hs2LogTag(getClass()), "Failed to parse ANQP: " +
+                    rte.toString() + ": " + bssData, rte);
         }
         mConfigStore.notifyANQPResponse(scanDetail, null);
     }
