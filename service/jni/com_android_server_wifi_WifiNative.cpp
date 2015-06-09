@@ -1247,7 +1247,7 @@ static jboolean android_net_wifi_requestRange(
         config.bw = (wifi_rtt_bw) getIntField(env, param, "bandwidth");
 
         ALOGD("RTT request destination %d: type is %d, peer is %d, bw is %d, center_freq is %d ", i,
-                config.type,config.peer, config.channel.width,  config.channel.center_freq0);
+                config.type,config.peer, config.channel.width,  config.channel.center_freq);
         ALOGD("center_freq0 is %d, center_freq1 is %d, num_burst is %d,interval is %d",
                 config.channel.center_freq0, config.channel.center_freq1, config.num_burst,
                 config.burst_period);
