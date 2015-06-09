@@ -7831,7 +7831,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                   if (message.arg1 == DhcpStateMachine.DHCP_SUCCESS) {
                       if (DBG) log("WifiStateMachine DHCP successful");
                       handleIPv4Success((DhcpResults) message.obj, DhcpStateMachine.DHCP_SUCCESS);
-                      // We advance to mVerifyingLinkState because handleIPv4Success will call
+                      // We advance to mConnectedState because handleIPv4Success will call
                       // updateLinkProperties, which then sends CMD_IP_CONFIGURATION_SUCCESSFUL.
                   } else if (message.arg1 == DhcpStateMachine.DHCP_FAILURE) {
                       mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_DHCP_FAILURE);
@@ -8260,6 +8260,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
       }
     }
 
+    // Note: currently, this state is never used, because WifiWatchdogStateMachine unconditionally
+    // sets mPoorNetworkDetectionEnabled to false.
     class VerifyingLinkState extends State {
         @Override
         public void enter() {
@@ -8280,8 +8282,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     log(getName() + " POOR_LINK_DETECTED: no transition");
                     break;
                 case WifiWatchdogStateMachine.GOOD_LINK_DETECTED:
-                    log(getName() + " GOOD_LINK_DETECTED: transition to captive portal check");
-
                     log(getName() + " GOOD_LINK_DETECTED: transition to CONNECTED");
                     sendConnectedState();
                     transitionTo(mConnectedState);
@@ -8295,14 +8295,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private void sendConnectedState() {
-        // Send out a broadcast with the CAPTIVE_PORTAL_CHECK to preserve
-        // existing behaviour. The captive portal check really happens after we
-        // transition into DetailedState.CONNECTED.
-        setNetworkDetailedState(DetailedState.CAPTIVE_PORTAL_CHECK);
-        mWifiConfigStore.updateStatus(mLastNetworkId,
-        DetailedState.CAPTIVE_PORTAL_CHECK);
-        sendNetworkStateChangeBroadcast(mLastBssid);
-
         // If this network was explicitly selected by the user, evaluate whether to call
         // explicitlySelected() so the system can treat it appropriately.
         WifiConfiguration config = getCurrentWifiConfiguration();
