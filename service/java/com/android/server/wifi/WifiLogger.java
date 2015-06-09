@@ -92,6 +92,10 @@ class WifiLogger  {
     }
 
     public synchronized void startLogging(boolean verboseEnabled) {
+        if (verboseEnabled == false) {
+            Log.d(TAG, "Not enabling logger to work around issues");
+            return;
+        }
         WifiNative.setLoggingEventHandler(mHandler);
         if (verboseEnabled) {
             mLogLevel = VERBOSE_LOG_WITH_WAKEUP;
@@ -125,10 +129,12 @@ class WifiLogger  {
     }
 
     public synchronized void stopLogging() {
-        WifiNative.setLoggingEventHandler(null);
-        stopLoggingAllBuffers();
-        mRingBuffers = null;
-        mLogLevel = VERBOSE_NO_LOG;
+        if (mLogLevel != VERBOSE_NO_LOG) {
+            WifiNative.setLoggingEventHandler(null);
+            stopLoggingAllBuffers();
+            mRingBuffers = null;
+            mLogLevel = VERBOSE_NO_LOG;
+        }
     }
 
     public synchronized void captureBugReportData(int reason) {
@@ -372,15 +378,17 @@ class WifiLogger  {
         report.errorCode = errorCode;
         report.time = System.currentTimeMillis();
 
-        for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
-            /* this will push data in mRingBuffers */
-            WifiNative.getRingBufferData(buffer.name);
-            LimitedCircularArray<byte[]> data = mRingBufferData.get(buffer.name);
-            byte[][] buffers = new byte[data.size()][];
-            for (int i = 0; i < data.size(); i++) {
-                buffers[i] = data.get(i).clone();
+        if (mRingBuffers != null) {
+            for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
+                /* this will push data in mRingBuffers */
+                WifiNative.getRingBufferData(buffer.name);
+                LimitedCircularArray<byte[]> data = mRingBufferData.get(buffer.name);
+                byte[][] buffers = new byte[data.size()][];
+                for (int i = 0; i < data.size(); i++) {
+                    buffers[i] = data.get(i).clone();
+                }
+                report.ringBuffers.put(buffer.name, buffers);
             }
-            report.ringBuffers.put(buffer.name, buffers);
         }
 
         if (captureFWDump) {
