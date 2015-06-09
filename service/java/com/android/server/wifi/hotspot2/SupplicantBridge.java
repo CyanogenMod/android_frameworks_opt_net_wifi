@@ -17,6 +17,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.ProtocolException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.CharBuffer;
@@ -86,11 +87,11 @@ public class SupplicantBridge {
         }
         String result = mSupplicantHook.doCustomCommand(anqpGet);
         if (result.startsWith("OK")) {
-            Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail.getSSID());
+            Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail);
         }
         else {
             Log.d(Utils.hs2LogTag(getClass()), "ANQP failed on " +
-                    scanDetail.getSSID() + ": " + result);
+                    scanDetail + ": " + result);
         }
     }
 
@@ -100,20 +101,25 @@ public class SupplicantBridge {
             scanDetail = mRequestMap.remove(bssid);
         }
         if (scanDetail == null) {
+            Log.d(Utils.hs2LogTag(getClass()), String.format("Spurious %s ANQP response for %012x",
+                            success ? "successful" : "failed", bssid));
             return;
         }
 
         String bssData = mSupplicantHook.scanResult(scanDetail.getBSSIDString());
-        //Log.d("HS2J", "BSS data for " + scanDetail.getBSSIDString() + ": " + bssData);
         try {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
-            if (!elements.isEmpty()) {
-                Log.d(Utils.hs2LogTag(getClass()), String.format("Parsed ANQP for %016x: %s", bssid, elements));
-                mConfigStore.notifyANQPResponse(scanDetail, elements);
-            }
+            Log.d(Utils.hs2LogTag(getClass()), String.format("%s ANQP response for %012x: %s",
+                    success ? "successful" : "failed", bssid, elements));
+            mConfigStore.notifyANQPResponse(scanDetail, elements);
         }
         catch (IOException ioe) {
-            Log.e(Utils.hs2LogTag(getClass()), ioe.toString());
+            Log.e(Utils.hs2LogTag(getClass()), "Failed to parse ANQP: " +
+                    ioe.toString() + ": " + bssData);
+        }
+        catch (RuntimeException rte) {
+            Log.e(Utils.hs2LogTag(getClass()), "Failed to parse ANQP: " +
+                    rte.toString() + ": " + bssData, rte);
         }
         mConfigStore.notifyANQPResponse(scanDetail, null);
     }

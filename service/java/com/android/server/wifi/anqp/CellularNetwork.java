@@ -1,5 +1,6 @@
 package com.android.server.wifi.anqp;
 
+import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,31 +13,34 @@ public class CellularNetwork {
 
     private final List<int[]> mMccMnc;
 
-    private CellularNetwork(int plmnCount, ByteBuffer payload) {
-        mMccMnc = new ArrayList<int[]>(plmnCount);
+    private CellularNetwork(int plmnCount, ByteBuffer payload) throws ProtocolException {
+        mMccMnc = new ArrayList<>(plmnCount);
 
         while (plmnCount > 0) {
-
+            if (payload.remaining() < 3) {
+                throw new ProtocolException("Truncated PLMN info");
+            }
             byte[] plmn = new byte[3];
             payload.get(plmn);
 
-            int mcc = ((plmn[0] << 16) & 0xf00) |
-                              (plmn[0] & 0x0f0) |
-                              (plmn[1] & 0x00f);
+            int mcc = ((plmn[0] << 8) & 0xf00) |
+                    (plmn[0] & 0x0f0) |
+                    (plmn[1] & 0x00f);
 
-            int mnc = ((plmn[2] << 8) & 0xf0) |
-                      ((plmn[2] >> 8) & 0x0f);
+            int mnc = ((plmn[2] << 4) & 0xf0) |
+                    ((plmn[2] >> 4) & 0x0f);
 
-            int n2 = (plmn[1] >> 8) & 0x0f;
+            int n2 = (plmn[1] >> 4) & 0x0f;
             if (n2 != 0xf) {
-                mnc = (mnc << 8) | n2 | MNC3Mask;
+                mnc = (mnc << 4) | n2 | MNC3Mask;
             }
 
             mMccMnc.add(new int[]{mcc, mnc});
+            plmnCount--;
         }
     }
 
-    public static CellularNetwork buildCellularNetwork(ByteBuffer payload) {
+    public static CellularNetwork buildCellularNetwork(ByteBuffer payload) throws ProtocolException {
         int iei = payload.get() & BYTE_MASK;
         int plmnLen = payload.get() & 0x7f;
 

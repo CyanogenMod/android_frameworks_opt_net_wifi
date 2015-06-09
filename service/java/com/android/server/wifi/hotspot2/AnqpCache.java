@@ -116,19 +116,17 @@ public class AnqpCache implements AlarmHandler {
     }
 
     public boolean initiate(NetworkDetail network) {
-
-        long now = System.currentTimeMillis();
         CacheKey key = CacheKey.buildKey(network, STANDARD_ESS);
 
         synchronized (mANQPCache) {
             ANQPData data = mANQPCache.get(key);
-            if (data == null ||
-                    (data.isResolved() && data.getDomainID() != network.getAnqpDomainID()) ||
-                    data.expendable(now)) {
+            if (data == null || data.expired()) {
                 mANQPCache.put(key, new ANQPData(network, null));
                 return true;
             }
             else {
+                Log.d(Utils.hs2LogTag(getClass()),
+                      String.format("BSSID %012x already in cache: %s", network.getBSSID(), data));
                 return false;
             }
         }
@@ -137,24 +135,13 @@ public class AnqpCache implements AlarmHandler {
     public void update(NetworkDetail network,
                        Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
 
-        long now = System.currentTimeMillis();
         CacheKey key = CacheKey.buildKey(network, STANDARD_ESS);
 
         // Networks with a 0 ANQP Domain ID are still cached, but with a very short expiry, just
         // long enough to prevent excessive re-querying.
         synchronized (mANQPCache) {
-            ANQPData data = mANQPCache.get(key);
-            if (data == null ||
-                    !data.isResolved() ||
-                    data.getDomainID() != network.getAnqpDomainID() ||
-                    data.recacheable(now)) {
-                Log.d(Utils.hs2LogTag(getClass()), "Updating " + key + " -> " + data);
-                data = new ANQPData(network, anqpElements);
-                mANQPCache.put(key, data);
-            }
-            else {
-                Log.d(Utils.hs2LogTag(getClass()), "Not recaching " + key + " -> " + data);
-            }
+            ANQPData data = new ANQPData(network, anqpElements);
+            mANQPCache.put(key, data);
         }
     }
 
@@ -166,15 +153,7 @@ public class AnqpCache implements AlarmHandler {
             data = mANQPCache.get(key);
         }
 
-        long now = System.currentTimeMillis();
-
-        if (data == null ||
-                !data.isResolved() ||
-                data.getDomainID() != network.getAnqpDomainID() ||
-                data.expired(now)) {
-            return null;
-        }
-        return data;
+        return data != null && data.isValid(network) ? data : null;
     }
 
     public void clear() {
