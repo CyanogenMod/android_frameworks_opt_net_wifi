@@ -944,7 +944,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 new TimeBucket( 5, 5, 10 ),
                 new TimeBucket( 10, 10, 25 ),
                 new TimeBucket( 30, 25, 55 ),
-                new TimeBucket( 60, 55, 100),
+                new TimeBucket( 60, 55, 240),
                 new TimeBucket( 300, 240, 500),
                 new TimeBucket( 600, 500, 1500),
                 new TimeBucket( 1800, 1500, WifiScanner.MAX_SCAN_PERIOD_MS) };
