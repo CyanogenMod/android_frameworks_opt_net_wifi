@@ -71,6 +71,8 @@ import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
+import cyanogenmod.providers.CMSettings;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
@@ -986,24 +988,42 @@ public class WifiConfigStore extends IpConfigStore {
         if (VDBG) localLog("selectNetwork", config.networkId);
         if (config.networkId == INVALID_NETWORK_ID) return false;
 
-        // Reset the priority of each network at start or if it goes too high.
-        if (mLastPriority == -1 || mLastPriority > 1000000) {
-            for(WifiConfiguration config2 : mConfiguredNetworks.values()) {
-                if (updatePriorities) {
-                    if (config2.networkId != INVALID_NETWORK_ID) {
-                        config2.priority = 0;
-                        setNetworkPriorityNative(config2.networkId, config.priority);
+        final boolean autoConfigure = isAutoConfigPriorities();
+        if (autoConfigure) {
+            // Reset the priority of each network at start or if it goes too high.
+            if (mLastPriority == -1 || mLastPriority > 1000000) {
+                for (WifiConfiguration config2 : mConfiguredNetworks.values()) {
+                    if (updatePriorities) {
+                        if (config2.networkId != INVALID_NETWORK_ID) {
+                            config2.priority = 0;
+                            setNetworkPriorityNative(config2.networkId, config.priority);
+                        }
                     }
                 }
             }
-            mLastPriority = 0;
+        } else {
+            // Ensure that last priority is reestablished if auto configuration is reenabled
+            for (WifiConfiguration wifiConfiguration : mConfiguredNetworks.values()) {
+                if (wifiConfiguration != null && wifiConfiguration.priority > mLastPriority) {
+                    mLastPriority = wifiConfiguration.priority;
+                }
+            }
         }
 
+
         // Set to the highest priority and save the configuration.
-        if (updatePriorities) {
-            config.priority = ++mLastPriority;
-            setNetworkPriorityNative(config.networkId, config.priority);
-            buildPnoList();
+        if (autoConfigure) {
+            if (updatePriorities) {
+                config.priority = ++mLastPriority;
+                setNetworkPriorityNative(config.networkId, config.priority);
+                buildPnoList();
+            }
+        } else {
+            // Use the lastknown configuration to recover the priority
+            WifiConfiguration lastKnown = mConfiguredNetworks.get(config.networkId);
+            if (lastKnown != null) {
+                config.priority = lastKnown.priority;
+            }
         }
 
         if (config.isPasspoint()) {
@@ -1032,7 +1052,7 @@ public class WifiConfigStore extends IpConfigStore {
         writeKnownNetworkHistory(false);
 
         /* Enable the given network while disabling all other networks */
-        enableNetworkWithoutBroadcast(config.networkId, true);
+        enableNetworkWithoutBroadcast(config.networkId, autoConfigure);
 
        /* Avoid saving the config & sending a broadcast to prevent settings
         * from displaying a disabled list of networks */
@@ -1847,8 +1867,8 @@ public class WifiConfigStore extends IpConfigStore {
                     mLastPriority = config.priority;
                 }
 
-                config.setIpAssignment(IpAssignment.DHCP);
-                config.setProxySettings(ProxySettings.NONE);
+            config.setIpAssignment(IpAssignment.DHCP);
+            config.setProxySettings(ProxySettings.NONE);
 
                 if (mConfiguredNetworks.getByConfigKey(config.configKey()) != null) {
                     // That SSID is already known, just ignore this duplicate entry
@@ -4627,5 +4647,10 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
         }
+    }
+
+    private boolean isAutoConfigPriorities() {
+        return CMSettings.Global.getInt(mContext.getContentResolver(),
+                CMSettings.Global.WIFI_AUTO_PRIORITIES_CONFIGURATION, 1) != 0;
     }
 }
