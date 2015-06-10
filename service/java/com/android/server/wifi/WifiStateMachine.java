@@ -4108,7 +4108,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             sb.append(String.format(" ls+=%d", mWifiInfo.linkStuckCount));
             if (PDBG) loge(" bad link -> stuck count ="
                     + Integer.toString(mWifiInfo.linkStuckCount));
-        } else if (mWifiInfo.txSuccessRate > 2 || mWifiInfo.txBadRate < 0.1) {
+        } else if (mWifiInfo.txBadRate < 0.3) {
             if (mWifiInfo.linkStuckCount > 0)
                 mWifiInfo.linkStuckCount -= 1;
             sb.append(String.format(" ls-=%d", mWifiInfo.linkStuckCount));
@@ -7752,6 +7752,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case CMD_ENABLE_RSSI_POLL:
+                    cleanWifiScore();
                     if (mWifiConfigStore.enableRssiPollWhenAssociated.get()) {
                         mEnableRssiPolling = (message.arg1 == 1);
                     } else {
@@ -7763,8 +7764,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         fetchRssiLinkSpeedAndFrequencyNative();
                         sendMessageDelayed(obtainMessage(CMD_RSSI_POLL,
                                 mRssiPollToken, 0), POLL_RSSI_INTERVAL_MSECS);
-                    } else {
-                        cleanWifiScore();
                     }
                     break;
                 case WifiManager.RSSI_PKTCNT_FETCH:
