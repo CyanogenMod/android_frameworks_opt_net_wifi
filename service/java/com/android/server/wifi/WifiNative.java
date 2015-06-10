@@ -29,6 +29,7 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
+import android.net.wifi.WifiEnterpriseConfig;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Base64;
@@ -180,6 +181,16 @@ public class WifiNative {
         }
     }
 
+    private boolean doBooleanCommandWithoutLogging(String command) {
+        if (DBG) Log.d(mTAG, "doBooleanCommandWithoutLogging: " + command);
+        synchronized (mLock) {
+            int cmdId = getNewCmdIdLocked();
+            boolean result = doBooleanCommandNative(mInterfacePrefix + command);
+            if (DBG) Log.d(mTAG, command + ": returned " + result);
+            return result;
+        }
+    }
+
     private int doIntCommand(String command) {
         if (DBG) Log.d(mTAG, "doInt: " + command);
         synchronized (mLock) {
@@ -276,7 +287,12 @@ public class WifiNative {
 
     public boolean setNetworkVariable(int netId, String name, String value) {
         if (TextUtils.isEmpty(name) || TextUtils.isEmpty(value)) return false;
-        return doBooleanCommand("SET_NETWORK " + netId + " " + name + " " + value);
+        if (name.equals(WifiConfiguration.pskVarName)
+                || name.equals(WifiEnterpriseConfig.PASSWORD_KEY)) {
+            return doBooleanCommandWithoutLogging("SET_NETWORK " + netId + " " + name + " " + value);
+        } else {
+            return doBooleanCommand("SET_NETWORK " + netId + " " + name + " " + value);
+        }
     }
 
     public String getNetworkVariable(int netId, String name) {
