@@ -811,27 +811,45 @@ public class WifiConfigStore extends IpConfigStore {
         if (VDBG) localLog("selectNetwork", netId);
         if (netId == INVALID_NETWORK_ID) return false;
 
-        // Reset the priority of each network at start or if it goes too high.
-        if (mLastPriority == -1 || mLastPriority > 1000000) {
+        final boolean autoConfigure = isAutoConfigPriorities();
+        if (autoConfigure) {
+            // Reset the priority of each network at start or if it goes too high.
+            if (mLastPriority == -1 || mLastPriority > 1000000) {
+                for(WifiConfiguration config : mConfiguredNetworks.values()) {
+                    if (config.networkId != INVALID_NETWORK_ID) {
+                        config.priority = 0;
+                        addOrUpdateNetworkNative(config, -1);
+                    }
+                }
+                mLastPriority = 0;
+            }
+        } else {
+            // Ensure that last priority is reestablished if auto configuration is reenabled
             for(WifiConfiguration config : mConfiguredNetworks.values()) {
-                if (config.networkId != INVALID_NETWORK_ID) {
-                    config.priority = 0;
-                    addOrUpdateNetworkNative(config, -1);
+                if(config != null && config.priority > mLastPriority) {
+                    mLastPriority = config.priority;
                 }
             }
-            mLastPriority = 0;
         }
 
         // Set to the highest priority and save the configuration.
         WifiConfiguration config = new WifiConfiguration();
         config.networkId = netId;
-        config.priority = ++mLastPriority;
+        if (autoConfigure) {
+            config.priority = ++mLastPriority;
+        } else {
+            // Use the lastknown configuration to recover the priority
+            WifiConfiguration lastKnown =  mConfiguredNetworks.get(netId);
+            if (lastKnown != null) {
+                config.priority = lastKnown.priority;
+            }
+        }
 
         addOrUpdateNetworkNative(config, -1);
         mWifiNative.saveConfig();
 
         /* Enable the given network while disabling all other networks */
-        enableNetworkWithoutBroadcast(netId, true);
+        enableNetworkWithoutBroadcast(netId, autoConfigure);
 
        /* Avoid saving the config & sending a broadcast to prevent settings
         * from displaying a disabled list of networks */
@@ -1456,8 +1474,8 @@ public class WifiConfigStore extends IpConfigStore {
                 mLastPriority = config.priority;
             }
 
-                config.setIpAssignment(IpAssignment.DHCP);
-                config.setProxySettings(ProxySettings.NONE);
+            config.setIpAssignment(IpAssignment.DHCP);
+            config.setProxySettings(ProxySettings.NONE);
 
             if (mNetworkIds.containsKey(configKey(config))) {
                 // That SSID is already known, just ignore this duplicate entry
@@ -4417,6 +4435,11 @@ public class WifiConfigStore extends IpConfigStore {
                         Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID);
             }
         }
+    }
+
+    private boolean isAutoConfigPriorities() {
+        return Settings.Global.getInt(mContext.getContentResolver(),
+                Settings.Global.WIFI_AUTO_PRIORITIES_CONFIGURATION, 1) != 0;
     }
 
 }
