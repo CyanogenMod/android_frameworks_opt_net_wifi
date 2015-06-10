@@ -4687,7 +4687,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     + mNetworkInfo.getDetailedState() + " and new state=" + state
                     + " hidden=" + hidden);
         }
-        if (mNetworkInfo.getExtraInfo() != null && mWifiInfo.getSSID() != null) {
+        if (mNetworkInfo.getExtraInfo() != null && mWifiInfo.getSSID() != null
+                && !mWifiInfo.getSSID().equals(WifiSsid.NONE)) {
             // Always indicate that SSID has changed
             if (!mNetworkInfo.getExtraInfo().equals(mWifiInfo.getSSID())) {
                 if (DBG) {
