@@ -43,8 +43,8 @@ public abstract class Utils {
         long mac = 0;
         int count = 0;
         for (int n = 0; n < s.length(); n++) {
-            int nibble = Utils.fromHex(s.charAt(n), true);
-            if (nibble >= 0) {
+            int nibble = Utils.fromHex(s.charAt(n), true);  // Set lenient to not blow up on ':'
+            if (nibble >= 0) {                              // ... and use only legit hex.
                 mac = (mac << 4) | nibble;
                 count++;
             }

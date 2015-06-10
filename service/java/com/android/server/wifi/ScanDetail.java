@@ -10,6 +10,7 @@ import com.android.server.wifi.anqp.VenueNameElement;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.PasspointMatchInfo;
+import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import java.util.ArrayList;
@@ -74,9 +75,12 @@ public class ScanDetail {
     }
 
     public void propagateANQPInfo(Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
+        if (anqpElements.isEmpty()) {
+            return;
+        }
         mNetworkDetail = mNetworkDetail.complete(anqpElements);
-        HSFriendlyNameElement fne = (HSFriendlyNameElement)anqpElements.get(Constants
-                .ANQPElementType.HSFriendlyName);
+        HSFriendlyNameElement fne = (HSFriendlyNameElement)anqpElements.get(
+                Constants.ANQPElementType.HSFriendlyName);
         // !!! Match with language
         if (fne != null && !fne.getNames().isEmpty()) {
             mScanResult.venueName = fne.getNames().get(0).getText();
@@ -129,6 +133,12 @@ public class ScanDetail {
 
     @Override
     public String toString() {
-        return mScanResult.SSID;
+        try {
+            return String.format("'%s'/%012x",
+                    mScanResult.SSID, Utils.parseMac(mScanResult.BSSID));
+        }
+        catch (IllegalArgumentException iae) {
+            return String.format("'%s'/----", mScanResult.BSSID);
+        }
     }
 }

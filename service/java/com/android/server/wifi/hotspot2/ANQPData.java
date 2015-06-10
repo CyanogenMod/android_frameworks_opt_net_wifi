@@ -4,20 +4,29 @@ import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 
 public class ANQPData {
+    /**
+     * The regular cache time for entries with a non-zero domain id.
+     */
     private static final long ANQP_QUALIFIED_CACHE_TIMEOUT = 3600000L;
+    /**
+     * The cache time for entries with a zero domain id. The zero domain id indicates that ANQP
+     * data from the AP may change at any time, thus a relatively short cache time is given to
+     * such data, but still long enough to avoid excessive querying.
+     */
     private static final long ANQP_UNQUALIFIED_CACHE_TIMEOUT = 60000L;
-    private static final long ANQP_HOLDOFF_TIME =              60000L;
-    private static final long ANQP_RECACHE_TIME =             300000L;
+    /**
+     * This is the hold off time for pending queries, i.e. the time during which subsequent queries
+     * are squelched.
+     */
+    private static final long ANQP_HOLDOFF_TIME = 10000L;
 
     private final NetworkDetail mNetwork;
     private final Map<Constants.ANQPElementType, ANQPElement> mANQPElements;
     private final long mCtime;
     private final long mExpiry;
-    private volatile long mAtime;
 
     public ANQPData(NetworkDetail network,
                     Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
@@ -25,48 +34,37 @@ public class ANQPData {
         mNetwork = network;
         mANQPElements = anqpElements != null ? Collections.unmodifiableMap(anqpElements) : null;
         mCtime = System.currentTimeMillis();
-        mExpiry = mCtime +
-                ( network.getAnqpDomainID() == 0 ?
-                ANQP_UNQUALIFIED_CACHE_TIMEOUT :
-                ANQP_QUALIFIED_CACHE_TIMEOUT );
-        mAtime = mCtime;
+        if (anqpElements == null) {
+            mExpiry = mCtime + ANQP_HOLDOFF_TIME;
+        }
+        else if (network.getAnqpDomainID() == 0) {
+            mExpiry = mCtime + ANQP_UNQUALIFIED_CACHE_TIMEOUT;
+        }
+        else {
+            mExpiry = mCtime + ANQP_QUALIFIED_CACHE_TIMEOUT;
+        }
     }
 
     public Map<Constants.ANQPElementType, ANQPElement> getANQPElements() {
-        mAtime = System.currentTimeMillis();
-        return mANQPElements;
+        return Collections.unmodifiableMap(mANQPElements);
     }
 
     public NetworkDetail getNetwork() {
         return mNetwork;
     }
 
-    public int getDomainID() {
-        return mNetwork.getAnqpDomainID();
-    }
-
-    public long getCtime() {
-        return mCtime;
-    }
-
-    public long getAtime() {
-        return mAtime;
+    public boolean expired() {
+        return expired(System.currentTimeMillis());
     }
 
     public boolean expired(long at) {
-        return mExpiry < at;
+        return mExpiry <= at;
     }
 
-    public boolean recacheable(long at) {
-        return mNetwork.getAnqpDomainID() == 0 || mCtime + ANQP_RECACHE_TIME < at;
-    }
-
-    public boolean isResolved() {
-        return mANQPElements != null;
-    }
-
-    public boolean expendable(long at) {
-        return mANQPElements == null && mCtime + ANQP_HOLDOFF_TIME < at;
+    protected boolean isValid(NetworkDetail nwk) {
+        return mANQPElements != null &&
+                nwk.getAnqpDomainID() == mNetwork.getAnqpDomainID() &&
+                mExpiry > System.currentTimeMillis();
     }
 
     @Override
@@ -83,8 +81,7 @@ public class ANQPData {
         sb.append(Utils.toHMS(now-mCtime)).append(" old, expires in ").
                 append(Utils.toHMS(mExpiry-now)).append(' ');
         sb.append(expired(now) ? 'x' : '-');
-        sb.append(recacheable(now) ? 'c' : '-');
-        sb.append(isResolved() ? '-' : 'u');
+        sb.append(mANQPElements == null ? 'u' : '-');
         return sb.toString();
     }
 }
