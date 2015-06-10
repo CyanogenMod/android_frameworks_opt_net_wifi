@@ -8563,6 +8563,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         if (config != null) {
                             // Disable autojoin
                             config.numNoInternetAccessReports += 1;
+                            config.dirty = true;
+                            mWifiConfigStore.writeKnownNetworkHistory(false);
                         }
                     }
                     return HANDLED;
@@ -8570,9 +8572,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (message.arg1 == NetworkAgent.VALID_NETWORK) {
                         config = getCurrentWifiConfiguration();
                         if (config != null) {
+                            if (!config.validatedInternetAccess
+                                    || config.numNoInternetAccessReports != 0) {
+                                config.dirty = true;
+                            }
                             // re-enable autojoin
                             config.numNoInternetAccessReports = 0;
                             config.validatedInternetAccess = true;
+                            mWifiConfigStore.writeKnownNetworkHistory(false);
                         }
                     }
                     return HANDLED;
