@@ -6193,8 +6193,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case WifiMonitor.ANQP_DONE_EVENT:
-                    Log.d(Utils.hs2LogTag(getClass()), String.format("WFSM: ANQP for %016x %s",
-                            (Long)message.obj, message.arg1 != 0 ? "success" : "fail"));
                     mWifiConfigStore.notifyANQPDone((Long) message.obj, message.arg1 != 0);
                     break;
                 default:

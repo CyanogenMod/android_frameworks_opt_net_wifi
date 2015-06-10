@@ -132,7 +132,7 @@ public class NetworkDetail {
             throw new IllegalArgumentException("No element separator");
         }
 
-        mBSSID = parseMac(bssid);
+        mBSSID = Utils.parseMac(bssid);
 
         ByteBuffer data = ByteBuffer.wrap(Utils.hexToBytes(infoElements.substring(separator + 1)))
                 .order(ByteOrder.LITTLE_ENDIAN);
