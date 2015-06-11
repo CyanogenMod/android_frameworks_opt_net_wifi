@@ -275,7 +275,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private boolean testNetworkDisconnect = false;
 
     private boolean mEnableRssiPolling = false;
-    private boolean mEnableBackgroundScan = false;
+    private boolean mLegacyPnoEnabled = false;
     private int mRssiPollToken = 0;
     /* 3 operational states for STA operation: CONNECT_MODE, SCAN_ONLY_MODE, SCAN_ONLY_WIFI_OFF_MODE
     * In CONNECT_MODE, the STA can scan and connect to an access point
@@ -2207,6 +2207,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiConfigStore.enableAllNetworks();
         }
         mWifiNative.enableBackgroundScan(enable);
+        mLegacyPnoEnabled = enable;
     }
 
     /**
@@ -2457,7 +2458,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         pw.println("mUserWantsSuspendOpt " + mUserWantsSuspendOpt);
         pw.println("mSuspendOptNeedsDisabled " + mSuspendOptNeedsDisabled);
         pw.println("Supplicant status " + mWifiNative.status(true));
-        pw.println("mEnableBackgroundScan " + mEnableBackgroundScan);
+        pw.println("mLegacyPnoEnabled " + mLegacyPnoEnabled);
         pw.println("mSetCountryCode " + mSetCountryCode);
         pw.println("mDriverSetCountryCode " + mDriverSetCountryCode);
         pw.println("mConnectedModeGScanOffloadStarted " + mConnectedModeGScanOffloadStarted);
@@ -3407,10 +3408,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         getWifiLinkLayerStats(false);
         mOnTimeScreenStateChange = mOnTime;
         lastScreenStateChangeTimeStamp = lastLinkLayerStatsUpdate;
-        mEnableBackgroundScan = mScreenOn == false;
+
         cancelDelayedScan();
 
         if (screenOn) {
+            if (mLegacyPnoEnabled) {
+                enableBackgroundScan(false);
+            }
             setScanAlarm(false);
             clearBlacklist();
 
@@ -3446,18 +3450,20 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (!mBackgroundScanSupported) {
                         setScanAlarm(true);
                     } else {
-                        mEnableBackgroundScan = true;
+                        if (!mIsScanOngoing) {
+                            enableBackgroundScan(true);
+                        }
                     }
                 }
             } else {
-                stopGScan("ScreenOffStop(enableBackground=" + mEnableBackgroundScan + ") ");
+                if (mLegacyPnoEnabled) {
+                    enableBackgroundScan(false);
+                }
+                stopGScan("ScreenOffStop(enableBackground=" + mLegacyPnoEnabled + ") ");
             }
         }
-        if (DBG) logd("backgroundScan enabled=" + mEnableBackgroundScan);
-        if (mEnableBackgroundScan) {
-            // to scan for them in background, we need all networks enabled
-            enableBackgroundScan(mEnableBackgroundScan);
-        }
+        if (DBG) logd("backgroundScan enabled=" + mLegacyPnoEnabled);
+
         if (DBG) log("handleScreenStateChanged Exit: " + screenOn);
     }
 
@@ -8753,7 +8759,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (PDBG) {
                 loge(" Enter DisconnectingState State scan interval "
                         + mWifiConfigStore.wifiDisconnectedShortScanIntervalMilli.get()
-                        + " mEnableBackgroundScan= " + mEnableBackgroundScan
+                        + " mLegacyPnoEnabled= " + mLegacyPnoEnabled
                         + " screenOn=" + mScreenOn);
             }
 
@@ -8818,7 +8824,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (PDBG) {
                 loge(" Enter DisconnectedState scan interval "
                         + mWifiConfigStore.wifiDisconnectedShortScanIntervalMilli.get()
-                        + " mEnableBackgroundScan= " + mEnableBackgroundScan
+                        + " mLegacyPnoEnabled= " + mLegacyPnoEnabled
                         + " screenOn=" + mScreenOn
                         + " useGscan=" + mHalBasedPnoDriverSupported + "/"
                         + mWifiConfigStore.enableHalBasedPno.get());
@@ -8840,7 +8846,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     /**
                      * screen dark and PNO supported => scan alarm disabled
                      */
-                    if (mEnableBackgroundScan) {
+                    if (mBackgroundScanSupported) {
                         /* If a regular scan result is pending, do not initiate background
                          * scan until the scan results are returned. This is needed because
                         * initiating a background scan will cancel the regular scan and
@@ -8950,7 +8956,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             return HANDLED;
                         }
                         /* Disable background scan temporarily during a regular scan */
-                        if (mEnableBackgroundScan) {
+                        if (mLegacyPnoEnabled) {
                             enableBackgroundScan(false);
                         }
                         handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
@@ -8968,7 +8974,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                          * place to issue).
                          */
 
-                        if (mEnableBackgroundScan) {
+                        if (mLegacyPnoEnabled) {
                             enableBackgroundScan(false);
                         }
                         ret = NOT_HANDLED;
@@ -9005,7 +9011,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                 case WifiMonitor.SCAN_FAILED_EVENT:
                     /* Re-enable background scan when a pending scan result is received */
-                    if (mEnableBackgroundScan && mIsScanOngoing) {
+                    if (!mScreenOn && mIsScanOngoing
+                            && mBackgroundScanSupported
+                            && !useHalBasedAutoJoinOffload()) {
                         enableBackgroundScan(true);
                     }
                     /* Handled in parent state */
@@ -9062,7 +9070,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         @Override
         public void exit() {
             /* No need for a background scan upon exit from a disconnected state */
-            if (mEnableBackgroundScan) {
+            if (mLegacyPnoEnabled) {
                 enableBackgroundScan(false);
             }
             setScanAlarm(false);
