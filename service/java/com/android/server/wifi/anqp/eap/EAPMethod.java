@@ -1,7 +1,13 @@
 package com.android.server.wifi.anqp.eap;
 
+
+import android.util.Log;
+
+import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.Constants;
+import com.android.server.wifi.anqp.ThreeGPPNetworkElement;
 import com.android.server.wifi.hotspot2.AuthMatch;
+import com.android.server.wifi.hotspot2.Utils;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
@@ -109,21 +115,47 @@ public class EAPMethod {
         return mEAPMethodID;
     }
 
-    public AuthMatch matchAuthParams(EAPMethod other) {
-        if (other.getAuthParams().isEmpty() || mAuthParams.isEmpty()) {
-            return AuthMatch.Unqualified;
-        }
-        for (Map.Entry<EAP.AuthInfoID, Set<AuthParam>> entry : other.getAuthParams().entrySet()) {
+    public AuthMatch match(com.android.server.wifi.hotspot2.pps.Credential credential,
+                           ThreeGPPNetworkElement plmnElement) {
 
-            Set<AuthParam> myParams = mAuthParams.get(entry.getKey());
-            if (myParams == null)
-                continue;
-
-            if (!Collections.disjoint(myParams, entry.getValue())) {
-                return AuthMatch.Qualified;
-            }
+        EAPMethod credMethod = credential.getEAPMethod();
+        if (mEAPMethodID != credMethod.getEAPMethodID()) {
+            return AuthMatch.None;
         }
-        return AuthMatch.None;
+
+        switch (mEAPMethodID) {
+            case EAP_TTLS:
+                if (mAuthParams.isEmpty()) {
+                    return AuthMatch.MethodOnly;
+                }
+                for (Map.Entry<EAP.AuthInfoID, Set<AuthParam>> entry :
+                        credMethod.getAuthParams().entrySet()) {
+                    Set<AuthParam> params = mAuthParams.get(entry.getKey());
+                    if (params == null)
+                        continue;
+
+                    if (!Collections.disjoint(params, entry.getValue())) {
+                        return AuthMatch.Exact;
+                    }
+                }
+                return AuthMatch.None;
+            case EAP_TLS:
+                return AuthMatch.Exact;
+            case EAP_SIM:
+            case EAP_AKA:
+            case EAP_AKAPrim:
+                if (plmnElement == null || plmnElement.getPlmns().isEmpty()) {
+                    return AuthMatch.MethodOnly;
+                }
+                for (CellularNetwork network : plmnElement.getPlmns()) {
+                    if (network.matchIMSI(credential.getImsi())) {
+                        return AuthMatch.Exact;
+                    }
+                }
+                return AuthMatch.None;
+            default:
+                return AuthMatch.MethodOnly;
+        }
     }
 
     public AuthParam getAuthParam() {
