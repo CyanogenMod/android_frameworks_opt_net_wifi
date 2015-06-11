@@ -670,7 +670,7 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         Chronograph chronograph = new Chronograph();
-        chronograph.start();
+        /* chronograph.start(); */
         mMOManager = new MOManager(new File(PPS_FILE));
         mAnqpCache = new AnqpCache(chronograph);
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
