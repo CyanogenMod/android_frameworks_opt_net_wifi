@@ -55,7 +55,6 @@ import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.hotspot2.ANQPData;
 import com.android.server.wifi.hotspot2.AnqpCache;
-import com.android.server.wifi.hotspot2.Chronograph;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
@@ -657,18 +656,16 @@ public class WifiConfigStore extends IpConfigStore {
             enableSsidWhitelist.set(false);
         }
 
-        Chronograph chronograph = new Chronograph();
-        chronograph.start();
         mMOManager = new MOManager(new File(PPS_FILE));
-        mAnqpCache = new AnqpCache(chronograph);
+        mAnqpCache = new AnqpCache();
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap<>();
 
         mSIMAccessor = new SIMAccessor(mContext);
     }
 
-    public void clearANQPCache() {
-        mAnqpCache.clear();
+    public void trimANQPCache(boolean all) {
+        mAnqpCache.clear(all, DBG);
     }
 
     void enableVerboseLogging(int verbose) {

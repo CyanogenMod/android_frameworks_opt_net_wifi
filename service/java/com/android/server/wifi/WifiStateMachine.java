@@ -1310,7 +1310,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     public void clearANQPCache() {
-        mWifiConfigStore.clearANQPCache();
+        mWifiConfigStore.trimANQPCache(true);
     }
 
     public void setAllowScansWithTraffic(int enabled) {
@@ -3657,6 +3657,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         emptyScanResultCount = 0;
+
+        mWifiConfigStore.trimANQPCache(false);
 
         // note that all these splits and substrings keep references to the original
         // huge string buffer while the amount we really want is generally pretty small
