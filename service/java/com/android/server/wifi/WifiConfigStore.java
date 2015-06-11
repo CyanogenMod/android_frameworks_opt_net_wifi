@@ -3231,7 +3231,7 @@ public class WifiConfigStore extends IpConfigStore {
         boolean queried = !query;
         Collection<HomeSP> homeSPs = mMOManager.getLoadedSPs().values();
         Map<HomeSP, PasspointMatch> matches = new HashMap<>(homeSPs.size());
-        Log.d(Utils.hs2LogTag(getClass()), "match nwk " + scanDetail.getSSID() +
+        Log.d(Utils.hs2LogTag(getClass()), "match nwk " + scanDetail.toKeyString() +
                 ", anqp " + ( anqpData != null ? "present" : "missing" ) +
                 ", query " + query + ", home sps: " + homeSPs.size());
 
