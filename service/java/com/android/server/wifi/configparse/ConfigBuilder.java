@@ -28,12 +28,8 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
-import java.security.cert.CertPath;
-import java.security.cert.CertPathValidator;
-import java.security.cert.CertPathValidatorException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
-import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,7 +42,7 @@ public class ConfigBuilder {
     private static final String KeyTag = "application/x-pkcs12";
     private static final String CATag = "application/x-x509-ca-cert";
 
-    private static String X509 = "X.509";
+    private static final String X509 = "X.509";
 
     private static final String TAG = "WCFG";
 
@@ -211,6 +207,7 @@ public class ConfigBuilder {
     }
 
     // Retain for debugging purposes
+    /*
     private static void xIterateCerts(KeyStore ks, X509Certificate caCert)
             throws GeneralSecurityException {
         Enumeration<String> aliases = ks.aliases();
@@ -231,6 +228,7 @@ public class ConfigBuilder {
             }
         }
     }
+    */
 
     private static WifiConfiguration buildTTLSConfig(HomeSP homeSP)
             throws IOException {
