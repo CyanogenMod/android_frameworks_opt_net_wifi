@@ -664,7 +664,10 @@ public class WifiConfigStore extends IpConfigStore {
             enableSsidWhitelist.set(false);
         }
 
-        mMOManager = new MOManager(new File(PPS_FILE));
+        boolean hs2on = mContext.getResources().getBoolean(R.bool.config_wifi_hotspot2_enabled);
+        Log.d(Utils.hs2LogTag(getClass()), "Passpoint is " + (hs2on ? "enabled" : "disabled"));
+
+        mMOManager = new MOManager(new File(PPS_FILE), hs2on);
         mAnqpCache = new AnqpCache();
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap<>();
@@ -2479,6 +2482,10 @@ public class WifiConfigStore extends IpConfigStore {
          */
 
         if (VDBG) localLog("addOrUpdateNetworkNative " + config.getPrintableSsid());
+        if (config.isPasspoint() && !mMOManager.isConfigured()) {
+            Log.e(TAG, "Passpoint is not enabled");
+            return new NetworkUpdateResult(INVALID_NETWORK_ID);
+        }
 
         int netId = config.networkId;
         boolean newNetwork = false;
@@ -3096,7 +3103,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private Map<HomeSP, PasspointMatch> matchPasspointNetworks(ScanDetail scanDetail) {
-        if (mMOManager.getLoadedSPs().isEmpty()) {
+        if (!mMOManager.isConfigured()) {
             return null;
         }
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();
