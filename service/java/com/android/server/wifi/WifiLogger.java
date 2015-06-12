@@ -92,19 +92,21 @@ class WifiLogger  {
     }
 
     public synchronized void startLogging(boolean verboseEnabled) {
+        mFirmwareVersion = WifiNative.getFirmwareVersion();
+        mDriverVersion = WifiNative.getDriverVersion();
+        mSupportedFeatureSet = WifiNative.getSupportedLoggerFeatureSet();
+
         if (verboseEnabled == false) {
             Log.d(TAG, "Not enabling logger to work around issues");
             return;
         }
+
         WifiNative.setLoggingEventHandler(mHandler);
         if (verboseEnabled) {
             mLogLevel = VERBOSE_LOG_WITH_WAKEUP;
         } else {
             mLogLevel = VERBOSE_NORMAL_LOG;
         }
-        mFirmwareVersion = WifiNative.getFirmwareVersion();
-        mDriverVersion = WifiNative.getDriverVersion();
-        mSupportedFeatureSet = WifiNative.getSupportedLoggerFeatureSet();
         if (mRingBuffers == null) {
             if (fetchRingBuffers()) {
                 startLoggingAllExceptPerPacketBuffers();
