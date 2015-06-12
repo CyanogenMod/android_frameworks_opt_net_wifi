@@ -1215,6 +1215,7 @@ public class WifiConfigStore extends IpConfigStore {
                 writePasspointConfigs(config.FQDN, null);
             }
             mWifiNative.saveConfig();
+            writeKnownNetworkHistory(true);
             return true;
         } else {
             loge("Failed to remove network " + netId);
