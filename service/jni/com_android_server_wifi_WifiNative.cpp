@@ -1027,6 +1027,17 @@ void onLinkStatsResults(wifi_request_id id, wifi_iface_stat *iface_stat,
     }
 }
 
+static void android_net_wifi_setLinkLayerStats (JNIEnv *env, jclass cls, jint iface, int enable)  {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    wifi_link_layer_params params;
+    params.aggressive_statistics_gathering = enable;
+    params.mpdu_size_threshold = 128;
+    ALOGE("android_net_wifi_setLinkLayerStats: %u\n", enable);
+
+    hal_fn.wifi_set_link_stats(handle, params);
+}
+
 static jobject android_net_wifi_getLinkLayerStats (JNIEnv *env, jclass cls, jint iface)  {
 
     wifi_stats_result_handler handler;
@@ -2098,6 +2109,8 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_untrackSignificantWifiChange},
     { "getWifiLinkLayerStatsNative", "(I)Landroid/net/wifi/WifiLinkLayerStats;",
             (void*) android_net_wifi_getLinkLayerStats},
+    { "setWifiLinkLayerStatsNative", "(II)V",
+            (void*) android_net_wifi_setLinkLayerStats},
     { "getSupportedFeatureSetNative", "(I)I",
             (void*) android_net_wifi_getSupportedFeatures},
     { "requestRangeNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
