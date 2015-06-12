@@ -1773,6 +1773,7 @@ public class WifiAutoJoinController {
                         mWifiConfigStore.wifiConfigurationFromScanResult(untrustedCandidate);
                 candidate.allowedKeyManagement.set(KeyMgmt.NONE);
                 candidate.ephemeral = true;
+                candidate.dirty = true;
             }
         }
 
