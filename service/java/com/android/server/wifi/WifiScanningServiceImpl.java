@@ -950,7 +950,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 new TimeBucket( 1800, 1500, WifiScanner.MAX_SCAN_PERIOD_MS) };
 
         private static final int MAX_BUCKETS = 8;
-        private static final int MAX_CHANNELS = 8;
+        private static final int MAX_CHANNELS = 32;
         private static final int DEFAULT_MAX_AP_PER_SCAN = 10;
         private static final int DEFAULT_REPORT_THRESHOLD_PERCENT = 100;
         private static final int DEFAULT_BASE_PERIOD_MS = 5000;
@@ -971,10 +971,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 bucketSettings.report_events = 0;
                 bucketSettings.channels = new WifiNative.ChannelSettings[MAX_CHANNELS];
                 bucketSettings.num_channels = 0;
-                for (int j = 0; j < bucketSettings.channels.length; j++) {
-                    WifiNative.ChannelSettings channelSettings = new WifiNative.ChannelSettings();
-                    bucketSettings.channels[j] = channelSettings;
-                }
                 mSettings.buckets[i] = bucketSettings;
             }
         }
@@ -1080,8 +1076,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 localLog("desired channel " + desiredChannelSpec.frequency);
 
                 boolean found = false;
-                for (WifiNative.ChannelSettings existingChannelSpec : bucket.channels) {
-                    if (desiredChannelSpec.frequency == existingChannelSpec.frequency) {
+                for (int i = 0; i < bucket.num_channels; i++) {
+                    if (desiredChannelSpec.frequency == bucket.channels[i].frequency) {
                         found = true;
                         break;
                     }
@@ -1107,8 +1103,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                     localLog("adding new channel spec " + desiredChannelSpec.frequency);
 
-                    WifiNative.ChannelSettings channelSettings = bucket.channels[bucket.num_channels];
+                    WifiNative.ChannelSettings channelSettings = new WifiNative.ChannelSettings();
                     channelSettings.frequency = desiredChannelSpec.frequency;
+                    bucket.channels[bucket.num_channels] = channelSettings;
                     bucket.num_channels++;
                     mChannelToBucketMap.put(bucketIndex, channelSettings.frequency);
                 }
@@ -1872,12 +1869,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static int getBandFromChannels(WifiNative.ChannelSettings[] channels) {
         int band = WifiScanner.WIFI_BAND_UNSPECIFIED;
         for (WifiNative.ChannelSettings channel : channels) {
-            if (2400 <= channel.frequency && channel.frequency < 2500) {
-                band |= WifiScanner.WIFI_BAND_24_GHZ;
-            } else if ( isDfs(channel.frequency)) {
-                band |= WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY;
-            } else if (5100 <= channel.frequency && channel.frequency < 6000) {
-                band |= WifiScanner.WIFI_BAND_5_GHZ;
+            if (channel != null) {
+                if (2400 <= channel.frequency && channel.frequency < 2500) {
+                    band |= WifiScanner.WIFI_BAND_24_GHZ;
+                } else if ( isDfs(channel.frequency)) {
+                    band |= WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY;
+                } else if (5100 <= channel.frequency && channel.frequency < 6000) {
+                    band |= WifiScanner.WIFI_BAND_5_GHZ;
+                }
             }
         }
         return band;
