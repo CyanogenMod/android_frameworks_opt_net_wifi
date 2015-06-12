@@ -5898,6 +5898,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mHalBasedPnoDriverSupported = true;
             }
 
+            // Enable link layer stats gathering
+            mWifiNative.setWifiLinkLayerStats("wlan0", 1);
+
             if (PDBG) {
                 loge("Driverstarted State enter done, epno=" + mHalBasedPnoDriverSupported
                      + " feature=" + mHalFeatureSet);
