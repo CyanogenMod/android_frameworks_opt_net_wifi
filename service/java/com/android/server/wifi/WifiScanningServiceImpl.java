@@ -766,7 +766,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                                 result.level, result.frequency, result.timestamp,
                                 ScanResult.UNSPECIFIED, ScanResult.UNSPECIFIED,result.channelWidth,
                                 result.centerFreq0, result.centerFreq1,
-                                result.is80211McRTTResponder);
+                                result.is80211mcResponder());
                         if (DBG) localLog("sending it to " + handler);
                         newResult.informationElements = result.informationElements.clone();
                         mChannel.sendMessage(

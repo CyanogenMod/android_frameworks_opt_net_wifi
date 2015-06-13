@@ -1416,7 +1416,8 @@ public class WifiNative {
         byte channelMode = 0;
         byte centerFreqIndex1 = 0;
         byte centerFreqIndex2 = 0;
-        result.is80211McRTTResponder = false;
+
+        boolean is80211McRTTResponder = false;
 
         ScanResult.InformationElement elements[] = new ScanResult.InformationElement[num];
         for (int i = 0, index = 0; i < num; i++) {
@@ -1444,16 +1445,23 @@ public class WifiNative {
                 byte offset = RTT_RESP_ENABLE_BIT % 8;
 
                 if(len < tempIndex + 1) {
-                    result.is80211McRTTResponder = false;
+                    is80211McRTTResponder = false;
                 } else {
                     if ((bytes[inforStart + tempIndex] & ((byte)0x1 << offset)) != 0) {
-                        result.is80211McRTTResponder = true;
+                        is80211McRTTResponder = true;
                     } else {
-                        result.is80211McRTTResponder = false;
+                        is80211McRTTResponder = false;
                     }
                 }
             }
         }
+
+        if (is80211McRTTResponder) {
+            result.setFlag(ScanResult.FLAG_80211mc_RESPONDER);
+        } else {
+            result.clearFlag(ScanResult.FLAG_80211mc_RESPONDER);
+        }
+
         //handle RTT related information
         if (channelMode != 0) {
             // 80 or 160 MHz
@@ -1488,7 +1496,7 @@ public class WifiNative {
         if(DBG) {
             Log.d(TAG, dbg + "SSID: " + result.SSID + " ChannelWidth is: " + result.channelWidth +
                     " PrimaryFreq: " + result.frequency +" mCenterfreq0: " + result.centerFreq0 +
-                    " mCenterfreq1: " + result.centerFreq1 + (result.is80211McRTTResponder ?
+                    " mCenterfreq1: " + result.centerFreq1 + (is80211McRTTResponder ?
                     "Support RTT reponder: " : "Do not support RTT responder"));
         }
 

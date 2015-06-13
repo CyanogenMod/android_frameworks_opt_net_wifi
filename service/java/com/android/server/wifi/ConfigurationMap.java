@@ -44,7 +44,10 @@ public class ConfigurationMap {
                     Log.d(WifiConfigStore.TAG, "Matched " + id_str + " with " + config.networkId);
                     config.FQDN = fqdn;
                     config.providerFriendlyName = homeSp.getFriendlyName();
-                    config.roamingConsortiumIds = new HashSet<>(homeSp.getRoamingConsortiums());
+
+                    HashSet<Long> roamingConsortiumIds = homeSp.getRoamingConsortiums();
+                    config.roamingConsortiumIds =
+                            roamingConsortiumIds.toArray(new Long[roamingConsortiumIds.size()]);
                     config.enterpriseConfig.setPlmn(homeSp.getCredential().getImsi());
                     config.enterpriseConfig.setRealm(homeSp.getCredential().getRealm());
                     mPerFQDN.put(fqdn, config.networkId);
