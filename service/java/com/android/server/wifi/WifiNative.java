@@ -1337,6 +1337,7 @@ public class WifiNative {
     private static native boolean stopScanNative(int iface, int id);
     private static native WifiScanner.ScanData[] getScanResultsNative(int iface, boolean flush);
     private static native WifiLinkLayerStats getWifiLinkLayerStatsNative(int iface);
+    private static native void setWifiLinkLayerStatsNative(int iface, int enable);
 
     public static class ChannelSettings {
         int frequency;
@@ -1731,6 +1732,15 @@ public class WifiNative {
                 return getWifiLinkLayerStatsNative(sWlan0Index);
             } else {
                 return null;
+            }
+        }
+    }
+
+    synchronized public static void setWifiLinkLayerStats(String iface, int enable) {
+        if (iface == null) return;
+        synchronized (mLock) {
+            if (sWifiHalHandle != 0) {
+                setWifiLinkLayerStatsNative(sWlan0Index, enable);
             }
         }
     }
