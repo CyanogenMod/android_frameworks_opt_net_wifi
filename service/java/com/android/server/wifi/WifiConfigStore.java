@@ -81,6 +81,7 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -237,6 +238,8 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String DELETED_CRC32_KEY = "DELETED_CRC32";
     private static final String DELETED_EPHEMERAL_KEY = "DELETED_EPHEMERAL";
     private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST";
+    private static final String CREATION_TIME_KEY = "CREATION_TIME";
+    private static final String UPDATE_TIME_KEY = "UPDATE_TIME";
 
     private static final String SEPARATOR = ":  ";
     private static final String NL = "\n";
@@ -503,6 +506,11 @@ public class WifiConfigStore extends IpConfigStore {
      */
     HashSet<String> mBssidBlacklist = new HashSet<String>();
 
+    /*
+     * Lost config list, whenever we read a config from networkHistory.txt that was not in
+     * wpa_supplicant.conf
+     */
+    HashSet<String> mLostConfigsDbg = new HashSet<String>();
 
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
@@ -2021,6 +2029,12 @@ public class WifiConfigStore extends IpConfigStore {
                             Boolean.toString(config.validatedInternetAccess) + NL);
                     out.writeUTF(EPHEMERAL_KEY + SEPARATOR +
                             Boolean.toString(config.ephemeral) + NL);
+                    if (config.creationTime != null) {
+                        out.writeUTF(CREATION_TIME_KEY + SEPARATOR + config.creationTime + NL);
+                    }
+                    if (config.updateTime != null) {
+                        out.writeUTF(UPDATE_TIME_KEY + SEPARATOR + config.updateTime + NL);
+                    }
                     if (config.peerWifiConfiguration != null) {
                         out.writeUTF(PEER_CONFIGURATION_KEY + SEPARATOR +
                                 config.peerWifiConfiguration + NL);
@@ -2196,6 +2210,7 @@ public class WifiConfigStore extends IpConfigStore {
                         localLog("readNetworkHistory didnt find netid for hash="
                                 + Integer.toString(value.hashCode())
                                 + " key: " + value);
+                        mLostConfigsDbg.add(value);
                         continue;
                     }
 
@@ -2234,6 +2249,12 @@ public class WifiConfigStore extends IpConfigStore {
                             break;
                         case VALIDATED_INTERNET_ACCESS_KEY:
                             config.validatedInternetAccess = Boolean.parseBoolean(value);
+                            break;
+                        case CREATION_TIME_KEY:
+                            config.creationTime = value;
+                            break;
+                        case UPDATE_TIME_KEY:
+                            config.updateTime = value;
                             break;
                         case EPHEMERAL_KEY:
                             config.ephemeral = Boolean.parseBoolean(value);
@@ -2750,6 +2771,10 @@ public class WifiConfigStore extends IpConfigStore {
                 currentConfig.FQDN = config.FQDN;
                 currentConfig.providerFriendlyName = config.providerFriendlyName;
                 currentConfig.roamingConsortiumIds = config.roamingConsortiumIds;
+                currentConfig.validatedInternetAccess = config.validatedInternetAccess;
+                currentConfig.numNoInternetAccessReports = config.numNoInternetAccessReports;
+                currentConfig.updateTime = config.updateTime;
+                currentConfig.creationTime = config.creationTime;
             }
             if (DBG) {
                 log("created new config netId=" + Integer.toString(netId)
@@ -2789,8 +2814,18 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
+        // For debug, record the time the configuration was modified
+        StringBuilder sb = new StringBuilder();
+        sb.append("time=");
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(System.currentTimeMillis());
+        sb.append(String.format("%tm-%td %tH:%tM:%tS.%tL", c, c, c, c, c, c));
+
         if (newNetwork) {
             currentConfig.dirty = true;
+            currentConfig.creationTime = sb.toString();
+        } else {
+            currentConfig.updateTime = sb.toString();
         }
 
         if (currentConfig.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
@@ -3691,7 +3726,12 @@ public class WifiConfigStore extends IpConfigStore {
             pw.println(conf);
         }
         pw.println();
-
+        if (mLostConfigsDbg != null && mLostConfigsDbg.size() > 0) {
+            pw.println("LostConfigs: ");
+            for (String s : mLostConfigsDbg) {
+                pw.println(s);
+            }
+        }
         if (mLocalLog != null) {
             pw.println("WifiConfigStore - Log Begin ----");
             mLocalLog.dump(fd, pw, args);
