@@ -590,8 +590,8 @@ public class NetworkDetail {
 
     public String toKeyString() {
         return mHESSID != 0 ?
-            String.format("'%s':%s (%012x)", mSSID, getBSSIDString(), mHESSID) :
-            String.format("'%s':%s", mSSID, getBSSIDString());
+            String.format("'%s':%012x (%012x)", mSSID, mBSSID, mHESSID) :
+            String.format("'%s':%012x", mSSID, mBSSID);
     }
 
     public String getBSSIDString() {

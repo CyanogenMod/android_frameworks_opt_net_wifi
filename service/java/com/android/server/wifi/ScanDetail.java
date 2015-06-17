@@ -109,6 +109,16 @@ public class ScanDetail {
         return  mNetworkDetail == null ? mScanResult.BSSID : mNetworkDetail.getBSSIDString();
     }
 
+    public String toKeyString() {
+        NetworkDetail networkDetail = mNetworkDetail;
+        if (networkDetail != null) {
+            return networkDetail.toKeyString();
+        }
+        else {
+            return String.format("'%s':%012x", mScanResult.BSSID, Utils.parseMac(mScanResult.BSSID));
+        }
+    }
+
     public long getSeen() {
         return mSeen;
     }
