@@ -2131,8 +2131,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (enable) {
             mWifiConfigStore.enableAllNetworks();
         }
-        mWifiNative.enableBackgroundScan(enable);
-        mLegacyPnoEnabled = enable;
+        boolean ret = mWifiNative.enableBackgroundScan(enable);
+        if (ret) {
+            mLegacyPnoEnabled = enable;
+        } else {
+            Log.e(TAG, " Fail to set up pno, want " + enable + " now " + mLegacyPnoEnabled);
+        }
     }
 
     /**
@@ -3302,9 +3306,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         cancelDelayedScan();
 
         if (screenOn) {
-            if (mLegacyPnoEnabled) {
-                enableBackgroundScan(false);
-            }
+            enableBackgroundScan(false);
             setScanAlarm(false);
             clearBlacklist();
 
@@ -3346,9 +3348,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                 }
             } else {
-                if (mLegacyPnoEnabled) {
-                    enableBackgroundScan(false);
-                }
+                enableBackgroundScan(false);
                 stopGScan("ScreenOffStop(enableBackground=" + mLegacyPnoEnabled + ") ");
             }
         }
@@ -8617,9 +8617,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             return HANDLED;
                         }
                         /* Disable background scan temporarily during a regular scan */
-                        if (mLegacyPnoEnabled) {
-                            enableBackgroundScan(false);
-                        }
+                        enableBackgroundScan(false);
                         handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                         ret = HANDLED;
                     } else {
@@ -8635,9 +8633,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                          * place to issue).
                          */
 
-                        if (mLegacyPnoEnabled) {
-                            enableBackgroundScan(false);
-                        }
+                        enableBackgroundScan(false);
                         ret = NOT_HANDLED;
                     }
                     break;
@@ -8731,9 +8727,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         @Override
         public void exit() {
             /* No need for a background scan upon exit from a disconnected state */
-            if (mLegacyPnoEnabled) {
-                enableBackgroundScan(false);
-            }
+            enableBackgroundScan(false);
             setScanAlarm(false);
         }
     }
