@@ -4,9 +4,7 @@ import android.util.Log;
 
 import com.android.server.wifi.SIMAccessor;
 import com.android.server.wifi.anqp.ANQPElement;
-import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.DomainNameElement;
-import com.android.server.wifi.anqp.NAIRealmData;
 import com.android.server.wifi.anqp.NAIRealmElement;
 import com.android.server.wifi.anqp.RoamingConsortiumElement;
 import com.android.server.wifi.anqp.ThreeGPPNetworkElement;
@@ -87,6 +85,28 @@ public class HomeSP {
                                 Map<ANQPElementType, ANQPElement> anqpElementMap,
                                 SIMAccessor simAccessor) {
 
+        PasspointMatch spMatch = matchSP(networkDetail, anqpElementMap, simAccessor);
+
+        if (spMatch == PasspointMatch.HomeProvider || spMatch == PasspointMatch.RoamingProvider) {
+            NAIRealmElement naiRealmElement =
+                    (NAIRealmElement) anqpElementMap.get(ANQPElementType.ANQPNAIRealm);
+            ThreeGPPNetworkElement threeGPPNetworkElement =
+                    (ThreeGPPNetworkElement) anqpElementMap.get(ANQPElementType.ANQP3GPPNetwork);
+
+            AuthMatch authMatch = naiRealmElement.match(mCredential, threeGPPNetworkElement);
+            Log.d(Utils.hs2LogTag(getClass()), networkDetail.toKeyString() + " match on " + mFQDN +
+                    ": " + spMatch + ", auth " + authMatch);
+            return authMatch == AuthMatch.None ? PasspointMatch.None : spMatch;
+        }
+        else {
+            return spMatch;
+        }
+    }
+
+    public PasspointMatch matchSP(NetworkDetail networkDetail,
+                                Map<ANQPElementType, ANQPElement> anqpElementMap,
+                                SIMAccessor simAccessor) {
+
         if (mSSIDs.containsKey(networkDetail.getSSID())) {
             Long hessid = mSSIDs.get(networkDetail.getSSID());
             if (hessid == null || networkDetail.getHESSID() == hessid) {
@@ -109,7 +129,10 @@ public class HomeSP {
             anOIs.addAll(rcElement.getOIs());
         }
 
-        boolean authPossible = false;
+        // It may seem reasonable to check for home provider match prior to checking for roaming
+        // relationship, but it is possible to avoid an ANQP query if it turns out that the
+        // "match all" rule fails based only on beacon info only.
+        boolean roamingMatch = false;
 
         if (!mMatchAllOIs.isEmpty()) {
             boolean matchesAll = true;
@@ -121,7 +144,7 @@ public class HomeSP {
                 }
             }
             if (matchesAll) {
-                authPossible = true;
+                roamingMatch = true;
             }
             else {
                 if (anqpElementMap != null || networkDetail.getAnqpOICount() == 0) {
@@ -133,10 +156,10 @@ public class HomeSP {
             }
         }
 
-        if (!authPossible &&
+        if (!roamingMatch &&
                 (!Collections.disjoint(mMatchAnyOIs, anOIs) ||
                         !Collections.disjoint(mRoamingConsortiums, anOIs))) {
-            authPossible = true;
+            roamingMatch = true;
         }
 
         if (anqpElementMap == null) {
@@ -145,10 +168,6 @@ public class HomeSP {
 
         DomainNameElement domainNameElement =
                 (DomainNameElement) anqpElementMap.get(ANQPElementType.ANQPDomName);
-        NAIRealmElement naiRealmElement =
-                (NAIRealmElement) anqpElementMap.get(ANQPElementType.ANQPNAIRealm);
-        ThreeGPPNetworkElement threeGPPNetworkElement =
-                (ThreeGPPNetworkElement) anqpElementMap.get(ANQPElementType.ANQP3GPPNetwork);
 
         if (domainNameElement != null) {
             for (String domain : domainNameElement.getDomains()) {
@@ -158,76 +177,19 @@ public class HomeSP {
                     return PasspointMatch.HomeProvider;
                 }
 
+                /* This is fundamentally wrong: We can't match the ANQP data to something unrelated
+                 * to this Home SP. Commented out until this has been clarified by the WFA.
                 String imsi = simAccessor.getMatchingImsi(Utils.getMccMnc(anLabels));
                 if (imsi != null) {
                     Log.d(Utils.hs2LogTag(getClass()), "Domain " + domain +
                             " matches IMSI " + imsi);
                     return PasspointMatch.HomeProvider;
                 }
+                */
             }
         }
 
-        if (!authPossible && naiRealmElement != null) {
-            AuthMatch authMatch = matchRealms(naiRealmElement, threeGPPNetworkElement);
-            if (authMatch != AuthMatch.None) {
-                return PasspointMatch.RoamingProvider;
-            }
-        }
-
-        return PasspointMatch.None;
-    }
-
-    private AuthMatch matchRealms(NAIRealmElement naiRealmElement,
-                                  ThreeGPPNetworkElement threeGPPNetworkElement) {
-        List<String> credRealm = Utils.splitDomain(mCredential.getRealm());
-
-        for (NAIRealmData naiRealmData : naiRealmElement.getRealmData()) {
-
-            DomainMatcher.Match match = DomainMatcher.Match.None;
-            for (String anRealm : naiRealmData.getRealms()) {
-                List<String> anRealmLabels = Utils.splitDomain(anRealm);
-                match = mDomainMatcher.isSubDomain(anRealmLabels);
-                if (match != DomainMatcher.Match.None) {
-                    Log.d(Utils.hs2LogTag(getClass()), "+++ Direct sub-domain of " + anRealm + ": " + match);
-                    break;
-                }
-                if (DomainMatcher.arg2SubdomainOfArg1(credRealm, anRealmLabels)) {
-                    match = DomainMatcher.Match.Secondary;
-                    Log.d(Utils.hs2LogTag(getClass()), "+++ Realm " + mCredential.getRealm() + " sub-domain of " + anRealm + ": " + match);
-                    break;
-                }
-            }
-
-            if (match != DomainMatcher.Match.None) {
-                if (mCredential.getImsi() != null) {
-                    // All the device has is one of EAP-SIM, AKA or AKA',
-                    // so a 3GPP element must appear and contain a matching MNC/MCC
-                    if (threeGPPNetworkElement == null) {
-                        return AuthMatch.None;
-                    }
-                    for (CellularNetwork network : threeGPPNetworkElement.getPlmns()) {
-                        if (network.matchIMSI(mCredential.getImsi())) {
-                            AuthMatch authMatch =
-                                    naiRealmData.matchEAPMethods(mCredential.getEAPMethod());
-                            if (authMatch != AuthMatch.None) {
-                                Log.d(Utils.hs2LogTag(getClass()), "+++ IMSI " + mCredential.getImsi() + " match " + network + ": " + authMatch);
-                                return authMatch;
-                            }
-                        }
-                    }
-                } else {
-                    AuthMatch authMatch = naiRealmData.matchEAPMethods(mCredential.getEAPMethod());
-                    if (authMatch != AuthMatch.None) {
-                        // Note: Something more intelligent could be done here based on the
-                        // authMatch value. It may be useful to have a secondary score to
-                        // distinguish more predictable EAP method/parameter matching.
-                        Log.d(Utils.hs2LogTag(getClass()), "+++ Auth match " + mCredential.getEAPMethod());
-                        return authMatch;
-                    }
-                }
-            }
-        }
-        return AuthMatch.None;
+        return roamingMatch ? PasspointMatch.RoamingProvider : PasspointMatch.None;
     }
 
     public String getFQDN() { return mFQDN; }

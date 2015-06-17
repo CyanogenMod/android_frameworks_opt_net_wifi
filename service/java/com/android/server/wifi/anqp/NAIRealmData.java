@@ -1,7 +1,13 @@
 package com.android.server.wifi.anqp;
 
+import android.util.Log;
+
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.hotspot2.AuthMatch;
+import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.pps.Credential;
+import com.android.server.wifi.hotspot2.pps.DomainMatcher;
+import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
@@ -32,7 +38,7 @@ public class NAIRealmData {
                 StandardCharsets.UTF_8 :
                 StandardCharsets.US_ASCII);
         String[] realms = realm.split(";");
-        mRealms = new ArrayList<String>();
+        mRealms = new ArrayList<>();
         for (String realmElement : realms) {
             if (realmElement.length() > 0) {
                 mRealms.add(realmElement);
@@ -40,7 +46,7 @@ public class NAIRealmData {
         }
 
         int methodCount = payload.get() & Constants.BYTE_MASK;
-        mEAPMethods = new ArrayList<EAPMethod>(methodCount);
+        mEAPMethods = new ArrayList<>(methodCount);
         while (methodCount > 0) {
             mEAPMethods.add(new EAPMethod(payload));
             methodCount--;
@@ -55,20 +61,36 @@ public class NAIRealmData {
         return Collections.unmodifiableList(mEAPMethods);
     }
 
-    public AuthMatch matchEAPMethods(EAPMethod refMethod) {
-        if (mEAPMethods.isEmpty()) {
-            return AuthMatch.RealmOnly;
+    public AuthMatch match(List<String> credLabels, Credential credential,
+                           ThreeGPPNetworkElement plmnElement) {
+        if (!mRealms.isEmpty()) {
+            boolean realmMatch = false;
+            for (String realm : mRealms) {
+                List<String> labels = Utils.splitDomain(realm);
+                if (DomainMatcher.arg2SubdomainOfArg1(credLabels, labels)) {
+                    realmMatch = true;
+                    break;
+                }
+            }
+            if (!realmMatch) {
+                return AuthMatch.None;
+            }
+            else if (mEAPMethods.isEmpty()) {
+                return AuthMatch.RealmOnly;
+            }
+            // else there is a realm match and one or more EAP methods - check them.
+        }
+        else if (mEAPMethods.isEmpty()) {
+            return AuthMatch.Indeterminate;
         }
 
         AuthMatch best = AuthMatch.None;
-        AuthMatch exitCondition = AuthMatch.values()[AuthMatch.values().length-1];
-
-        for (EAPMethod method : mEAPMethods) {
-            AuthMatch match = method.matchAuthParams(refMethod);
+        for (EAPMethod eapMethod : mEAPMethods) {
+            AuthMatch match = eapMethod.match(credential, plmnElement);
             if (match.compareTo(best) > 0) {
                 best = match;
-                if (match == exitCondition) {
-                    return match;
+                if (best == AuthMatch.Exact) {
+                    return best;
                 }
             }
         }
