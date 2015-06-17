@@ -630,12 +630,14 @@ public class WifiNative {
             return doBooleanCommand("DRIVER COUNTRY");
     }
 
-    public void enableBackgroundScan(boolean enable) {
+    public boolean enableBackgroundScan(boolean enable) {
+        boolean ret;
         if (enable) {
-            doBooleanCommand("SET pno 1");
+            ret = doBooleanCommand("SET pno 1");
         } else {
-            doBooleanCommand("SET pno 0");
+            ret = doBooleanCommand("SET pno 0");
         }
+        return ret;
     }
 
     public void enableAutoConnect(boolean enable) {
