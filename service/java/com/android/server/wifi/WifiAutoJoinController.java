@@ -227,7 +227,7 @@ public class WifiAutoJoinController {
             if (result.capabilities != null)
                 cap = result.capabilities;
             logDbg(result.SSID + " " + result.BSSID + " rssi="
-                    + result.level + " cap " + cap + " is not scored");
+                    + result.level + " cap " + cap + " tsf " + result.timestamp + " is not scored");
         }
     }
 
@@ -242,6 +242,18 @@ public class WifiAutoJoinController {
         for (ScanDetail scanDetail : scanList) {
             ScanResult result = scanDetail.getScanResult();
             if (result.SSID == null) continue;
+
+            // Fetch previous instance
+            ScanDetail sd = scanResultCache.get(result.BSSID);
+            if (sd != null) {
+                ScanResult sr = sd.getScanResult();
+                if (sr.timestamp != 0 && sr.timestamp == result.timestamp) {
+                    logDbg(" addToScanCache skip stale " + result.SSID + " " + result.BSSID
+                            + " tsf=" + result.timestamp + " age=" + (now - result.seen)
+                            + " seen= " + result.seen + " now=" + now);
+                    continue;
+                }
+            }
 
             // Make sure we record the last time we saw this result
             scanDetail.setSeen();
