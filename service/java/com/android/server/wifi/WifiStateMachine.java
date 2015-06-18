@@ -504,6 +504,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private AlarmManager mAlarmManager;
     private PendingIntent mScanIntent;
     private PendingIntent mDriverStopIntent;
+    private PendingIntent mPnoIntent;
 
     /* Tracks current frequency mode */
     private AtomicInteger mFrequencyBand = new AtomicInteger(WifiManager.WIFI_FREQUENCY_BAND_AUTO);
@@ -991,6 +992,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String ACTION_START_SCAN =
             "com.android.server.WifiManager.action.START_SCAN";
 
+    private static final int PNO_START_REQUEST = 0;
+    private static final String ACTION_START_PNO =
+            "com.android.server.WifiManager.action.START_PNO";
+
     private static final String DELAYED_STOP_COUNTER = "DelayedStopCounter";
     private static final int DRIVER_STOP_REQUEST = 0;
     private static final String ACTION_DELAYED_DRIVER_STOP =
@@ -1082,6 +1087,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
+        mPnoIntent = getPrivateBroadcast(ACTION_START_PNO, PNO_START_REQUEST);
 
         // Make sure the interval is not configured less than 10 seconds
         int period = mContext.getResources().getInteger(
@@ -1137,6 +1143,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                 },
                 new IntentFilter(ACTION_START_SCAN));
+
+        mContext.registerReceiver(
+                new BroadcastReceiver() {
+                    @Override
+                    public void onReceive(Context context, Intent intent) {
+                        sendMessage(CMD_RESTART_AUTOJOIN_OFFLOAD, 0,
+                                mRestartAutoJoinOffloadCounter, "pno alarm");
+                        if (DBG)
+                            loge("WiFiStateMachine PNO START ALARM sent");
+                    }
+                },
+                new IntentFilter(ACTION_START_PNO));
+
 
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_SCREEN_ON);
@@ -1240,7 +1259,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     PendingIntent getPrivateBroadcast(String action, int requestCode) {
         Intent intent = new Intent(action, null);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-        intent.setPackage(this.getClass().getPackage().getName());
+        //intent.setPackage(this.getClass().getPackage().getName());
+        intent.setPackage("android");
         return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
     }
 
@@ -1257,7 +1277,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             VDBG = true;
             PDBG = true;
             mLogMessages = true;
-            //mWifiNative.setSupplicantLogLevel("DEBUG");
+            mWifiNative.setSupplicantLogLevel("DEBUG");
         } else {
             DBG = false;
             VDBG = false;
@@ -1726,7 +1746,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         } else {
             mWifiInfo.updatePacketRates(stats);
         }
-        sendMessage(CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION);
+        if (useHalBasedAutoJoinOffload()) {
+            sendMessage(CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION);
+        }
         return stats;
     }
 
@@ -3459,7 +3481,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 }
             } else {
                 enableBackgroundScan(false);
-                stopGScan("ScreenOffStop(enableBackground=" + mLegacyPnoEnabled + ") ");
+                if (useHalBasedAutoJoinOffload()) {
+                    // don't try stop Gscan if it is not enabled
+                    stopGScan("ScreenOffStop(enableBackground=" + mLegacyPnoEnabled + ") ");
+                }
             }
         }
         if (DBG) logd("backgroundScan enabled=" + mLegacyPnoEnabled);
@@ -3892,7 +3917,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     + " sup_state=" + state
                     + " debouncing=" + linkDebouncing
                     + " mConnectionRequests=" + mConnectionRequests
-                    + " selection=" + selection);
+                    + " selection=" + selection
+                    + " mNumScanResultsReturned " + mNumScanResultsReturned
+                     + " mScanResults " + mScanResults.size());
         }
         if (attemptAutoJoin) {
             messageHandlingStatus = MESSAGE_HANDLING_STATUS_PROCESSED;
@@ -7268,6 +7295,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             transitionTo(mDisconnectingState);
                         } else {
                             /* Already in disconnected state, nothing to change */
+                            if (!mScreenOn && mLegacyPnoEnabled && mBackgroundScanSupported) {
+                                int delay = 30 * 1000;
+                                if (VDBG) {
+                                    loge("Starting PNO alarm");
+                                }
+                                mAlarmManager.set(AlarmManager.RTC_WAKEUP,
+                                       System.currentTimeMillis() + delay,
+                                       mPnoIntent);
+                            }
+                            mRestartAutoJoinOffloadCounter++;
                         }
                     } else {
                         loge("Failed to connect config: " + config + " netId: " + netId);
@@ -9010,6 +9047,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 startDisconnectedGScan("disconnected restart gscan");
                             }
                         }
+                    } else {
+                        // If we are still disconnected for a short while after having found a
+                        // network thru PNO, then something went wrong, and for some reason we
+                        // couldn't join this network.
+                        // It might be due to a SW bug in supplicant or the wifi stack, or an
+                        // interoperability issue, or we try to join a bad bss and failed
+                        // In that case we want to restart pno so as to make sure that we will
+                        // attempt again to join that network.
+                        if (!mScreenOn && !mIsScanOngoing && mBackgroundScanSupported) {
+                            enableBackgroundScan(false);
+                            enableBackgroundScan(true);
+                        }
+                        return HANDLED;
                     }
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
@@ -9076,6 +9126,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             /* No need for a background scan upon exit from a disconnected state */
             enableBackgroundScan(false);
             setScanAlarm(false);
+            mAlarmManager.cancel(mPnoIntent);
         }
     }
 
