@@ -865,7 +865,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         ks.load(null, null);
         PKIXParameters params = new PKIXParameters(ks);
         params.setRevocationEnabled(false);
-        Log.d("HS2J", "CA Cert: " + caCert.getSubjectX500Principal());
         validator.validate(path, params);
     }
 
@@ -1969,12 +1968,16 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             if (TextUtils.isEmpty(config.providerFriendlyName)) {
                 return "no provider friendly name";
             }
+            WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
             /* this is passpoint configuration; it must have enterprise config */
-            if (config.enterpriseConfig == null
-                    ||config. enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.NONE ) {
+            if (enterpriseConfig == null
+                    || enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.NONE ) {
                 return "no enterprise config";
             }
-            if (config.enterpriseConfig.getCaCertificate() == null) {
+            if ((enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
+                    enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS ||
+                    enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.PEAP) &&
+                    enterpriseConfig.getCaCertificate() == null) {
                 return "no CA certificate";
             }
         }

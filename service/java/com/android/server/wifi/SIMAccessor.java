@@ -4,6 +4,9 @@ import android.content.Context;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class SIMAccessor {
     private final TelephonyManager mTelephonyManager;
     private final SubscriptionManager mSubscriptionManager;
@@ -13,16 +16,17 @@ public class SIMAccessor {
         mSubscriptionManager = SubscriptionManager.from(context);
     }
 
-    public String getMatchingImsi(String mccMnc) {
+    public List<String> getMatchingImsis(IMSIParameter mccMnc) {
         if (mccMnc == null) {
             return null;
         }
+        List<String> imsis = new ArrayList<>();
         for (int subId : mSubscriptionManager.getActiveSubscriptionIdList()) {
             String imsi = mTelephonyManager.getSubscriberId(subId);
-            if (imsi.startsWith(mccMnc)) {
-                return imsi;
+            if (mccMnc.matches(imsi)) {
+                imsis.add(imsi);
             }
         }
-        return null;
+        return imsis.isEmpty() ? null : imsis;
     }
 }
