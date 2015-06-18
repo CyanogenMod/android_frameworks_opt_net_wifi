@@ -2302,7 +2302,7 @@ public class WifiConfigStore extends IpConfigStore {
                                     + " to " + config.creatorName);
                         }
                     }
-
+                } else if (config != null) {
                     switch (key) {
                         case SSID_KEY:
                             ssid = value;
