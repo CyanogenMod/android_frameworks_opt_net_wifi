@@ -28,7 +28,7 @@ public class ScanDetail {
         mNetworkDetail = networkDetail;
         mScanResult = new ScanResult(wifiSsid, BSSID, caps, level, frequency, tsf );
         mSeen = System.currentTimeMillis();
-        mScanResult.seen = mSeen;
+        //mScanResult.seen = mSeen;
         mScanResult.channelWidth = networkDetail.getChannelWidth();
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
@@ -41,7 +41,7 @@ public class ScanDetail {
         mNetworkDetail = null;
         mScanResult = new ScanResult(wifiSsid, BSSID, caps, level, frequency, tsf );
         mSeen = seen;
-        mScanResult.seen = mSeen;
+        //mScanResult.seen = mSeen;
         mScanResult.channelWidth = 0;
         mScanResult.centerFreq0 = 0;
         mScanResult.centerFreq1 = 0;
@@ -66,7 +66,7 @@ public class ScanDetail {
         mScanResult.frequency = freq;
         mScanResult.timestamp = tsf;
         mSeen = System.currentTimeMillis();
-        mScanResult.seen = mSeen;
+        //mScanResult.seen = mSeen;
         mScanResult.channelWidth = networkDetail.getChannelWidth();
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
