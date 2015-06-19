@@ -506,6 +506,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private PendingIntent mDriverStopIntent;
     private PendingIntent mPnoIntent;
 
+    private int mDisconnectedPnoAlarmCount = 0;
     /* Tracks current frequency mode */
     private AtomicInteger mFrequencyBand = new AtomicInteger(WifiManager.WIFI_FREQUENCY_BAND_AUTO);
 
@@ -7318,7 +7319,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             if (!mScreenOn && mLegacyPnoEnabled && mBackgroundScanSupported) {
                                 int delay = 60 * 1000;
                                 if (VDBG) {
-                                    loge("Starting PNO alarm");
+                                    loge("Starting PNO alarm: " + delay);
                                 }
                                 mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                                        System.currentTimeMillis() + delay,
@@ -8939,7 +8940,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
 
             mDisconnectedTimeStamp = System.currentTimeMillis();
-
+            mDisconnectedPnoAlarmCount = 0;
         }
         @Override
         public boolean processMessage(Message message) {
@@ -9094,9 +9095,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             && mBackgroundScanSupported
                             && !useHalBasedAutoJoinOffload()) {
                         // We receive scan results from legacy PNO, hence restart the PNO alarm
-                        int delay = 300 * 1000;
+                        int delay;
+                        if (mDisconnectedPnoAlarmCount < 1) {
+                            delay = 30 * 1000;
+                        } else if (mDisconnectedPnoAlarmCount < 3) {
+                            delay = 60 * 1000;
+                        } else {
+                            delay = 360 * 1000;
+                        }
+                        mDisconnectedPnoAlarmCount++;
                         if (VDBG) {
-                            loge("Starting PNO alarm");
+                            loge("Starting PNO alarm " + delay);
                         }
                         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                                 System.currentTimeMillis() + delay,
@@ -9155,6 +9164,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         @Override
         public void exit() {
+            mDisconnectedPnoAlarmCount = 0;
             /* No need for a background scan upon exit from a disconnected state */
             enableBackgroundScan(false);
             setScanAlarm(false);
