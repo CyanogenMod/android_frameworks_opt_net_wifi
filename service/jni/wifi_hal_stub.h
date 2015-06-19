@@ -107,6 +107,10 @@ wifi_error wifi_set_gscan_roam_params_stub(wifi_request_id id, wifi_interface_ha
                                         wifi_roam_params * params);
 wifi_error wifi_set_ssid_white_list_stub(wifi_request_id id, wifi_interface_handle iface,
                        int num_networks, wifi_ssid *ssids);
+wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
+        wifi_interface_handle iface, u8 *ip_packet, u16 ip_packet_len,
+        u8 *src_mac_addr, u8 *dst_mac_addr, u32 period_msec);
+wifi_error wifi_stop_sending_offloaded_packet_stub(wifi_request_id id, wifi_interface_handle iface);
 #ifdef __cplusplus
 }
 #endif

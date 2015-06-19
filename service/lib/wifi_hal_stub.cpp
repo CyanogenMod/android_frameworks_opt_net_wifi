@@ -237,3 +237,13 @@ wifi_error wifi_set_ssid_white_list_stub(wifi_request_id id, wifi_interface_hand
                        int num_networks, wifi_ssid *ssids) {
       return WIFI_ERROR_NOT_SUPPORTED;
 }
+
+wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
+        wifi_interface_handle iface, u8 *ip_packet, u16 ip_packet_len,
+        u8 *src_mac_addr, u8 *dst_mac_addr, u32 period_msec) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_stop_sending_offloaded_packet_stub(wifi_request_id id, wifi_interface_handle iface) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}

@@ -92,6 +92,8 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_set_bssid_preference = wifi_set_bssid_preference_stub;
     hal_fn->wifi_enable_lazy_roam = wifi_enable_lazy_roam_stub;
     hal_fn->wifi_set_bssid_blacklist = wifi_set_bssid_blacklist_stub;
+    hal_fn->wifi_start_sending_offloaded_packet = wifi_start_sending_offloaded_packet_stub;
+    hal_fn->wifi_stop_sending_offloaded_packet = wifi_stop_sending_offloaded_packet_stub;
     return 0;
 }
 
