@@ -762,6 +762,19 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
+     * This function returns all configuration, and is used for cebug and creating bug reports.
+     */
+    private List<WifiConfiguration>
+    getAllConfiguredNetworks() {
+        List<WifiConfiguration> networks = new ArrayList<>();
+        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+            WifiConfiguration newConfig = new WifiConfiguration(config);
+            networks.add(newConfig);
+        }
+        return networks;
+    }
+
+    /**
      * Fetch the list of currently configured networks
      * @return List of networks
      */
@@ -3831,7 +3844,7 @@ public class WifiConfigStore extends IpConfigStore {
         pw.println("Dump of WifiConfigStore");
         pw.println("mLastPriority " + mLastPriority);
         pw.println("Configured networks");
-        for (WifiConfiguration conf : getConfiguredNetworks()) {
+        for (WifiConfiguration conf : getAllConfiguredNetworks()) {
             pw.println(conf);
         }
         pw.println();

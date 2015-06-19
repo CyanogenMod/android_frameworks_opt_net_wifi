@@ -7249,6 +7249,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     loge("CMD_AUTO_CONNECT did save config -> "
                             + " nid=" + Integer.toString(netId));
 
+                    // Since we updated the config,read it back from config store:
+                    config = mWifiConfigStore.getWifiConfiguration(netId);
+                    if (config == null) {
+                        loge("CMD_AUTO_CONNECT couldnt update the config, got null config");
+                        break;
+                    }
+                    if (netId != config.networkId) {
+                        loge("CMD_AUTO_CONNECT couldnt update the config, want"
+                                + " nid=" + Integer.toString(netId) + " but got" + config.networkId);
+                        break;
+                    }
+
                     if (deferForUserInput(message, netId, false)) {
                         break;
                     } else if (mWifiConfigStore.getWifiConfiguration(netId).userApproved ==
