@@ -148,7 +148,7 @@ class ScanDetailCache {
         WifiConfiguration.Visibility status = new WifiConfiguration.Visibility();
 
         long now_ms = System.currentTimeMillis();
-        long now_uptime_ms = SystemClock.uptimeMillis();
+        long now_elapsed_ms = SystemClock.elapsedRealtime();
         for(ScanDetail scanDetail : values()) {
             ScanResult result = scanDetail.getScanResult();
             if (scanDetail.getSeen() == 0)
@@ -167,10 +167,10 @@ class ScanDetailCache {
             if (result.timestamp != 0) {
                 if (DBG) {
                     Log.e("getVisibilityByRssi", " considering " + result.SSID + " " + result.BSSID
-                        + " uptime=" + now_uptime_ms + " timestamp=" + result.timestamp
+                        + " elapsed=" + now_elapsed_ms + " timestamp=" + result.timestamp
                         + " age = " + age);
                 }
-                if ((now_uptime_ms - (result.timestamp/1000)) > age) continue;
+                if ((now_elapsed_ms - (result.timestamp/1000)) > age) continue;
             } else {
                 // This check the time at which we have received the scan result from supplicant
                 if ((now_ms - result.seen) > age) continue;

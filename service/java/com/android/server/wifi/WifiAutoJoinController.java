@@ -247,7 +247,8 @@ public class WifiAutoJoinController {
             if (VDBG) {
                 logDbg(" addToScanCache " + result.SSID + " " + result.BSSID
                         + " tsf=" + result.timestamp
-                        + " now= " + now + " uptime=" + SystemClock.uptimeMillis());
+                        + " now= " + now + " uptime=" + SystemClock.uptimeMillis()
+                        + " elapsed=" + SystemClock.elapsedRealtime());
             }
 
             // Make sure we record the last time we saw this result
