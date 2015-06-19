@@ -28,6 +28,7 @@ import android.os.Process;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
+import android.os.SystemClock;
 
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
@@ -243,16 +244,10 @@ public class WifiAutoJoinController {
             ScanResult result = scanDetail.getScanResult();
             if (result.SSID == null) continue;
 
-            // Fetch previous instance
-            ScanDetail sd = scanResultCache.get(result.BSSID);
-            if (sd != null) {
-                ScanResult sr = sd.getScanResult();
-                if (sr.timestamp != 0 && sr.timestamp == result.timestamp) {
-                    logDbg(" addToScanCache skip stale " + result.SSID + " " + result.BSSID
-                            + " tsf=" + result.timestamp + " age=" + (now - result.seen)
-                            + " seen= " + result.seen + " now=" + now);
-                    continue;
-                }
+            if (VDBG) {
+                logDbg(" addToScanCache " + result.SSID + " " + result.BSSID
+                        + " tsf=" + result.timestamp
+                        + " now= " + now + " uptime=" + SystemClock.uptimeMillis());
             }
 
             // Make sure we record the last time we saw this result
@@ -372,7 +367,7 @@ public class WifiAutoJoinController {
      * For instance if the candidate is a home network versus an unknown public wifi,
      * the delta will be infinite, else compare Kepler scores etc…
      * Negatve return values from this functions are meaningless per se, just trying to
-     * keep t````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````````hem distinct for debug purpose (i.e. -1, -2 etc...)
+     * keep them distinct for debug purpose (i.e. -1, -2 etc...)
      */
     private int compareNetwork(WifiConfiguration candidate,
                                String lastSelectedConfiguration) {
@@ -1457,21 +1452,23 @@ public class WifiAutoJoinController {
         didOverride = false;
         didBailDueToWeakRssi = false;
         int networkSwitchType = AUTO_JOIN_IDLE;
+        int age = mScanResultAutoJoinAge;
 
         long now = System.currentTimeMillis();
 
         String lastSelectedConfiguration = mWifiConfigStore.getLastSelectedConfiguration();
-
+        if (lastSelectedConfiguration != null) {
+            age = 14000;
+        }
         // Reset the currentConfiguration Key, and set it only if WifiStateMachine and
         // supplicant agree
         mCurrentConfigurationKey = null;
         WifiConfiguration currentConfiguration = mWifiStateMachine.getCurrentWifiConfiguration();
 
         WifiConfiguration candidate = null;
-
         // Obtain the subset of recently seen networks
         List<WifiConfiguration> list =
-                mWifiConfigStore.getRecentConfiguredNetworks(mScanResultAutoJoinAge, false);
+                mWifiConfigStore.getRecentConfiguredNetworks(age, false);
         if (list == null) {
             if (VDBG) logDbg("attemptAutoJoin nothing known=" +
                     mWifiConfigStore.getConfiguredNetworksSize());
