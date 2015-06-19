@@ -7297,7 +7297,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         } else {
                             /* Already in disconnected state, nothing to change */
                             if (!mScreenOn && mLegacyPnoEnabled && mBackgroundScanSupported) {
-                                int delay = 30 * 1000;
+                                int delay = 60 * 1000;
                                 if (VDBG) {
                                     loge("Starting PNO alarm");
                                 }
@@ -9070,6 +9070,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             && mBackgroundScanSupported
                             && !useHalBasedAutoJoinOffload()) {
                         enableBackgroundScan(true);
+                    } else if (!mScreenOn
+                            && !mIsScanOngoing
+                            && mBackgroundScanSupported
+                            && !useHalBasedAutoJoinOffload()) {
+                        // We receive scan results from legacy PNO, hence restart the PNO alarm
+                        int delay = 300 * 1000;
+                        if (VDBG) {
+                            loge("Starting PNO alarm");
+                        }
+                        mAlarmManager.set(AlarmManager.RTC_WAKEUP,
+                                System.currentTimeMillis() + delay,
+                                mPnoIntent);
                     }
                     /* Handled in parent state */
                     ret = NOT_HANDLED;

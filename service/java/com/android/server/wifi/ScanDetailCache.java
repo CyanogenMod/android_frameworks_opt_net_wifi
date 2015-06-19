@@ -4,6 +4,7 @@ package com.android.server.wifi;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.util.Log;
+import android.os.SystemClock;
 
 import com.android.server.wifi.ScanDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
@@ -25,7 +26,7 @@ class ScanDetailCache {
     private WifiConfiguration mConfig;
     private HashMap<String, ScanDetail> mMap;
     private HashMap<String, PasspointMatchInfo> mPasspointMatches;
-
+    private static boolean DBG=false;
     ScanDetailCache(WifiConfiguration config) {
         mConfig = config;
         mMap = new HashMap();
@@ -147,6 +148,7 @@ class ScanDetailCache {
         WifiConfiguration.Visibility status = new WifiConfiguration.Visibility();
 
         long now_ms = System.currentTimeMillis();
+        long now_uptime_ms = SystemClock.uptimeMillis();
         for(ScanDetail scanDetail : values()) {
             ScanResult result = scanDetail.getScanResult();
             if (scanDetail.getSeen() == 0)
@@ -162,7 +164,17 @@ class ScanDetailCache {
                 status.num24 = status.num24 + 1;
             }
 
-            if ((now_ms - result.seen) > age) continue;
+            if (result.timestamp != 0) {
+                if (DBG) {
+                    Log.e("getVisibilityByRssi", " considering " + result.SSID + " " + result.BSSID
+                        + " uptime=" + now_uptime_ms + " timestamp=" + result.timestamp
+                        + " age = " + age);
+                }
+                if ((now_uptime_ms - (result.timestamp/1000)) > age) continue;
+            } else {
+                // This check the time at which we have received the scan result from supplicant
+                if ((now_ms - result.seen) > age) continue;
+            }
 
             if (result.is5GHz()) {
                 if (result.level > status.rssi5) {
