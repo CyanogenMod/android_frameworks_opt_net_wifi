@@ -5129,37 +5129,46 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (DBG) {
             Log.d(TAG, "SoftAp config channel is: " + config.apChannel);
         }
-        //set country code through HAL Here
-        if (mSetCountryCode != null) {
-            if(!mWifiNative.setCountryCodeHal(mSetCountryCode.toUpperCase(Locale.ROOT))) {
+
+        //We need HAL support to set country code and get available channel list, if HAL is
+        //not available, like razor, we regress to original implementaion (2GHz, channel 6)
+        if (mWifiNative.isHalStarted()) {
+            //set country code through HAL Here
+            if (mSetCountryCode != null) {
+                if (!mWifiNative.setCountryCodeHal(mSetCountryCode.toUpperCase(Locale.ROOT))) {
+                    if (config.apBand != 0) {
+                        Log.e(TAG, "Fail to set country code. Can not setup Softap on 5GHz");
+                        //countrycode is mandatory for 5GHz
+                        sendMessage(CMD_START_AP_FAILURE);
+                        return;
+                    }
+                }
+            } else {
                 if (config.apBand != 0) {
-                    Log.e(TAG, "Fail to set country code. Can not setup Softap on 5GHz");
                     //countrycode is mandatory for 5GHz
+                    Log.e(TAG, "Can not setup softAp on 5GHz without country code!");
                     sendMessage(CMD_START_AP_FAILURE);
                     return;
                 }
             }
-        } else {
-            if (config.apBand != 0) {
-                //countrycode is mandatory for 5GHz
-                Log.e(TAG, "Can not setup softAp on 5GHz without country code!");
-                sendMessage(CMD_START_AP_FAILURE);
-                return;
-            }
-        }
 
-        if (config.apChannel == 0) {
-            config.apChannel = chooseApChannel(config.apBand);
             if (config.apChannel == 0) {
-                //fail to get available channel
+                config.apChannel = chooseApChannel(config.apBand);
+                if (config.apChannel == 0) {
+                    //fail to get available channel
+                    sendMessage(CMD_START_AP_FAILURE);
+                    return;
+                }
+            }
+            //turn off interface
+            if (!mWifiNative.toggleInterface(0)) {
                 sendMessage(CMD_START_AP_FAILURE);
                 return;
             }
-        }
-        //turn off interface
-        if (!mWifiNative.toggleInterface(0)) {
-            sendMessage(CMD_START_AP_FAILURE);
-            return;
+        } else {
+            //for some old device, wifiHal may not be supported
+            config.apChannel = 0;
+            config.apChannel = 6;
         }
         // Start hostapd on a separate thread
         new Thread(new Runnable() {
