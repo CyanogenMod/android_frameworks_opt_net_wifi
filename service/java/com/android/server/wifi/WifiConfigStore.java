@@ -64,7 +64,6 @@ import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.hotspot2.ANQPData;
 import com.android.server.wifi.hotspot2.AnqpCache;
-import com.android.server.wifi.hotspot2.Chronograph;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
@@ -677,18 +676,19 @@ public class WifiConfigStore extends IpConfigStore {
             enableSsidWhitelist.set(false);
         }
 
-        Chronograph chronograph = new Chronograph();
-        /* chronograph.start(); */
-        mMOManager = new MOManager(new File(PPS_FILE));
-        mAnqpCache = new AnqpCache(chronograph);
+        boolean hs2on = mContext.getResources().getBoolean(R.bool.config_wifi_hotspot2_enabled);
+        Log.d(Utils.hs2LogTag(getClass()), "Passpoint is " + (hs2on ? "enabled" : "disabled"));
+
+        mMOManager = new MOManager(new File(PPS_FILE), hs2on);
+        mAnqpCache = new AnqpCache();
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap<>();
 
         mSIMAccessor = new SIMAccessor(mContext);
     }
 
-    public void clearANQPCache() {
-        mAnqpCache.clear();
+    public void trimANQPCache(boolean all) {
+        mAnqpCache.clear(all, DBG);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -2590,6 +2590,10 @@ public class WifiConfigStore extends IpConfigStore {
          */
 
         if (VDBG) localLog("addOrUpdateNetworkNative " + config.getPrintableSsid());
+        if (config.isPasspoint() && !mMOManager.isConfigured()) {
+            Log.e(TAG, "Passpoint is not enabled");
+            return new NetworkUpdateResult(INVALID_NETWORK_ID);
+        }
 
         int netId = config.networkId;
         boolean newNetwork = false;
@@ -3218,7 +3222,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private Map<HomeSP, PasspointMatch> matchPasspointNetworks(ScanDetail scanDetail) {
-        if (mMOManager.getLoadedSPs().isEmpty()) {
+        if (!mMOManager.isConfigured()) {
             return null;
         }
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();

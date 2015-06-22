@@ -30,30 +30,14 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.os.SystemClock;
 
-import com.android.server.wifi.anqp.ANQPElement;
-import com.android.server.wifi.anqp.Constants;
-import com.android.server.wifi.hotspot2.ANQPData;
-import com.android.server.wifi.hotspot2.AnqpCache;
-import com.android.server.wifi.hotspot2.Chronograph;
-import com.android.server.wifi.hotspot2.NetworkDetail;
-import com.android.server.wifi.hotspot2.PasspointMatch;
-import com.android.server.wifi.hotspot2.PasspointMatchInfo;
-import com.android.server.wifi.hotspot2.SupplicantBridge;
-import com.android.server.wifi.hotspot2.pps.HomeSP;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 /**
  * AutoJoin controller is responsible for WiFi Connect decision
