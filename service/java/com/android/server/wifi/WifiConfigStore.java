@@ -2907,14 +2907,19 @@ public class WifiConfigStore extends IpConfigStore {
             try {
                 Credential credential =
                         new Credential(config.enterpriseConfig, mKeyStore, !newNetwork);
+                HashSet<Long> roamingConsortiumIds = new HashSet<Long>();
+                for (Long roamingConsortiumId : config.roamingConsortiumIds) {
+                    roamingConsortiumIds.add(roamingConsortiumId);
+                }
+
                 homeSP = new HomeSP(Collections.<String, Long>emptyMap(), config.FQDN,
-                        config.roamingConsortiumIds, Collections.<String>emptySet(),
+                        roamingConsortiumIds, Collections.<String>emptySet(),
                         Collections.<Long>emptySet(), Collections.<Long>emptyList(),
                         config.providerFriendlyName, null, credential);
 
                 log("created a homeSP object for " + config.networkId + ":" + config.SSID);
 
-            /* fix enterprise config properties for passpoint */
+                /* fix enterprise config properties for passpoint */
                 currentConfig.enterpriseConfig.setRealm(config.enterpriseConfig.getRealm());
                 currentConfig.enterpriseConfig.setPlmn(config.enterpriseConfig.getPlmn());
             }

@@ -32,7 +32,8 @@ public class ScanDetail {
         mScanResult.channelWidth = networkDetail.getChannelWidth();
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
-        mScanResult.is80211McRTTResponder = networkDetail.is80211McResponderSupport();
+        if (networkDetail.is80211McResponderSupport())
+            mScanResult.setFlag(ScanResult.FLAG_80211mc_RESPONDER);
         mMatches = null;
     }
 
@@ -45,7 +46,7 @@ public class ScanDetail {
         mScanResult.channelWidth = 0;
         mScanResult.centerFreq0 = 0;
         mScanResult.centerFreq1 = 0;
-        mScanResult.is80211McRTTResponder = false;
+        mScanResult.flags = 0;
         mMatches = null;
     }
 
@@ -70,8 +71,10 @@ public class ScanDetail {
         mScanResult.channelWidth = networkDetail.getChannelWidth();
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
-        mScanResult.is80211McRTTResponder = networkDetail.is80211McResponderSupport();
-        mScanResult.passpointNetwork = networkDetail.isInterworking();
+        if (networkDetail.is80211McResponderSupport())
+            mScanResult.setFlag(ScanResult.FLAG_80211mc_RESPONDER);
+        if (networkDetail.isInterworking())
+            mScanResult.setFlag(ScanResult.FLAG_PASSPOINT_NETWORK);
     }
 
     public void propagateANQPInfo(Map<Constants.ANQPElementType, ANQPElement> anqpElements) {

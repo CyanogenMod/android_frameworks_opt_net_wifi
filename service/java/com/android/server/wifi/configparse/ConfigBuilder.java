@@ -330,7 +330,8 @@ public class ConfigBuilder {
         WifiConfiguration config = new WifiConfiguration();
 
         config.FQDN = homeSP.getFQDN();
-        config.roamingConsortiumIds = homeSP.getRoamingConsortiums();
+        config.roamingConsortiumIds = homeSP.getRoamingConsortiums().toArray(
+                new Long[homeSP.getRoamingConsortiums().size()]);
         config.providerFriendlyName = homeSP.getFriendlyName();
 
         config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_EAP);
