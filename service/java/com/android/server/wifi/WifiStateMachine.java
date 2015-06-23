@@ -445,11 +445,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * Save the UID correctly depending on if this is a new or existing network.
      * @return true if operation is authorized, false otherwise
      */
-    boolean recordUidIfAuthorized(WifiConfiguration config, int uid) {
+    boolean recordUidIfAuthorized(WifiConfiguration config, int uid, boolean onlyAnnotate) {
         if (!mWifiConfigStore.isNetworkConfigured(config)) {
             config.creatorUid = uid;
             config.creatorName = mContext.getPackageManager().getNameForUid(uid);
-        } else if (!mWifiConfigStore.canModifyNetwork(uid, config)) {
+        } else if (!mWifiConfigStore.canModifyNetwork(uid, config, onlyAnnotate)) {
             return false;
         }
 
@@ -6996,7 +6996,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_ADD_OR_UPDATE_NETWORK:
                     config = (WifiConfiguration) message.obj;
 
-                    if (!recordUidIfAuthorized(config, message.sendingUid)) {
+                    if (!recordUidIfAuthorized(config, message.sendingUid,
+                            /* onlyAnnotate */ false)) {
                         loge("Not authorized to update network "
                              + " config=" + config.SSID
                              + " cnid=" + config.networkId
@@ -7034,7 +7035,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_REMOVE_NETWORK:
                     netId = message.arg1;
-                    if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId)) {
+                    if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId,
+                            /* onlyAnnotate */ false)) {
                         loge("Not authorized to remove network "
                              + " cnid=" + netId
                              + " uid=" + message.sendingUid);
@@ -7364,7 +7366,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     /* Save the network config */
                     if (config != null) {
-                        if (!recordUidIfAuthorized(config, message.sendingUid)) {
+                        // When connecting to an access point, WifiStateMachine wants to update the
+                        // relevant config with administrative data. This update should not be
+                        // considered a 'real' update, therefore lockdown by Device Owner must be
+                        // disregarded.
+                        if (!recordUidIfAuthorized(config, message.sendingUid,
+                                /* onlyAnnotate */ true)) {
                             loge("Not authorized to update network "
                                  + " config=" + config.SSID
                                  + " cnid=" + config.networkId
@@ -7511,7 +7518,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     // Only record the uid if this is user initiated
                     boolean checkUid = (message.what == WifiManager.SAVE_NETWORK);
-                    if (checkUid && !recordUidIfAuthorized(config, message.sendingUid)) {
+                    if (checkUid && !recordUidIfAuthorized(config, message.sendingUid,
+                            /* onlyAnnotate */ false)) {
                         loge("Not authorized to update network "
                              + " config=" + config.SSID
                              + " cnid=" + config.networkId
@@ -7586,7 +7594,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // check that the caller owns this network
                     netId = message.arg1;
 
-                    if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId)) {
+                    if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId,
+                            /* onlyAnnotate */ false)) {
                         loge("Not authorized to forget network "
                              + " cnid=" + netId
                              + " uid=" + message.sendingUid);
