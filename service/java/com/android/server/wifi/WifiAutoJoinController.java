@@ -1249,7 +1249,8 @@ public class WifiAutoJoinController {
         // keep going - it could be that another BSSID is in range (has been seen recently) which
         // has a score, even if the one we're immediately connected to doesn't.
         ScanResult currentScanResult = mWifiStateMachine.getCurrentScanResult();
-        boolean currentNetworkHasScoreCurve = mNetworkScoreCache.hasScoreCurve(currentScanResult);
+        boolean currentNetworkHasScoreCurve = currentScanResult != null
+                && mNetworkScoreCache.hasScoreCurve(currentScanResult);
         if (ephemeralOutOfRangeTimeoutMs <= 0 || currentNetworkHasScoreCurve) {
             if (DBG) {
                 if (currentNetworkHasScoreCurve) {
