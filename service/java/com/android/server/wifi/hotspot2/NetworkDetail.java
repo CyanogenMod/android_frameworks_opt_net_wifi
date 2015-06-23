@@ -166,7 +166,7 @@ public class NetworkDetail {
         RuntimeException exception = null;
 
         try {
-            while (data.hasRemaining()) {
+            while (data.remaining() > 1) {
                 int eid = data.get() & Constants.BYTE_MASK;
                 int elementLength = data.get() & Constants.BYTE_MASK;
 
@@ -174,6 +174,10 @@ public class NetworkDetail {
                     throw new IllegalArgumentException("Element length " + elementLength +
                             " exceeds payload length " + data.remaining() +
                             " @ " + data.position());
+                }
+                if (eid == 0 && elementLength == 0 && ssidOctets != null) {
+                    // Don't overwrite SSID (eid 0) with trailing zero garbage
+                    continue;
                 }
 
                 ByteBuffer element;
@@ -247,15 +251,15 @@ public class NetworkDetail {
                             }
                         }
                         roamingConsortiums = new long[oiCount];
-                        if (oi1Length > 0) {
+                        if (oi1Length > 0 && roamingConsortiums.length > 0) {
                             roamingConsortiums[0] =
                                     getInteger(data, ByteOrder.BIG_ENDIAN, oi1Length);
                         }
-                        if (oi2Length > 0) {
+                        if (oi2Length > 0 && roamingConsortiums.length > 1) {
                             roamingConsortiums[1] =
                                     getInteger(data, ByteOrder.BIG_ENDIAN, oi2Length);
                         }
-                        if (oi3Length > 0) {
+                        if (oi3Length > 0 && roamingConsortiums.length > 2) {
                             roamingConsortiums[2] =
                                     getInteger(data, ByteOrder.BIG_ENDIAN, oi3Length);
                         }
@@ -308,7 +312,7 @@ public class NetworkDetail {
                 }
             }
         }
-        catch (IllegalArgumentException | BufferUnderflowException e) {
+        catch (IllegalArgumentException | BufferUnderflowException | ArrayIndexOutOfBoundsException e) {
             Log.d(Utils.hs2LogTag(getClass()), "Caught " + e);
             if (ssidOctets == null) {
                 throw new IllegalArgumentException("Malformed IE string (no SSID)", e);
