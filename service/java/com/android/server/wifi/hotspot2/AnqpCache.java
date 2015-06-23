@@ -10,17 +10,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class AnqpCache implements AlarmHandler {
+public class AnqpCache {
     private static final long CACHE_RECHECK = 60000L;
     private static final boolean STANDARD_ESS = true;  // Regular AP keying; see CacheKey below.
+    private long mLastSweep;
 
     private final HashMap<CacheKey, ANQPData> mANQPCache;
-    private final Chronograph mChronograph;
 
-    public AnqpCache(Chronograph chronograph) {
+    public AnqpCache() {
         mANQPCache = new HashMap<>();
-        mChronograph = chronograph;
-        mChronograph.addAlarm(CACHE_RECHECK, this, null);
+        mLastSweep = System.currentTimeMillis();
     }
 
     private static class CacheKey {
@@ -156,27 +155,28 @@ public class AnqpCache implements AlarmHandler {
         return data != null && data.isValid(network) ? data : null;
     }
 
-    public void clear() {
-        synchronized (mANQPCache) {
-            mANQPCache.clear();
-        }
-    }
-
-    @Override
-    public void wake(Object token) {
+    public void clear(boolean all, boolean debug) {
         long now = System.currentTimeMillis();
         synchronized (mANQPCache) {
-            List<CacheKey> regulars = new ArrayList<>();
-            for (Map.Entry<CacheKey, ANQPData> entry : mANQPCache.entrySet()) {
-                if (entry.getValue().expired(now)) {
-                    regulars.add(entry.getKey());
-                }
+            if (all) {
+                mANQPCache.clear();
+                mLastSweep = now;
             }
-            for (CacheKey key : regulars) {
-                mANQPCache.remove(key);
-                Log.d(Utils.hs2LogTag(getClass()), "Retired " + key);
+            else if (now > mLastSweep + CACHE_RECHECK) {
+                List<CacheKey> retirees = new ArrayList<>();
+                for (Map.Entry<CacheKey, ANQPData> entry : mANQPCache.entrySet()) {
+                    if (entry.getValue().expired(now)) {
+                        retirees.add(entry.getKey());
+                    }
+                }
+                for (CacheKey key : retirees) {
+                    mANQPCache.remove(key);
+                    if (debug) {
+                        Log.d(Utils.hs2LogTag(getClass()), "Retired " + key);
+                    }
+                }
+                mLastSweep = now;
             }
         }
-        mChronograph.addAlarm(CACHE_RECHECK, this, null);
     }
 }

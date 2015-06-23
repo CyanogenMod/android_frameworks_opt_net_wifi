@@ -120,15 +120,21 @@ public class MOManager {
     }
 
     private final File mPpsFile;
+    private final boolean mEnabled;
     private final Map<String, HomeSP> mSPs;
 
-    public MOManager(File ppsFile) {
+    public MOManager(File ppsFile, boolean hs2enabled) {
         mPpsFile = ppsFile;
+        mEnabled = hs2enabled;
         mSPs = new HashMap<>();
     }
 
     public File getPpsFile() {
         return mPpsFile;
+    }
+
+    public boolean isConfigured() {
+        return mEnabled && !mSPs.isEmpty();
     }
 
     public Map<String, HomeSP> getLoadedSPs() {
@@ -137,7 +143,7 @@ public class MOManager {
 
     public List<HomeSP> loadAllSPs() throws IOException {
 
-        if (!mPpsFile.exists()) {
+        if (!mEnabled || !mPpsFile.exists()) {
             return Collections.emptyList();
         }
 
@@ -210,36 +216,10 @@ public class MOManager {
         return mSPs.get(fqdn);
     }
 
-    public void saveAllSps(Map<String, HomeSP> homeSPs) throws IOException {
-
-        Map<String, HomeSP> obsolete = new HashMap<>(mSPs);
-
-        List<HomeSP> resultSet = new ArrayList<>(homeSPs.size());
-        int additions = 0;
-
-        for (HomeSP newSP : homeSPs.values()) {
-            HomeSP existing = obsolete.remove(newSP.getFQDN());
-            if (existing == null) {
-                resultSet.add(newSP);
-                additions++;
-            }
-            else {
-                resultSet.add(existing);
-            }
-            Log.d("HSXX", "From wpa: " + newSP.getCredential().hasDisregardPassword());
-        }
-
-        if (!obsolete.isEmpty() || additions > 0) {
-            Log.d(Utils.hs2LogTag(getClass()), String.format("MO change: %s -> %s: %s",
-                    fqdnList(mSPs.values()), fqdnList(homeSPs.values()), fqdnList(resultSet)));
-            rewriteMO(resultSet, mSPs, mPpsFile);
-        }
-        else {
-            Log.d(Utils.hs2LogTag(getClass()), "Not persisting MO");
-        }
-    }
-
     public void addSP(HomeSP homeSP) throws IOException {
+        if (!mEnabled) {
+            throw new IOException("HS2.0 not enabled on this device");
+        }
         if (mSPs.containsKey(homeSP.getFQDN())) {
             Log.d(Utils.hs2LogTag(getClass()), "HS20 profile for " +
                     homeSP.getFQDN() + " already exists");
