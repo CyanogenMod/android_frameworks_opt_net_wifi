@@ -599,8 +599,8 @@ public class WifiMonitor {
                     if (mWifiNative.connectToSupplicant()) {
                         m.mMonitoring = true;
                         m.mStateMachine.sendMessage(SUP_CONNECTION_EVENT);
-                        new MonitorThread(mWifiNative, this).start();
                         mConnected = true;
+                        new MonitorThread(mWifiNative, this).start();
                         break;
                     }
                     if (connectTries++ < 5) {
@@ -744,8 +744,16 @@ public class WifiMonitor {
         }
 
         public void run() {
+            if (DBG) {
+                Log.d(TAG, "MonitorThread start with mConnected=" +
+                     mWifiMonitorSingleton.mConnected);
+            }
             //noinspection InfiniteLoopStatement
             for (;;) {
+                if (!mWifiMonitorSingleton.mConnected) {
+                    if (DBG) Log.d(TAG, "MonitorThread exit because mConnected is false");
+                    break;
+                }
                 String eventStr = mWifiNative.waitForEvent();
 
                 // Skip logging the common but mostly uninteresting events
