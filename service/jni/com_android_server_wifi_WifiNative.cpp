@@ -80,6 +80,7 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_set_nodfs_flag = wifi_set_nodfs_flag_stub;
     hal_fn->wifi_get_firmware_memory_dump = wifi_get_firmware_memory_dump_stub;
     hal_fn->wifi_set_log_handler = wifi_set_log_handler_stub;
+    hal_fn->wifi_reset_log_handler = wifi_reset_log_handler_stub;
     hal_fn->wifi_set_alert_handler = wifi_set_alert_handler_stub;
     hal_fn->wifi_get_firmware_version = wifi_get_firmware_version_stub;
     hal_fn->wifi_get_ring_buffers_status = wifi_get_ring_buffers_status_stub;
