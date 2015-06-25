@@ -38,7 +38,7 @@ import java.util.zip.Deflater;
 class WifiLogger  {
 
     private static final String TAG = "WifiLogger";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
 
     /** log level flags; keep these consistent with wifi_logger.h */
 
@@ -96,12 +96,9 @@ class WifiLogger  {
         mDriverVersion = WifiNative.getDriverVersion();
         mSupportedFeatureSet = WifiNative.getSupportedLoggerFeatureSet();
 
-        if (verboseEnabled == false) {
-            Log.d(TAG, "Not enabling logger to work around issues");
-            return;
-        }
+        if (mLogLevel == VERBOSE_NO_LOG)
+            WifiNative.setLoggingEventHandler(mHandler);
 
-        WifiNative.setLoggingEventHandler(mHandler);
         if (verboseEnabled) {
             mLogLevel = VERBOSE_LOG_WITH_WAKEUP;
         } else {
@@ -140,7 +137,7 @@ class WifiLogger  {
     }
 
     public synchronized void captureBugReportData(int reason) {
-        boolean captureFWDump = (mLogLevel > VERBOSE_LOG_WITH_WAKEUP);
+        boolean captureFWDump = (mLogLevel > VERBOSE_NORMAL_LOG);
         BugReport report = captureBugreport(reason, captureFWDump);
         mLastBugReports.addLast(report);
     }
@@ -176,7 +173,8 @@ class WifiLogger  {
 
     /* private methods and data */
     private static class BugReport {
-        long time;
+        long systemTimeMs;
+        long kernelTimeNanos;
         int errorCode;
         HashMap<String, byte[][]> ringBuffers = new HashMap();
         byte[] fwMemoryDump;
@@ -186,9 +184,13 @@ class WifiLogger  {
             StringBuilder builder = new StringBuilder();
 
             Calendar c = Calendar.getInstance();
-            c.setTimeInMillis(time);
-            builder.append("time = ").append(
+            c.setTimeInMillis(systemTimeMs);
+            builder.append("system time = ").append(
                     String.format("%tm-%td %tH:%tM:%tS.%tL", c, c, c, c, c, c)).append("\n");
+
+            long kernelTimeMs = kernelTimeNanos/(1000*1000);
+            builder.append("kernel time = ").append(kernelTimeMs/1000).append(".").append
+                    (kernelTimeMs%1000).append("\n");
 
             if (alertData == null)
                 builder.append("reason = ").append(errorCode).append("\n");
@@ -378,7 +380,8 @@ class WifiLogger  {
     private BugReport captureBugreport(int errorCode, boolean captureFWDump) {
         BugReport report = new BugReport();
         report.errorCode = errorCode;
-        report.time = System.currentTimeMillis();
+        report.systemTimeMs = System.currentTimeMillis();
+        report.kernelTimeNanos = System.nanoTime();
 
         if (mRingBuffers != null) {
             for (WifiNative.RingBufferStatus buffer : mRingBuffers) {

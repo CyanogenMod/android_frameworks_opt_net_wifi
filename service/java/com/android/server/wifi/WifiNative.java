@@ -135,7 +135,7 @@ public class WifiNative {
         }
     }
 
-    private static final LocalLog mLocalLog = new LocalLog(65536);
+    private static final LocalLog mLocalLog = new LocalLog(16384);
 
     // hold mLock before accessing mCmdIdLock
     private static int sCmdId;
