@@ -4802,6 +4802,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         mWifiInfo.setSSID(stateChangeResult.wifiSsid);
+        mWifiInfo.setEphemeral(mWifiConfigStore.isEphemeral(mWifiInfo.getNetworkId()));
 
         mSupplicantStateTracker.sendMessage(Message.obtain(message));
 
