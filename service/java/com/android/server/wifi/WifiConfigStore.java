@@ -1750,6 +1750,11 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
+    boolean isEphemeral(int netId) {
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        return config != null && config.ephemeral;
+    }
+
     /**
      * Should be called when a single network configuration is made.
      * @param network The network configuration that changed.
