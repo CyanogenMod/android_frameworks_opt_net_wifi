@@ -296,7 +296,8 @@ int set_iface_flags(const char *ifname, int dev_up) {
     }
 
     if (ioctl(sock, SIOCSIFFLAGS, &ifr) != 0) {
-      ALOGE("Could not set interface %s flags \n", ifname);
+      ALOGE("Could not set interface %s flags: %d\n", ifname, errno);
+      ret = errno ? -errno : -999;
       close(sock);
       return ret;
     } else {
@@ -1644,8 +1645,8 @@ static void on_ring_buffer_data(char *ring_name, char *buffer, int buffer_size,
 
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
-    ALOGD("on_ring_buffer_data called, vm = %p, obj = %p, env = %p buffer size = %d", mVM,
-            mCls, env, buffer_size);
+    /* ALOGD("on_ring_buffer_data called, vm = %p, obj = %p, env = %p buffer size = %d", mVM,
+            mCls, env, buffer_size); */
 
     jobject ringStatus = createObject(env,
                     "com/android/server/wifi/WifiNative$RingBufferStatus");
@@ -1748,8 +1749,7 @@ static jboolean android_net_wifi_start_logging_ring_buffer(JNIEnv *env, jclass c
 static jboolean android_net_wifi_get_ring_buffer_data(JNIEnv *env, jclass cls, jint iface,
         jstring ring_name) {
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("android_net_wifi_get_ring_buffer_data = %p", handle);
-
+    // ALOGD("android_net_wifi_get_ring_buffer_data = %p", handle);
 
     const char* ring_name_const_char = env->GetStringUTFChars(ring_name, JNI_FALSE);
     int len;
@@ -1759,11 +1759,6 @@ static jboolean android_net_wifi_get_ring_buffer_data(JNIEnv *env, jclass cls, j
 
     int result = hal_fn.wifi_get_ring_data(handle, ring_name_char);
 
-    if (result == WIFI_SUCCESS)
-        ALOGD("Get Ring data command success\n");
-    else
-        ALOGE("Failed to execute get ring data command\n");
-
     env->ReleaseStringUTFChars(ring_name, ring_name_char);
     return result == WIFI_SUCCESS;
 }
@@ -1772,8 +1767,8 @@ static jboolean android_net_wifi_get_ring_buffer_data(JNIEnv *env, jclass cls, j
 void on_firmware_memory_dump(char *buffer, int buffer_size) {
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
-    ALOGD("on_firmware_memory_dump called, vm = %p, obj = %p, env = %p buffer_size = %d"
-            , mVM, mCls, env, buffer_size);
+    /* ALOGD("on_firmware_memory_dump called, vm = %p, obj = %p, env = %p buffer_size = %d"
+            , mVM, mCls, env, buffer_size); */
 
     if (buffer_size > 0) {
         jbyteArray dump = env->NewByteArray(buffer_size);
@@ -1787,7 +1782,7 @@ void on_firmware_memory_dump(char *buffer, int buffer_size) {
 
 static jboolean android_net_wifi_get_fw_memory_dump(JNIEnv *env, jclass cls, jint iface){
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
-    ALOGD("android_net_wifi_get_fw_memory_dump = %p", handle);
+    // ALOGD("android_net_wifi_get_fw_memory_dump = %p", handle);
 
     if (handle == NULL) {
         ALOGE("Can not get wifi_interface_handle");
