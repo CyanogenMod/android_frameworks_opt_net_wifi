@@ -6671,6 +6671,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
                 s = "ASSOCIATION_REJECTION_EVENT";
                 break;
+            case WifiMonitor.ANQP_DONE_EVENT:
+                s = "WifiMonitor.ANQP_DONE_EVENT";
+                break;
+            case WifiMonitor.GAS_QUERY_DONE_EVENT:
+                s = "WifiMonitor.GAS_QUERY_DONE_EVENT";
+                break;
+            case WifiMonitor.HS20_DEAUTH_EVENT:
+                s = "WifiMonitor.HS20_DEAUTH_EVENT";
+                break;
+            case WifiMonitor.GAS_QUERY_START_EVENT:
+                s = "WifiMonitor.GAS_QUERY_START_EVENT";
+                break;
             case CMD_SET_OPERATIONAL_MODE:
                 s = "CMD_SET_OPERATIONAL_MODE";
                 break;
