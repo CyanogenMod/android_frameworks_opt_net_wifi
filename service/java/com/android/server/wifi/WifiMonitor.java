@@ -1109,14 +1109,34 @@ public class WifiMonitor {
         return err;
     }
 
+    WifiP2pDevice getWifiP2pDevice(String dataString) {
+        try {
+            WifiP2pDevice device = new WifiP2pDevice(dataString);
+            return device;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    WifiP2pGroup getWifiP2pGroup(String dataString) {
+        try {
+            WifiP2pGroup group = new WifiP2pGroup(dataString);
+            return group;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     /**
      * Handle p2p events
      */
     private void handleP2pEvents(String dataString) {
         if (dataString.startsWith(P2P_DEVICE_FOUND_STR)) {
-            mStateMachine.sendMessage(P2P_DEVICE_FOUND_EVENT, new WifiP2pDevice(dataString));
+            WifiP2pDevice device = getWifiP2pDevice(dataString);
+            if (device != null) mStateMachine.sendMessage(P2P_DEVICE_FOUND_EVENT, device);
         } else if (dataString.startsWith(P2P_DEVICE_LOST_STR)) {
-            mStateMachine.sendMessage(P2P_DEVICE_LOST_EVENT, new WifiP2pDevice(dataString));
+            WifiP2pDevice device = getWifiP2pDevice(dataString);
+            if (device != null) mStateMachine.sendMessage(P2P_DEVICE_LOST_EVENT, device);
         } else if (dataString.startsWith(P2P_FIND_STOPPED_STR)) {
             mStateMachine.sendMessage(P2P_FIND_STOPPED_EVENT);
         } else if (dataString.startsWith(P2P_GO_NEG_REQUEST_STR)) {
@@ -1131,9 +1151,11 @@ public class WifiMonitor {
         } else if (dataString.startsWith(P2P_GROUP_FORMATION_FAILURE_STR)) {
             mStateMachine.sendMessage(P2P_GROUP_FORMATION_FAILURE_EVENT, p2pError(dataString));
         } else if (dataString.startsWith(P2P_GROUP_STARTED_STR)) {
-            mStateMachine.sendMessage(P2P_GROUP_STARTED_EVENT, new WifiP2pGroup(dataString));
+            WifiP2pGroup group = getWifiP2pGroup(dataString);
+            if (group != null) mStateMachine.sendMessage(P2P_GROUP_STARTED_EVENT, group);
         } else if (dataString.startsWith(P2P_GROUP_REMOVED_STR)) {
-            mStateMachine.sendMessage(P2P_GROUP_REMOVED_EVENT, new WifiP2pGroup(dataString));
+            WifiP2pGroup group = getWifiP2pGroup(dataString);
+            if (group != null) mStateMachine.sendMessage(P2P_GROUP_REMOVED_EVENT, group);
         } else if (dataString.startsWith(P2P_INVITATION_RECEIVED_STR)) {
             mStateMachine.sendMessage(P2P_INVITATION_RECEIVED_EVENT,
                     new WifiP2pGroup(dataString));
