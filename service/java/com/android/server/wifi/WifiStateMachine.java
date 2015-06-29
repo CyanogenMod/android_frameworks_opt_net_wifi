@@ -2559,6 +2559,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (msg.sendingUid > 0 && msg.sendingUid != Process.WIFI_UID) {
             sb.append(" uid=" + msg.sendingUid);
         }
+        sb.append(" ").append(printTime());
         switch (msg.what) {
             case CMD_STARTED_GSCAN_DBG:
             case CMD_STARTED_PNO_DBG:
@@ -2658,7 +2659,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
-                sb.append(printTime());
                 StateChangeResult stateChangeResult = (StateChangeResult) msg.obj;
                 if (stateChangeResult != null) {
                     sb.append(stateChangeResult.toString());
@@ -2726,7 +2726,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(bssid);
                 }
                 sb.append(" blacklist=" + Boolean.toString(didBlackListBSSID));
-                sb.append(printTime());
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
                 sb.append(" ");
@@ -2774,7 +2773,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 if (config != null) {
                     sb.append(" ").append(config.configKey());
                 }
-                sb.append(printTime());
                 key = mWifiConfigStore.getLastSelectedConfiguration();
                 if (key != null) {
                     sb.append(" last=").append(key);
@@ -2793,7 +2791,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(" Target=").append(mTargetRoamBSSID);
                 }
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
-                sb.append(printTime());
                 break;
             case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                 if (msg.obj != null) {
@@ -2811,7 +2808,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 if (linkDebouncing) {
                     sb.append(" debounce");
                 }
-                sb.append(printTime());
                 break;
             case WifiMonitor.SSID_TEMP_DISABLED:
             case WifiMonitor.SSID_REENABLED:
@@ -2843,7 +2839,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         sb.append(" bssid=").append(mWifiInfo.getBSSID());
                     }
                 }
-                sb.append(printTime());
                 break;
             case CMD_RSSI_POLL:
             case CMD_UNWANTED_NETWORK:
@@ -2896,7 +2891,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(" ").append(mTargetRoamBSSID);
                 }
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
-                sb.append(printTime());
                 config = getCurrentWifiConfiguration();
                 if (config != null) {
                     sb.append(config.configKey());
@@ -2928,7 +2922,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 }
                 sb.append(" roam=").append(Integer.toString(mAutoRoaming));
                 sb.append(" fail count=").append(Integer.toString(mRoamFailCount));
-                sb.append(printTime());
                 break;
             case CMD_ADD_OR_UPDATE_NETWORK:
                 sb.append(" ");
@@ -3067,7 +3060,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(",").append(mWifiInfo.txBad);
                     sb.append(",").append(mWifiInfo.txRetries);
                 }
-                sb.append(printTime());
                 sb.append(String.format(" bcn=%d", mRunningBeaconCount));
                 break;
             case CMD_UPDATE_LINKPROPERTIES:
