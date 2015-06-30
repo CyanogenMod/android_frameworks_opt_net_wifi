@@ -4412,7 +4412,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             newLp.addRoute(route);
         }
         for (InetAddress dns : netlinkLinkProperties.getDnsServers()) {
-            newLp.addDnsServer(dns);
+            // Only add likely reachable DNS servers.
+            // TODO: investigate deleting this.
+            if (newLp.isReachable(dns)) {
+                newLp.addDnsServer(dns);
+            }
         }
 
         // IPv4 routes, DNS servers and domains come from mDhcpResults.
@@ -4424,7 +4428,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     newLp.addRoute(route);
                 }
                 for (InetAddress dns : mDhcpResults.dnsServers) {
-                    newLp.addDnsServer(dns);
+                    // Only add likely reachable DNS servers.
+                    // TODO: investigate deleting this.
+                    if (newLp.isReachable(dns)) {
+                        newLp.addDnsServer(dns);
+                    }
                 }
                 newLp.setDomains(mDhcpResults.domains);
             }
