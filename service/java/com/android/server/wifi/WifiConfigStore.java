@@ -3679,70 +3679,20 @@ public class WifiConfigStore extends IpConfigStore {
             config.preSharedKey = null;
         }
 
-        value = mWifiNative.getNetworkVariable(config.networkId,
-                WifiConfiguration.Protocol.varName);
-        if (!TextUtils.isEmpty(value)) {
-            String vals[] = value.split(" ");
-            for (String val : vals) {
-                int index =
-                    lookupString(val, WifiConfiguration.Protocol.strings);
-                if (0 <= index) {
-                    config.allowedProtocols.set(index);
-                }
-            }
-        }
+        readNetworkBitsetVariable(config.networkId, config.allowedProtocols,
+                WifiConfiguration.Protocol.varName, WifiConfiguration.Protocol.strings);
 
-        value = mWifiNative.getNetworkVariable(config.networkId,
-                WifiConfiguration.KeyMgmt.varName);
-        if (!TextUtils.isEmpty(value)) {
-            String vals[] = value.split(" ");
-            for (String val : vals) {
-                int index =
-                    lookupString(val, WifiConfiguration.KeyMgmt.strings);
-                if (0 <= index) {
-                    config.allowedKeyManagement.set(index);
-                }
-            }
-        }
+        readNetworkBitsetVariable(config.networkId, config.allowedKeyManagement,
+                WifiConfiguration.KeyMgmt.varName, WifiConfiguration.KeyMgmt.strings);
 
-        value = mWifiNative.getNetworkVariable(config.networkId,
-                WifiConfiguration.AuthAlgorithm.varName);
-        if (!TextUtils.isEmpty(value)) {
-            String vals[] = value.split(" ");
-            for (String val : vals) {
-                int index =
-                    lookupString(val, WifiConfiguration.AuthAlgorithm.strings);
-                if (0 <= index) {
-                    config.allowedAuthAlgorithms.set(index);
-                }
-            }
-        }
+        readNetworkBitsetVariable(config.networkId, config.allowedAuthAlgorithms,
+                WifiConfiguration.AuthAlgorithm.varName, WifiConfiguration.AuthAlgorithm.strings);
 
-        value = mWifiNative.getNetworkVariable(config.networkId,
-                WifiConfiguration.PairwiseCipher.varName);
-        if (!TextUtils.isEmpty(value)) {
-            String vals[] = value.split(" ");
-            for (String val : vals) {
-                int index =
-                    lookupString(val, WifiConfiguration.PairwiseCipher.strings);
-                if (0 <= index) {
-                    config.allowedPairwiseCiphers.set(index);
-                }
-            }
-        }
+        readNetworkBitsetVariable(config.networkId, config.allowedPairwiseCiphers,
+                WifiConfiguration.PairwiseCipher.varName, WifiConfiguration.PairwiseCipher.strings);
 
-        value = mWifiNative.getNetworkVariable(config.networkId,
-                WifiConfiguration.GroupCipher.varName);
-        if (!TextUtils.isEmpty(value)) {
-            String vals[] = value.split(" ");
-            for (String val : vals) {
-                int index =
-                    lookupString(val, WifiConfiguration.GroupCipher.strings);
-                if (0 <= index) {
-                    config.allowedGroupCiphers.set(index);
-                }
-            }
-        }
+        readNetworkBitsetVariable(config.networkId, config.allowedGroupCiphers,
+                WifiConfiguration.GroupCipher.varName, WifiConfiguration.GroupCipher.strings);
 
         if (config.enterpriseConfig == null) {
             config.enterpriseConfig = new WifiEnterpriseConfig();
@@ -4471,4 +4421,18 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    private void readNetworkBitsetVariable(int netId, BitSet variable, String varName,
+            String[] strings) {
+        String value = mWifiNative.getNetworkVariable(netId, varName);
+        if (!TextUtils.isEmpty(value)) {
+            variable.clear();
+            String vals[] = value.split(" ");
+            for (String val : vals) {
+                int index = lookupString(val, strings);
+                if (0 <= index) {
+                    variable.set(index);
+                }
+            }
+        }
+    }
 }
