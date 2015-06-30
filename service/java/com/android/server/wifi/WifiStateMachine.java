@@ -270,6 +270,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mRestartAutoJoinOffloadCounter++;
     }
 
+    public void registerNetworkDisabled(int netId) {
+        // Restart legacy PNO and autojoin offload if needed
+        sendMessage(CMD_RESTART_AUTOJOIN_OFFLOAD, 0,
+                mRestartAutoJoinOffloadCounter, " registerNetworkDisabled " + netId);
+        mRestartAutoJoinOffloadCounter++;
+    }
+
     // Testing various network disconnect cases by sending lots of spurious
     // disconnect to supplicant
     private boolean testNetworkDisconnect = false;
@@ -1054,7 +1061,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 PackageManager.FEATURE_WIFI_DIRECT);
 
         mWifiNative = new WifiNative(mInterfaceName);
-        mWifiConfigStore = new WifiConfigStore(context, mWifiNative);
+        mWifiConfigStore = new WifiConfigStore(context,this,  mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
