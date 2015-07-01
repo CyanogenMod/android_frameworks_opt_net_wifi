@@ -530,9 +530,12 @@ public class WifiConfigStore extends IpConfigStore {
     private final MOManager mMOManager;
     private final SIMAccessor mSIMAccessor;
 
-    WifiConfigStore(Context c, WifiNative wn) {
+    private WifiStateMachine mWifiStateMachine;
+
+    WifiConfigStore(Context c,  WifiStateMachine w, WifiNative wn) {
         mContext = c;
         mWifiNative = wn;
+        mWifiStateMachine = w;
 
         // A map for value setting in readAutoJoinConfig() - replacing the replicated code.
         sKeyMap.put(ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY, enableAutoJoinWhenAssociated);
@@ -1580,7 +1583,11 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
     boolean disableNetwork(int netId) {
-        return disableNetwork(netId, WifiConfiguration.DISABLED_UNKNOWN_REASON);
+        boolean ret = disableNetwork(netId, WifiConfiguration.DISABLED_UNKNOWN_REASON);
+        if (ret) {
+            mWifiStateMachine.registerNetworkDisabled(netId);
+        }
+        return ret;
     }
 
     /**
