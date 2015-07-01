@@ -1992,9 +1992,22 @@ public class WifiNative {
             sWifiLoggerEventHandler.onWifiAlert(errorCode, buffer);
     }
 
-    synchronized public static void setLoggingEventHandler(WifiLoggerEventHandler handler) {
+    private static int sLogCmdId = -1;
+    private static native boolean setLoggingEventHandlerNative(int iface, int id);
+    synchronized public static boolean setLoggingEventHandler(WifiLoggerEventHandler handler) {
         synchronized (mLock) {
-            sWifiLoggerEventHandler = handler;
+            if (isHalStarted()) {
+                int oldId =  sLogCmdId;
+                sLogCmdId = getNewCmdIdLocked();
+                if (!setLoggingEventHandlerNative(sWlan0Index, sLogCmdId)) {
+                    sLogCmdId = oldId;
+                    return false;
+                }
+                sWifiLoggerEventHandler = handler;
+                return true;
+            } else {
+                return false;
+            }
         }
     }
 
@@ -2019,6 +2032,27 @@ public class WifiNative {
                 return getSupportedLoggerFeatureSetNative(sWlan0Index);
             } else {
                 return 0;
+            }
+        }
+    }
+
+    private static native boolean resetLogHandlerNative(int iface, int id);
+    synchronized public static boolean resetLogHandler() {
+        synchronized (mLock) {
+            if (isHalStarted()) {
+                if (sLogCmdId == -1) {
+                    Log.e(TAG,"Can not reset handler Before set any handler");
+                    return false;
+                }
+                sWifiLoggerEventHandler = null;
+                if (resetLogHandlerNative(sWlan0Index, sLogCmdId)) {
+                    sLogCmdId = -1;
+                    return true;
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
             }
         }
     }
