@@ -1456,6 +1456,12 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         pw.println("Locks held:");
         mLocks.dump(pw);
 
+        pw.println("Multicast Locks held:");
+        for (Multicaster l : mMulticasters) {
+            pw.print("    ");
+            pw.println(l);
+        }
+
         mWifiWatchdogStateMachine.dump(fd, pw, args);
         pw.println();
         mWifiStateMachine.dump(fd, pw, args);
