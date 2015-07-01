@@ -111,6 +111,7 @@ import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
+import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.net.NetlinkTracker;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
@@ -781,6 +782,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* used to log if GSCAN was started */
     static final int CMD_STARTED_GSCAN_DBG                              = BASE + 159;
+
+    /* used to offload sending IP packet */
+    static final int CMD_START_IP_PACKET_OFFLOAD                        = BASE + 160;
+
+    /* used to stop offload sending IP packet */
+    static final int CMD_STOP_IP_PACKET_OFFLOAD                         = BASE + 161;
 
 
     /* Wifi state machine modes of operation */
@@ -1780,6 +1787,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mTxTimeScan += mTxTimeThisScan;
             mRxTimeScan += mRxTimeThisScan;
         }
+    }
+
+    int startWifiIPPacketOffload(int slot, KeepalivePacketData packetData, int intervalSeconds) {
+        return mWifiNative.startSendingOffloadedPacket(slot, packetData, intervalSeconds * 1000);
+    }
+
+    int stopWifiIPPacketOffload(int slot) {
+        return mWifiNative.stopSendingOffloadedPacket(slot);
+    }
+
+    int resetWifiIPPacketOffload() {
+        //ToDo: clear the list of object when ever there is disconnect
+        // Does the driver maintain the list of offloaded packets and
+        // clear on each disconnect?
+        return 0;
     }
 
     // If workSource is not null, blame is given to it, otherwise blame is given to callingUid.
@@ -5227,6 +5249,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }).start();
     }
 
+    private byte[] macAddressFromString(String macString) {
+        String[] macBytes = macString.split(":");
+        if (macBytes.length != 6) {
+            throw new IllegalArgumentException("MAC address should be 6 bytes long!");
+        }
+        byte[] mac = new byte[6];
+        for (int i = 0; i < macBytes.length; i++) {
+            Integer hexVal = Integer.parseInt(macBytes[i], 16);
+            mac[i] = hexVal.byteValue();
+        }
+        return mac;
+    }
+
     /*
      * Read a MAC address in /proc/arp/table, used by WifistateMachine
      * so as to record MAC address of default gateway.
@@ -5575,6 +5610,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_REMOVE_USER_CONFIGURATIONS:
                     deferMessage(message);
+                    break;
+                case CMD_START_IP_PACKET_OFFLOAD:
+                    if (mNetworkAgent != null) mNetworkAgent.onPacketKeepaliveEvent(
+                            message.arg1,
+                            ConnectivityManager.PacketKeepalive.ERROR_INVALID_NETWORK);
+                    break;
+                case CMD_STOP_IP_PACKET_OFFLOAD:
+                    if (mNetworkAgent != null) mNetworkAgent.onPacketKeepaliveEvent(
+                            message.arg1,
+                            ConnectivityManager.PacketKeepalive.ERROR_INVALID_NETWORK);
                     break;
                 default:
                     loge("Error! unhandled message" + message);
@@ -6283,6 +6328,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case WifiMonitor.ANQP_DONE_EVENT:
                     mWifiConfigStore.notifyANQPDone((Long) message.obj, message.arg1 != 0);
                     break;
+                case CMD_STOP_IP_PACKET_OFFLOAD: {
+                    int slot = message.arg1;
+                    int ret = stopWifiIPPacketOffload(slot);
+                    if (mNetworkAgent != null) {
+                        mNetworkAgent.onPacketKeepaliveEvent(slot, ret);
+                    }
+                    break;
+                }
                 default:
                     return NOT_HANDLED;
             }
@@ -6839,6 +6892,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION:
                 s = "CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION";
+                break;
+            case CMD_START_IP_PACKET_OFFLOAD:
+                s = "CMD_START_IP_PACKET_OFFLOAD";
+                break;
+            case CMD_STOP_IP_PACKET_OFFLOAD:
+                s = "CMD_STOP_IP_PACKET_OFFLOAD";
                 break;
             default:
                 s = "what:" + Integer.toString(what);
@@ -7766,6 +7825,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         protected void saveAcceptUnvalidated(boolean accept) {
             if (this != mNetworkAgent) return;
             WifiStateMachine.this.sendMessage(CMD_ACCEPT_UNVALIDATED, accept ? 1 : 0);
+        }
+
+        @Override
+        protected void startPacketKeepalive(Message msg) {
+            WifiStateMachine.this.sendMessage(
+                    CMD_START_IP_PACKET_OFFLOAD, msg.arg1, msg.arg2, msg.obj);
+        }
+
+        @Override
+        protected void stopPacketKeepalive(Message msg) {
+            WifiStateMachine.this.sendMessage(
+                    CMD_STOP_IP_PACKET_OFFLOAD, msg.arg1, msg.arg2, msg.obj);
         }
 
         @Override
@@ -8883,6 +8954,27 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         break;
                     }
                     break;
+                case CMD_START_IP_PACKET_OFFLOAD: {
+                        int slot = message.arg1;
+                        int intervalSeconds = message.arg2;
+                        KeepalivePacketData pkt = (KeepalivePacketData) message.obj;
+                        byte[] dstMac;
+                        try {
+                            InetAddress gateway = RouteInfo.selectBestRoute(
+                                    mLinkProperties.getRoutes(), pkt.dstAddress).getGateway();
+                            String dstMacStr = macAddressFromRoute(gateway.getHostAddress());
+                            dstMac = macAddressFromString(dstMacStr);
+                        } catch (NullPointerException|IllegalArgumentException e) {
+                            loge("Can't find MAC address for next hop to " + pkt.dstAddress);
+                            mNetworkAgent.onPacketKeepaliveEvent(slot,
+                                    ConnectivityManager.PacketKeepalive.ERROR_INVALID_IP_ADDRESS);
+                            break;
+                        }
+                        pkt.dstMac = dstMac;
+                        int result = startWifiIPPacketOffload(slot, pkt, intervalSeconds);
+                        mNetworkAgent.onPacketKeepaliveEvent(slot, result);
+                        break;
+                    }
                 default:
                     return NOT_HANDLED;
             }

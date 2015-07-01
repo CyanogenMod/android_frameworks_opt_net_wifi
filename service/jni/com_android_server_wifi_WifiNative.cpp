@@ -2077,6 +2077,45 @@ static jboolean android_net_wifi_setSsidWhitelist(
     return hal_fn.wifi_set_ssid_white_list(id, handle, num_ssids, ssids) == WIFI_SUCCESS;
 }
 
+static jint android_net_wifi_start_sending_offloaded_packet(JNIEnv *env, jclass cls, jint iface,
+                    jint idx, jbyteArray srcMac, jbyteArray dstMac, jbyteArray pkt, jint period)  {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("Start packet offload [%d] = %p", idx, handle);
+    wifi_error ret;
+    wifi_request_id id = idx;
+    byte * pkt_data =  (byte *)env->GetByteArrayElements(pkt, NULL);
+    unsigned short pkt_len = env->GetArrayLength(pkt);
+    byte* src_mac_addr = (byte *)env->GetByteArrayElements(srcMac, NULL);
+    byte* dst_mac_addr = (byte *)env->GetByteArrayElements(dstMac, NULL);
+    int i;
+    char macAddr[32];
+    sprintf(macAddr, "%0x:%0x:%0x:%0x:%0x:%0x", src_mac_addr[0], src_mac_addr[1],
+            src_mac_addr[2], src_mac_addr[3], src_mac_addr[4], src_mac_addr[5]);
+    ALOGD("src_mac_addr %s", macAddr);
+    sprintf(macAddr, "%0x:%0x:%0x:%0x:%0x:%0x", dst_mac_addr[0], dst_mac_addr[1],
+            dst_mac_addr[2], dst_mac_addr[3], dst_mac_addr[4], dst_mac_addr[5]);
+    ALOGD("dst_mac_addr %s", macAddr);
+    ALOGD("pkt_len %d\n", pkt_len);
+    ALOGD("Pkt data : ");
+    for(i = 0; i < pkt_len; i++) {
+        ALOGD(" %x ", pkt_data[i]);
+    }
+    ALOGD("\n");
+    ret =  hal_fn.wifi_start_sending_offloaded_packet(id, handle, pkt_data, pkt_len,
+                src_mac_addr, dst_mac_addr, period);
+    ALOGD("ret= %d\n", ret);
+    return ret;
+}
+
+static jint android_net_wifi_stop_sending_offloaded_packet(JNIEnv *env, jclass cls,
+                    jint iface, jint idx) {
+    int ret;
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("Stop packet offload [%d] = %p", idx, handle);
+    ret =  hal_fn.wifi_stop_sending_offloaded_packet(idx, handle);
+    ALOGD("ret= %d\n", ret);
+    return ret;
+}
 // ----------------------------------------------------------------------------
 
 /*
@@ -2163,7 +2202,11 @@ static JNINativeMethod gWifiMethods[] = {
     { "setSsidWhitelistNative", "(II[Ljava/lang/String;)Z",
              (void*)android_net_wifi_setSsidWhitelist},
     {"setLoggingEventHandlerNative", "(II)Z", (void *) android_net_wifi_set_log_handler},
-    {"resetLogHandlerNative", "(II)Z", (void *) android_net_wifi_reset_log_handler}
+    {"resetLogHandlerNative", "(II)Z", (void *) android_net_wifi_reset_log_handler},
+    { "startSendingOffloadedPacketNative", "(II[B[B[BI)I",
+             (void*)android_net_wifi_start_sending_offloaded_packet},
+    { "stopSendingOffloadedPacketNative", "(II)I",
+             (void*)android_net_wifi_stop_sending_offloaded_packet}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
