@@ -34,6 +34,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.List;
 
 public class ConfigBuilder {
@@ -330,8 +331,14 @@ public class ConfigBuilder {
         WifiConfiguration config = new WifiConfiguration();
 
         config.FQDN = homeSP.getFQDN();
-        config.roamingConsortiumIds = homeSP.getRoamingConsortiums().toArray(
-                new Long[homeSP.getRoamingConsortiums().size()]);
+
+        HashSet<Long> roamingConsortiumIds = homeSP.getRoamingConsortiums();
+        config.roamingConsortiumIds = new long[roamingConsortiumIds.size()];
+        int i = 0;
+        for (long id : roamingConsortiumIds) {
+            config.roamingConsortiumIds[i] = id;
+            i++;
+        }
         config.providerFriendlyName = homeSP.getFriendlyName();
 
         config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_EAP);
