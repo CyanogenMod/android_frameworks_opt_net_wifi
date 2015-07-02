@@ -133,6 +133,10 @@ public class MOManager {
         return mPpsFile;
     }
 
+    public boolean isEnabled() {
+        return mEnabled;
+    }
+
     public boolean isConfigured() {
         return mEnabled && !mSPs.isEmpty();
     }

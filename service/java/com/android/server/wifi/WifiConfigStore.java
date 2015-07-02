@@ -2596,7 +2596,7 @@ public class WifiConfigStore extends IpConfigStore {
          */
 
         if (VDBG) localLog("addOrUpdateNetworkNative " + config.getPrintableSsid());
-        if (config.isPasspoint() && !mMOManager.isConfigured()) {
+        if (config.isPasspoint() && !mMOManager.isEnabled()) {
             Log.e(TAG, "Passpoint is not enabled");
             return new NetworkUpdateResult(INVALID_NETWORK_ID);
         }
