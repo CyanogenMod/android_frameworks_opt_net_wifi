@@ -605,13 +605,13 @@ static bool parseMacAddress(JNIEnv *env, jobject obj, mac_addr addr) {
         return false;
     }
 
-    const char *bssid = env->GetStringUTFChars(macAddrString, NULL);
-    if (bssid == NULL) {
+    ScopedUtfChars bssid(env, macAddrString);
+    if (bssid.c_str() == NULL) {
         ALOGE("Error getting bssid");
         return false;
     }
 
-    parseMacAddress(bssid, addr);
+    parseMacAddress(bssid.c_str(), addr);
     return true;
 }
 
@@ -693,12 +693,12 @@ static jboolean android_net_wifi_setHotlist(
             return false;
         }
 
-        const char *bssid = env->GetStringUTFChars(macAddrString, NULL);
-        if (bssid == NULL) {
+        ScopedUtfChars bssid(env, macAddrString);
+        if (bssid.c_str() == NULL) {
             ALOGE("Error getting bssid");
             return false;
         }
-        parseMacAddress(bssid, params.ap[i].bssid);
+        parseMacAddress(bssid.c_str(), params.ap[i].bssid);
 
         mac_addr addr;
         memcpy(addr, params.ap[i].bssid, sizeof(mac_addr));
@@ -814,14 +814,14 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
             return false;
         }
 
-        const char *bssid = env->GetStringUTFChars(macAddrString, NULL);
-        if (bssid == NULL) {
+        ScopedUtfChars bssid(env, macAddrString);
+        if (bssid.c_str() == NULL) {
             ALOGE("Error getting bssid");
             return false;
         }
 
         mac_addr addr;
-        parseMacAddress(bssid, addr);
+        parseMacAddress(bssid.c_str(), addr);
         memcpy(params.ap[i].bssid, addr, sizeof(mac_addr));
 
         char bssidOut[32];
@@ -1087,7 +1087,9 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
         return false;
     }
 
-    return wifi_set_scanning_mac_oui(handle, (byte *)bytes) == WIFI_SUCCESS;
+    wifi_error ret = wifi_set_scanning_mac_oui(handle, (byte *)bytes);
+    env->ReleaseByteArrayElements(param, bytes, 0);
+    return ret == WIFI_SUCCESS;
 }
 
 static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
