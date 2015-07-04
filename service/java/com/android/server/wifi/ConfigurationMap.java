@@ -46,8 +46,12 @@ public class ConfigurationMap {
                     config.providerFriendlyName = homeSp.getFriendlyName();
 
                     HashSet<Long> roamingConsortiumIds = homeSp.getRoamingConsortiums();
-                    config.roamingConsortiumIds =
-                            roamingConsortiumIds.toArray(new Long[roamingConsortiumIds.size()]);
+                    config.roamingConsortiumIds = new long[roamingConsortiumIds.size()];
+                    int i = 0;
+                    for (long id : roamingConsortiumIds) {
+                        config.roamingConsortiumIds[i] = id;
+                        i++;
+                    }
                     config.enterpriseConfig.setPlmn(homeSp.getCredential().getImsi());
                     config.enterpriseConfig.setRealm(homeSp.getCredential().getRealm());
                     mPerFQDN.put(fqdn, config.networkId);
