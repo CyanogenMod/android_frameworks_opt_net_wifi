@@ -129,7 +129,13 @@ class WifiLogger  {
 
     public synchronized void stopLogging() {
         if (mLogLevel != VERBOSE_NO_LOG) {
-            WifiNative.setLoggingEventHandler(null);
+            //resetLogHandler only can be used when you terminate all logging since all handler will
+            //be removed. This also stop alert logging
+            if(!WifiNative.resetLogHandler()) {
+                Log.e(TAG, "Fail to reset log handler");
+            } else {
+                if (DBG) Log.d(TAG,"Reset log handler");
+            }
             stopLoggingAllBuffers();
             mRingBuffers = null;
             mLogLevel = VERBOSE_NO_LOG;

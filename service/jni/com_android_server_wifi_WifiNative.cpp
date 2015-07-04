@@ -1705,30 +1705,6 @@ static jboolean android_net_wifi_start_logging_ring_buffer(JNIEnv *env, jclass c
         return false;
     }
 
-    //set logging handler
-
-    //initialize the handler on first time
-    wifi_ring_buffer_data_handler handler;
-    handler.on_ring_buffer_data = &on_ring_buffer_data;
-    int result = hal_fn.wifi_set_log_handler(0, handle, handler);
-    if (result != WIFI_SUCCESS) {
-        ALOGE("Fail to set logging handler");
-        return false;
-    } else {
-        ALOGE(" Successfully set on_ring_buffer_data");
-    }
-    //set alter handler
-    wifi_alert_handler alert_handler;
-    alert_handler.on_alert = &on_alert_data;
-    result = hal_fn.wifi_set_alert_handler(0, handle, alert_handler);
-    if (result != WIFI_SUCCESS) {
-        ALOGE(" Fail to set logging handler");
-        return false;
-    } else {
-        ALOGE(" Successfully set on_alert");
-    }
-
-
     const char* ring_name_const_char = env->GetStringUTFChars(ring_name, JNI_FALSE);
     int len;
     for(len = 0; ring_name_const_char[len] != 0; len++);
@@ -1798,6 +1774,37 @@ static jboolean android_net_wifi_get_fw_memory_dump(JNIEnv *env, jclass cls, jin
 
 }
 
+static jboolean android_net_wifi_set_log_handler(JNIEnv *env, jclass cls, jint iface, jint id) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("android_net_wifi_set_log_handler = %p", handle);
+
+    //initialize the handler on first time
+    wifi_ring_buffer_data_handler handler;
+    handler.on_ring_buffer_data = &on_ring_buffer_data;
+    int result = hal_fn.wifi_set_log_handler(id, handle, handler);
+    if (result != WIFI_SUCCESS) {
+        ALOGE("Fail to set logging handler");
+        return false;
+    }
+
+    //set alter handler This will start alert too
+    wifi_alert_handler alert_handler;
+    alert_handler.on_alert = &on_alert_data;
+    result = hal_fn.wifi_set_alert_handler(id, handle, alert_handler);
+    if (result != WIFI_SUCCESS) {
+        ALOGE(" Fail to set alert handler");
+        return false;
+    }
+
+    return true;
+}
+
+static jboolean android_net_wifi_reset_log_handler(JNIEnv *env, jclass cls, jint iface, jint id) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("android_net_wifi_reset_log_handler = %p", handle);
+    int result = hal_fn.wifi_reset_log_handler(id,handle);
+    return result == WIFI_SUCCESS;
+}
 // ----------------------------------------------------------------------------
 // ePno framework
 // ----------------------------------------------------------------------------
@@ -2149,7 +2156,9 @@ static JNINativeMethod gWifiMethods[] = {
     { "setBssidBlacklistNative", "(II[Ljava/lang/String;)Z",
             (void*)android_net_wifi_setBssidBlacklist},
     { "setSsidWhitelistNative", "(II[Ljava/lang/String;)Z",
-             (void*)android_net_wifi_setSsidWhitelist}
+             (void*)android_net_wifi_setSsidWhitelist},
+    {"setLoggingEventHandlerNative", "(II)Z", (void *) android_net_wifi_set_log_handler},
+    {"resetLogHandlerNative", "(II)Z", (void *) android_net_wifi_reset_log_handler}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
