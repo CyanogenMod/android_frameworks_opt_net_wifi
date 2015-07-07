@@ -3,6 +3,7 @@ package com.android.server.wifi.hotspot2.omadm;
 import android.util.Base64;
 import android.util.Log;
 
+import com.android.server.wifi.IMSIParameter;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.anqp.eap.ExpandedEAPMethod;
@@ -417,7 +418,7 @@ public class MOManager {
                 || method.getEAPMethodID() == EAP.EAPMethodID.EAP_AKAPrim) {
 
             OMANode simNode = credentialNode.addChild(TAG_SIM, null, null, null);
-            simNode.addChild(TAG_IMSI, null, cred.getImsi(), null);
+            simNode.addChild(TAG_IMSI, null, cred.getImsi().toString(), null);
             simNode.addChild(TAG_EAPType, null,
                     Integer.toString(EAP.mapEAPMethod(method.getEAPMethodID())), null);
 
@@ -631,13 +632,18 @@ public class MOManager {
             }
         }
         if (simNode != null) {
+            try {
+                IMSIParameter imsi = new IMSIParameter(getString(simNode.getChild(TAG_IMSI)));
 
-            String imsi = getString(simNode.getChild(TAG_IMSI));
-            EAPMethod eapMethod =
-                    new EAPMethod(EAP.mapEAPMethod(getInteger(simNode.getChild(TAG_EAPType))),
-                            null);
+                EAPMethod eapMethod =
+                        new EAPMethod(EAP.mapEAPMethod(getInteger(simNode.getChild(TAG_EAPType))),
+                                null);
 
-            return new Credential(ctime, expTime, realm, checkAAACert, eapMethod, imsi);
+                return new Credential(ctime, expTime, realm, checkAAACert, eapMethod, imsi);
+            }
+            catch (IOException ioe) {
+                throw new OMAException("Failed to parse IMSI: " + ioe);
+            }
         }
         throw new OMAException("Missing credential parameters");
     }
