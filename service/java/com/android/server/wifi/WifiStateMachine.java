@@ -5126,6 +5126,30 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         return apChannel;
     }
 
+    /* SoftAP configuration */
+    private boolean enableSoftAp() {
+        if (WifiNative.getInterfaces() != 0) {
+            if (!mWifiNative.toggleInterface(0)) {
+                if (DBG) Log.e(TAG, "toggleInterface failed");
+                return false;
+            }
+        } else {
+            if (DBG) Log.d(TAG, "No interfaces to toggle");
+        }
+
+        try {
+            mNwService.wifiFirmwareReload(mInterfaceName, "AP");
+            if (DBG) Log.d(TAG, "Firmware reloaded in AP mode");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to reload AP firmware " + e);
+        }
+
+        if (WifiNative.startHal() == false) {
+            /* starting HAL is optional */
+            Log.e(TAG, "Failed to start HAL");
+        }
+        return true;
+    }
 
     /* Current design is to not set the config on a running hostapd but instead
      * stop and start tethering when user changes config on a running access point
@@ -5170,11 +5194,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sendMessage(CMD_START_AP_FAILURE);
                     return;
                 }
-            }
-            //turn off interface
-            if (!mWifiNative.toggleInterface(0)) {
-                sendMessage(CMD_START_AP_FAILURE);
-                return;
             }
         } else {
             //for some old device, wifiHal may not be supported
@@ -5648,14 +5667,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (mWifiNative.loadDriver() == false) {
                         loge("Failed to load driver for softap");
                     } else {
-
-                        if (WifiNative.startHal() == false) {
-                            /* starting HAL is optional */
-                            loge("Failed to start HAL");
+                        if (enableSoftAp() == true) {
+                            setWifiApState(WIFI_AP_STATE_ENABLING);
+                            transitionTo(mSoftApStartingState);
+                        } else {
+                            setWifiApState(WIFI_AP_STATE_FAILED);
+                            transitionTo(mInitialState);
                         }
-
-                        setWifiApState(WIFI_AP_STATE_ENABLING);
-                        transitionTo(mSoftApStartingState);
                     }
                     break;
                 default:
