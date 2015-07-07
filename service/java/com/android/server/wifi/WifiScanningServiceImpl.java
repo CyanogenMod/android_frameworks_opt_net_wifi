@@ -51,7 +51,6 @@ import com.android.internal.util.StateMachine;
 import com.android.internal.util.State;
 import com.android.server.am.BatteryStatsService;
 
-
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -216,6 +215,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private WifiScanningStateMachine mStateMachine;
     private ClientHandler mClientHandler;
     private IBatteryStats mBatteryStats;
+    private final WifiNative.ScanCapabilities mScanCapabilities = new WifiNative.ScanCapabilities();
 
     WifiScanningServiceImpl() { }
 
@@ -336,9 +336,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 switch (msg.what) {
                     case CMD_DRIVER_LOADED:
                         if (WifiNative.getInterfaces() != 0) {
-                            WifiNative.ScanCapabilities capabilities =
-                                    new WifiNative.ScanCapabilities();
-                            if (WifiNative.getScanCapabilities(capabilities)) {
+                            if (WifiNative.getScanCapabilities(mScanCapabilities)) {
                                 transitionTo(mStartedState);
                             } else {
                                 loge("could not get scan capabilities");
@@ -949,22 +947,20 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 new TimeBucket( 600, 500, 1500),
                 new TimeBucket( 1800, 1500, WifiScanner.MAX_SCAN_PERIOD_MS) };
 
-        private static final int MAX_BUCKETS = 8;
         private static final int MAX_CHANNELS = 32;
-        private static final int DEFAULT_MAX_AP_PER_SCAN = 10;
-        private static final int DEFAULT_REPORT_THRESHOLD_PERCENT = 100;
         private static final int DEFAULT_BASE_PERIOD_MS = 5000;
         private static final int DEFAULT_REPORT_THRESHOLD_NUM_SCANS = 10;
+        private static final int DEFAULT_REPORT_THRESHOLD_PERCENT = 100;
 
         private WifiNative.ScanSettings mSettings;
         {
             mSettings = new WifiNative.ScanSettings();
-            mSettings.max_ap_per_scan = DEFAULT_MAX_AP_PER_SCAN;
+            mSettings.max_ap_per_scan = mScanCapabilities.max_ap_cache_per_scan;
             mSettings.base_period_ms = DEFAULT_BASE_PERIOD_MS;
             mSettings.report_threshold_percent = DEFAULT_REPORT_THRESHOLD_PERCENT;
             mSettings.report_threshold_num_scans = DEFAULT_REPORT_THRESHOLD_NUM_SCANS;
 
-            mSettings.buckets = new WifiNative.BucketSettings[MAX_BUCKETS];
+            mSettings.buckets = new WifiNative.BucketSettings[mScanCapabilities.max_scan_buckets];
             for (int i = 0; i < mSettings.buckets.length; i++) {
                 WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
                 bucketSettings.bucket = i;
@@ -1123,8 +1119,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 mSettings.num_buckets++;
             }
 
-            if (mSettings.max_ap_per_scan < settings.numBssidsPerScan) {
-                mSettings.max_ap_per_scan = settings.numBssidsPerScan;
+            if ( settings.numBssidsPerScan != 0) {
+                if (mSettings.max_ap_per_scan > settings.numBssidsPerScan) {
+                    mSettings.max_ap_per_scan = settings.numBssidsPerScan;
+                }
             }
 
             if (settings.maxScansToCache != 0) {
