@@ -9,6 +9,7 @@ import android.telephony.TelephonyManager;
 import android.util.Base64;
 import android.util.Log;
 
+import com.android.server.wifi.IMSIParameter;
 import com.android.server.wifi.anqp.eap.AuthParam;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
@@ -302,16 +303,18 @@ public class ConfigBuilder {
             throws IOException {
 
         Credential credential = homeSP.getCredential();
-        String credImsi = credential.getImsi();
+        IMSIParameter credImsi = credential.getImsi();
 
+        /*
+         * Uncomment to enforce strict IMSI matching with currently installed SIM cards.
+         *
         TelephonyManager tm = TelephonyManager.from(context);
         SubscriptionManager sub = SubscriptionManager.from(context);
         boolean match = false;
 
         for (int subId : sub.getActiveSubscriptionIdList()) {
             String imsi = tm.getSubscriberId(subId);
-            Log.d(TAG, "Checking imsi '" + imsi + "'");
-            if (credImsi.equals(imsi)) {
+            if (credImsi.matches(imsi)) {
                 match = true;
                 break;
             }
@@ -319,9 +322,10 @@ public class ConfigBuilder {
         if (!match) {
             throw new IOException("Supplied IMSI does not match any SIM card");
         }
+        */
 
         WifiConfiguration config = buildBaseConfiguration(homeSP);
-        config.enterpriseConfig.setPlmn(credImsi);
+        config.enterpriseConfig.setPlmn(credImsi.toString());
         return config;
     }
 

@@ -4,6 +4,7 @@ import android.util.Log;
 
 import com.android.server.wifi.SIMAccessor;
 import com.android.server.wifi.anqp.ANQPElement;
+import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.DomainNameElement;
 import com.android.server.wifi.anqp.NAIRealmElement;
 import com.android.server.wifi.anqp.RoamingConsortiumElement;
@@ -85,27 +86,32 @@ public class HomeSP {
                                 Map<ANQPElementType, ANQPElement> anqpElementMap,
                                 SIMAccessor simAccessor) {
 
-        PasspointMatch spMatch = matchSP(networkDetail, anqpElementMap, simAccessor);
+        List<String> imsis = simAccessor.getMatchingImsis(mCredential.getImsi());
 
-        if (spMatch == PasspointMatch.HomeProvider || spMatch == PasspointMatch.RoamingProvider) {
-            NAIRealmElement naiRealmElement =
-                    (NAIRealmElement) anqpElementMap.get(ANQPElementType.ANQPNAIRealm);
-            ThreeGPPNetworkElement threeGPPNetworkElement =
-                    (ThreeGPPNetworkElement) anqpElementMap.get(ANQPElementType.ANQP3GPPNetwork);
+        PasspointMatch spMatch = matchSP(networkDetail, anqpElementMap, imsis);
 
-            AuthMatch authMatch = naiRealmElement.match(mCredential, threeGPPNetworkElement);
-            Log.d(Utils.hs2LogTag(getClass()), networkDetail.toKeyString() + " match on " + mFQDN +
-                    ": " + spMatch + ", auth " + authMatch);
-            return authMatch == AuthMatch.None ? PasspointMatch.None : spMatch;
-        }
-        else {
+        if (spMatch != PasspointMatch.HomeProvider && spMatch != PasspointMatch.RoamingProvider) {
             return spMatch;
         }
+
+        if (imsiMatch(imsis, (ThreeGPPNetworkElement)
+                anqpElementMap.get(ANQPElementType.ANQP3GPPNetwork)) != null) {
+            return spMatch;
+        }
+
+        NAIRealmElement naiRealmElement =
+                (NAIRealmElement) anqpElementMap.get(ANQPElementType.ANQPNAIRealm);
+
+        AuthMatch authMatch =
+                naiRealmElement.match(mCredential);
+        Log.d(Utils.hs2LogTag(getClass()), networkDetail.toKeyString() + " match on " + mFQDN +
+                ": " + spMatch + ", auth " + authMatch);
+        return authMatch == AuthMatch.None ? PasspointMatch.None : spMatch;
     }
 
     public PasspointMatch matchSP(NetworkDetail networkDetail,
                                 Map<ANQPElementType, ANQPElement> anqpElementMap,
-                                SIMAccessor simAccessor) {
+                                List<String> imsis) {
 
         if (mSSIDs.containsKey(networkDetail.getSSID())) {
             Long hessid = mSSIDs.get(networkDetail.getSSID());
@@ -177,19 +183,47 @@ public class HomeSP {
                     return PasspointMatch.HomeProvider;
                 }
 
-                /* This is fundamentally wrong: We can't match the ANQP data to something unrelated
-                 * to this Home SP. Commented out until this has been clarified by the WFA.
-                String imsi = simAccessor.getMatchingImsi(Utils.getMccMnc(anLabels));
-                if (imsi != null) {
-                    Log.d(Utils.hs2LogTag(getClass()), "Domain " + domain +
-                            " matches IMSI " + imsi);
+                if (imsiMatch(imsis, anLabels) != null) {
                     return PasspointMatch.HomeProvider;
                 }
-                */
             }
         }
 
         return roamingMatch ? PasspointMatch.RoamingProvider : PasspointMatch.None;
+    }
+
+    private String imsiMatch(List<String> imsis, ThreeGPPNetworkElement plmnElement) {
+        if (imsis == null || plmnElement == null || plmnElement.getPlmns().isEmpty()) {
+            return null;
+        }
+        for (CellularNetwork network : plmnElement.getPlmns()) {
+            for (String mccMnc : network) {
+                String imsi = imsiMatch(imsis, mccMnc);
+                if (imsi != null) {
+                    return imsi;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String imsiMatch(List<String> imsis, List<String> fqdn) {
+        if (imsis == null) {
+            return null;
+        }
+        String mccMnc = Utils.getMccMnc(fqdn);
+        return mccMnc != null ? imsiMatch(imsis, mccMnc) : null;
+    }
+
+    private String imsiMatch(List<String> imsis, String mccMnc) {
+        if (mCredential.getImsi().matchesMccMnc(mccMnc)) {
+            for (String imsi : imsis) {
+                if (imsi.startsWith(mccMnc)) {
+                    return imsi;
+                }
+            }
+        }
+        return null;
     }
 
     public String getFQDN() { return mFQDN; }

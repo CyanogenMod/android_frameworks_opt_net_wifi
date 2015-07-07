@@ -3,15 +3,15 @@ package com.android.server.wifi.anqp;
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 
-public class CellularNetwork {
+public class CellularNetwork implements Iterable<String> {
     private static final int PLMNListType = 0;
-    private static final int MNC3Mask = 0x10000;    // Beware: marker bit for 3 digit MNC in MNC
 
-    private final List<int[]> mMccMnc;
+    private final List<String> mMccMnc;
 
     private CellularNetwork(int plmnCount, ByteBuffer payload) throws ProtocolException {
         mMccMnc = new ArrayList<>(plmnCount);
@@ -31,16 +31,17 @@ public class CellularNetwork {
                     ((plmn[2] >> 4) & 0x0f);
 
             int n2 = (plmn[1] >> 4) & 0x0f;
-            if (n2 != 0xf) {
-                mnc = (mnc << 4) | n2 | MNC3Mask;
-            }
+            String mccMnc = n2 != 0xf ?
+                    String.format("%03x%03x", mcc, (mnc << 4) | n2) :
+                    String.format("%03x%02x", mcc, mnc);
 
-            mMccMnc.add(new int[]{mcc, mnc});
+            mMccMnc.add(mccMnc);
             plmnCount--;
         }
     }
 
-    public static CellularNetwork buildCellularNetwork(ByteBuffer payload) throws ProtocolException {
+    public static CellularNetwork buildCellularNetwork(ByteBuffer payload)
+            throws ProtocolException {
         int iei = payload.get() & BYTE_MASK;
         int plmnLen = payload.get() & 0x7f;
 
@@ -53,50 +54,16 @@ public class CellularNetwork {
         return new CellularNetwork(plmnCount, payload);
     }
 
-    public boolean matchIMSI(String imsi) {
-        if (imsi.length() < 5) {
-            return false;
-        }
-
-        int mcc = Integer.parseInt(imsi.substring(0, 3), 16);
-        int mnc2 = -1;
-        int mnc3 = -1;
-
-        for (int[] mccMnc : mMccMnc) {
-            if (mccMnc[0] == mcc) {
-                if ((mccMnc[1] & MNC3Mask) != 0) {
-                    if (mnc3 < 0) {
-                        if (imsi.length() < 6) {
-                            continue;
-                        }
-                        mnc3 = Integer.parseInt(imsi.substring(3, 6)) | MNC3Mask;
-                    }
-                    if (mccMnc[1] == mnc3) {
-                        return true;
-                    }
-                } else {
-                    if (mnc2 < 0) {
-                        mnc2 = Integer.parseInt(imsi.substring(3, 5));
-                    }
-                    if (mccMnc[1] == mnc2) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+    @Override
+    public Iterator<String> iterator() {
+        return mMccMnc.iterator();
     }
 
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder("PLMN:");
-        for (int[] mccMnc : mMccMnc) {
-            if ((mccMnc[1] & MNC3Mask) != 0) {
-                sb.append(String.format(" %03x/%03x", mccMnc[0], mccMnc[1] & 0xfff));
-            }
-            else {
-                sb.append(String.format(" %03x/%02x", mccMnc[0], mccMnc[1]));
-            }
+        for (String mccMnc : mMccMnc) {
+            sb.append(' ').append(mccMnc);
         }
         return sb.toString();
     }
