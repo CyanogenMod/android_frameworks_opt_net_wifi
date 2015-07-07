@@ -1,5 +1,6 @@
 package com.android.server.wifi.anqp;
 
+import com.android.server.wifi.SIMAccessor;
 import com.android.server.wifi.hotspot2.AuthMatch;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.pps.Credential;
@@ -45,14 +46,14 @@ public class NAIRealmElement extends ANQPElement {
         return Collections.unmodifiableList(mRealmData);
     }
 
-    public AuthMatch match(Credential credential, ThreeGPPNetworkElement plmnElement) {
+    public AuthMatch match(Credential credential) {
         if (mRealmData.isEmpty())
             return AuthMatch.Indeterminate;
 
         List<String> credLabels = Utils.splitDomain(credential.getRealm());
         AuthMatch best = AuthMatch.None;
         for (NAIRealmData realmData : mRealmData) {
-            AuthMatch match = realmData.match(credLabels, credential, plmnElement);
+            AuthMatch match = realmData.match(credLabels, credential);
             if (match.compareTo(best) > 0) {
                 best = match;
                 if (best == AuthMatch.Exact) {

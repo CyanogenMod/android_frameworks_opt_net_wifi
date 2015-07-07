@@ -7,6 +7,7 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 
+import com.android.server.wifi.IMSIParameter;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
@@ -41,7 +42,7 @@ public class Credential {
     private final CertType mCertType;
     private final byte[] mFingerPrint;
 
-    private final String mImsi;
+    private final IMSIParameter mImsi;
 
     public Credential(long ctime, long expTime, String realm, boolean checkAAACert,
                       EAPMethod eapMethod, String userName, String password,
@@ -92,7 +93,7 @@ public class Credential {
     }
 
     public Credential(long ctime, long expTime, String realm, boolean checkAAACert,
-                      EAPMethod eapMethod, String imsi) {
+                      EAPMethod eapMethod, IMSIParameter imsi) {
         mCtime = ctime;
         mExpTime = expTime;
         mRealm = realm;
@@ -174,7 +175,8 @@ public class Credential {
             fingerPrint = null;
         }
         mFingerPrint = fingerPrint;
-        mImsi = enterpriseConfig.getPlmn();
+        String imsi = enterpriseConfig.getPlmn();
+        mImsi = imsi == null || imsi.length() == 0 ? null : new IMSIParameter(imsi);
         mUserName = enterpriseConfig.getIdentity();
         mPassword = enterpriseConfig.getPassword();
         mDisregardPassword = update && mPassword.length() < 2;
@@ -240,7 +242,7 @@ public class Credential {
         return mRealm;
     }
 
-    public String getImsi() {
+    public IMSIParameter getImsi() {
         return mImsi;
     }
 
@@ -306,7 +308,7 @@ public class Credential {
         return true;
     }
 
-    private static boolean safeEquals(String s1, String s2) {
+    private static boolean safeEquals(Object s1, Object s2) {
         if (s1 == null) {
             return s2 == null;
         }

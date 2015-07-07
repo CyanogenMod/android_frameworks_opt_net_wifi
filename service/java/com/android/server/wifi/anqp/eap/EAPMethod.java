@@ -3,6 +3,8 @@ package com.android.server.wifi.anqp.eap;
 
 import android.util.Log;
 
+import com.android.server.wifi.IMSIParameter;
+import com.android.server.wifi.SIMAccessor;
 import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.ThreeGPPNetworkElement;
@@ -115,8 +117,7 @@ public class EAPMethod {
         return mEAPMethodID;
     }
 
-    public AuthMatch match(com.android.server.wifi.hotspot2.pps.Credential credential,
-                           ThreeGPPNetworkElement plmnElement) {
+    public AuthMatch match(com.android.server.wifi.hotspot2.pps.Credential credential) {
 
         EAPMethod credMethod = credential.getEAPMethod();
         if (mEAPMethodID != credMethod.getEAPMethodID()) {
@@ -144,15 +145,7 @@ public class EAPMethod {
             case EAP_SIM:
             case EAP_AKA:
             case EAP_AKAPrim:
-                if (plmnElement == null || plmnElement.getPlmns().isEmpty()) {
-                    return AuthMatch.MethodOnly;
-                }
-                for (CellularNetwork network : plmnElement.getPlmns()) {
-                    if (network.matchIMSI(credential.getImsi())) {
-                        return AuthMatch.Exact;
-                    }
-                }
-                return AuthMatch.None;
+                return AuthMatch.MethodOnly;
             default:
                 return AuthMatch.MethodOnly;
         }

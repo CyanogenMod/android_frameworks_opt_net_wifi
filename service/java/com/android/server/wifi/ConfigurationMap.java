@@ -52,7 +52,7 @@ public class ConfigurationMap {
                         config.roamingConsortiumIds[i] = id;
                         i++;
                     }
-                    config.enterpriseConfig.setPlmn(homeSp.getCredential().getImsi());
+                    config.enterpriseConfig.setPlmn(homeSp.getCredential().getImsi().toString());
                     config.enterpriseConfig.setRealm(homeSp.getCredential().getRealm());
                     mPerFQDN.put(fqdn, config.networkId);
                 }

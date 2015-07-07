@@ -2,6 +2,7 @@ package com.android.server.wifi.anqp;
 
 import android.util.Log;
 
+import com.android.server.wifi.SIMAccessor;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.hotspot2.AuthMatch;
 import com.android.server.wifi.hotspot2.Utils;
@@ -61,8 +62,7 @@ public class NAIRealmData {
         return Collections.unmodifiableList(mEAPMethods);
     }
 
-    public AuthMatch match(List<String> credLabels, Credential credential,
-                           ThreeGPPNetworkElement plmnElement) {
+    public AuthMatch match(List<String> credLabels, Credential credential) {
         if (!mRealms.isEmpty()) {
             boolean realmMatch = false;
             for (String realm : mRealms) {
@@ -86,7 +86,7 @@ public class NAIRealmData {
 
         AuthMatch best = AuthMatch.None;
         for (EAPMethod eapMethod : mEAPMethods) {
-            AuthMatch match = eapMethod.match(credential, plmnElement);
+            AuthMatch match = eapMethod.match(credential);
             if (match.compareTo(best) > 0) {
                 best = match;
                 if (best == AuthMatch.Exact) {
