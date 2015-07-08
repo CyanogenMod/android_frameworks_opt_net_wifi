@@ -1503,18 +1503,6 @@ static jobject android_net_wifi_get_tdls_capabilities(JNIEnv *env, jclass cls, j
 // ----------------------------------------------------------------------------
 // Debug framework
 // ----------------------------------------------------------------------------
-
-static void onRingBufferData(char * ring_name, char * buffer,
-int buffer_size, wifi_ring_buffer_status *status) {
-    JNIEnv *env = NULL;
-    mVM->AttachCurrentThread(&env, NULL);
-
-    ALOGD("onRingBufferData called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
-
-    reportEvent(env, mCls, "onDataAvailable", "(I[Landroid/net/wifi/WiFiLogger$LogData;)V",
-        0, 0);
-}
-
 static jint android_net_wifi_get_supported_logger_feature(JNIEnv *env, jclass cls, jint iface){
     //Not implemented yet
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
@@ -1686,10 +1674,10 @@ static void on_alert_data(wifi_request_id id, char *buffer, int buffer_size, int
         jbyteArray records = env->NewByteArray(buffer_size);
         jbyte *bytes = (jbyte *) buffer;
         env->SetByteArrayRegion(records, 0,buffer_size, bytes);
-        reportEvent(env, mCls,"onWifiAlert","([B;I)V", records, err_code);
+        reportEvent(env, mCls,"onWifiAlert","([BI)V", records, err_code);
         env->DeleteLocalRef(records);
     } else {
-        reportEvent(env, mCls,"onWifiAlert","([B;I)V", NULL, err_code);
+        reportEvent(env, mCls,"onWifiAlert","([BI)V", NULL, err_code);
     }
 }
 
