@@ -24,7 +24,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
@@ -47,7 +46,6 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserHandle;
-import android.os.UserManager;
 import android.provider.Settings;
 import android.security.Credentials;
 import android.security.KeyChain;
@@ -165,6 +163,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static boolean VVDBG = false;
 
     private static final String SUPPLICANT_CONFIG_FILE = "/data/misc/wifi/wpa_supplicant.conf";
+    private static final String SUPPLICANT_CONFIG_FILE_BACKUP = SUPPLICANT_CONFIG_FILE + ".tmp";
     private static final String PPS_FILE = "/data/misc/wifi/PerProviderSubscription.conf";
 
     /* configured networks with network id as the key */
@@ -1879,31 +1878,36 @@ public class WifiConfigStore extends IpConfigStore {
         if (showNetworks) localLog("loadConfiguredNetworks loaded " + mConfiguredNetworks.size() + " networks");
 
         if (mConfiguredNetworks.isEmpty()) {
-            // no networks? Lets log if the wpa_supplicant.conf file contents
-            BufferedReader reader = null;
+            // no networks? Lets log if the file contents
+            logKernelTime();
+            logContents(SUPPLICANT_CONFIG_FILE);
+            logContents(SUPPLICANT_CONFIG_FILE_BACKUP);
+            logContents(networkHistoryConfigFile);
+        }
+    }
+
+    private void logContents(String file) {
+        localLog("--- Begin " + file + " ---", true);
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new FileReader(file));
+            for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                localLog(line, true);
+            }
+        } catch (FileNotFoundException e) {
+            localLog("Could not open " + file + ", " + e, true);
+        } catch (IOException e) {
+            localLog("Could not read " + file + ", " + e, true);
+        } finally {
             try {
-                reader = new BufferedReader(new FileReader(SUPPLICANT_CONFIG_FILE));
-                if (DBG) {
-                    localLog("--- Begin wpa_supplicant.conf Contents ---", true);
-                    for (String line = reader.readLine(); line != null; line = reader.readLine()) {
-                        localLog(line, true);
-                    }
-                    localLog("--- End wpa_supplicant.conf Contents ---", true);
+                if (reader != null) {
+                    reader.close();
                 }
-            } catch (FileNotFoundException e) {
-                localLog("Could not open " + SUPPLICANT_CONFIG_FILE + ", " + e, true);
             } catch (IOException e) {
-                localLog("Could not read " + SUPPLICANT_CONFIG_FILE + ", " + e, true);
-            } finally {
-                try {
-                    if (reader != null) {
-                        reader.close();
-                    }
-                } catch (IOException e) {
-                    // Just ignore the fact that we couldn't close
-                }
+                // Just ignore the fact that we couldn't close
             }
         }
+        localLog("--- End " + file + " Contents ---", true);
     }
 
     private Map<String, String> readNetworkVariablesFromSupplicantFile(String key) {
@@ -3850,6 +3854,14 @@ public class WifiConfigStore extends IpConfigStore {
         } else {
             Log.e(TAG, s);
         }
+    }
+
+    private void logKernelTime() {
+        long kernelTimeMs = System.nanoTime()/(1000*1000);
+        StringBuilder builder = new StringBuilder();
+        builder.append("kernel time = ").append(kernelTimeMs/1000).append(".").append
+                (kernelTimeMs%1000).append("\n");
+        localLog(builder.toString());
     }
 
     protected void log(String s) {
