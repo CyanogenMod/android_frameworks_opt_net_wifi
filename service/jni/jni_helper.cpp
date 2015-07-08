@@ -436,7 +436,7 @@ void reportEvent(JNIEnv *env, jclass cls, const char *method, const char *signat
     va_start(params, signature);
 
     jmethodID methodID = env->GetStaticMethodID(cls, method, signature);
-    if (method == NULL) {
+    if (methodID == NULL) {
         ALOGE("Error in getting method ID");
         return;
     }
