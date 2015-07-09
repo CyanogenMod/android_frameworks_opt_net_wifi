@@ -956,6 +956,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             if (!isCurrentProfile(userId) && !hasInteractUsersFull) {
                 return new ArrayList<ScanResult>();
             }
+            if (!checkCallerHasLocationPermission(callingPackage, uid)) {
+                return new ArrayList<ScanResult>();
+            }
             return mWifiStateMachine.syncGetScanResultsList();
         } finally {
             Binder.restoreCallingIdentity(ident);
@@ -2001,6 +2004,26 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             sb.append(String.format(" %02x", s.charAt(n) & 0xffff));
         }
         return sb.toString();
+    }
+
+    /**
+     * Checks that calling process has android.Manifest.permission.ACCESS_COARSE_LOCATION or
+     * android.Manifest.permission.ACCESS_FINE_LOCATION and a corresponding app op is allowed
+     */
+    private boolean checkCallerHasLocationPermission(String callingPackage, int uid) {
+        if (mContext.checkCallingOrSelfPermission(
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                && isAppOppAllowed(AppOpsManager.OP_FINE_LOCATION, callingPackage, uid)) {
+            return true;
+        }
+
+        return mContext.checkCallingOrSelfPermission(
+                Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                && isAppOppAllowed(AppOpsManager.OP_COARSE_LOCATION, callingPackage, uid);
+    }
+
+    private boolean isAppOppAllowed(int op, String callingPackage, int uid) {
+        return mAppOps.noteOp(op, uid, callingPackage) == AppOpsManager.MODE_ALLOWED;
     }
 
 }
