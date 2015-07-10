@@ -2515,6 +2515,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         pw.println();
         mWifiConfigStore.dump(fd, pw, args);
         pw.println();
+        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_USER_ACTION);
         mWifiLogger.dump(fd, pw, args);
     }
 
