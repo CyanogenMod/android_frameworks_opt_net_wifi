@@ -64,6 +64,7 @@ class WifiLogger  {
     public static final int REPORT_REASON_DHCP_FAILURE              = 4;
     public static final int REPORT_REASON_UNEXPECTED_DISCONNECT     = 5;
     public static final int REPORT_REASON_SCAN_FAILURE              = 6;
+    public static final int REPORT_REASON_USER_ACTION               = 7;
 
     /** number of ring buffer entries to cache */
     public static final int MAX_RING_BUFFERS                        = 10;
@@ -143,8 +144,7 @@ class WifiLogger  {
     }
 
     public synchronized void captureBugReportData(int reason) {
-        boolean captureFWDump = (mLogLevel > VERBOSE_NORMAL_LOG);
-        BugReport report = captureBugreport(reason, captureFWDump);
+        BugReport report = captureBugreport(reason, true);
         mLastBugReports.addLast(report);
     }
 
