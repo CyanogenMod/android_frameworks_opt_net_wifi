@@ -2338,14 +2338,15 @@ public class WifiNative {
     synchronized public int
     startSendingOffloadedPacket(int slot, KeepalivePacketData keepAlivePacket, int period) {
         Log.d(TAG, "startSendingOffloadedPacket slot=" + slot + " period=" + period);
+
+        String[] macAddrStr = getMacAddress().split(":");
+        byte[] srcMac = new byte[6];
+        for(int i = 0; i < 6; i++) {
+            Integer hexVal = Integer.parseInt(macAddrStr[i], 16);
+            srcMac[i] = hexVal.byteValue();
+        }
         synchronized (mLock) {
             if (isHalStarted()) {
-                String[] macAddrStr = getMacAddress().split(":");
-                byte[] srcMac = new byte[6];
-                for(int i = 0; i < 6; i++) {
-                    Integer hexVal = Integer.parseInt(macAddrStr[i], 16);
-                    srcMac[i] = hexVal.byteValue();
-                }
                 return startSendingOffloadedPacketNative(sWlan0Index, slot, srcMac,
                                 keepAlivePacket.dstMac, keepAlivePacket.data, period);
             } else {
