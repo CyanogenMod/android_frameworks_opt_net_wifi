@@ -5672,11 +5672,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             ConnectivityManager.PacketKeepalive.ERROR_INVALID_NETWORK);
                     break;
                 case CMD_START_RSSI_MONITORING_OFFLOAD:
-                    if (mNetworkAgent != null) mNetworkAgent.onPacketKeepaliveEvent(
-                            message.arg1,
-                            ConnectivityManager.PacketKeepalive.ERROR_INVALID_NETWORK);
-                    break;
-                case CMD_START_RSSI_MONITORING_OFFLOAD:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
                 case CMD_STOP_RSSI_MONITORING_OFFLOAD:
