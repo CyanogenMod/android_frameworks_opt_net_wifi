@@ -9515,6 +9515,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         if (DBG) log("Turn on scanning after p2p disconnected");
                         sendMessageDelayed(obtainMessage(CMD_NO_NETWORKS_PERIODIC_SCAN,
                                     ++mPeriodicScanToken, 0), mNoNetworksPeriodicScan);
+                    } else if (!mP2pConnected.get() && (!mScreenOn)) {
+                        if (!enableBackgroundScan(true)) {
+                            handlePnoFailError();
+                        }
                     } else {
                         // If P2P is not connected and there are saved networks, then restart
                         // scanning at the normal period. This is necessary because scanning might
