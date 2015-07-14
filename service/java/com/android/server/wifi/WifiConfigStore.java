@@ -1405,9 +1405,13 @@ public class WifiConfigStore extends IpConfigStore {
      */
     boolean removeNetwork(int netId) {
         if (showNetworks) localLog("removeNetwork", netId);
+        WifiConfiguration config = mConfiguredNetworks.get(netId);
         boolean ret = mWifiNative.removeNetwork(netId);
         if (ret) {
             removeConfigAndSendBroadcastIfNeeded(netId);
+            if (config != null && config.isPasspoint()) {
+                writePasspointConfigs(config.FQDN, null);
+            }
         }
         return ret;
     }
