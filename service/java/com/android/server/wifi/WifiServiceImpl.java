@@ -946,8 +946,12 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceAccessPermission();
         int userId = UserHandle.getCallingUserId();
         int uid = Binder.getCallingUid();
+        boolean isSystemProcess = (UserHandle.getAppId(uid) == android.os.Process.SYSTEM_UID);
         boolean hasInteractUsersFull = checkInteractAcrossUsersFull();
         long ident = Binder.clearCallingIdentity();
+        if (!isSystemProcess && !isLocationEnabled()) {
+            return new ArrayList<ScanResult>();
+        }
         try {
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
                     != AppOpsManager.MODE_ALLOWED) {
@@ -956,13 +960,18 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             if (!isCurrentProfile(userId) && !hasInteractUsersFull) {
                 return new ArrayList<ScanResult>();
             }
-            if (!checkCallerHasLocationPermission(callingPackage, uid)) {
+            if (!isSystemProcess && !checkCallerHasLocationPermission(callingPackage, uid)) {
                 return new ArrayList<ScanResult>();
             }
             return mWifiStateMachine.syncGetScanResultsList();
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
+    }
+
+    private boolean isLocationEnabled() {
+        return Settings.Secure.getInt(mContext.getContentResolver(), Settings.Secure.LOCATION_MODE,
+                Settings.Secure.LOCATION_MODE_OFF) != Settings.Secure.LOCATION_MODE_OFF;
     }
 
     /**
