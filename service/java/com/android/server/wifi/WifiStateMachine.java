@@ -3672,7 +3672,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
 
-    private void setWifiApState(int wifiApState) {
+    private void setWifiApState(int wifiApState, int reason) {
         final int previousWifiApState = mWifiApState.get();
 
         try {
@@ -3694,6 +3694,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.putExtra(WifiManager.EXTRA_WIFI_AP_STATE, wifiApState);
         intent.putExtra(WifiManager.EXTRA_PREVIOUS_WIFI_AP_STATE, previousWifiApState);
+        if (wifiApState == WifiManager.WIFI_AP_STATE_FAILED) {
+            //only set reason number when softAP start failed
+            intent.putExtra(WifiManager.EXTRA_WIFI_AP_FAILURE_REASON, reason);
+        }
+
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
 
@@ -5175,7 +5180,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (config.apBand != 0) {
                         Log.e(TAG, "Fail to set country code. Can not setup Softap on 5GHz");
                         //countrycode is mandatory for 5GHz
-                        sendMessage(CMD_START_AP_FAILURE);
+                        sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_GENERAL);
                         return;
                     }
                 }
@@ -5183,7 +5188,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 if (config.apBand != 0) {
                     //countrycode is mandatory for 5GHz
                     Log.e(TAG, "Can not setup softAp on 5GHz without country code!");
-                    sendMessage(CMD_START_AP_FAILURE);
+                    sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_GENERAL);
                     return;
                 }
             }
@@ -5192,7 +5197,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 config.apChannel = chooseApChannel(config.apBand);
                 if (config.apChannel == 0) {
                     //fail to get available channel
-                    sendMessage(CMD_START_AP_FAILURE);
+                    sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_NO_CHANNEL);
                     return;
                 }
             }
@@ -5213,7 +5218,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mNwService.startAccessPoint(config, mInterfaceName);
                     } catch (Exception e1) {
                         loge("Exception in softap re-start " + e1);
-                        sendMessage(CMD_START_AP_FAILURE);
+                        sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_GENERAL);
                         return;
                     }
                 }
@@ -5669,10 +5674,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         loge("Failed to load driver for softap");
                     } else {
                         if (enableSoftAp() == true) {
-                            setWifiApState(WIFI_AP_STATE_ENABLING);
+                            setWifiApState(WIFI_AP_STATE_ENABLING, 0);
                             transitionTo(mSoftApStartingState);
                         } else {
-                            setWifiApState(WIFI_AP_STATE_FAILED);
+                            setWifiApState(WIFI_AP_STATE_FAILED,
+                                    WifiManager.SAP_START_FAILURE_GENERAL);
                             transitionTo(mInitialState);
                         }
                     }
@@ -5857,7 +5863,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_START_AP:
                     /* Cannot start soft AP while in client mode */
                     loge("Failed to start soft AP with a running supplicant");
-                    setWifiApState(WIFI_AP_STATE_FAILED);
+                    setWifiApState(WIFI_AP_STATE_FAILED, WifiManager.SAP_START_FAILURE_GENERAL);
                     break;
                 case CMD_SET_OPERATIONAL_MODE:
                     mOperationalMode = message.arg1;
@@ -9383,15 +9389,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         startSoftApWithConfig(config);
                     } else {
                         loge("Softap config is null!");
-                        sendMessage(CMD_START_AP_FAILURE);
+                        sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_GENERAL);
                     }
                     break;
                 case CMD_START_AP_SUCCESS:
-                    setWifiApState(WIFI_AP_STATE_ENABLED);
+                    setWifiApState(WIFI_AP_STATE_ENABLED, 0);
                     transitionTo(mSoftApStartedState);
                     break;
                 case CMD_START_AP_FAILURE:
-                    setWifiApState(WIFI_AP_STATE_FAILED);
+                    setWifiApState(WIFI_AP_STATE_FAILED, message.arg1);
                     transitionTo(mInitialState);
                     break;
                 default:
@@ -9415,7 +9421,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     } catch(Exception e) {
                         loge("Exception in stopAccessPoint()");
                     }
-                    setWifiApState(WIFI_AP_STATE_DISABLED);
+                    setWifiApState(WIFI_AP_STATE_DISABLED, 0);
                     transitionTo(mInitialState);
                     break;
                 case CMD_START_AP:
@@ -9501,7 +9507,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     return HANDLED;
                 case CMD_STOP_AP:
                     if (DBG) log("Untethering before stopping AP");
-                    setWifiApState(WIFI_AP_STATE_DISABLING);
+                    setWifiApState(WIFI_AP_STATE_DISABLING, 0);
                     stopTethering();
                     transitionTo(mUntetheringState);
                     // More work to do after untethering
