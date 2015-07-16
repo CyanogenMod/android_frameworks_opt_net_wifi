@@ -811,7 +811,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
-        if (isValid(config)) {
+        if (isValid(config) && isValidPasspoint(config)) {
         
             WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
@@ -1953,6 +1953,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return validity == null || logAndReturnFalse(validity);
     }
 
+    public static boolean isValidPasspoint(WifiConfiguration config) {
+        String validity = checkPasspointValidity(config);
+        return validity == null || logAndReturnFalse(validity);
+    }
+
     public static String checkValidity(WifiConfiguration config) {
         if (config.allowedKeyManagement == null)
             return "allowed kmgmt";
@@ -1969,7 +1974,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 return "not PSK or 8021X";
             }
         }
+        return null;
+    }
 
+    public static String checkPasspointValidity(WifiConfiguration config) {
         if (!TextUtils.isEmpty(config.FQDN)) {
             /* this is passpoint configuration; it must not have an SSID */
             if (!TextUtils.isEmpty(config.SSID)) {
@@ -1993,8 +2001,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 return "no CA certificate";
             }
         }
-
-        // TODO: Add more checks
         return null;
     }
 
