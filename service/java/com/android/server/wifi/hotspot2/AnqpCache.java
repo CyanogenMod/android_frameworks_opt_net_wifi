@@ -5,6 +5,7 @@ import android.util.Log;
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
 
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -177,6 +178,13 @@ public class AnqpCache {
                 }
                 mLastSweep = now;
             }
+        }
+    }
+
+    public void dump(PrintWriter out) {
+        out.println("Last sweep " + Utils.toHMS(System.currentTimeMillis() - mLastSweep) + " ago.");
+        for (ANQPData anqpData : mANQPCache.values()) {
+            out.println(anqpData.toString(false));
         }
     }
 }
