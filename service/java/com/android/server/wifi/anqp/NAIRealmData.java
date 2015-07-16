@@ -1,14 +1,10 @@
 package com.android.server.wifi.anqp;
 
-import android.util.Log;
-
-import com.android.server.wifi.SIMAccessor;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.hotspot2.AuthMatch;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.DomainMatcher;
-import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
@@ -62,21 +58,18 @@ public class NAIRealmData {
         return Collections.unmodifiableList(mEAPMethods);
     }
 
-    public AuthMatch match(List<String> credLabels, Credential credential) {
+    public int match(List<String> credLabels, Credential credential) {
+        int realmMatch = AuthMatch.None;
         if (!mRealms.isEmpty()) {
-            boolean realmMatch = false;
             for (String realm : mRealms) {
                 List<String> labels = Utils.splitDomain(realm);
                 if (DomainMatcher.arg2SubdomainOfArg1(credLabels, labels)) {
-                    realmMatch = true;
+                    realmMatch = AuthMatch.Realm;
                     break;
                 }
             }
-            if (!realmMatch) {
-                return AuthMatch.None;
-            }
-            else if (mEAPMethods.isEmpty()) {
-                return AuthMatch.RealmOnly;
+            if (realmMatch == AuthMatch.None || mEAPMethods.isEmpty()) {
+                return realmMatch;
             }
             // else there is a realm match and one or more EAP methods - check them.
         }
@@ -84,10 +77,10 @@ public class NAIRealmData {
             return AuthMatch.Indeterminate;
         }
 
-        AuthMatch best = AuthMatch.None;
+        int best = AuthMatch.None;
         for (EAPMethod eapMethod : mEAPMethods) {
-            AuthMatch match = eapMethod.match(credential);
-            if (match.compareTo(best) > 0) {
+            int match = eapMethod.match(credential) | realmMatch;
+            if (match > best) {
                 best = match;
                 if (best == AuthMatch.Exact) {
                     return best;

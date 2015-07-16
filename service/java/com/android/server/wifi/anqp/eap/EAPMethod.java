@@ -1,15 +1,8 @@
 package com.android.server.wifi.anqp.eap;
 
 
-import android.util.Log;
-
-import com.android.server.wifi.IMSIParameter;
-import com.android.server.wifi.SIMAccessor;
-import com.android.server.wifi.anqp.CellularNetwork;
 import com.android.server.wifi.anqp.Constants;
-import com.android.server.wifi.anqp.ThreeGPPNetworkElement;
 import com.android.server.wifi.hotspot2.AuthMatch;
-import com.android.server.wifi.hotspot2.Utils;
 
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
@@ -117,7 +110,7 @@ public class EAPMethod {
         return mEAPMethodID;
     }
 
-    public AuthMatch match(com.android.server.wifi.hotspot2.pps.Credential credential) {
+    public int match(com.android.server.wifi.hotspot2.pps.Credential credential) {
 
         EAPMethod credMethod = credential.getEAPMethod();
         if (mEAPMethodID != credMethod.getEAPMethodID()) {
@@ -127,27 +120,30 @@ public class EAPMethod {
         switch (mEAPMethodID) {
             case EAP_TTLS:
                 if (mAuthParams.isEmpty()) {
-                    return AuthMatch.MethodOnly;
+                    return AuthMatch.Method;
                 }
+                int paramCount = 0;
                 for (Map.Entry<EAP.AuthInfoID, Set<AuthParam>> entry :
                         credMethod.getAuthParams().entrySet()) {
                     Set<AuthParam> params = mAuthParams.get(entry.getKey());
-                    if (params == null)
+                    if (params == null) {
                         continue;
+                    }
 
                     if (!Collections.disjoint(params, entry.getValue())) {
-                        return AuthMatch.Exact;
+                        return AuthMatch.MethodParam;
                     }
+                    paramCount += params.size();
                 }
-                return AuthMatch.None;
+                return paramCount > 0 ? AuthMatch.None : AuthMatch.Method;
             case EAP_TLS:
-                return AuthMatch.Exact;
+                return AuthMatch.MethodParam;
             case EAP_SIM:
             case EAP_AKA:
             case EAP_AKAPrim:
-                return AuthMatch.MethodOnly;
+                return AuthMatch.Method;
             default:
-                return AuthMatch.MethodOnly;
+                return AuthMatch.Method;
         }
     }
 
