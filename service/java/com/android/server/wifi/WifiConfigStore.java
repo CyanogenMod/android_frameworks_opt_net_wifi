@@ -3839,6 +3839,11 @@ public class WifiConfigStore extends IpConfigStore {
             mLocalLog.dump(fd, pw, args);
             pw.println("WifiConfigStore - Log End ----");
         }
+        if (mMOManager.isConfigured()) {
+            pw.println("Begin dump of ANQP Cache");
+            mAnqpCache.dump(pw);
+            pw.println("End dump of ANQP Cache");
+        }
     }
 
     public String getConfigFile() {
