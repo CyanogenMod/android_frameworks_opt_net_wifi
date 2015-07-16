@@ -82,6 +82,7 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_set_log_handler = wifi_set_log_handler_stub;
     hal_fn->wifi_reset_log_handler = wifi_reset_log_handler_stub;
     hal_fn->wifi_set_alert_handler = wifi_set_alert_handler_stub;
+    hal_fn->wifi_reset_alert_handler = wifi_reset_alert_handler_stub;
     hal_fn->wifi_get_firmware_version = wifi_get_firmware_version_stub;
     hal_fn->wifi_get_ring_buffers_status = wifi_get_ring_buffers_status_stub;
     hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
@@ -1791,10 +1792,26 @@ static jboolean android_net_wifi_set_log_handler(JNIEnv *env, jclass cls, jint i
 
 static jboolean android_net_wifi_reset_log_handler(JNIEnv *env, jclass cls, jint iface, jint id) {
     wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+
+    //reset alter handler
+    ALOGD("android_net_wifi_reset_alert_handler = %p", handle);
+    int result = hal_fn.wifi_reset_alert_handler(id, handle);
+    if (result != WIFI_SUCCESS) {
+        ALOGE(" Fail to reset alert handler");
+        return false;
+    }
+
+    //reset log handler
     ALOGD("android_net_wifi_reset_log_handler = %p", handle);
-    int result = hal_fn.wifi_reset_log_handler(id,handle);
-    return result == WIFI_SUCCESS;
+    result = hal_fn.wifi_reset_log_handler(id, handle);
+    if (result != WIFI_SUCCESS) {
+        ALOGE("Fail to reset logging handler");
+        return false;
+    }
+
+    return true;
 }
+
 // ----------------------------------------------------------------------------
 // ePno framework
 // ----------------------------------------------------------------------------
