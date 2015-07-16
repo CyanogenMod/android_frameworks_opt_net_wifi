@@ -170,6 +170,10 @@ wifi_error wifi_set_alert_handler_stub(wifi_request_id id, wifi_interface_handle
     return WIFI_ERROR_NOT_SUPPORTED;
 }
 
+wifi_error wifi_reset_alert_handler_stub(wifi_request_id id, wifi_interface_handle iface) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
 wifi_error wifi_get_firmware_version_stub( wifi_interface_handle iface, char *buffer,
         int buffer_size) {
     return WIFI_ERROR_NOT_SUPPORTED;
