@@ -1331,8 +1331,10 @@ public class WifiNative {
         public int  max_significant_wifi_change_aps;
     }
 
-    public static boolean getScanCapabilities(ScanCapabilities capabilities) {
-        return getScanCapabilitiesNative(sWlan0Index, capabilities);
+    synchronized public static boolean getScanCapabilities(ScanCapabilities capabilities) {
+        synchronized (mLock) {
+            return isHalStarted() && getScanCapabilitiesNative(sWlan0Index, capabilities);
+        }
     }
 
     private static native boolean getScanCapabilitiesNative(
