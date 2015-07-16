@@ -67,8 +67,7 @@ public class ANQPData {
                 mExpiry > System.currentTimeMillis();
     }
 
-    @Override
-    public String toString() {
+    public String toString(boolean brief) {
         StringBuilder sb = new StringBuilder();
         sb.append(mNetwork.toKeyString()).append(", domid ").append(mNetwork.getAnqpDomainID());
         if (mANQPElements == null) {
@@ -80,8 +79,18 @@ public class ANQPData {
         long now = System.currentTimeMillis();
         sb.append(Utils.toHMS(now-mCtime)).append(" old, expires in ").
                 append(Utils.toHMS(mExpiry-now)).append(' ');
-        sb.append(expired(now) ? 'x' : '-');
-        sb.append(mANQPElements == null ? 'u' : '-');
+        if (brief) {
+            sb.append(expired(now) ? 'x' : '-');
+            sb.append(mANQPElements == null ? 'u' : '-');
+        }
+        else if (mANQPElements != null) {
+            sb.append(" data=").append(mANQPElements);
+        }
         return sb.toString();
+    }
+
+    @Override
+    public String toString() {
+        return toString(true);
     }
 }
