@@ -50,7 +50,7 @@ public class HomeSP {
                    Credential credential) {
 
         mSSIDs = ssidMap;
-        List<List<String>> otherPartners = new ArrayList<List<String>>(otherHomePartners.size());
+        List<List<String>> otherPartners = new ArrayList<>(otherHomePartners.size());
         for (String otherPartner : otherHomePartners) {
             otherPartners.add(Utils.splitDomain(otherPartner));
         }
@@ -90,23 +90,38 @@ public class HomeSP {
 
         PasspointMatch spMatch = matchSP(networkDetail, anqpElementMap, imsis);
 
-        if (spMatch != PasspointMatch.HomeProvider && spMatch != PasspointMatch.RoamingProvider) {
+        if (spMatch == PasspointMatch.Incomplete || spMatch == PasspointMatch.Declined) {
             return spMatch;
         }
 
         if (imsiMatch(imsis, (ThreeGPPNetworkElement)
                 anqpElementMap.get(ANQPElementType.ANQP3GPPNetwork)) != null) {
-            return spMatch;
+            // PLMN match, promote sp match to roaming if necessary.
+            return spMatch == PasspointMatch.None ? PasspointMatch.RoamingProvider : spMatch;
         }
 
         NAIRealmElement naiRealmElement =
                 (NAIRealmElement) anqpElementMap.get(ANQPElementType.ANQPNAIRealm);
 
-        AuthMatch authMatch =
-                naiRealmElement.match(mCredential);
+        int authMatch = naiRealmElement != null ?
+                naiRealmElement.match(mCredential) :
+                AuthMatch.Indeterminate;
+        
         Log.d(Utils.hs2LogTag(getClass()), networkDetail.toKeyString() + " match on " + mFQDN +
-                ": " + spMatch + ", auth " + authMatch);
-        return authMatch == AuthMatch.None ? PasspointMatch.None : spMatch;
+                ": " + spMatch + ", auth " + AuthMatch.toString(authMatch));
+
+        if (authMatch == AuthMatch.None) {
+            // Distinct auth mismatch, demote authentication.
+            return PasspointMatch.None;
+        }
+        else if ((authMatch & AuthMatch.Realm) == 0) {
+            // No realm match, return sp match as is.
+            return spMatch;
+        }
+        else {
+            // Realm match, promote sp match to roaming if necessary.
+            return spMatch == PasspointMatch.None ? PasspointMatch.RoamingProvider : spMatch;
+        }
     }
 
     public PasspointMatch matchSP(NetworkDetail networkDetail,
