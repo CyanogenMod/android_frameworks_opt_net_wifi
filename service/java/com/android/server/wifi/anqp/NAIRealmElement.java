@@ -46,15 +46,15 @@ public class NAIRealmElement extends ANQPElement {
         return Collections.unmodifiableList(mRealmData);
     }
 
-    public AuthMatch match(Credential credential) {
+    public int match(Credential credential) {
         if (mRealmData.isEmpty())
             return AuthMatch.Indeterminate;
 
         List<String> credLabels = Utils.splitDomain(credential.getRealm());
-        AuthMatch best = AuthMatch.None;
+        int best = AuthMatch.None;
         for (NAIRealmData realmData : mRealmData) {
-            AuthMatch match = realmData.match(credLabels, credential);
-            if (match.compareTo(best) > 0) {
+            int match = realmData.match(credLabels, credential);
+            if (match > best) {
                 best = match;
                 if (best == AuthMatch.Exact) {
                     return best;
