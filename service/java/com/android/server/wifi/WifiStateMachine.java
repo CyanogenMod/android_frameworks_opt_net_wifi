@@ -7928,7 +7928,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             byte[] rssiRange = new byte[rssiVals.length];
             for (int i = 0; i < rssiVals.length; i++) {
                 int val = rssiVals[i];
-                if (val < Byte.MAX_VALUE && val > Byte.MIN_VALUE) {
+                if (val <= Byte.MAX_VALUE && val >= Byte.MIN_VALUE) {
                     rssiRange[i] = (byte) val;
                 } else {
                     Log.e(TAG, "Illegal values for rssi thresholds " + val);
