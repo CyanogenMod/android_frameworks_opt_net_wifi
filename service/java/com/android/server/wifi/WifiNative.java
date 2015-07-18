@@ -2368,4 +2368,47 @@ public class WifiNative {
             }
         }
     }
+
+    public static interface WifiRssiEventHandler {
+        void onRssiThresholdBreached(byte curRssi);
+    }
+
+    private static WifiRssiEventHandler sWifiRssiEventHandler;
+
+    synchronized static void onRssiThresholdBreached(int id, byte curRssi) {
+        sWifiRssiEventHandler.onRssiThresholdBreached(curRssi);
+    }
+
+    private native static int startRssiMonitoringNative(int iface, int id,
+                                        byte maxRssi, byte minRssi);
+
+    private static int sRssiMonitorCmdId = 0;
+
+    synchronized public int startRssiMonitoring(byte maxRssi, byte minRssi,
+                                                WifiRssiEventHandler rssiEventHandler) {
+        Log.d(TAG, "startRssiMonitoring: maxRssi=" + maxRssi + " minRssi=" + minRssi);
+        sWifiRssiEventHandler = rssiEventHandler;
+        synchronized (mLock) {
+            if (isHalStarted()) {
+                sRssiMonitorCmdId = getNewCmdIdLocked();
+                Log.d(TAG, "sRssiMonitorCmdId = " + sRssiMonitorCmdId);
+                return startRssiMonitoringNative(sWlan0Index, sRssiMonitorCmdId, maxRssi, minRssi);
+            } else {
+                return -1;
+            }
+        }
+    }
+
+    private native static int stopRssiMonitoringNative(int iface, int idx);
+
+    synchronized public int stopRssiMonitoring() {
+        Log.d(TAG, "stopRssiMonitoring, cmdId " + sRssiMonitorCmdId);
+        synchronized (mLock) {
+            if (isHalStarted()) {
+                return stopRssiMonitoringNative(sWlan0Index, sRssiMonitorCmdId);
+            } else {
+                return -1;
+            }
+        }
+    }
 }
