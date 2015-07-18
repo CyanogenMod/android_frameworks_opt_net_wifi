@@ -1310,16 +1310,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         sendMessage(CMD_DISCONNECT);
     }
 
-    public void setAllowNetworkSwitchingWhileAssociated(int enabled) {
-        mEnableAssociatedNetworkSwitchingInDevSettings = enabled > 0;
-    }
-
     int getHalBasedAutojoinOffload() {
         return mHalBasedPnoEnableInDevSettings ? 1 : 0;
-    }
-
-    int getAllowNetworkSwitchingWhileAssociated() {
-        return mEnableAssociatedNetworkSwitchingInDevSettings ? 1 : 0;
     }
 
     boolean useHalBasedAutoJoinOffload() {
@@ -1334,10 +1326,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     boolean allowFullBandScanAndAssociated() {
 
-        if (!mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
+        if (!getEnableAutoJoinWhenAssociated()) {
             if (DBG) {
                 Log.e(TAG, "allowFullBandScanAndAssociated: "
-                        + " enableAutoJoinScanWhenAssociated : disallow");
+                        + " enableAutoJoinWhenAssociated : disallow");
             }
             return false;
         }
@@ -1424,14 +1416,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         return mWifiConfigStore.alwaysEnableScansWhileAssociated.get();
     }
 
-    public void setAllowScansWhileAssociated(int enabled) {
-        mWifiConfigStore.enableAutoJoinScanWhenAssociated.set(enabled > 0 ? true : false);
+    public boolean enableAutoJoinWhenAssociated(boolean enabled) {
+        boolean old_state = getEnableAutoJoinWhenAssociated();
+        mWifiConfigStore.enableAutoJoinWhenAssociated.set(enabled);
+        if (!old_state && enabled && mScreenOn && getCurrentState() == mConnectedState) {
+            startDelayedScan(mWifiConfigStore.wifiAssociatedShortScanIntervalMilli.get(), null,
+                    null);
+        }
+        return true;
     }
 
-    public int getAllowScansWhileAssociated() {
-        return mWifiConfigStore.enableAutoJoinScanWhenAssociated.get() ? 1 : 0;
+    public boolean getEnableAutoJoinWhenAssociated() {
+        return mWifiConfigStore.enableAutoJoinWhenAssociated.get();
     }
-
     /*
      *
      * Framework scan control
@@ -2597,7 +2594,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sb.append(" halAllowed=").append(useHalBasedAutoJoinOffload());
                 sb.append(" scanAllowed=").append(allowFullBandScanAndAssociated());
                 sb.append(" autojoinAllowed=");
-                sb.append(mWifiConfigStore.enableAutoJoinScanWhenAssociated.get());
+                sb.append(mWifiConfigStore.enableAutoJoinWhenAssociated.get());
                 sb.append(" withTraffic=").append(getAllowScansWithTraffic());
                 sb.append(" tx=").append(mWifiInfo.txSuccessRate);
                 sb.append("/").append(mWifiConfigStore.maxTxPacketForFullScans);
@@ -3911,7 +3908,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 || getCurrentState() == mScanModeState
                 || getCurrentState() == mDisconnectingState
                 || (getCurrentState() == mConnectedState
-                && !mWifiConfigStore.enableAutoJoinWhenAssociated.get())
+                && !getEnableAutoJoinWhenAssociated())
                 || linkDebouncing
                 || state == SupplicantState.ASSOCIATING
                 || state == SupplicantState.AUTHENTICATING
@@ -3944,7 +3941,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
         }
 
-        if (mWifiConfigStore.enableAutoJoinWhenAssociated.get()) {
+        if (attemptAutoJoin) {
             synchronized (mScanResultCache) {
                 // AutoJoincontroller will directly acces the scan result list and update it with
                 // ScanResult status
@@ -4048,7 +4045,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
         delta = networkDelta;
         if (mWifiInfo != null) {
-            if (!mWifiConfigStore.enableAutoJoinWhenAssociated.get()
+            if (!getEnableAutoJoinWhenAssociated()
                     && mWifiInfo.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
                 // If AutoJoin while associated is not enabled,
                 // we should never switch network when already associated
@@ -8029,9 +8026,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     //}
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
                         // Check if the CMD_START_SCAN message is obsolete (and thus if it should
-                        // not be processed) and restart the scan if needed
-                        boolean shouldScan =
-                                mScreenOn && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get();
+                        // not be processed) and restart the scan if neede
+                        if (!getEnableAutoJoinWhenAssociated()) {
+                            return HANDLED;
+                        }
+                        boolean shouldScan = mScreenOn;
+
                         if (!checkAndRestartDelayedScan(message.arg2,
                                 shouldScan,
                                 mWifiConfigStore.wifiAssociatedShortScanIntervalMilli.get(),
@@ -8605,7 +8605,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         + " mHalBasedPnoEnableInDevSettings " + mHalBasedPnoEnableInDevSettings);
             }
             if (mScreenOn
-                    && mWifiConfigStore.enableAutoJoinScanWhenAssociated.get()) {
+                    && getEnableAutoJoinWhenAssociated()) {
                 if (useHalBasedAutoJoinOffload()) {
                     startGScanConnectedModeOffload("connectedEnter");
                 } else {

@@ -1874,34 +1874,23 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return mWifiStateMachine.getAllowScansWithTraffic();
     }
 
-    public void setAllowScansWhileAssociated(int enabled) {
-        enforceAccessPermission();
-        mWifiStateMachine.setAllowScansWhileAssociated(enabled);
+    public boolean enableAutoJoinWhenAssociated(boolean enabled) {
+        enforceChangePermission();
+        return mWifiStateMachine.enableAutoJoinWhenAssociated(enabled);
     }
 
-    public int getAllowScansWhileAssociated() {
+    public boolean getEnableAutoJoinWhenAssociated() {
         enforceAccessPermission();
-        return mWifiStateMachine.getAllowScansWhileAssociated();
+        return mWifiStateMachine.getEnableAutoJoinWhenAssociated();
     }
-
     public void setHalBasedAutojoinOffload(int enabled) {
-        enforceAccessPermission();
+        enforceChangePermission();
         mWifiStateMachine.setHalBasedAutojoinOffload(enabled);
     }
 
     public int getHalBasedAutojoinOffload() {
         enforceAccessPermission();
         return mWifiStateMachine.getHalBasedAutojoinOffload();
-    }
-
-    public void setAllowNetworkSwitchingWhileAssociated(int enabled) {
-        enforceAccessPermission();
-        mWifiStateMachine.setAllowNetworkSwitchingWhileAssociated(enabled);
-    }
-
-    public int getAllowNetworkSwitchingWhileAssociated() {
-        enforceAccessPermission();
-        return mWifiStateMachine.getAllowNetworkSwitchingWhileAssociated();
     }
 
     /* Return the Wifi Connection statistics object */

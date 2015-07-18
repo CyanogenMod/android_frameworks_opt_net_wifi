@@ -328,8 +328,6 @@ public class WifiConfigStore extends IpConfigStore {
 
     // The three below configurations are mainly for power stats and CPU usage tracking
     // allowing to incrementally disable framework features
-    private static final String ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY
-            = "ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED";
     private static final String ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY
             = "ENABLE_AUTO_JOIN_WHILE_ASSOCIATED";
     private static final String ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY
@@ -398,7 +396,6 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicBoolean enableSsidWhitelist = new AtomicBoolean(true);
     public final AtomicBoolean enableAutoJoinWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableFullBandScanWhenAssociated = new AtomicBoolean(true);
-    public final AtomicBoolean enableAutoJoinScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableChipWakeUpWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableRssiPollWhenAssociated = new AtomicBoolean(true);
     public final AtomicInteger thresholdInitialAutoJoinAttemptMin5RSSI =
@@ -539,7 +536,6 @@ public class WifiConfigStore extends IpConfigStore {
         // A map for value setting in readAutoJoinConfig() - replacing the replicated code.
         sKeyMap.put(ENABLE_AUTO_JOIN_WHILE_ASSOCIATED_KEY, enableAutoJoinWhenAssociated);
         sKeyMap.put(ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY, enableFullBandScanWhenAssociated);
-        sKeyMap.put(ENABLE_AUTO_JOIN_SCAN_WHILE_ASSOCIATED_KEY, enableAutoJoinScanWhenAssociated);
         sKeyMap.put(ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY, enableChipWakeUpWhenAssociated);
         sKeyMap.put(ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY, enableRssiPollWhenAssociated);
         sKeyMap.put(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY, thresholdInitialAutoJoinAttemptMin5RSSI);
@@ -653,10 +649,6 @@ public class WifiConfigStore extends IpConfigStore {
                 R.integer.config_wifi_framework_max_connection_errors_to_blacklist);
         wifiConfigBlacklistMinTimeMilli = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_network_black_list_min_time_milli);
-
-
-        enableAutoJoinScanWhenAssociated.set(mContext.getResources().getBoolean(
-                R.bool.config_wifi_framework_enable_associated_autojoin_scan));
 
         enableAutoJoinWhenAssociated.set(mContext.getResources().getBoolean(
                 R.bool.config_wifi_framework_enable_associated_network_selection));
