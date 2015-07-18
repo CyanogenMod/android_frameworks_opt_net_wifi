@@ -150,7 +150,8 @@ import java.util.regex.Pattern;
  *
  * @hide
  */
-public class WifiStateMachine extends StateMachine implements WifiNative.WifiPnoEventHandler {
+public class WifiStateMachine extends StateMachine implements WifiNative.WifiPnoEventHandler,
+    WifiNative.WifiRssiEventHandler {
 
     private static final String NETWORKTYPE = "WIFI";
     private static final String NETWORKTYPE_UNTRUSTED = "WIFI_UT";
@@ -272,6 +273,34 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mRestartAutoJoinOffloadCounter++;
     }
 
+    @Override
+    public void onRssiThresholdBreached(byte curRssi) {
+        if (DBG) {
+            Log.e(TAG, "onRssiThresholdBreach event. Cur Rssi = " + curRssi);
+        }
+        sendMessage(CMD_RSSI_THRESHOLD_BREACH, curRssi);
+    }
+
+    public void processRssiThreshold(byte curRssi) {
+        for (int i = 0; i < mRssiRanges.length; i++) {
+            if (curRssi < mRssiRanges[i]) {
+                // Assume sorted values(ascending order) for rssi,
+                // bounded by high(127) and low(-127) at extremeties
+                byte maxRssi = mRssiRanges[i];
+                byte minRssi = mRssiRanges[i-1];
+                Log.d(TAG, "Re-program rssi thresholds" + "maxRssi=" + maxRssi
+                        + " minRssi=" + minRssi + " curRssi=" + curRssi);
+                // This value of hw has to be believed as this value is averaged and has breached
+                // the rssi thresholds and raised event to host. This would be eggregious if this
+                // value is invalid
+                mWifiInfo.setRssi((int) curRssi);
+                updateCapabilities(getCurrentWifiConfiguration());
+                int ret = startRssiMonitoringOffload(maxRssi, minRssi);
+                Log.d(TAG, "Post re-programming rssi threshold ret = " + ret);
+                break;
+            }
+        }
+    }
     public void registerNetworkDisabled(int netId) {
         // Restart legacy PNO and autojoin offload if needed
         sendMessage(CMD_RESTART_AUTOJOIN_OFFLOAD, 0,
@@ -540,6 +569,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private String[] mWhiteListedSsids = null;
 
+    private byte[] mRssiRanges;
+
     // Keep track of various statistics, for retrieval by System Apps, i.e. under @SystemApi
     // We should really persist that into the networkHistory.txt file, and read it back when
     // WifiStateMachine starts up
@@ -788,6 +819,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* used to stop offload sending IP packet */
     static final int CMD_STOP_IP_PACKET_OFFLOAD                         = BASE + 161;
+
+    /* used to start rssi monitoring in hw */
+    static final int CMD_START_RSSI_MONITORING_OFFLOAD                  = BASE + 162;
+
+    /* used to stop rssi moniroting in hw */
+    static final int CMD_STOP_RSSI_MONITORING_OFFLOAD                   = BASE + 163;
+
+    /* used to indicated RSSI threshold breach in hw */
+    static final int CMD_RSSI_THRESHOLD_BREACH                          = BASE + 164;
+
 
 
     /* Wifi state machine modes of operation */
@@ -1797,11 +1838,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         return mWifiNative.stopSendingOffloadedPacket(slot);
     }
 
-    int resetWifiIPPacketOffload() {
-        //ToDo: clear the list of object when ever there is disconnect
-        // Does the driver maintain the list of offloaded packets and
-        // clear on each disconnect?
-        return 0;
+    int startRssiMonitoringOffload(byte maxRssi, byte minRssi) {
+        return mWifiNative.startRssiMonitoring(maxRssi, minRssi, WifiStateMachine.this);
+    }
+
+    int stopRssiMonitoringOffload() {
+        return mWifiNative.stopRssiMonitoring();
     }
 
     // If workSource is not null, blame is given to it, otherwise blame is given to callingUid.
@@ -2335,6 +2377,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      */
     public void setHighPerfModeEnabled(boolean enable) {
         sendMessage(CMD_SET_HIGH_PERF_MODE, enable ? 1 : 0, 0);
+    }
+
+    public int stopRssiMonitoring(AsyncChannel channel) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_STOP_RSSI_MONITORING_OFFLOAD,
+                                    mRssiRanges);
+        int ret = (int)resultMsg.obj;
+        resultMsg.recycle();
+        return ret;
     }
 
     /**
@@ -5622,6 +5672,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             message.arg1,
                             ConnectivityManager.PacketKeepalive.ERROR_INVALID_NETWORK);
                     break;
+                case CMD_START_RSSI_MONITORING_OFFLOAD:
+                    if (mNetworkAgent != null) mNetworkAgent.onPacketKeepaliveEvent(
+                            message.arg1,
+                            ConnectivityManager.PacketKeepalive.ERROR_INVALID_NETWORK);
+                    break;
+                case CMD_START_RSSI_MONITORING_OFFLOAD:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    break;
+                case CMD_STOP_RSSI_MONITORING_OFFLOAD:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    break;
                 default:
                     loge("Error! unhandled message" + message);
                     break;
@@ -6900,6 +6961,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             case CMD_STOP_IP_PACKET_OFFLOAD:
                 s = "CMD_STOP_IP_PACKET_OFFLOAD";
                 break;
+            case CMD_START_RSSI_MONITORING_OFFLOAD:
+                s = "CMD_START_RSSI_MONITORING_OFFLOAD";
+                break;
+            case CMD_STOP_RSSI_MONITORING_OFFLOAD:
+                s = "CMD_STOP_RSSI_MONITORING_OFFLOAD";
+                break;
+            case CMD_RSSI_THRESHOLD_BREACH:
+                s = "CMD_RSSI_THRESHOLD_BREACH";
+                break;
             default:
                 s = "what:" + Integer.toString(what);
                 break;
@@ -7775,6 +7845,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_PNO_NETWORK_FOUND:
                     processPnoNetworkFound((ScanResult[])message.obj);
                     break;
+                case CMD_RSSI_THRESHOLD_BREACH:
+                    byte curRssi = (byte)message.arg1;
+                    processRssiThreshold(curRssi);
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -7842,7 +7916,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         @Override
         protected void setSignalStrengthThresholds(int[] thresholds) {
-            // TODO: Implement.
             // 1. Tell the hardware to start RSSI monitoring here, possibly adding MIN_VALUE and
             //    MAX_VALUE at the start/end of the thresholds array if necessary.
             // 2. Ensure that when the hardware event fires, we fetch the RSSI from the hardware
@@ -7853,6 +7926,26 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             //    received, or we might skip callbacks.
             // 3. Ensure that when we disconnect, RSSI monitoring is stopped.
             log("Received signal strength thresholds: " + Arrays.toString(thresholds));
+            int [] rssiVals = Arrays.copyOf(thresholds, thresholds.length + 2);
+            rssiVals[rssiVals.length - 2] = Byte.MIN_VALUE;
+            rssiVals[rssiVals.length - 1] = Byte.MAX_VALUE;
+            Arrays.sort(rssiVals);
+            byte[] rssiRange = new byte[rssiVals.length];
+            for (int i = 0; i < rssiVals.length; i++) {
+                int val = rssiVals[i];
+                if (val < Byte.MAX_VALUE && val > Byte.MIN_VALUE) {
+                    rssiRange[i] = (byte) val;
+                } else {
+                    Log.e(TAG, "Illegal values for rssi thresholds " + val);
+                }
+            }
+            // ToDo: Do we quash rssi values in this sorted array which are very close?
+            mRssiRanges = rssiRange;
+            //In the degenerate case when the input range has no values, the
+            //rssiRange will have only 2 values(127, -128), which when armed to
+            //any chipset can never trigger a rssi breach
+            WifiStateMachine.this.sendMessage(CMD_START_RSSI_MONITORING_OFFLOAD,
+                    mWifiInfo.getRssi());
         }
     }
 
@@ -8976,6 +9069,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mNetworkAgent.onPacketKeepaliveEvent(slot, result);
                         break;
                     }
+                case CMD_START_RSSI_MONITORING_OFFLOAD:
+                    byte currRssi = (byte)message.arg1;
+                    processRssiThreshold(currRssi);
+                    break;
+                case CMD_STOP_RSSI_MONITORING_OFFLOAD:
+                    stopRssiMonitoringOffload();
+                    break;
                 default:
                     return NOT_HANDLED;
             }
