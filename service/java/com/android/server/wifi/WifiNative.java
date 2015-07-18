@@ -36,6 +36,8 @@ import android.util.Base64;
 import android.util.LocalLog;
 import android.util.Log;
 
+import com.android.server.connectivity.KeepalivePacketData;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -2326,6 +2328,42 @@ public class WifiNative {
                 return setSsidWhitelistNative(sWlan0Index, sPnoCmdId, list);
             } else {
                 return false;
+            }
+        }
+    }
+
+    private native static int startSendingOffloadedPacketNative(int iface, int idx,
+                                    byte[] srcMac, byte[] dstMac, byte[] pktData, int period);
+
+    synchronized public int
+    startSendingOffloadedPacket(int slot, KeepalivePacketData keepAlivePacket, int period) {
+        Log.d(TAG, "startSendingOffloadedPacket slot=" + slot + " period=" + period);
+        synchronized (mLock) {
+            if (isHalStarted()) {
+                String[] macAddrStr = getMacAddress().split(":");
+                byte[] srcMac = new byte[6];
+                for(int i = 0; i < 6; i++) {
+                    Integer hexVal = Integer.parseInt(macAddrStr[i], 16);
+                    srcMac[i] = hexVal.byteValue();
+                }
+                return startSendingOffloadedPacketNative(sWlan0Index, slot, srcMac,
+                                keepAlivePacket.dstMac, keepAlivePacket.data, period);
+            } else {
+                return -1;
+            }
+        }
+    }
+
+    private native static int stopSendingOffloadedPacketNative(int iface, int idx);
+
+    synchronized public int
+    stopSendingOffloadedPacket(int slot) {
+        Log.d(TAG, "stopSendingOffloadedPacket " + slot);
+        synchronized (mLock) {
+            if (isHalStarted()) {
+                return stopSendingOffloadedPacketNative(sWlan0Index, slot);
+            } else {
+                return -1;
             }
         }
     }
