@@ -2118,6 +2118,43 @@ static jint android_net_wifi_stop_sending_offloaded_packet(JNIEnv *env, jclass c
     ALOGD("ret= %d\n", ret);
     return ret;
 }
+
+static void onRssiThresholdbreached(wifi_request_id id, u8 *cur_bssid, s8 cur_rssi) {
+
+    ALOGD("RSSI threshold breached, cur RSSI - %d!!\n", cur_rssi);
+    ALOGD("BSSID %02x:%02x:%02x:%02x:%02x:%02x\n",
+            cur_bssid[0], cur_bssid[1], cur_bssid[2],
+            cur_bssid[3], cur_bssid[4], cur_bssid[5]);
+    JNIEnv *env = NULL;
+    mVM->AttachCurrentThread(&env, NULL);
+    //ALOGD("onRssiThresholdbreached called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
+    reportEvent(env, mCls, "onRssiThresholdbreached", "(IB)V", id, cur_rssi);
+}
+
+static jint android_net_wifi_start_rssi_monitoring_native(JNIEnv *env, jclass cls, jint iface,
+        jint idx, jbyte maxRssi, jbyte minRssi) {
+
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("Start Rssi monitoring = %p", handle);
+    ALOGD("MinRssi %d MaxRssi %d", minRssi, maxRssi);
+    wifi_error ret;
+    wifi_request_id id = idx;
+    wifi_rssi_event_handler eh;
+    eh.on_rssi_threshold_breached = onRssiThresholdbreached;
+    ret = hal_fn.wifi_start_rssi_monitoring(id, handle, maxRssi, minRssi, eh);
+    return ret;
+}
+
+static jint android_net_wifi_stop_rssi_monitoring_native(JNIEnv *env, jclass cls,
+        jint iface, jint idx) {
+    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    ALOGD("Stop Rssi monitoring = %p", handle);
+    wifi_error ret;
+    wifi_request_id id = idx;
+    ret = hal_fn.wifi_stop_rssi_monitoring(id, handle);
+    return ret;
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -2208,7 +2245,11 @@ static JNINativeMethod gWifiMethods[] = {
     { "startSendingOffloadedPacketNative", "(II[B[B[BI)I",
              (void*)android_net_wifi_start_sending_offloaded_packet},
     { "stopSendingOffloadedPacketNative", "(II)I",
-             (void*)android_net_wifi_stop_sending_offloaded_packet}
+             (void*)android_net_wifi_stop_sending_offloaded_packet},
+    {"startRssiMonitoringNative", "(IIBB)I",
+            (void*)android_net_wifi_start_rssi_monitoring_native},
+    {"stopRssiMonitoringNative", "(II)I",
+            (void*)android_net_wifi_stop_rssi_monitoring_native}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
