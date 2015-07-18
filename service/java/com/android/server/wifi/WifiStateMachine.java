@@ -126,6 +126,7 @@ import java.io.PrintWriter;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -4011,11 +4012,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
              */
             int newSignalLevel = WifiManager.calculateSignalLevel(newRssi, WifiManager.RSSI_LEVELS);
             if (newSignalLevel != mLastSignalLevel) {
+                updateCapabilities(getCurrentWifiConfiguration());
                 sendRssiChangeBroadcast(newRssi);
             }
             mLastSignalLevel = newSignalLevel;
         } else {
             mWifiInfo.setRssi(WifiInfo.INVALID_RSSI);
+            updateCapabilities(getCurrentWifiConfiguration());
         }
 
         if (newLinkSpeed != -1) {
@@ -7728,6 +7731,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mNetworkCapabilities.addCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED);
         }
+        mNetworkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
+                mWifiInfo.getRssi() : NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED);
         mNetworkAgent.sendNetworkCapabilities(mNetworkCapabilities);
     }
 
@@ -7762,6 +7767,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         protected void saveAcceptUnvalidated(boolean accept) {
             if (this != mNetworkAgent) return;
             WifiStateMachine.this.sendMessage(CMD_ACCEPT_UNVALIDATED, accept ? 1 : 0);
+        }
+
+        @Override
+        protected void setSignalStrengthThresholds(int[] thresholds) {
+            // TODO: Implement.
+            // 1. Tell the hardware to start RSSI monitoring here, possibly adding MIN_VALUE and
+            //    MAX_VALUE at the start/end of the thresholds array if necessary.
+            // 2. Ensure that when the hardware event fires, we fetch the RSSI from the hardware
+            //    event, call mWifiInfo.setRssi() with it, and call updateCapabilities(), and then
+            //    re-arm the hardware event. This needs to be done on the state machine thread to
+            //    avoid race conditions. The RSSI used to re-arm the event (and perhaps also the one
+            //    sent in the NetworkCapabilities) must be the one received from the hardware event
+            //    received, or we might skip callbacks.
+            // 3. Ensure that when we disconnect, RSSI monitoring is stopped.
+            log("Received signal strength thresholds: " + Arrays.toString(thresholds));
         }
     }
 
