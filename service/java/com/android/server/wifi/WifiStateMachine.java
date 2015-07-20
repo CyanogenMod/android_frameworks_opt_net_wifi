@@ -3819,176 +3819,25 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
 
-    private static final String IE_STR = "ie=";
-    private static final String ID_STR = "id=";
-    private static final String BSSID_STR = "bssid=";
-    private static final String FREQ_STR = "freq=";
-    private static final String LEVEL_STR = "level=";
-    private static final String TSF_STR = "tsf=";
-    private static final String FLAGS_STR = "flags=";
-    private static final String SSID_STR = "ssid=";
-    private static final String DELIMITER_STR = "====";
-    private static final String END_STR = "####";
-
-    // Used for matching BSSID strings, at least one characteer must be a non-zero number
-    private static Pattern mNotZero = Pattern.compile("[1-9a-fA-F]");
-
-    /**
-     * Format:
-     * <p/>
-     * id=1
-     * bssid=68:7f:76:d7:1a:6e
-     * freq=2412
-     * level=-44
-     * tsf=1344626243700342
-     * flags=[WPA2-PSK-CCMP][WPS][ESS]
-     * ssid=zfdy
-     * ====
-     * id=2
-     * bssid=68:5f:74:d7:1a:6f
-     * freq=5180
-     * level=-73
-     * tsf=1344626243700373
-     * flags=[WPA2-PSK-CCMP][WPS][ESS]
-     * ssid=zuby
-     * ====
-     */
     private void setScanResults() {
         mNumScanResultsKnown = 0;
         mNumScanResultsReturned = 0;
-        String bssid = "";
-        int level = 0;
-        int freq = 0;
-        long tsf = 0;
-        String flags = "";
-        WifiSsid wifiSsid = null;
-        String scanResults;
-        String tmpResults;
-        StringBuffer scanResultsBuf = new StringBuffer();
-        int sid = 0;
 
-        while (true) {
-            tmpResults = mWifiNative.scanResults(sid);
-            if (TextUtils.isEmpty(tmpResults)) break;
-            scanResultsBuf.append(tmpResults);
-            scanResultsBuf.append("\n");
-            String[] lines = tmpResults.split("\n");
-            sid = -1;
-            for (int i = lines.length - 1; i >= 0; i--) {
-                if (lines[i].startsWith(END_STR)) {
-                    break;
-                } else if (lines[i].startsWith(ID_STR)) {
-                    try {
-                        sid = Integer.parseInt(lines[i].substring(ID_STR.length())) + 1;
-                    } catch (NumberFormatException e) {
-                        // Nothing to do
-                    }
-                    break;
-                }
-            }
-            if (sid == -1) break;
-        }
+        ArrayList<ScanDetail> scanResults = mWifiNative.getScanResults();
 
-        scanResults = scanResultsBuf.toString();
-
-        if (TextUtils.isEmpty(scanResults)) {
+        if (scanResults.isEmpty()) {
             mScanResults = new ArrayList<>();
             return;
         }
 
         mWifiConfigStore.trimANQPCache(false);
 
-        // note that all these splits and substrings keep references to the original
-        // huge string buffer while the amount we really want is generally pretty small
-        // so make copies instead (one example b/11087956 wasted 400k of heap here).
         synchronized (mScanResultCache) {
-            mScanResults = new ArrayList<>();
-            String[] lines = scanResults.split("\n");
-            final int bssidStrLen = BSSID_STR.length();
-            final int flagLen = FLAGS_STR.length();
-            String infoElements = null;
-            List<String> anqpLines = null;
+            mScanResults = scanResults;
+            mNumScanResultsReturned = mScanResults.size();
 
-            for (String line : lines) {
-                if (line.startsWith(BSSID_STR)) {
-                    bssid = new String(line.getBytes(), bssidStrLen, line.length() - bssidStrLen);
-                } else if (line.startsWith(FREQ_STR)) {
-                    try {
-                        freq = Integer.parseInt(line.substring(FREQ_STR.length()));
-                    } catch (NumberFormatException e) {
-                        freq = 0;
-                    }
-                } else if (line.startsWith(LEVEL_STR)) {
-                    try {
-                        level = Integer.parseInt(line.substring(LEVEL_STR.length()));
-                        /* some implementations avoid negative values by adding 256
-                         * so we need to adjust for that here.
-                         */
-                        if (level > 0) level -= 256;
-                    } catch (NumberFormatException e) {
-                        level = 0;
-                    }
-                } else if (line.startsWith(TSF_STR)) {
-                    try {
-                        tsf = Long.parseLong(line.substring(TSF_STR.length()));
-                    } catch (NumberFormatException e) {
-                        tsf = 0;
-                    }
-                } else if (line.startsWith(FLAGS_STR)) {
-                    flags = new String(line.getBytes(), flagLen, line.length() - flagLen);
-                } else if (line.startsWith(SSID_STR)) {
-                    wifiSsid = WifiSsid.createFromAsciiEncoded(
-                            line.substring(SSID_STR.length()));
-                } else if (line.startsWith(IE_STR)) {
-                    infoElements = line;
-                } else if (SupplicantBridge.isAnqpAttribute(line)) {
-                    if (anqpLines == null) {
-                        anqpLines = new ArrayList<>();
-                    }
-                    anqpLines.add(line);
-                } else if (line.startsWith(DELIMITER_STR) || line.startsWith(END_STR)) {
-                    if (bssid != null) {
-                        try {
-                            NetworkDetail networkDetail =
-                                    new NetworkDetail(bssid, infoElements, anqpLines, freq);
-
-                            String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
-                            if (!xssid.equals(networkDetail.getTrimmedSSID())) {
-                                logd(String.format(
-                                        "Inconsistent SSID on BSSID '%s': '%s' vs '%s': %s",
-                                        bssid, xssid, networkDetail.getSSID(), infoElements));
-                            }
-
-                            if (networkDetail.hasInterworking()) {
-                                Log.d(Utils.hs2LogTag(getClass()), "HSNwk: '" + networkDetail);
-                            }
-
-                            ScanDetail scanDetail = mScanResultCache.get(networkDetail);
-                            if (scanDetail != null) {
-                                scanDetail.updateResults(networkDetail, level, wifiSsid, xssid,
-                                        flags, freq, tsf);
-                            } else {
-                                scanDetail = new ScanDetail(networkDetail, wifiSsid, bssid,
-                                        flags, level, freq, tsf);
-                                mScanResultCache.put(networkDetail, scanDetail);
-                            }
-
-                            mNumScanResultsReturned++; // Keep track of how many scan results we got
-                            // as part of this scan's processing
-                            mScanResults.add(scanDetail);
-                        } catch (IllegalArgumentException iae) {
-                            Log.d(TAG, "Failed to parse information elements: " + iae);
-                        }
-                    }
-                    bssid = null;
-                    level = 0;
-                    freq = 0;
-                    tsf = 0;
-                    flags = "";
-                    wifiSsid = null;
-                    infoElements = null;
-                    anqpLines = null;
-                }
+            for (ScanDetail resultDetail : mScanResults) {
+                mScanResultCache.put(resultDetail.getNetworkDetail(), resultDetail);
             }
         }
 
