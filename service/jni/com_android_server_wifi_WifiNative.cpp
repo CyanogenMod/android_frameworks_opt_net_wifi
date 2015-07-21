@@ -2126,7 +2126,7 @@ static void onRssiThresholdbreached(wifi_request_id id, u8 *cur_bssid, s8 cur_rs
     JNIEnv *env = NULL;
     mVM->AttachCurrentThread(&env, NULL);
     //ALOGD("onRssiThresholdbreached called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
-    reportEvent(env, mCls, "onRssiThresholdbreached", "(IB)V", id, cur_rssi);
+    reportEvent(env, mCls, "onRssiThresholdBreached", "(IB)V", id, cur_rssi);
 }
 
 static jint android_net_wifi_start_rssi_monitoring_native(JNIEnv *env, jclass cls, jint iface,
