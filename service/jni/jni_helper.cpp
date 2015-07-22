@@ -442,6 +442,10 @@ void reportEvent(JNIEnv *env, jclass cls, const char *method, const char *signat
     }
 
     env->CallStaticVoidMethodV(cls, methodID, params);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
     va_end(params);
 }
 
@@ -459,7 +463,7 @@ jobject createObject(JNIEnv *env, const char *className)
         return NULL;
     }
     jobject obj = env->NewObject(cls, constructor);
-    if (constructor == NULL) {
+    if (obj == NULL) {
         ALOGE("Could not create new object of %s", className);
         return NULL;
     }
