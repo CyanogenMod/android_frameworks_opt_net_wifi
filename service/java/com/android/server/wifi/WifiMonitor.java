@@ -28,6 +28,7 @@ import android.net.wifi.p2p.WifiP2pProvDiscEvent;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Message;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.util.LocalLog;
 import android.util.Log;
 
@@ -38,7 +39,9 @@ import com.android.internal.util.Protocol;
 import com.android.internal.util.StateMachine;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -114,8 +117,8 @@ public class WifiMonitor {
 
     /* Hotspot 2.0 events */
     private static final String HS20_PREFIX_STR = "HS20-";
-    private static final String HS20_SUB_REM_STR = "HS20-SUBSCRIPTION-REMEDIATION";
-    private static final String HS20_DEAUTH_STR = "HS20-DEAUTH-IMMINENT-NOTICE";
+    public static final String HS20_SUB_REM_STR = "HS20-SUBSCRIPTION-REMEDIATION";
+    public static final String HS20_DEAUTH_STR = "HS20-DEAUTH-IMMINENT-NOTICE";
 
     private static final String IDENTITY_STR = "IDENTITY";
 
@@ -138,6 +141,9 @@ public class WifiMonitor {
      * <code>xx:xx:xx:xx:xx:xx</code> is the BSSID of the associated access point
      */
     private static final String CONNECTED_STR =    "CONNECTED";
+    private static final String ConnectPrefix = "Connection to ";
+    private static final String ConnectSuffix = " completed";
+
     /**
      * <pre>
      * CTRL-EVENT-DISCONNECTED - Disconnect event - remove keys
@@ -423,6 +429,7 @@ public class WifiMonitor {
     /* AP-STA-DISCONNECTED 42:fc:89:a8:96:09 */
     private static final String AP_STA_DISCONNECTED_STR = "AP-STA-DISCONNECTED";
     private static final String ANQP_DONE_STR = "ANQP-QUERY-DONE";
+    private static final String HS20_ICON_STR = "RX-HS20-ICON";
 
     /* Supplicant events reported to a state machine */
     private static final int BASE = Protocol.BASE_WIFI_MONITOR;
@@ -771,6 +778,8 @@ public class WifiMonitor {
                 +" - "+ Thread.currentThread().getStackTrace()[5].getMethodName()*/);
     }
 
+    private volatile long mLastConnectBSSID;
+
     /* @return true if the event was supplicant disconnection */
     private boolean dispatchEvent(String eventStr, String iface) {
 
@@ -805,6 +814,19 @@ public class WifiMonitor {
                 catch (IllegalArgumentException iae) {
                     Log.e(TAG, "Bad ANQP event string: '" + eventStr + "': " + iae);
                 }
+            } else if (eventStr.startsWith(HS20_ICON_STR)) {
+                try {
+                    handleIconResult(eventStr);
+                }
+                catch (IllegalArgumentException iae) {
+                    Log.e(TAG, "Bad Icon event string: '" + eventStr + "': " + iae);
+                }
+            }
+            else if (eventStr.startsWith(HS20_SUB_REM_STR)) {
+                // Tack on the last connected BSSID so we have some idea what AP the WNM pertains to
+                handleWnmRemediationFrame(String.format("%012x %s", mLastConnectBSSID, eventStr));
+            } else if (eventStr.startsWith(HS20_DEAUTH_STR)) {
+                handleWnmDeauthFrame(String.format("%012x %s", mLastConnectBSSID, eventStr));
             } else if (eventStr.startsWith(REQUEST_PREFIX_STR)) {
                 handleRequests(eventStr);
             } else if (eventStr.startsWith(TARGET_BSSID_STR)) {
@@ -834,8 +856,26 @@ public class WifiMonitor {
         * Map event name into event enum
         */
         int event;
-        if (eventName.equals(CONNECTED_STR))
+        if (eventName.equals(CONNECTED_STR)) {
             event = CONNECTED;
+            long bssid = -1L;
+            int prefix = eventStr.indexOf(ConnectPrefix);
+            if (prefix >= 0) {
+                int suffix = eventStr.indexOf(ConnectSuffix);
+                if (suffix > prefix) {
+                    try {
+                        bssid = Utils.parseMac(
+                                eventStr.substring(prefix + ConnectPrefix.length(), suffix));
+                    } catch (IllegalArgumentException iae) {
+                        bssid = -1L;
+                    }
+                }
+            }
+            mLastConnectBSSID = bssid;
+            if (bssid == -1L) {
+                Log.w(TAG, "Failed to parse out BSSID from '" + eventStr + "'");
+            }
+        }
         else if (eventName.equals(DISCONNECTED_STR))
             event = DISCONNECTED;
         else if (eventName.equals(STATE_CHANGE_STR))
@@ -1214,6 +1254,70 @@ public class WifiMonitor {
         catch (IllegalArgumentException iae) {
             Log.e(TAG, "Bad MAC address in ANQP response: " + iae.getMessage());
         }
+    }
+
+    private final Map<String, String[]> mIconFragmentMap = new LinkedHashMap<String, String[]>() {
+        @Override
+        protected boolean removeEldestEntry(Entry eldest) {
+            return size() > 3;
+        }
+    };
+
+    private void handleIconResult(String eventStr) {
+        // RX-HS20-ICON c0:c5:20:27:d1:e8 9 10 OMJjkpWlDpC+UC...
+        String[] segments = eventStr.split(" ");
+        if (segments.length != 5) {
+            throw new IllegalArgumentException("Incorrect number of segments");
+        }
+        try {
+            String bssid = segments[1];
+            int fragmentIndex = Integer.parseInt(segments[2]);
+            int fragmentEnd = Integer.parseInt(segments[3]);
+
+            String[] fragments = mIconFragmentMap.get(bssid);
+            if (fragments == null) {
+                fragments = new String[fragmentEnd+1];
+                mIconFragmentMap.put(bssid, fragments);
+            }
+            if (fragmentEnd >= fragments.length) {
+                fragments = new String[fragmentEnd+1];
+                mIconFragmentMap.put(bssid, fragments);
+                Log.w(TAG, String.format("Icon fragment %d out of %d exceeds %d",
+                        fragmentIndex, fragmentEnd, fragments.length));
+            }
+            fragments[fragmentIndex] = segments[4];
+
+            boolean incomplete = false;
+            for (String fragment : fragments) {
+                if (fragment == null) {
+                    incomplete = true;
+                    break;
+                }
+            }
+            if (!incomplete) {
+                StringBuilder b64 = new StringBuilder();
+                for (String fragment : fragments) {
+                    b64.append(fragment);
+                }
+                mIconFragmentMap.remove(bssid);
+                long mac = Utils.parseMac(bssid);
+                byte[] octets = Base64.decode(b64.toString(), Base64.DEFAULT);
+                mStateMachine.sendMessage(
+                        RX_HS20_ANQP_ICON_EVENT, (int)(mac >>> 32), (int)mac, octets);
+            }
+        }
+        catch (NumberFormatException nfe) {
+            throw new IllegalArgumentException("Bad numeral");
+        }
+    }
+
+    private void handleWnmRemediationFrame(String eventStr) {
+        Log.d("ZXZ", "WNM frame: " + eventStr);
+        mStateMachine.sendMessage(HS20_REMEDIATION_EVENT, eventStr);
+    }
+
+    private void handleWnmDeauthFrame(String eventStr) {
+        mStateMachine.sendMessage(HS20_DEAUTH_EVENT, eventStr);
     }
 
     /**

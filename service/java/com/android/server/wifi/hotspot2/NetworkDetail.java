@@ -15,8 +15,10 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static com.android.server.wifi.anqp.Constants.BYTES_IN_EUI48;
 import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
@@ -170,14 +172,11 @@ public class NetworkDetail {
                 int eid = data.get() & Constants.BYTE_MASK;
                 int elementLength = data.get() & Constants.BYTE_MASK;
 
-                if (elementLength > data.remaining()) {
-                    throw new IllegalArgumentException("Element length " + elementLength +
-                            " exceeds payload length " + data.remaining() +
-                            " @ " + data.position());
-                }
-                if (eid == 0 && elementLength == 0 && ssidOctets != null) {
-                    // Don't overwrite SSID (eid 0) with trailing zero garbage
-                    continue;
+                if (elementLength > data.remaining() || (eid == EID_SSID && ssidOctets != null)) {
+                    // Experience shows that many IE strings contain trailing garbage.
+                    // Avoid overwriting existing elements and quietly drop out when things look
+                    // bad.
+                    break;
                 }
 
                 ByteBuffer element;
@@ -439,21 +438,10 @@ public class NetworkDetail {
         return new NetworkDetail(this, anqpElements);
     }
 
-    private static long parseMac(String s) {
-
-        long mac = 0;
-        int count = 0;
-        for (int n = 0; n < s.length(); n++) {
-            int nibble = Utils.fromHex(s.charAt(n), true);
-            if (nibble >= 0) {
-                mac = (mac << 4) | nibble;
-                count++;
-            }
-        }
-        if (count < 12 || (count&1) == 1) {
-            throw new IllegalArgumentException("Bad MAC address: '" + s + "'");
-        }
-        return mac;
+    public boolean queriable(List<Constants.ANQPElementType> queryElements) {
+        return mAnt != null &&
+                (Constants.hasBaseANQPElements(queryElements) ||
+                 Constants.hasR2Elements(queryElements) && mHSRelease == HSRelease.R2);
     }
 
     public boolean has80211uInfo() {
@@ -582,10 +570,10 @@ public class NetworkDetail {
 
     @Override
     public String toString() {
-        return String.format("NetworkInfo{mSSID='%s', mHESSID=%x, mBSSID=%x, mStationCount=%d, " +
-                "mChannelUtilization=%d, mCapacity=%d, mAnt=%s, mInternet=%s, " +
-                "mVenueGroup=%s, mVenueType=%s, mHSRelease=%s, mAnqpDomainID=%d, " +
-                "mAnqpOICount=%d, mRoamingConsortiums=%s}",
+        return String.format("NetworkInfo{SSID='%s', HESSID=%x, BSSID=%x, StationCount=%d, " +
+                "ChannelUtilization=%d, Capacity=%d, Ant=%s, Internet=%s, " +
+                "VenueGroup=%s, VenueType=%s, HSRelease=%s, AnqpDomainID=%d, " +
+                "AnqpOICount=%d, RoamingConsortiums=%s}",
                 mSSID, mHESSID, mBSSID, mStationCount,
                 mChannelUtilization, mCapacity, mAnt, mInternet,
                 mVenueGroup, mVenueType, mHSRelease, mAnqpDomainID,

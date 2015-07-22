@@ -37,6 +37,7 @@ import android.net.Uri;
 import android.net.wifi.BatchedScanResult;
 import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.IWifiManager;
+import android.net.wifi.ScanInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
 import android.net.wifi.WifiActivityEnergyInfo;
@@ -94,7 +95,25 @@ import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.android.internal.R;
+import com.android.internal.app.IBatteryStats;
+import com.android.internal.telephony.TelephonyIntents;
+import com.android.internal.util.AsyncChannel;
+import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.configparse.ConfigBuilder;
+import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.osu.OSUInfo;
+
+import org.xml.sax.SAXException;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -832,6 +851,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
             WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
+            /* !!! Killed cert verification for testing.
             if (config.isPasspoint() &&
                     (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
                 enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
@@ -849,6 +869,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     return -1;
                 }
             }
+            */
 
             //TODO: pass the Uid the WifiStateMachine as a message parameter
             Slog.i("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
@@ -988,6 +1009,93 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
+    }
+
+    private static final long BSSIDNeighborDistance = 16;
+
+    /**
+     * An augmented version of getScanResults that returns ScanResults as well as OSU information
+     * wrapped in ScanInfo objects.
+     * @param callingPackage
+     * @return
+     */
+    public List<ScanInfo> getScanInfos(String callingPackage) {
+        List<ScanResult> scanResults = getScanResults(callingPackage);
+        Collection<OSUInfo> osuInfos = mWifiStateMachine.getOSUInfos();
+        Map<Long, Integer> rssiMap = new HashMap<>();
+
+        Map<String, List<ScanResult>> ssidMap = new HashMap<>();
+        for (ScanResult scanResult : scanResults) {
+            List<ScanResult> scanResultSet = ssidMap.get(scanResult.SSID);
+            if (scanResultSet == null) {
+                scanResultSet = new ArrayList<>();
+                ssidMap.put(scanResult.SSID, scanResultSet);
+            }
+            scanResultSet.add(scanResult);
+            rssiMap.put(Utils.parseMac(scanResult.BSSID), scanResult.level);
+        }
+
+        Map<String, List<OSUInfo>> osuSsids = new HashMap<>();
+        for (OSUInfo osuInfo : osuInfos) {
+            List<OSUInfo> osuSet = osuSsids.get(osuInfo.getSSID());
+            if (osuSet == null) {
+                osuSet = new ArrayList<>();
+                osuSsids.put(osuInfo.getSSID(), osuSet);
+            }
+            osuSet.add(osuInfo);
+        }
+
+        List<ScanInfo> scanInfos = new ArrayList<>();
+        for (Map.Entry<String, List<ScanResult>> entry : ssidMap.entrySet()) {
+            List<ScanResult> scanResultSet = entry.getValue();
+            List<OSUInfo> osuSet = osuSsids.get(entry.getKey());
+            if (osuSet != null) {
+                if (scanResultSet.size() > 1) {
+                    // If there are multiple scan results with the same matching OSU SSID, only drop
+                    // the ones that have adjacent BSSIDs to some OSU (assuming OSU SSIDs lives on
+                    // the same AP as the one advertising the OSU.
+                    for (ScanResult scanResult : scanResultSet) {
+                        boolean sameAP = false;
+                        for (OSUInfo osuInfo : osuSet) {
+                            if (Math.abs(Utils.parseMac(scanResult.BSSID) - osuInfo.getBSSID()) <
+                                    BSSIDNeighborDistance) {
+                                sameAP = true;
+                                break;
+                            }
+                        }
+                        if (!sameAP) {
+                            scanInfos.add(new ScanInfo(scanResult));
+                        }
+                    }
+                }
+                // Else simply don't add the scan result
+            }
+            else {
+                // No OSU match, retain the scan result
+                for (ScanResult scanResult : scanResultSet) {
+                    scanInfos.add(new ScanInfo(scanResult));
+                }
+            }
+        }
+
+        for (OSUInfo osuInfo : osuInfos) {
+            Integer rssi = rssiMap.get(osuInfo.getBSSID());
+            scanInfos.add(new ScanInfo(
+                    osuInfo.getBSSID(),
+                    rssi != null ? rssi : -40,
+                    osuInfo.getSSID(),
+                    osuInfo.getName(null),
+                    osuInfo.getServiceDescription(null),
+                    osuInfo.getIconFileElement().getType(),
+                    osuInfo.getIconFileElement().getIconData(),
+                    osuInfo.getOsuID()));
+        }
+
+        return scanInfos;
+    }
+
+    public void setOsuSelection(int osuID) {
+        mWifiStateMachine.setOSUSelection(osuID);
     }
 
     private boolean isLocationEnabled() {

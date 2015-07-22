@@ -276,6 +276,7 @@ public class WifiAutoJoinController {
                 result.isAutoJoinCandidate = 0;
             }
         }
+        mWifiConfigStore.notifyScanComplete();
 
         if (unknownScanResults.size() != 0) {
             NetworkKey[] newKeys =

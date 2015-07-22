@@ -1,5 +1,6 @@
 package com.android.server.wifi.anqp;
 
+import java.io.IOException;
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -12,8 +13,7 @@ import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
  * "Wi-Fi Alliance Hotspot 2.0 (Release 2) Technical Specification - Version 5.00"
  */
 public class I18Name {
-    private static final int LANG_CODE_LENGTH = 3;
-
+    private final String mLanguage;
     private final Locale mLocale;
     private final String mText;
 
@@ -25,9 +25,24 @@ public class I18Name {
         if (nameLength < 3) {
             throw new ProtocolException("Runt I18Name: " + nameLength);
         }
-        String language = Constants.getString(payload, LANG_CODE_LENGTH, StandardCharsets.US_ASCII);
-        mLocale = Locale.forLanguageTag(language);
-        mText = Constants.getString(payload, nameLength - LANG_CODE_LENGTH, StandardCharsets.UTF_8);
+        mLanguage = Constants.getTrimmedString(payload,
+                Constants.LANG_CODE_LENGTH, StandardCharsets.US_ASCII);
+        mLocale = Locale.forLanguageTag(mLanguage);
+        mText = Constants.getString(payload, nameLength -
+                Constants.LANG_CODE_LENGTH, StandardCharsets.UTF_8);
+    }
+
+    public I18Name(String compoundString) throws IOException {
+        if (compoundString.length() < 3) {
+            throw new IOException("I18String too short: '" + compoundString + "'");
+        }
+        mLanguage = compoundString.substring(0, 3);
+        mText = compoundString.substring(4);
+        mLocale = Locale.forLanguageTag(mLanguage);
+    }
+
+    public String getLanguage() {
+        return mLanguage;
     }
 
     public Locale getLocale() {
@@ -36,6 +51,26 @@ public class I18Name {
 
     public String getText() {
         return mText;
+    }
+
+    @Override
+    public boolean equals(Object thatObject) {
+        if (this == thatObject) {
+            return true;
+        }
+        if (thatObject == null || getClass() != thatObject.getClass()) {
+            return false;
+        }
+
+        I18Name that = (I18Name) thatObject;
+        return mLanguage.equals(that.mLanguage) && mText.equals(that.mText);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = mLanguage.hashCode();
+        result = 31 * result + mText.hashCode();
+        return result;
     }
 
     @Override

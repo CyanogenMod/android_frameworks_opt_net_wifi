@@ -115,6 +115,7 @@ import com.android.server.net.NetlinkTracker;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.osu.OSUInfo;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
 import java.io.BufferedReader;
@@ -128,6 +129,7 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -419,7 +421,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     // NOTE: Do not return to clients - use #getWiFiInfoForUid(int)
     private WifiInfo mWifiInfo;
     private NetworkInfo mNetworkInfo;
-    private NetworkCapabilities mNetworkCapabilities;
+    private final NetworkCapabilities mDfltNetworkCapabilities;
     private SupplicantStateTracker mSupplicantStateTracker;
     private BaseDhcpStateMachine mDhcpStateMachine;
     private boolean mDhcpActive = false;
@@ -1189,7 +1191,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mNetworkCapabilitiesFilter.setLinkUpstreamBandwidthKbps(1024 * 1024);
         mNetworkCapabilitiesFilter.setLinkDownstreamBandwidthKbps(1024 * 1024);
         // TODO - needs to be a bit more dynamic
-        mNetworkCapabilities = new NetworkCapabilities(mNetworkCapabilitiesFilter);
+        mDfltNetworkCapabilities = new NetworkCapabilities(mNetworkCapabilitiesFilter);
 
         mContext.registerReceiver(
                 new BroadcastReceiver() {
@@ -2106,6 +2108,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         return getWiFiInfoForUid(Binder.getCallingUid());
     }
 
+    public WifiInfo getWifiInfo() {
+        return mWifiInfo;
+    }
+
     public DhcpResults syncGetDhcpResults() {
         synchronized (mDhcpResultsLock) {
             return new DhcpResults(mDhcpResults);
@@ -2142,6 +2148,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
             return scanList;
         }
+    }
+
+    public Collection<OSUInfo> getOSUInfos() {
+        return mWifiConfigStore.getOSUInfos();
+    }
+
+    public void setOSUSelection(int osuID) {
+        mWifiConfigStore.setOSUSelection(osuID);
     }
 
     public void disableEphemeralNetwork(String SSID) {
@@ -6421,6 +6435,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 }
+                case WifiMonitor.RX_HS20_ANQP_ICON_EVENT:
+                    mWifiConfigStore.notifyIconReceived(
+                            (long)message.arg1 << 32 | (long)message.arg2, (byte[])message.obj);
+                    break;
+                case WifiMonitor.HS20_REMEDIATION_EVENT:
+                    mWifiConfigStore.wnmFrameReceived((String)message.obj);
+                    break;
+                case WifiMonitor.HS20_DEAUTH_EVENT:
+                    mWifiConfigStore.wnmFrameReceived((String)message.obj);
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -6852,11 +6876,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             case WifiMonitor.ANQP_DONE_EVENT:
                 s = "WifiMonitor.ANQP_DONE_EVENT";
                 break;
+            case WifiMonitor.RX_HS20_ANQP_ICON_EVENT:
+                s = "WifiMonitor.RX_HS20_ANQP_ICON_EVENT";
+                break;
             case WifiMonitor.GAS_QUERY_DONE_EVENT:
                 s = "WifiMonitor.GAS_QUERY_DONE_EVENT";
                 break;
             case WifiMonitor.HS20_DEAUTH_EVENT:
                 s = "WifiMonitor.HS20_DEAUTH_EVENT";
+                break;
+            case WifiMonitor.HS20_REMEDIATION_EVENT:
+                s = "WifiMonitor.HS20_REMEDIATION_EVENT";
                 break;
             case WifiMonitor.GAS_QUERY_START_EVENT:
                 s = "WifiMonitor.GAS_QUERY_START_EVENT";
@@ -7885,16 +7915,22 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private void updateCapabilities(WifiConfiguration config) {
+        NetworkCapabilities networkCapabilities = new NetworkCapabilities(mDfltNetworkCapabilities);
         if (config.ephemeral) {
-            mNetworkCapabilities.removeCapability(
+            networkCapabilities.removeCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED);
         } else {
-            mNetworkCapabilities.addCapability(
+            networkCapabilities.addCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED);
         }
-        mNetworkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
+        networkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
                 mWifiInfo.getRssi() : NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED);
-        mNetworkAgent.sendNetworkCapabilities(mNetworkCapabilities);
+        if (mWifiConfigStore.isOSUNetwork(config)) {
+            Log.d(TAG, "Removing internet cap from " + config.SSID);
+            //networkCapabilities.removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+            networkCapabilities.addCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL);
+        }
+        mNetworkAgent.sendNetworkCapabilities(networkCapabilities);
     }
 
     private class WifiNetworkAgent extends NetworkAgent {
