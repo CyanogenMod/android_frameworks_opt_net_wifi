@@ -1592,11 +1592,11 @@ public class WifiNative {
     }
 
     public static class ScanCapabilities {
-        public int  max_scan_cache_size;                 // in number of scan results??
+        public int  max_scan_cache_size;
         public int  max_scan_buckets;
         public int  max_ap_cache_per_scan;
         public int  max_rssi_sample_size;
-        public int  max_scan_reporting_threshold;        // in number of scan results??
+        public int  max_scan_reporting_threshold;
         public int  max_hotlist_bssids;
         public int  max_significant_wifi_change_aps;
     }
