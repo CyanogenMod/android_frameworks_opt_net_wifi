@@ -86,7 +86,7 @@ public class SupplicantBridge {
             mRequestMap.put(scanDetail.getNetworkDetail().getBSSID(), scanDetail);
         }
         String result = mSupplicantHook.doCustomCommand(anqpGet);
-        if (result.startsWith("OK")) {
+        if (result != null && result.startsWith("OK")) {
             Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail);
         }
         else {
