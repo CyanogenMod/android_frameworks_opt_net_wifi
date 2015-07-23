@@ -1920,6 +1920,15 @@ public class WifiNative {
         }
     }
 
+    public boolean disable5GHzFrequencies(boolean disable) {
+       if (disable) {
+           return doBooleanCommand("P2P_SET disallow_freq 2485-6000");
+       } else {
+          //Empty set means,it will enable all frequences
+          return doBooleanCommand("P2P_SET disallow_freq \"\"");
+       }
+    }
+
     private static native boolean setDfsFlagNative(int iface, boolean dfsOn);
     synchronized public static boolean setDfsFlag(boolean dfsOn) {
         synchronized (mLock) {
