@@ -196,7 +196,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private INetworkManagementService mNwService;
     private ConnectivityManager mCm;
     private WifiLogger mWifiLogger;
-
+    private WifiApConfigStore mWifiApConfigStore;
     private final boolean mP2pSupported;
     private final AtomicBoolean mP2pConnected = new AtomicBoolean(false);
     private boolean mTemporarilyDisconnectWifi = false;
@@ -5182,8 +5182,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         int[] channel;
 
         if (apBand == 0)  {
-            //for 2.4GHz, we only set the AP at channel 1,6,11
-            apChannel = 5 * mRandom.nextInt(3) + 1;
+            if (mWifiApConfigStore.allowed2GChannel == null ||
+                    mWifiApConfigStore.allowed2GChannel.size() == 0) {
+                //most safe channel to use
+                if(DBG) {
+                    Log.d(TAG, "No specified 2G allowed channel list");
+                }
+                apChannel = 6;
+            } else {
+                int index = mRandom.nextInt(mWifiApConfigStore.allowed2GChannel.size());
+                apChannel = mWifiApConfigStore.allowed2GChannel.get(index).intValue();
+            }
         } else {
             //5G without DFS
             channel = mWifiNative.getChannelsForBand(2);
@@ -5698,11 +5707,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             if (mWifiApConfigChannel == null) {
                 mWifiApConfigChannel = new AsyncChannel();
-                WifiApConfigStore wifiApConfigStore = WifiApConfigStore.makeWifiApConfigStore(
+                mWifiApConfigStore = WifiApConfigStore.makeWifiApConfigStore(
                         mContext, getHandler());
-                wifiApConfigStore.loadApConfiguration();
+                mWifiApConfigStore.loadApConfiguration();
                 mWifiApConfigChannel.connectSync(mContext, getHandler(),
-                        wifiApConfigStore.getMessenger());
+                        mWifiApConfigStore.getMessenger());
             }
 
             if (mWifiConfigStore.enableHalBasedPno.get()) {
