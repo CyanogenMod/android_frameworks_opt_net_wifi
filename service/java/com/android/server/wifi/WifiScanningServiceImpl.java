@@ -32,7 +32,6 @@ import android.net.wifi.WifiScanner.BssidInfo;
 import android.net.wifi.WifiScanner.ChannelSpec;
 import android.net.wifi.WifiScanner.ScanData;
 import android.net.wifi.WifiScanner.ScanSettings;
-import android.net.wifi.WifiSsid;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
@@ -49,9 +48,10 @@ import android.util.Log;
 import com.android.internal.app.IBatteryStats;
 import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
-import com.android.internal.util.StateMachine;
 import com.android.internal.util.State;
+import com.android.internal.util.StateMachine;
 import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.WifiScannerImpl;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -87,6 +87,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         Log.e(TAG, message);
         mLocalLog.log(message);
     }
+
+    private WifiScannerImpl mScannerImpl;
 
     @Override
     public Messenger getMessenger() {
@@ -215,6 +217,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     private final WifiNative mWifiNative;
     private final Context mContext;
+    private HandlerThread mHandlerThread;
     private WifiScanningStateMachine mStateMachine;
     private ClientHandler mClientHandler;
     private IBatteryStats mBatteryStats;
@@ -227,12 +230,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     public void startService() {
-        HandlerThread thread = new HandlerThread("WifiScanningService");
-        thread.start();
+        mHandlerThread = new HandlerThread("WifiScanningService");
+        mHandlerThread.start();
 
-        mClientHandler = new ClientHandler(thread.getLooper());
-        mStateMachine = new WifiScanningStateMachine(thread.getLooper());
-        mWifiChangeStateMachine = new WifiChangeStateMachine(thread.getLooper());
+        mClientHandler = new ClientHandler(mHandlerThread.getLooper());
+        mStateMachine = new WifiScanningStateMachine(mHandlerThread.getLooper());
+        mWifiChangeStateMachine = new WifiChangeStateMachine(mHandlerThread.getLooper());
         mBatteryStats = BatteryStatsService.getService();
 
         mContext.registerReceiver(
@@ -336,14 +339,18 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
                 switch (msg.what) {
                     case CMD_DRIVER_LOADED:
-                        if (mWifiNative.getInterfaces() != 0) {
-                            if (mWifiNative.getScanCapabilities(mScanCapabilities)) {
+                        if (mScannerImpl == null) {
+                            mScannerImpl =
+                                    WifiScannerImpl.create(mContext, mHandlerThread.getLooper());
+                        }
+                        if (mScannerImpl != null) {
+                            if (mScannerImpl.getScanCapabilities(mScanCapabilities)) {
                                 transitionTo(mStartedState);
                             } else {
                                 loge("could not get scan capabilities");
                             }
                         } else {
-                            loge("could not start HAL");
+                            loge("could not create wifi scanner");
                         }
                         break;
                     case WifiScanner.CMD_SCAN:
@@ -443,7 +450,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         configureWifiChange((WifiScanner.WifiChangeSettings) msg.obj);
                         break;
                     case CMD_SCAN_RESULTS_AVAILABLE: {
-                            ScanData[] results = mWifiNative.getScanResults(/* flush = */ true);
+                            ScanData[] results = mScannerImpl.getLatestBatchedScanResults(/* flush = */ true);
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportScanResults(results);
@@ -762,7 +769,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     if (channelSpec.frequency == result.frequency) {
                         ScanResult newResult = new ScanResult(result);
                         if (DBG) localLog("sending it to " + handler);
-                        newResult.informationElements = result.informationElements.clone();
+                        if (result.informationElements != null) {
+                            newResult.informationElements = result.informationElements.clone();
+                        }
+                        else {
+                            newResult.informationElements = null;
+                        }
                         mChannel.sendMessage(
                                 WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, newResult);
                     }
@@ -1188,10 +1200,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         WifiNative.ScanSettings s = c.getComputedSettings();
         if (s.num_buckets == 0) {
             if (DBG) localLog("Stopping scan because there are no buckets");
-            mWifiNative.stopScan();
+            mScannerImpl.stopBatchedScan();
             return true;
         } else {
-            if (mWifiNative.startScan(s, mStateMachine)) {
+            if (mScannerImpl.startBatchedScan(s, mStateMachine)) {
                 localLog("Successfully started scan of " + s.num_buckets + " buckets at"
                         + "time = " + SystemClock.elapsedRealtimeNanos() / 1000 + " period "
                         + s.base_period_ms);
@@ -1297,7 +1309,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     boolean reportScanResults() {
-        ScanData results[] = mWifiNative.getScanResults(/* flush = */ true);
+        ScanData results[] = mScannerImpl.getLatestBatchedScanResults(/* flush = */ true);
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci2 : clients) {
             ci2.reportScanResults(results);
@@ -1318,9 +1330,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         if (num_hotlist_ap == 0) {
-            mWifiNative.resetHotlist();
+            mScannerImpl.resetHotlist();
         } else {
             BssidInfo bssidInfos[] = new BssidInfo[num_hotlist_ap];
+            int apLostThreshold = Integer.MAX_VALUE;
             int index = 0;
             for (ClientInfo ci : clients) {
                 Collection<WifiScanner.HotlistSettings> settings = ci.getHotlistSettings();
@@ -1328,13 +1341,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     for (int i = 0; i < s.bssidInfos.length; i++, index++) {
                         bssidInfos[index] = s.bssidInfos[i];
                     }
+                    if (s.apLostThreshold < apLostThreshold) {
+                        apLostThreshold = s.apLostThreshold;
+                    }
                 }
             }
 
             WifiScanner.HotlistSettings settings = new WifiScanner.HotlistSettings();
             settings.bssidInfos = bssidInfos;
-            settings.apLostThreshold = 3;
-            mWifiNative.setHotlist(settings, mStateMachine);
+            settings.apLostThreshold = apLostThreshold;
+            mScannerImpl.setHotlist(settings, mStateMachine);
         }
     }
 

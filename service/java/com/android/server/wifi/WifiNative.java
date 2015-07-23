@@ -55,6 +55,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Native calls for bring up/shut down of the supplicant daemon and for
@@ -315,7 +316,27 @@ public class WifiNative {
     public static final int SCAN_WITHOUT_CONNECTION_SETUP          = 1;
     public static final int SCAN_WITH_CONNECTION_SETUP             = 2;
 
-    public boolean scan(int type, String freqList) {
+    public boolean scan(int type, Set<Integer> freqs) {
+        if(freqs == null) {
+            return scan(type, (String)null);
+        }
+        else if (freqs.size() != 0) {
+            StringBuilder freqList = new StringBuilder();
+            boolean first = true;
+            for (Integer freq : freqs) {
+                if (!first)
+                    freqList.append(",");
+                freqList.append(freq.toString());
+                first = false;
+            }
+            return scan(type, freqList.toString());
+        }
+        else {
+            return false;
+        }
+    }
+
+    private boolean scan(int type, String freqList) {
         if (type == SCAN_WITHOUT_CONNECTION_SETUP) {
             if (freqList == null) return doBooleanCommand("SCAN TYPE=ONLY");
             else return doBooleanCommand("SCAN TYPE=ONLY freq=" + freqList);
@@ -595,9 +616,10 @@ public class WifiNative {
                             if (networkDetail.hasInterworking()) {
                                 Log.d(TAG, "HSNwk: '" + networkDetail);
                             }
-
-                            results.add(new ScanDetail(networkDetail, wifiSsid, bssid,
-                                     flags, level, freq, tsf));
+                            ScanDetail scan = new ScanDetail(networkDetail, wifiSsid, bssid, flags,
+                                    level, freq, tsf);
+                            scan.getScanResult().informationElements = infoElements;
+                            results.add(scan);
                         } catch (IllegalArgumentException iae) {
                             Log.d(TAG, "Failed to parse information elements: " + iae);
                         }

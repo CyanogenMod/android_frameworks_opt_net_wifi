@@ -136,6 +136,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
@@ -1720,7 +1721,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     // Last connect attempt is used to prevent scan requests:
     //  - for a period of 10 seconds after attempting to connect
     private long lastConnectAttemptTimestamp = 0;
-    private String lastScanFreqs = null;
+    private Set<Integer> lastScanFreqs = null;
 
     // For debugging, keep track of last message status handling
     // TODO, find an equivalent mechanism as part of parent class
@@ -1949,17 +1950,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             workSource = bundle.getParcelable(CUSTOMIZED_SCAN_WORKSOURCE);
         }
 
-        // parse scan settings
-        String freqs = null;
+        Set<Integer> freqs = null;
         if (settings != null && settings.channelSet != null) {
-            StringBuilder sb = new StringBuilder();
-            boolean first = true;
+            freqs = new HashSet<Integer>();
             for (WifiChannel channel : settings.channelSet) {
-                if (!first) sb.append(',');
-                else first = false;
-                sb.append(channel.freqMHz);
+                freqs.add(channel.freqMHz);
             }
-            freqs = sb.toString();
         }
 
         // call wifi native to start the scan
@@ -2017,7 +2013,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     /**
      * return true iff scan request is accepted
      */
-    private boolean startScanNative(int type, String freqs) {
+    private boolean startScanNative(int type, Set<Integer> freqs) {
         if (mWifiNative.scan(type, freqs)) {
             mIsScanOngoing = true;
             mIsFullScanOngoing = (freqs == null);
@@ -2759,7 +2755,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sb.append(String.format(" %.1f ", mWifiInfo.txBadRate));
                 sb.append(String.format(" rx=%.1f", mWifiInfo.rxSuccessRate));
                 if (lastScanFreqs != null) {
-                    sb.append(" list=").append(lastScanFreqs);
+                    sb.append(" list=");
+                    for(int freq : lastScanFreqs) {
+                        sb.append(freq).append(",");
+                    }
                 } else {
                     sb.append(" fiv=").append(fullBandConnectedTimeIntervalMilli);
                 }
@@ -7946,24 +7945,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             //return true but to not trigger the scan
             return true;
         }
-        HashSet<Integer> channels = mWifiConfigStore.makeChannelList(config,
+        HashSet<Integer> freqs = mWifiConfigStore.makeChannelList(config,
                 ONE_HOUR_MILLI, restrictChannelList);
-        if (channels != null && channels.size() != 0) {
-            StringBuilder freqs = new StringBuilder();
-            boolean first = true;
-            for (Integer channel : channels) {
-                if (!first)
-                    freqs.append(",");
-                freqs.append(channel.toString());
-                first = false;
-            }
+        if (freqs != null && freqs.size() != 0) {
             //if (DBG) {
             logd("starting scan for " + config.configKey() + " with " + freqs);
             //}
             // Call wifi native to start the scan
             if (startScanNative(
-                    WifiNative.SCAN_WITHOUT_CONNECTION_SETUP,
-                    freqs.toString())) {
+                    WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs)) {
                 // Only count battery consumption if scan request is accepted
                 noteScanStart(SCAN_ALARM_SOURCE, null);
                 messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
