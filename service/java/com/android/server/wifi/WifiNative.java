@@ -1404,19 +1404,18 @@ public class WifiNative {
         int num = 0;
         if (bytes == null) return;
         if (dbg == null) dbg = "";
-        for (int i = 0; i < bytes.length; ) {
+        for (int i = 0; i < bytes.length - 1; ) {
             int type  = bytes[i] & 0xFF;
             int len = bytes[i + 1] & 0xFF;
-
             if (i + len + 2 > bytes.length) {
                 Log.w(TAG, dbg + "bad length " + len + " of IE " + type + " from " + result.BSSID);
                 Log.w(TAG, dbg + "ignoring the rest of the IEs");
                 break;
             }
             num++;
-            i += len + 2;
             if (DBG) Log.i(TAG, dbg + "bytes[" + i + "] = [" + type + ", " + len + "]" + ", " +
-                    "next = " + i);
+                    "next = " + (i + len + 2));
+            i += len + 2;
         }
 
         int secondChanelOffset = 0;
@@ -2133,6 +2132,7 @@ public class WifiNative {
                     (buffer == null ? 0 :  buffer.length));
         }
     }
+
     private static native boolean getFwMemoryDumpNative(int iface);
     synchronized public static byte[] getFwMemoryDump() {
         synchronized (mLock) {
