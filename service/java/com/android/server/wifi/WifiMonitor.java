@@ -515,7 +515,6 @@ public class WifiMonitor {
     private final String mInterfaceName;
     private final WifiNative mWifiNative;
     private final StateMachine mStateMachine;
-    private StateMachine mStateMachine2;
     private boolean mMonitoring;
 
     // This is a global counter, since it's not monitor specific. However, the existing
@@ -535,7 +534,6 @@ public class WifiMonitor {
         mWifiNative = wifiNative;
         mInterfaceName = wifiNative.mInterfaceName;
         mStateMachine = stateMachine;
-        mStateMachine2 = null;
         mMonitoring = false;
 
         WifiMonitorSingleton.sInstance.registerInterfaceMonitor(mInterfaceName, this);
@@ -547,11 +545,6 @@ public class WifiMonitor {
         } else {
             DBG = false;
         }
-    }
-
-        // TODO: temporary hack, should be handle by supplicant manager (new component in future)
-    public void setStateMachine2(StateMachine stateMachine) {
-        mStateMachine2 = stateMachine;
     }
 
     public void startMonitoring() {
@@ -812,14 +805,6 @@ public class WifiMonitor {
                 catch (IllegalArgumentException iae) {
                     Log.e(TAG, "Bad ANQP event string: '" + eventStr + "': " + iae);
                 }
-            } else if (eventStr.startsWith(GAS_QUERY_PREFIX_STR)) {        // !!! clean >>End
-                handleGasQueryEvents(eventStr);
-            } else if (eventStr.startsWith(RX_HS20_ANQP_ICON_STR)) {
-                if (mStateMachine2 != null)
-                    mStateMachine2.sendMessage(RX_HS20_ANQP_ICON_EVENT,
-                            eventStr.substring(RX_HS20_ANQP_ICON_STR_LEN + 1));
-            } else if (eventStr.startsWith(HS20_PREFIX_STR)) {                  // !!! <<End
-                handleHs20Events(eventStr);
             } else if (eventStr.startsWith(REQUEST_PREFIX_STR)) {
                 handleRequests(eventStr);
             } else if (eventStr.startsWith(TARGET_BSSID_STR)) {
@@ -1228,70 +1213,6 @@ public class WifiMonitor {
         }
         catch (IllegalArgumentException iae) {
             Log.e(TAG, "Bad MAC address in ANQP response: " + iae.getMessage());
-        }
-    }
-
-    /**
-     * Handle ANQP events
-     */
-    private void handleGasQueryEvents(String dataString) {
-        // hs20
-        if (mStateMachine2 == null) return;
-        if (dataString.startsWith(GAS_QUERY_START_STR)) {
-            mStateMachine2.sendMessage(GAS_QUERY_START_EVENT);
-        } else if (dataString.startsWith(GAS_QUERY_DONE_STR)) {
-            String[] dataTokens = dataString.split(" ");
-            String bssid = null;
-            int success = 0;
-            for (String token : dataTokens) {
-                String[] nameValue = token.split("=");
-                if (nameValue.length != 2) {
-                    continue;
-                }
-                if (nameValue[0].equals("addr")) {
-                    bssid = nameValue[1];
-                    continue;
-                }
-                if (nameValue[0].equals("result"))  {
-                    success = nameValue[1].equals("SUCCESS") ? 1 : 0;
-                    continue;
-                }
-            }
-            mStateMachine2.sendMessage(GAS_QUERY_DONE_EVENT, success, 0, bssid);
-        } else {
-            if (DBG) Log.d(TAG, "Unknown GAS query event: " + dataString);
-        }
-    }
-
-    /**
-     * Handle HS20 events
-     */
-    private void handleHs20Events(String dataString) {
-        if (mStateMachine2 == null) return;
-        if (dataString.startsWith(HS20_SUB_REM_STR)) {
-            // format: HS20-SUBSCRIPTION-REMEDIATION osu_method, url
-            String[] dataTokens = dataString.split(" ");
-            int method = -1;
-            String url = null;
-            if (dataTokens.length >= 3) {
-                method = Integer.parseInt(dataTokens[1]);
-                url = dataTokens[2];
-            }
-            mStateMachine2.sendMessage(HS20_REMEDIATION_EVENT, method, 0, url);
-        } else if (dataString.startsWith(HS20_DEAUTH_STR)) {
-            // format: HS20-DEAUTH-IMMINENT-NOTICE code, delay, url
-            int code = -1;
-            int delay = -1;
-            String url = null;
-            String[] dataTokens = dataString.split(" ");
-            if (dataTokens.length >= 4) {
-                code = Integer.parseInt(dataTokens[1]);
-                delay = Integer.parseInt(dataTokens[2]);
-                url = dataTokens[3];
-            }
-            mStateMachine2.sendMessage(HS20_DEAUTH_EVENT, code, delay, url);
-        } else {
-            if (DBG) Log.d(TAG, "Unknown HS20 event: " + dataString);
         }
     }
 
