@@ -198,6 +198,8 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     /* Invitation to join an existing p2p group */
     private boolean mJoinExistingGroup;
 
+    private boolean mIsInvite = false;
+
     /* Track whether we are in p2p discovery. This is used to avoid sending duplicate
      * broadcasts
      */
@@ -1303,6 +1305,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         @Override
         public void enter() {
             if (DBG) logd(getName());
+            mIsInvite = false;
             mSavedPeerConfig.invalidate();
         }
 
@@ -1386,6 +1389,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
                     mAutonomousGroup = false;
                     mJoinExistingGroup = true;
+                    mIsInvite = true;
                     transitionTo(mUserAuthorizingInviteRequestState);
                     break;
                 case WifiMonitor.P2P_PROV_DISC_PBC_REQ_EVENT:
@@ -2620,15 +2624,22 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
      * @param config for the peer
      */
     private void p2pConnectWithPinDisplay(WifiP2pConfig config) {
+        boolean join = false;
         WifiP2pDevice dev = fetchCurrentDeviceDetails(config);
+        if (mIsInvite) {
+            join = true;
+        } else {
+            join = dev.isGroupOwner();
+        }
 
-        String pin = mWifiNative.p2pConnect(config, dev.isGroupOwner());
+        String pin = mWifiNative.p2pConnect(config, join);
         try {
             Integer.parseInt(pin);
             notifyInvitationSent(pin, config.deviceAddress);
         } catch (NumberFormatException ignore) {
             // do nothing if p2pConnect did not return a pin
         }
+        mIsInvite = false;
     }
 
     /**
