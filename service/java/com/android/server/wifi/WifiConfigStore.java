@@ -2053,6 +2053,14 @@ public class WifiConfigStore extends IpConfigStore {
                 needUpdate = true;
             }
         }
+        final List<Long> deletedSSIDs = new ArrayList<Long>();
+        for (Long csum : mDeletedSSIDs) {
+            deletedSSIDs.add(new Long(csum));
+        }
+        final List<String> deletedEphemeralSSIDs = new ArrayList<String>();
+        for (String ssid: mDeletedEphemeralSSIDs) {
+            deletedEphemeralSSIDs.add(new String(ssid));
+        }
         if (VDBG) {
             loge(" writeKnownNetworkHistory() num networks:" +
                     mConfiguredNetworks.size() + " needWrite=" + needUpdate);
@@ -2224,15 +2232,15 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(NL);
                     out.writeUTF(NL);
                 }
-                if (mDeletedSSIDs != null && mDeletedSSIDs.size() > 0) {
-                    for (Long i : mDeletedSSIDs) {
+                if (deletedSSIDs.size() > 0) {
+                    for (Long i : deletedSSIDs) {
                         out.writeUTF(DELETED_CRC32_KEY);
                         out.writeUTF(String.valueOf(i));
                         out.writeUTF(NL);
                     }
                 }
-                if (mDeletedEphemeralSSIDs != null && mDeletedEphemeralSSIDs.size() > 0) {
-                    for (String ssid : mDeletedEphemeralSSIDs) {
+                if (deletedEphemeralSSIDs.size() > 0) {
+                    for (String ssid : deletedEphemeralSSIDs) {
                         out.writeUTF(DELETED_EPHEMERAL_KEY);
                         out.writeUTF(ssid);
                         out.writeUTF(NL);
