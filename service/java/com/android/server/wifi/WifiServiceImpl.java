@@ -40,6 +40,7 @@ import android.net.wifi.*;
 import android.net.wifi.IWifiManager;
 import android.os.AsyncTask;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -953,14 +954,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             return new ArrayList<ScanResult>();
         }
         try {
+            if (!isSystemProcess && !checkCallerHasLocationPermission(callingPackage, uid)) {
+                return new ArrayList<ScanResult>();
+            }
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
                     != AppOpsManager.MODE_ALLOWED) {
                 return new ArrayList<ScanResult>();
             }
             if (!isCurrentProfile(userId) && !hasInteractUsersFull) {
-                return new ArrayList<ScanResult>();
-            }
-            if (!isSystemProcess && !checkCallerHasLocationPermission(callingPackage, uid)) {
                 return new ArrayList<ScanResult>();
             }
             return mWifiStateMachine.syncGetScanResultsList();
@@ -2015,15 +2016,33 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      * android.Manifest.permission.ACCESS_FINE_LOCATION and a corresponding app op is allowed
      */
     private boolean checkCallerHasLocationPermission(String callingPackage, int uid) {
-        if (mContext.checkCallingOrSelfPermission(
-                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (ActivityManager.checkUidPermission(Manifest.permission.ACCESS_FINE_LOCATION, uid)
+                == PackageManager.PERMISSION_GRANTED
                 && isAppOppAllowed(AppOpsManager.OP_FINE_LOCATION, callingPackage, uid)) {
             return true;
         }
 
-        return mContext.checkCallingOrSelfPermission(
-                Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                && isAppOppAllowed(AppOpsManager.OP_COARSE_LOCATION, callingPackage, uid);
+        if (ActivityManager.checkUidPermission(Manifest.permission.ACCESS_COARSE_LOCATION, uid)
+                == PackageManager.PERMISSION_GRANTED
+                && isAppOppAllowed(AppOpsManager.OP_COARSE_LOCATION, callingPackage, uid)) {
+            return true;
+        }
+        // Enforce location permission for apps targeting MNC and later versions
+        boolean enforceLocationPermission = true;
+        try {
+            enforceLocationPermission = mContext.getPackageManager().getApplicationInfo(
+                    callingPackage, 0).targetSdkVersion >= Build.VERSION_CODES.MNC;
+        } catch (PackageManager.NameNotFoundException e) {
+            // In case of exception, enforce permission anyway
+        }
+        if (enforceLocationPermission) {
+            throw new SecurityException("Need ACCESS_COARSE_LOCATION or "
+                    + "ACCESS_FINE_LOCATION permission to get scan results");
+        } else {
+            Log.e(TAG, "Permission denial: Need ACCESS_COARSE_LOCATION or ACCESS_FINE_LOCATION "
+                    + "permission to get scan results");
+        }
+        return false;
     }
 
     private boolean isAppOppAllowed(int op, String callingPackage, int uid) {
