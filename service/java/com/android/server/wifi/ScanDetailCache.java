@@ -155,6 +155,7 @@ class ScanDetailCache {
         long now_ms = System.currentTimeMillis();
         long now_elapsed_ms = SystemClock.elapsedRealtime();
         boolean isNetworkFound = false;
+        String profileConfigKey = mConfig.configKey();
         for(ScanDetail scanDetail : values()) {
             ScanResult result = scanDetail.getScanResult();
             if (scanDetail.getSeen() == 0)
@@ -189,14 +190,18 @@ class ScanDetailCache {
             }
 
             if (result.is5GHz()) {
-                isNetworkFound = true;
+                if (profileConfigKey.equals(WifiConfiguration.configKey(result))) {
+                    isNetworkFound = true;
+                }
                 if (result.level > status.rssi5) {
                     status.rssi5 = result.level;
                     status.age5 = result.seen;
                     status.BSSID5 = result.BSSID;
                 }
             } else if (result.is24GHz()) {
-                isNetworkFound = true;
+                if (profileConfigKey.equals(WifiConfiguration.configKey(result))) {
+                    isNetworkFound = true;
+                }
                 if (result.level > status.rssi24) {
                     status.rssi24 = result.level;
                     status.age24 = result.seen;
