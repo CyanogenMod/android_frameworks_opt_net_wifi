@@ -37,6 +37,7 @@ import java.io.DataOutputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.UUID;
 
 /**
@@ -59,6 +60,7 @@ class WifiApConfigStore extends StateMachine {
 
     private WifiConfiguration mWifiApConfig = null;
     private AsyncChannel mReplyChannel = new AsyncChannel();
+    public ArrayList <Integer> allowed2GChannel = null;
 
     WifiApConfigStore(Context context, Handler target) {
         super(TAG, target.getLooper());
@@ -69,6 +71,17 @@ class WifiApConfigStore extends StateMachine {
             addState(mActiveState, mDefaultState);
 
         setInitialState(mInactiveState);
+        String ap2GChannelListStr = (mContext.getResources().getString(
+                R.string.config_wifi_framework_sap_2G_channel_list));
+        Log.d(TAG, "2G band allowed channels are:" + ap2GChannelListStr);
+
+        if (ap2GChannelListStr != null) {
+            allowed2GChannel = new ArrayList<Integer>();
+            String channelList[] = ap2GChannelListStr.split(",");
+            for (String tmp : channelList) {
+                allowed2GChannel.add(Integer.parseInt(tmp));
+            }
+        }
     }
 
     public static WifiApConfigStore makeWifiApConfigStore(Context context, Handler target) {
@@ -167,6 +180,7 @@ class WifiApConfigStore extends StateMachine {
             if (authType != KeyMgmt.NONE) {
                 config.preSharedKey = in.readUTF();
             }
+
             mWifiApConfig = config;
         } catch (IOException ignore) {
             setDefaultApConfiguration();
