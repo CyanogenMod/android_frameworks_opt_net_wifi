@@ -387,6 +387,7 @@ public class WifiConfigStore extends IpConfigStore {
     public boolean enable5GHzPreference = true;
     public boolean enableWifiCellularHandoverUserTriggeredAdjustment = true;
 
+    private int mConfiguredBand = 0;
     public int currentNetworkBoost = 25;
     public int scanResultRssiLevelPatchUp = -85;
 
@@ -834,7 +835,7 @@ public class WifiConfigStore extends IpConfigStore {
             if (cache == null) {
                 continue;
             }
-            config.setVisibility(cache.getVisibility(milli));
+            config.setVisibility(cache.getVisibility(milli, mConfiguredBand));
             if (config.visibility == null) {
                 continue;
             }
@@ -2275,6 +2276,10 @@ public class WifiConfigStore extends IpConfigStore {
 
     public String getLastSelectedConfiguration() {
         return lastSelectedConfiguration;
+    }
+
+    public void setConfiguredBand(int band) {
+        mConfiguredBand = band;
     }
 
     public boolean isLastSelectedConfiguration(WifiConfiguration config) {

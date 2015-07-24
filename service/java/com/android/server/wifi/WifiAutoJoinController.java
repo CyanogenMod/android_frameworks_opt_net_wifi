@@ -24,6 +24,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
 import android.net.wifi.WifiConnectionStatistics;
+import android.net.wifi.WifiManager;
 import android.os.Process;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -968,6 +969,10 @@ public class WifiAutoJoinController {
         if (!mWifiConfigStore.enable5GHzPreference) {
             return 0;
         }
+        if (mWifiStateMachine.getFrequencyBand()
+               == WifiManager.WIFI_FREQUENCY_BAND_2GHZ) {
+            return 0;
+        }
         if (rssi
                 > mWifiConfigStore.bandPreferenceBoostThreshold5.get()) {
             // Boost by 2 dB for each point
@@ -1042,6 +1047,7 @@ public class WifiAutoJoinController {
         // Determine which BSSID we want to associate to, taking account
         // relative strength of 5 and 2.4 GHz BSSIDs
         long nowMs = System.currentTimeMillis();
+        int currentBand = mWifiStateMachine.getFrequencyBand();
 
         for (ScanDetail sd : scanDetailCache.values()) {
             ScanResult b = sd.getScanResult();
@@ -1049,6 +1055,14 @@ public class WifiAutoJoinController {
             int aRssiBoost5 = 0;
             int bRssiBoost = 0;
             int aRssiBoost = 0;
+            if (b.is5GHz()
+                    && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_2GHZ)) {
+                continue;
+           }
+           if (b.is24GHz()
+                   && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_5GHZ)) {
+                continue;
+           }
             if ((sd.getSeen() == 0) || (b.BSSID == null)
                     || ((nowMs - sd.getSeen()) > age)
                     || b.autoJoinStatus != ScanResult.ENABLED
@@ -1176,10 +1190,19 @@ public class WifiAutoJoinController {
         long nowMs = System.currentTimeMillis();
 
         int startScore = -10000;
+        int currentBand = mWifiStateMachine.getFrequencyBand();
 
         // Run thru all cached scan results
         for (ScanDetail sd : mWifiConfigStore.getScanDetailCache(config).values()) {
             ScanResult result = sd.getScanResult();
+            if (result.is5GHz()
+                  && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_2GHZ)) {
+                continue;
+            }
+            if (result.is24GHz()
+                  && (currentBand == WifiManager.WIFI_FREQUENCY_BAND_5GHZ)) {
+                continue;
+            }
             if ((nowMs - sd.getSeen()) < age) {
                 int sc = mNetworkScoreCache.getNetworkScore(result, isActive);
                 if (sc > startScore) {

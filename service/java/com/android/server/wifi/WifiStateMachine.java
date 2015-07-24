@@ -3899,6 +3899,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                         flags, level, freq, tsf);
                                 mScanResultCache.put(networkDetail, scanDetail);
                             }
+                            if (mFrequencyBand.get()
+                                    == WifiManager.WIFI_FREQUENCY_BAND_2GHZ) {
+                                if (ScanResult.is5GHz(freq)) {
+                                    continue;
+                                }
+                            } else if (mFrequencyBand.get()
+                                        == WifiManager.WIFI_FREQUENCY_BAND_5GHZ) {
+                                if (ScanResult.is24GHz(freq)) {
+                                    continue;
+                                 }
+                            }
 
                             mNumScanResultsReturned++; // Keep track of how many scan results we got
                             // as part of this scan's processing
@@ -4147,7 +4158,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         ScanDetailCache scanDetailCache =
                 mWifiConfigStore.getScanDetailCache(currentConfiguration);
         if (currentConfiguration != null && scanDetailCache != null) {
-            currentConfiguration.setVisibility(scanDetailCache.getVisibility(12000));
+            currentConfiguration.setVisibility(scanDetailCache.getVisibility(12000, mFrequencyBand.get()));
             if (currentConfiguration.visibility != null) {
                 if (currentConfiguration.visibility.rssi24 != WifiConfiguration.INVALID_RSSI
                         && currentConfiguration.visibility.rssi24
@@ -6222,6 +6233,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         if (PDBG)  logd("did set frequency band " + band);
 
                         mFrequencyBand.set(band);
+                        mWifiConfigStore.setConfiguredBand(band);
                         // Flush old data - like scan results
                         mWifiNative.bssFlush();
                         // Fetch the latest scan results when frequency band is set

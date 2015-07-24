@@ -3,6 +3,7 @@ package com.android.server.wifi;
 
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiManager;
 import android.util.Log;
 import android.os.SystemClock;
 
@@ -145,20 +146,31 @@ class ScanDetailCache {
     }
 
     public WifiConfiguration.Visibility getVisibilityByRssi(long age) {
+        return getVisibilityByRssi(age, WifiManager.WIFI_FREQUENCY_BAND_AUTO);
+    }
+
+    public WifiConfiguration.Visibility getVisibilityByRssi(long age, int configBand) {
         WifiConfiguration.Visibility status = new WifiConfiguration.Visibility();
 
         long now_ms = System.currentTimeMillis();
         long now_elapsed_ms = SystemClock.elapsedRealtime();
+        boolean isNetworkFound = false;
         for(ScanDetail scanDetail : values()) {
             ScanResult result = scanDetail.getScanResult();
             if (scanDetail.getSeen() == 0)
                 continue;
 
             if (result.is5GHz()) {
+                if (configBand == WifiManager.WIFI_FREQUENCY_BAND_2GHZ) {
+                    continue;
+            }
                 //strictly speaking: [4915, 5825]
                 //number of known BSSID on 5GHz band
                 status.num5 = status.num5 + 1;
             } else if (result.is24GHz()) {
+                if (configBand == WifiManager.WIFI_FREQUENCY_BAND_5GHZ) {
+                    continue;
+            }
                 //strictly speaking: [2412, 2482]
                 //number of known BSSID on 2.4Ghz band
                 status.num24 = status.num24 + 1;
@@ -177,12 +189,14 @@ class ScanDetailCache {
             }
 
             if (result.is5GHz()) {
+                isNetworkFound = true;
                 if (result.level > status.rssi5) {
                     status.rssi5 = result.level;
                     status.age5 = result.seen;
                     status.BSSID5 = result.BSSID;
                 }
             } else if (result.is24GHz()) {
+                isNetworkFound = true;
                 if (result.level > status.rssi24) {
                     status.rssi24 = result.level;
                     status.age24 = result.seen;
@@ -190,8 +204,16 @@ class ScanDetailCache {
                 }
             }
         }
-
-        return status;
+        /*
+         * Visibility should be set to null if there is no BSSIDs in
+         * both bands,so that auto join will not consider this network
+         * for connection attempt.
+         */
+        if (isNetworkFound) {
+            return status;
+        } else {
+            return null;
+        }
     }
 
     public WifiConfiguration.Visibility getVisibilityByPasspointMatch(long age) {
@@ -244,10 +266,14 @@ class ScanDetailCache {
     }
 
     public WifiConfiguration.Visibility getVisibility(long age) {
+        return getVisibility(age, WifiManager.WIFI_FREQUENCY_BAND_AUTO);
+    }
+
+    public WifiConfiguration.Visibility getVisibility(long age, int configBand) {
         if (mConfig.isPasspoint()) {
             return getVisibilityByPasspointMatch(age);
         } else {
-            return getVisibilityByRssi(age);
+            return getVisibilityByRssi(age, configBand);
         }
     }
 
