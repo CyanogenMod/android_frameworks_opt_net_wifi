@@ -186,6 +186,9 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     public static final int ENABLED                         = 1;
     public static final int DISABLED                        = 0;
 
+    static final int P2P_BLUETOOTH_COEXISTENCE_MODE_DISABLED    = 1;
+    static final int P2P_BLUETOOTH_COEXISTENCE_MODE_SENSE       = 2;
+
     private final boolean mP2pSupported;
 
     private WifiP2pDevice mThisDevice = new WifiP2pDevice();
@@ -571,6 +574,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         });
         private final WifiP2pInfo mWifiP2pInfo = new WifiP2pInfo();
         private WifiP2pGroup mGroup;
+        private boolean mIsBTCoexDisabled = false;
 
         // Saved WifiP2pConfig for an ongoing peer connection. This will never be null.
         // The deviceAddress will be an empty string when the device is inactive
@@ -1769,6 +1773,9 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     } else {
                         mWifiNative.setP2pGroupIdle(mGroup.getInterface(), GROUP_IDLE_TIME_S);
                         startIpManager(mGroup.getInterface());
+                        mWifiNative.setBluetoothCoexistenceMode(
+                                P2P_BLUETOOTH_COEXISTENCE_MODE_DISABLED);
+                        mIsBTCoexDisabled = true;
                         WifiP2pDevice groupOwner = mGroup.getOwner();
                         WifiP2pDevice peer = mPeers.get(groupOwner.deviceAddress);
                         if (peer != null) {
@@ -2017,6 +2024,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     break;
                 case IPM_POST_DHCP_ACTION:
                     mWifiNative.setP2pPowerSave(mGroup.getInterface(), true);
+                    enableBTCoex();
                     break;
                 case IPM_DHCP_RESULTS:
                     mDhcpResults = (DhcpResults) message.obj;
@@ -2039,6 +2047,11 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     break;
                 case WifiP2pManager.REMOVE_GROUP:
                     if (DBG) logd(getName() + " remove group");
+                    /*  We need to check BTCOex state, because some times
+                     *  user can interupt connection before dhcp sucess, then
+                     *  BTcoex will be in disabled state.
+                     */
+                    enableBTCoex();
                     if (mWifiNative.p2pGroupRemove(mGroup.getInterface())) {
                         transitionTo(mOngoingGroupRemovalState);
                         replyToMessage(message, WifiP2pManager.REMOVE_GROUP_SUCCEEDED);
@@ -2062,6 +2075,11 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                  */
                 case WifiMonitor.P2P_GROUP_REMOVED_EVENT:
                     if (DBG) logd(getName() + " group removed");
+                    /*  We need to check BTCOex state, because if group
+                     *  is removed at GO side before dhcp sucess, then
+                     *  BTCoex will be in disabled state.
+                     */
+                    enableBTCoex();
                     handleGroupRemoved();
                     mWifiNative.p2pFlush();
                     transitionTo(mInactiveState);
@@ -3245,6 +3263,17 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         }
 
         return clientInfo;
+    }
+
+    /**
+     * Enable BTCOEXMODE after DHCP or GROUP REMOVE
+     */
+    private void enableBTCoex() {
+        if (mIsBTCoexDisabled) {
+            mWifiNative.setBluetoothCoexistenceMode(
+                    P2P_BLUETOOTH_COEXISTENCE_MODE_SENSE);
+            mIsBTCoexDisabled = false;
+        }
     }
 
     }
