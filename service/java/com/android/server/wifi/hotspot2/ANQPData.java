@@ -16,17 +16,24 @@ public class ANQPData {
      * data from the AP may change at any time, thus a relatively short cache time is given to
      * such data, but still long enough to avoid excessive querying.
      */
-    private static final long ANQP_UNQUALIFIED_CACHE_TIMEOUT = 60000L;
+    private static final long ANQP_UNQUALIFIED_CACHE_TIMEOUT = 300000L;
     /**
      * This is the hold off time for pending queries, i.e. the time during which subsequent queries
      * are squelched.
      */
     private static final long ANQP_HOLDOFF_TIME = 10000L;
 
+    /**
+     * Max value for the retry counter for unanswered queries. This limits the maximum time-out to
+     * ANQP_HOLDOFF_TIME * 2^MAX_RETRY. With current values this results in 640s.
+     */
+    private static final int MAX_RETRY = 6;
+
     private final NetworkDetail mNetwork;
     private final Map<Constants.ANQPElementType, ANQPElement> mANQPElements;
     private final long mCtime;
     private final long mExpiry;
+    private final int mRetry;
 
     public ANQPData(NetworkDetail network,
                     Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
@@ -34,6 +41,7 @@ public class ANQPData {
         mNetwork = network;
         mANQPElements = anqpElements != null ? Collections.unmodifiableMap(anqpElements) : null;
         mCtime = System.currentTimeMillis();
+        mRetry = 0;
         if (anqpElements == null) {
             mExpiry = mCtime + ANQP_HOLDOFF_TIME;
         }
@@ -42,6 +50,20 @@ public class ANQPData {
         }
         else {
             mExpiry = mCtime + ANQP_QUALIFIED_CACHE_TIMEOUT;
+        }
+    }
+
+    public ANQPData(NetworkDetail network, ANQPData existing) {
+        mNetwork = network;
+        mANQPElements = null;
+        mCtime = System.currentTimeMillis();
+        if (existing == null) {
+            mRetry = 0;
+            mExpiry = mCtime + ANQP_HOLDOFF_TIME;
+        }
+        else {
+            mRetry = Math.max(existing.getRetry() + 1, MAX_RETRY);
+            mExpiry = ANQP_HOLDOFF_TIME * (1<<mRetry);
         }
     }
 
@@ -65,6 +87,10 @@ public class ANQPData {
         return mANQPElements != null &&
                 nwk.getAnqpDomainID() == mNetwork.getAnqpDomainID() &&
                 mExpiry > System.currentTimeMillis();
+    }
+
+    private int getRetry() {
+        return mRetry;
     }
 
     public String toString(boolean brief) {

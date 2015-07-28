@@ -121,7 +121,7 @@ public class AnqpCache {
         synchronized (mANQPCache) {
             ANQPData data = mANQPCache.get(key);
             if (data == null || data.expired()) {
-                mANQPCache.put(key, new ANQPData(network, null));
+                mANQPCache.put(key, new ANQPData(network, data));
                 return true;
             }
             else {
