@@ -4139,12 +4139,24 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void clearBssidBlacklist() {
+        if (!mWifiStateMachine.useHalBasedAutoJoinOffload()) {
+            if(DBG) {
+                Log.d(TAG, "No blacklist allowed without epno enabled");
+            }
+            return;
+        }
         mBssidBlacklist = new HashSet<String>();
         mWifiNative.clearBlacklist();
         mWifiNative.setBssidBlacklist(null);
     }
 
     void blackListBssid(String BSSID) {
+        if (!mWifiStateMachine.useHalBasedAutoJoinOffload()) {
+            if(DBG) {
+                Log.d(TAG, "No blacklist allowed without epno enabled");
+            }
+            return;
+        }
         if (BSSID == null)
             return;
         mBssidBlacklist.add(BSSID);
