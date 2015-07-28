@@ -40,6 +40,7 @@ import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.util.InformationElementUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -84,10 +85,6 @@ public class WifiNative {
 
     private boolean mSuspendOptEnabled = false;
 
-    private static final int EID_HT_OPERATION = 61;
-    private static final int EID_VHT_OPERATION = 192;
-    private static final int EID_EXTENDED_CAPS = 127;
-    private static final int RTT_RESP_ENABLE_BIT = 70;
     /* Register native functions */
 
     static {
@@ -470,7 +467,7 @@ public class WifiNative {
             long tsf = 0;
             String flags = "";
             WifiSsid wifiSsid = null;
-            String infoElements = null;
+            String infoElementsStr = null;
             List<String> anqpLines = null;
 
             for (String line : lines) {
@@ -510,7 +507,7 @@ public class WifiNative {
                     wifiSsid = WifiSsid.createFromAsciiEncoded(
                             line.substring(BSS_SSID_STR.length()));
                 } else if (line.startsWith(BSS_IE_STR)) {
-                    infoElements = line;
+                    infoElementsStr = line;
                 } else if (SupplicantBridge.isAnqpAttribute(line)) {
                     if (anqpLines == null) {
                         anqpLines = new ArrayList<>();
@@ -519,14 +516,26 @@ public class WifiNative {
                 } else if (line.startsWith(BSS_DELIMITER_STR) || line.startsWith(BSS_END_STR)) {
                     if (bssid != null) {
                         try {
-                            NetworkDetail networkDetail =
-                                    new NetworkDetail(bssid, infoElements, anqpLines, freq);
+                            if (infoElementsStr == null) {
+                                throw new IllegalArgumentException("Null information element data");
+                            }
+                            int seperator = infoElementsStr.indexOf('=');
+                            if (seperator < 0) {
+                                throw new IllegalArgumentException("No element separator");
+                            }
+
+                            ScanResult.InformationElement[] infoElements =
+                                        InformationElementUtil.parseInformationElements(
+                                        Utils.hexToBytes(infoElementsStr.substring(seperator + 1)));
+
+                            NetworkDetail networkDetail = new NetworkDetail(bssid,
+                                    infoElements, anqpLines, freq);
 
                             String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
                             if (!xssid.equals(networkDetail.getTrimmedSSID())) {
                                 Log.d(TAG, String.format(
                                         "Inconsistent SSID on BSSID '%s': '%s' vs '%s': %s",
-                                        bssid, xssid, networkDetail.getSSID(), infoElements));
+                                        bssid, xssid, networkDetail.getSSID(), infoElementsStr));
                             }
 
                             if (networkDetail.hasInterworking()) {
@@ -545,7 +554,7 @@ public class WifiNative {
                     tsf = 0;
                     flags = "";
                     wifiSsid = null;
-                    infoElements = null;
+                    infoElementsStr = null;
                     anqpLines = null;
                 }
             }
@@ -1586,108 +1595,47 @@ public class WifiNative {
     }
 
     static void populateScanResult(ScanResult result, byte bytes[], String dbg) {
-        int num = 0;
         if (bytes == null) return;
         if (dbg == null) dbg = "";
-        for (int i = 0; i < bytes.length - 1; ) {
-            int type  = bytes[i] & 0xFF;
-            int len = bytes[i + 1] & 0xFF;
-            if (i + len + 2 > bytes.length) {
-                Log.w(TAG, dbg + "bad length " + len + " of IE " + type + " from " + result.BSSID);
-                Log.w(TAG, dbg + "ignoring the rest of the IEs");
-                break;
-            }
-            num++;
-            if (DBG) Log.i(TAG, dbg + "bytes[" + i + "] = [" + type + ", " + len + "]" + ", " +
-                    "next = " + (i + len + 2));
-            i += len + 2;
-        }
 
-        int secondChanelOffset = 0;
-        byte channelMode = 0;
-        int centerFreqIndex1 = 0;
-        int centerFreqIndex2 = 0;
+        InformationElementUtil.HtOperation htOperation = new InformationElementUtil.HtOperation();
+        InformationElementUtil.VhtOperation vhtOperation =
+                new InformationElementUtil.VhtOperation();
+        InformationElementUtil.ExtendedCapabilities extendedCaps =
+                new InformationElementUtil.ExtendedCapabilities();
 
-        boolean is80211McRTTResponder = false;
-
-        ScanResult.InformationElement elements[] = new ScanResult.InformationElement[num];
-        for (int i = 0, index = 0; i < num; i++) {
-            int type  = bytes[index] & 0xFF;
-            int len = bytes[index + 1] & 0xFF;
-            if (DBG) Log.i(TAG, dbg + "index = " + index + ", type = " + type + ", len = " + len);
-            ScanResult.InformationElement elem = new ScanResult.InformationElement();
-            elem.id = type;
-            elem.bytes = new byte[len];
-            for (int j = 0; j < len; j++) {
-                elem.bytes[j] = bytes[index + j + 2];
-            }
-            elements[i] = elem;
-            int inforStart = index + 2;
-            index += (len + 2);
-
-            if(type == EID_HT_OPERATION) {
-                secondChanelOffset = bytes[inforStart + 1] & 0x3;
-            } else if(type == EID_VHT_OPERATION) {
-                channelMode = bytes[inforStart];
-                centerFreqIndex1 = bytes[inforStart + 1] & 0xFF;
-                centerFreqIndex2 = bytes[inforStart + 2] & 0xFF;
-            } else if (type == EID_EXTENDED_CAPS) {
-                int tempIndex = RTT_RESP_ENABLE_BIT / 8;
-                byte offset = RTT_RESP_ENABLE_BIT % 8;
-
-                if(len < tempIndex + 1) {
-                    is80211McRTTResponder = false;
-                } else {
-                    if ((bytes[inforStart + tempIndex] & ((byte)0x1 << offset)) != 0) {
-                        is80211McRTTResponder = true;
-                    } else {
-                        is80211McRTTResponder = false;
-                    }
-                }
+        ScanResult.InformationElement elements[] =
+                InformationElementUtil.parseInformationElements(bytes);
+        for (ScanResult.InformationElement ie : elements) {
+            if(ie.id == ScanResult.InformationElement.EID_HT_OPERATION) {
+                htOperation.from(ie);
+            } else if(ie.id == ScanResult.InformationElement.EID_VHT_OPERATION) {
+                vhtOperation.from(ie);
+            } else if (ie.id == ScanResult.InformationElement.EID_EXTENDED_CAPS) {
+                extendedCaps.from(ie);
             }
         }
 
-        if (is80211McRTTResponder) {
+        if (extendedCaps.is80211McRTTResponder) {
             result.setFlag(ScanResult.FLAG_80211mc_RESPONDER);
         } else {
             result.clearFlag(ScanResult.FLAG_80211mc_RESPONDER);
         }
 
         //handle RTT related information
-        if (channelMode != 0) {
-            // 80 or 160 MHz
-            result.channelWidth = channelMode + 1;
-
-            //convert channel index to frequency in MHz, channel 36 is 5180MHz
-            result.centerFreq0 = (centerFreqIndex1 - 36) * 5 + 5180;
-
-            if(channelMode > 1) { //160MHz
-                result.centerFreq1 = (centerFreqIndex2 - 36) * 5 + 5180;
-            } else {
-                result.centerFreq1 = 0;
-            }
+        if (vhtOperation.isValid()) {
+            result.channelWidth = vhtOperation.getChannelWidth();
+            result.centerFreq0 = vhtOperation.getCenterFreq0();
+            result.centerFreq1 = vhtOperation.getCenterFreq1();
         } else {
-            //20 or 40 MHz
-            if (secondChanelOffset != 0) {//40MHz
-                result.channelWidth = 1;
-                if (secondChanelOffset == 1) {
-                    result.centerFreq0 = result.frequency + 20;
-                } else if (secondChanelOffset == 3) {
-                    result.centerFreq0 = result.frequency - 20;
-                } else {
-                    result.centerFreq0 = 0;
-                    Log.e(TAG, dbg + ": Error on secondChanelOffset");
-                }
-            } else {
-                result.centerFreq0  = 0;
-                result.centerFreq1  = 0;
-            }
+            result.channelWidth = htOperation.getChannelWidth();
+            result.centerFreq0 = htOperation.getCenterFreq0(result.frequency);
             result.centerFreq1  = 0;
         }
         if(DBG) {
             Log.d(TAG, dbg + "SSID: " + result.SSID + " ChannelWidth is: " + result.channelWidth +
                     " PrimaryFreq: " + result.frequency +" mCenterfreq0: " + result.centerFreq0 +
-                    " mCenterfreq1: " + result.centerFreq1 + (is80211McRTTResponder ?
+                    " mCenterfreq1: " + result.centerFreq1 + (extendedCaps.is80211McRTTResponder ?
                     "Support RTT reponder: " : "Do not support RTT responder"));
         }
 
