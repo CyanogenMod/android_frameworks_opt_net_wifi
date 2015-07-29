@@ -1630,6 +1630,7 @@ public class WifiAutoJoinController {
                     }
                 }
             }
+            // NOTE: If this condition is updated, update NETWORK_STATUS_UNWANTED_DISABLE_AUTOJOIN.
             if (config.numNoInternetAccessReports > 0
                     && !isLastSelected
                     && !config.validatedInternetAccess) {
