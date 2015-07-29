@@ -693,7 +693,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* Remove a packages associated configrations */
     static final int CMD_REMOVE_APP_CONFIGURATIONS                      = BASE + 97;
-    
+
     /* Disable an ephemeral network */
     static final int CMD_DISABLE_EPHEMERAL_NETWORK                      = BASE + 98;
 
@@ -744,8 +744,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     static final int CMD_AUTO_CONNECT                                   = BASE + 143;
 
-    static final int network_status_unwanted_disconnect = 0;
-    static final int network_status_unwanted_disable_autojoin = 1;
+    private static final int NETWORK_STATUS_UNWANTED_DISCONNECT         = 0;
+    private static final int NETWORK_STATUS_UNWANTED_VALIDATION_FAILED  = 1;
+    private static final int NETWORK_STATUS_UNWANTED_DISABLE_AUTOJOIN   = 2;
 
     static final int CMD_UNWANTED_NETWORK                               = BASE + 144;
 
@@ -7750,7 +7751,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (this != mNetworkAgent) return;
             if (DBG) log("WifiNetworkAgent -> Wifi unwanted score "
                     + Integer.toString(mWifiInfo.score));
-            unwantedNetwork(network_status_unwanted_disconnect);
+            unwantedNetwork(NETWORK_STATUS_UNWANTED_DISCONNECT);
         }
 
         @Override
@@ -7759,7 +7760,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (status == NetworkAgent.INVALID_NETWORK) {
                 if (DBG) log("WifiNetworkAgent -> Wifi networkStatus invalid, score="
                         + Integer.toString(mWifiInfo.score));
-                unwantedNetwork(network_status_unwanted_disable_autojoin);
+                unwantedNetwork(NETWORK_STATUS_UNWANTED_VALIDATION_FAILED);
             } else if (status == NetworkAgent.VALID_NETWORK) {
                 if (DBG && mWifiInfo != null) log("WifiNetworkAgent -> Wifi networkStatus valid, score= "
                         + Integer.toString(mWifiInfo.score));
@@ -7771,6 +7772,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         protected void saveAcceptUnvalidated(boolean accept) {
             if (this != mNetworkAgent) return;
             WifiStateMachine.this.sendMessage(CMD_ACCEPT_UNVALIDATED, accept ? 1 : 0);
+        }
+
+        @Override
+        protected void preventAutomaticReconnect() {
+            if (this != mNetworkAgent) return;
+            unwantedNetwork(NETWORK_STATUS_UNWANTED_DISABLE_AUTOJOIN);
         }
     }
 
@@ -8689,14 +8696,24 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     transitionTo(mVerifyingLinkState);
                     break;
                 case CMD_UNWANTED_NETWORK:
-                    if (message.arg1 == network_status_unwanted_disconnect) {
+                    if (message.arg1 == NETWORK_STATUS_UNWANTED_DISCONNECT) {
                         mWifiConfigStore.handleBadNetworkDisconnectReport(mLastNetworkId, mWifiInfo);
                         mWifiNative.disconnect();
                         transitionTo(mDisconnectingState);
-                    } else if (message.arg1 == network_status_unwanted_disable_autojoin) {
+                    } else if (message.arg1 == NETWORK_STATUS_UNWANTED_DISABLE_AUTOJOIN ||
+                            message.arg1 == NETWORK_STATUS_UNWANTED_VALIDATION_FAILED) {
                         config = getCurrentWifiConfiguration();
                         if (config != null) {
                             // Disable autojoin
+                            if (message.arg1 == NETWORK_STATUS_UNWANTED_DISABLE_AUTOJOIN) {
+                                config.validatedInternetAccess = false;
+                                // Clear last-selected status, as being last-selected also avoids
+                                // disabling auto-join.
+                                if (mWifiConfigStore.isLastSelectedConfiguration(config)) {
+                                    mWifiConfigStore.setLastSelectedConfiguration(
+                                        WifiConfiguration.INVALID_NETWORK_ID);
+                                }
+                            }
                             config.numNoInternetAccessReports += 1;
                             config.dirty = true;
                             mWifiConfigStore.writeKnownNetworkHistory(false);
