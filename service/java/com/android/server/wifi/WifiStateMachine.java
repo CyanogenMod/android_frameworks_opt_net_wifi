@@ -1303,6 +1303,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mLogMessages = false;
             mWifiNative.setSupplicantLogLevel("INFO");
         }
+        mWifiP2pServiceImpl.enableVerboseLogging(verbose);
         mWifiLogger.startLogging(mVerboseLoggingLevel > 0);
         mWifiAutoJoinController.enableVerboseLogging(verbose);
         mWifiMonitor.enableVerboseLogging(verbose);
