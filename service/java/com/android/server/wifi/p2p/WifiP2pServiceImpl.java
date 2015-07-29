@@ -920,8 +920,11 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     } catch (IllegalStateException ie) {
                         loge("Unable to change interface settings: " + ie);
                     }
-                    mWifiMonitor.startMonitoring();
-                    transitionTo(mP2pEnablingState);
+                    if (mWifiMonitor.startMonitoring()) {
+                        transitionTo(mP2pEnablingState);
+                    } else {
+                        loge("start  monitoring failed, do not transition");
+                    }
                     break;
                 default:
                     return NOT_HANDLED;
