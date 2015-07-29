@@ -6252,7 +6252,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     /* send regular delayed shut down */
                     Intent driverStopIntent = new Intent(ACTION_DELAYED_DRIVER_STOP, null);
-                    driverStopIntent.setPackage(this.getClass().getPackage().getName());
+                    driverStopIntent.setPackage(mContext.getPackageName());
                     driverStopIntent.putExtra(DELAYED_STOP_COUNTER, mDelayedStopCounter);
                     mDriverStopIntent = PendingIntent.getBroadcast(mContext,
                             DRIVER_STOP_REQUEST, driverStopIntent,
