@@ -947,14 +947,15 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceAccessPermission();
         int userId = UserHandle.getCallingUserId();
         int uid = Binder.getCallingUid();
-        boolean isSystemProcess = (UserHandle.getAppId(uid) == android.os.Process.SYSTEM_UID);
+        boolean canReadPeerMacAddresses = checkPeersMacAddress();
         boolean hasInteractUsersFull = checkInteractAcrossUsersFull();
         long ident = Binder.clearCallingIdentity();
-        if (!isSystemProcess && !isLocationEnabled()) {
-            return new ArrayList<ScanResult>();
-        }
         try {
-            if (!isSystemProcess && !checkCallerHasLocationPermission(callingPackage, uid)) {
+            if (!canReadPeerMacAddresses && !isLocationEnabled()) {
+                return new ArrayList<ScanResult>();
+            }
+            if (!canReadPeerMacAddresses
+                    && !checkCallerHasLocationPermission(callingPackage, uid)) {
                 return new ArrayList<ScanResult>();
             }
             if (mAppOps.noteOp(AppOpsManager.OP_WIFI_SCAN, uid, callingPackage)
@@ -982,6 +983,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return mContext.checkCallingOrSelfPermission(
                 android.Manifest.permission.INTERACT_ACROSS_USERS_FULL)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Returns true if the caller holds PEERS_MAC_ADDRESS.
+     */
+    private boolean checkPeersMacAddress() {
+        return mContext.checkCallingOrSelfPermission(
+                android.Manifest.permission.PEERS_MAC_ADDRESS) == PackageManager.PERMISSION_GRANTED;
     }
 
     /**
