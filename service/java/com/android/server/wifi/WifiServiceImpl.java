@@ -30,14 +30,23 @@ import android.database.ContentObserver;
 import android.net.ConnectivityManager;
 import android.net.DhcpInfo;
 import android.net.DhcpResults;
-import android.net.IpConfiguration.ProxySettings;
-import android.net.LinkAddress;
 import android.net.Network;
+import android.net.NetworkScorerAppManager;
 import android.net.NetworkUtils;
-import android.net.RouteInfo;
 import android.net.Uri;
-import android.net.wifi.*;
+import android.net.wifi.BatchedScanResult;
+import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.IWifiManager;
+import android.net.wifi.ScanResult;
+import android.net.wifi.ScanSettings;
+import android.net.wifi.WifiActivityEnergyInfo;
+import android.net.wifi.WifiChannel;
+import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiConnectionStatistics;
+import android.net.wifi.WifiEnterpriseConfig;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiLinkLayerStats;
+import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Build;
@@ -58,16 +67,23 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.Slog;
 
-import java.io.FileNotFoundException;
+import com.android.internal.R;
+import com.android.internal.app.IBatteryStats;
+import com.android.internal.telephony.TelephonyIntents;
+import com.android.internal.util.AsyncChannel;
+import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.configparse.ConfigBuilder;
+
+import org.xml.sax.SAXException;
+
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.lang.Override;
-import java.net.InetAddress;
 import java.net.Inet4Address;
-import java.net.URISyntaxException;
+import java.net.InetAddress;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.cert.CertPath;
@@ -79,15 +95,6 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
-import com.android.internal.R;
-import com.android.internal.app.IBatteryStats;
-import com.android.internal.telephony.TelephonyIntents;
-import com.android.internal.util.AsyncChannel;
-import com.android.server.am.BatteryStatsService;
-import com.android.server.wifi.configparse.ConfigBuilder;
-
-import org.xml.sax.SAXException;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -813,7 +820,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public int addOrUpdateNetwork(WifiConfiguration config) {
         enforceChangePermission();
         if (isValid(config) && isValidPasspoint(config)) {
-        
+
             WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
             if (config.isPasspoint() &&
@@ -948,13 +955,16 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         int userId = UserHandle.getCallingUserId();
         int uid = Binder.getCallingUid();
         boolean canReadPeerMacAddresses = checkPeersMacAddress();
+        boolean isActiveNetworkScorer =
+                NetworkScorerAppManager.isCallerActiveScorer(mContext, uid);
         boolean hasInteractUsersFull = checkInteractAcrossUsersFull();
         long ident = Binder.clearCallingIdentity();
         try {
-            if (!canReadPeerMacAddresses && !isLocationEnabled()) {
+            if (!canReadPeerMacAddresses && !isActiveNetworkScorer
+                    && !isLocationEnabled()) {
                 return new ArrayList<ScanResult>();
             }
-            if (!canReadPeerMacAddresses
+            if (!canReadPeerMacAddresses && !isActiveNetworkScorer
                     && !checkCallerHasLocationPermission(callingPackage, uid)) {
                 return new ArrayList<ScanResult>();
             }
@@ -1940,7 +1950,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             }
         }
     }
-    
+
     /* private methods */
     static boolean logAndReturnFalse(String s) {
         Log.d(TAG, s);
