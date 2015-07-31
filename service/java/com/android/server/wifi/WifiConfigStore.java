@@ -2650,14 +2650,24 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         boolean updateFailed = true;
+        WifiConfiguration savedConfig = null;
 
         setVariables: {
+            if (newNetwork == false ) {
+                savedConfig = mConfiguredNetworks.get(netId);
+                if (savedConfig != null) {
+                    readNetworkVariables(savedConfig);
+                }
+            }
 
-            if (config.SSID != null &&
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (savedConfig.SSID != null) && (config.SSID != null) &&
+                   (savedConfig.SSID.equals(config.SSID))) &&
+                   (config.SSID != null &&
                     !mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.ssidVarName,
-                        encodeSSID(config.SSID))) {
+                        encodeSSID(config.SSID)))) {
                 loge("failed to set SSID: "+config.SSID);
                 break setVariables;
             }
@@ -2672,7 +2682,10 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
 
-            if (config.BSSID != null) {
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (savedConfig.BSSID != null) && (config.BSSID != null) &&
+                   (savedConfig.BSSID.equals(config.BSSID)))
+                   && (config.BSSID != null)) {
                 log("Setting BSSID for " + config.configKey() + " to " + config.BSSID);
                 if (!mWifiNative.setNetworkVariable(
                         netId,
@@ -2685,11 +2698,15 @@ public class WifiConfigStore extends IpConfigStore {
 
             String allowedKeyManagementString =
                 makeString(config.allowedKeyManagement, WifiConfiguration.KeyMgmt.strings);
-            if (config.allowedKeyManagement.cardinality() != 0 &&
-                    !mWifiNative.setNetworkVariable(
-                        netId,
-                        WifiConfiguration.KeyMgmt.varName,
-                        allowedKeyManagementString)) {
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (allowedKeyManagementString != null) &&
+                   (savedConfig.allowedKeyManagement.equals(
+                   config.allowedKeyManagement))) &&
+                   config.allowedKeyManagement.cardinality() != 0 &&
+                   !mWifiNative.setNetworkVariable(
+                       netId,
+                       WifiConfiguration.KeyMgmt.varName,
+                       allowedKeyManagementString)) {
                 loge("failed to set key_mgmt: "+
                         allowedKeyManagementString);
                 break setVariables;
@@ -2697,8 +2714,11 @@ public class WifiConfigStore extends IpConfigStore {
 
             String allowedProtocolsString =
                 makeString(config.allowedProtocols, WifiConfiguration.Protocol.strings);
-            if (config.allowedProtocols.cardinality() != 0 &&
-                    !mWifiNative.setNetworkVariable(
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (allowedProtocolsString != null) &&
+                   (savedConfig.allowedProtocols.equals(config.allowedProtocols)))
+                   && config.allowedProtocols.cardinality() != 0 &&
+                   !mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.Protocol.varName,
                         allowedProtocolsString)) {
@@ -2709,11 +2729,15 @@ public class WifiConfigStore extends IpConfigStore {
 
             String allowedAuthAlgorithmsString =
                 makeString(config.allowedAuthAlgorithms, WifiConfiguration.AuthAlgorithm.strings);
-            if (config.allowedAuthAlgorithms.cardinality() != 0 &&
-                    !mWifiNative.setNetworkVariable(
-                        netId,
-                        WifiConfiguration.AuthAlgorithm.varName,
-                        allowedAuthAlgorithmsString)) {
+            if (!((newNetwork == false) && (savedConfig != null)
+                  && (allowedAuthAlgorithmsString != null) &&
+                  (savedConfig.allowedAuthAlgorithms.equals(
+                  config.allowedAuthAlgorithms))) &&
+                  config.allowedAuthAlgorithms.cardinality() != 0 &&
+                  !mWifiNative.setNetworkVariable(
+                      netId,
+                      WifiConfiguration.AuthAlgorithm.varName,
+                      allowedAuthAlgorithmsString)) {
                 loge("failed to set auth_alg: "+
                         allowedAuthAlgorithmsString);
                 break setVariables;
@@ -2722,11 +2746,15 @@ public class WifiConfigStore extends IpConfigStore {
             String allowedPairwiseCiphersString =
                     makeString(config.allowedPairwiseCiphers,
                     WifiConfiguration.PairwiseCipher.strings);
-            if (config.allowedPairwiseCiphers.cardinality() != 0 &&
-                    !mWifiNative.setNetworkVariable(
-                        netId,
-                        WifiConfiguration.PairwiseCipher.varName,
-                        allowedPairwiseCiphersString)) {
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (allowedPairwiseCiphersString != null) &&
+                   (savedConfig.allowedPairwiseCiphers.equals(
+                   config.allowedPairwiseCiphers))) &&
+                   config.allowedPairwiseCiphers.cardinality() != 0 &&
+                   !mWifiNative.setNetworkVariable(
+                       netId,
+                       WifiConfiguration.PairwiseCipher.varName,
+                       allowedPairwiseCiphersString)) {
                 loge("failed to set pairwise: "+
                         allowedPairwiseCiphersString);
                 break setVariables;
@@ -2734,11 +2762,15 @@ public class WifiConfigStore extends IpConfigStore {
 
             String allowedGroupCiphersString =
                 makeString(config.allowedGroupCiphers, WifiConfiguration.GroupCipher.strings);
-            if (config.allowedGroupCiphers.cardinality() != 0 &&
-                    !mWifiNative.setNetworkVariable(
-                        netId,
-                        WifiConfiguration.GroupCipher.varName,
-                        allowedGroupCiphersString)) {
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (allowedGroupCiphersString != null) &&
+                   (savedConfig.allowedGroupCiphers.equals(
+                   config.allowedGroupCiphers))) &&
+                   config.allowedGroupCiphers.cardinality() != 0 &&
+                   !mWifiNative.setNetworkVariable(
+                       netId,
+                       WifiConfiguration.GroupCipher.varName,
+                       allowedGroupCiphersString)) {
                 loge("failed to set group: "+
                         allowedGroupCiphersString);
                 break setVariables;
@@ -2746,8 +2778,13 @@ public class WifiConfigStore extends IpConfigStore {
 
             // Prevent client screw-up by passing in a WifiConfiguration we gave it
             // by preventing "*" as a key.
-            if (config.preSharedKey != null && !config.preSharedKey.equals("*") &&
-                    !mWifiNative.setNetworkVariable(
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (savedConfig.preSharedKey != null) &&
+                   (config.preSharedKey != null) &&
+                   (savedConfig.preSharedKey.equals(config.preSharedKey)))
+                   && config.preSharedKey != null &&
+                   !config.preSharedKey.equals("*") &&
+                   !mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.pskVarName,
                         config.preSharedKey)) {
@@ -2760,15 +2797,20 @@ public class WifiConfigStore extends IpConfigStore {
                 for (int i = 0; i < config.wepKeys.length; i++) {
                     // Prevent client screw-up by passing in a WifiConfiguration we gave it
                     // by preventing "*" as a key.
-                    if (config.wepKeys[i] != null && !config.wepKeys[i].equals("*")) {
-                        if (!mWifiNative.setNetworkVariable(
+                    if (!((newNetwork == false) && (savedConfig != null) &&
+                           (config.wepKeys[i] != null) &&
+                           (savedConfig.wepKeys[i] != null) &&
+                           (savedConfig.wepKeys[i].equals(config.wepKeys[i])))) {
+                        if (config.wepKeys[i] != null && !config.wepKeys[i].equals("*")) {
+                            if (!mWifiNative.setNetworkVariable(
                                     netId,
                                     WifiConfiguration.wepKeyVarNames[i],
                                     config.wepKeys[i])) {
-                            loge("failed to set wep_key" + i + ": " + config.wepKeys[i]);
-                            break setVariables;
+                                loge("failed to set wep_key" + i + ": " + config.wepKeys[i]);
+                                break setVariables;
+                            }
+                            hasSetKey = true;
                         }
-                        hasSetKey = true;
                     }
                 }
             }
@@ -2783,7 +2825,9 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
 
-            if (!mWifiNative.setNetworkVariable(
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (config.priority == savedConfig.priority )) &&
+                   !mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.priorityVarName,
                         Integer.toString(config.priority))) {
@@ -2792,7 +2836,9 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
-            if (config.hiddenSSID && !mWifiNative.setNetworkVariable(
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (savedConfig.hiddenSSID == config.hiddenSSID)) &&
+                   config.hiddenSSID && !mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.hiddenSSIDVarName,
                         Integer.toString(config.hiddenSSID ? 1 : 0))) {
@@ -2801,7 +2847,9 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
-            if (config.requirePMF && !mWifiNative.setNetworkVariable(
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (savedConfig.requirePMF == config.requirePMF)) &&
+                   config.requirePMF && !mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.pmfVarName,
                         "2")) {
@@ -2810,7 +2858,11 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
-            if (config.updateIdentifier != null && !mWifiNative.setNetworkVariable(
+            if (!((newNetwork == false) && (savedConfig != null) &&
+                   (savedConfig.updateIdentifier != null) &&
+                   (config.updateIdentifier != null) &&
+                   (savedConfig.updateIdentifier.equals(config.updateIdentifier)))
+                   && config.updateIdentifier != null && !mWifiNative.setNetworkVariable(
                     netId,
                     WifiConfiguration.updateIdentiferVarName,
                     config.updateIdentifier)) {
@@ -2820,7 +2872,7 @@ public class WifiConfigStore extends IpConfigStore {
             }
 
             if (config.enterpriseConfig != null &&
-                    config.enterpriseConfig.getEapMethod() != WifiEnterpriseConfig.Eap.NONE) {
+                   config.enterpriseConfig.getEapMethod() != WifiEnterpriseConfig.Eap.NONE) {
 
                 WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
@@ -2855,8 +2907,16 @@ public class WifiConfigStore extends IpConfigStore {
                 }
 
                 HashMap<String, String> enterpriseFields = enterpriseConfig.getFields();
+                HashMap<String, String> savedEnterpriseFields = null;
+                String savedValue = null;
+                if (savedConfig != null && savedConfig.enterpriseConfig != null) {
+                    savedEnterpriseFields = savedConfig.enterpriseConfig.getFields();
+                }
                 for (String key : enterpriseFields.keySet()) {
                         String value = enterpriseFields.get(key);
+                        if (savedEnterpriseFields != null) {
+                            savedValue = savedEnterpriseFields.get(key);
+                        }
                         if (key.equals("password") && value != null && value.equals("*")) {
                             // No need to try to set an obfuscated password, which will fail
                             continue;
@@ -2866,7 +2926,9 @@ public class WifiConfigStore extends IpConfigStore {
                             // No need to save realm or PLMN in supplicant
                             continue;
                         }
-                        if (!mWifiNative.setNetworkVariable(
+                        if (!((newNetwork == false) && (savedValue != null) &&
+                              (value != null) && value.equals(savedValue)) &&
+                               !mWifiNative.setNetworkVariable(
                                     netId,
                                     key,
                                     value)) {
