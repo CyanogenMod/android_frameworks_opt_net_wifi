@@ -1014,6 +1014,7 @@ public class WifiConfigStore extends IpConfigStore {
                 } else {
                     log("Setting SSID for " + config.networkId + " to" + result.getSSID());
                     setSSIDNative(config.networkId, result.getSSID());
+                    config.SSID = result.getSSID();
                 }
 
             } else {
