@@ -34,7 +34,6 @@ import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
 import android.Manifest;
 import android.app.ActivityManager;
 import android.app.AlarmManager;
-import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.app.backup.IBackupManager;
 import android.bluetooth.BluetoothAdapter;
@@ -359,6 +358,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* Tracks sequence number on a driver time out */
     private int mDriverStartToken = 0;
+
+    /**
+     * Don't select new network when previous network selection is
+     * pending connection for this much time
+     */
+    private static final int CONNECT_TIMEOUT_MSEC = 3000;
 
     /**
      * The link properties of the wifi interface.
@@ -1654,7 +1659,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private long lastScanDuration = 0;
     // Last connect attempt is used to prevent scan requests:
     //  - for a period of 10 seconds after attempting to connect
-    private long lastConnectAttempt = 0;
+    private long lastConnectAttemptTimestamp = 0;
     private String lastScanFreqs = null;
 
     // For debugging, keep track of last message status handling
@@ -1676,9 +1681,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     //TODO: second logic should be folded into that
     private boolean checkOrDeferScanAllowed(Message msg) {
         long now = System.currentTimeMillis();
-        if (lastConnectAttempt != 0 && (now - lastConnectAttempt) < 10000) {
+        if (lastConnectAttemptTimestamp != 0 && (now - lastConnectAttemptTimestamp) < 10000) {
             Message dmsg = Message.obtain(msg);
-            sendMessageDelayed(dmsg, 11000 - (now - lastConnectAttempt));
+            sendMessageDelayed(dmsg, 11000 - (now - lastConnectAttemptTimestamp));
             return false;
         }
         return true;
@@ -3901,7 +3906,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
         }
 
-        boolean attemptAutoJoin = true;
+        /* don't attempt autojoin if last connect attempt was just scheduled */
+        boolean attemptAutoJoin =
+                (System.currentTimeMillis() - lastConnectAttemptTimestamp) > CONNECT_TIMEOUT_MSEC;
         SupplicantState state = mWifiInfo.getSupplicantState();
         String selection = mWifiConfigStore.getLastSelectedConfiguration();
         if (getCurrentState() == mRoamingState
@@ -4807,7 +4814,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         currentSSID = currentSSID.substring(1, currentSSID.length() - 1);
                     }
                     if ((!SSID.equals(currentSSID)) && (getCurrentState() == mConnectedState)) {
-                        lastConnectAttempt = System.currentTimeMillis();
+                        lastConnectAttemptTimestamp = System.currentTimeMillis();
                         targetWificonfiguration
                             = mWifiConfigStore.getWifiConfiguration(mWifiInfo.getNetworkId());
                         transitionTo(mRoamingState);
@@ -7075,7 +7082,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 mWifiConfigStore.writeKnownNetworkHistory(false);
 
                                 // Remember time of last connection attempt
-                                lastConnectAttempt = System.currentTimeMillis();
+                                lastConnectAttemptTimestamp = System.currentTimeMillis();
 
                                 mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
 
@@ -7104,29 +7111,38 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
                 case CMD_ENABLE_NETWORK:
-                    boolean others = message.arg2 == 1;
+                    boolean disableOthers = message.arg2 == 1;
+                    netId = message.arg1;
+                    config = mWifiConfigStore.getWifiConfiguration(netId);
+                    if (config == null) {
+                        loge("No network with id = " + netId);
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
+                        break;
+                    }
+
                     // Tell autojoin the user did try to select to that network
                     // However, do NOT persist the choice by bumping the priority of the network
-                    if (others) {
+                    if (disableOthers) {
                         mWifiAutoJoinController.
-                                updateConfigurationHistory(message.arg1, true, false);
+                                updateConfigurationHistory(netId, true, false);
                         // Set the last selected configuration so as to allow the system to
                         // stick the last user choice without persisting the choice
-                        mWifiConfigStore.setLastSelectedConfiguration(message.arg1);
+                        mWifiConfigStore.setLastSelectedConfiguration(netId);
 
                         // Remember time of last connection attempt
-                        lastConnectAttempt = System.currentTimeMillis();
+                        lastConnectAttemptTimestamp = System.currentTimeMillis();
 
                         mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
                     }
                     // Cancel auto roam requests
-                    autoRoamSetBSSID(message.arg1, "any");
+                    autoRoamSetBSSID(netId, "any");
 
                     int uid = message.sendingUid;
-                    ok = mWifiConfigStore.enableNetwork(message.arg1, message.arg2 == 1, uid);
+                    ok = mWifiConfigStore.enableNetwork(netId, disableOthers, uid);
                     if (!ok) {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
                     }
+
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
                 case CMD_ENABLE_ALL_NETWORKS:
@@ -7266,14 +7282,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mWifiAutoJoinController.attemptAutoJoin();
                     break;
                 case CMD_REASSOCIATE:
-                    lastConnectAttempt = System.currentTimeMillis();
+                    lastConnectAttemptTimestamp = System.currentTimeMillis();
                     mWifiNative.reassociate();
                     break;
                 case CMD_RELOAD_TLS_AND_RECONNECT:
                     if (mWifiConfigStore.needsUnlockedKeyStore()) {
                         logd("Reconnecting to give a chance to un-connected TLS networks");
                         mWifiNative.disconnect();
-                        lastConnectAttempt = System.currentTimeMillis();
+                        lastConnectAttemptTimestamp = System.currentTimeMillis();
                         mWifiNative.reconnect();
                     }
                     break;
@@ -7354,7 +7370,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
                             lastConnectUid) && mWifiNative.reconnect()) {
-                        lastConnectAttempt = System.currentTimeMillis();
+                        lastConnectAttemptTimestamp = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
                         config = mWifiConfigStore.getWifiConfiguration(netId);
                         if (config != null
@@ -7518,7 +7534,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ true,
                             message.sendingUid) && mWifiNative.reconnect()) {
-                        lastConnectAttempt = System.currentTimeMillis();
+                        lastConnectAttemptTimestamp = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
                         /* The state tracker handles enabling networks upon completion/failure */
@@ -8631,7 +8647,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 }
             }
             registerConnected();
-            lastConnectAttempt = 0;
+            lastConnectAttemptTimestamp = 0;
             targetWificonfiguration = null;
             // Paranoia
             linkDebouncing = false;
@@ -8875,7 +8891,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                          ret = mWifiNative.reassociate();
                     }
                     if (ret) {
-                        lastConnectAttempt = System.currentTimeMillis();
+                        lastConnectAttemptTimestamp = System.currentTimeMillis();
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
                         // replyToMessage(message, WifiManager.CONNECT_NETWORK_SUCCEEDED);
