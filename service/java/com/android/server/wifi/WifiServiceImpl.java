@@ -2046,11 +2046,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 && isAppOppAllowed(AppOpsManager.OP_COARSE_LOCATION, callingPackage, uid)) {
             return true;
         }
-        // Enforce location permission for apps targeting MNC and later versions
+        // Enforce location permission for apps targeting M and later versions
         boolean enforceLocationPermission = true;
         try {
             enforceLocationPermission = mContext.getPackageManager().getApplicationInfo(
-                    callingPackage, 0).targetSdkVersion >= Build.VERSION_CODES.MNC;
+                    callingPackage, 0).targetSdkVersion >= Build.VERSION_CODES.M;
         } catch (PackageManager.NameNotFoundException e) {
             // In case of exception, enforce permission anyway
         }
