@@ -444,8 +444,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
         }
         if (VDBG) {
-            loge("autoRoamSetBSSID " + bssid
-                    + " key=" + config.configKey());
+            logd("autoRoamSetBSSID " + bssid + " key=" + config.configKey());
         }
         config.autoJoinBSSID = bssid;
         mTargetRoamBSSID = bssid;
@@ -487,7 +486,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         // We can only evaluate saved configurations.
         if (config == null) {
-            loge("deferForUserInput: configuration for netId="+netId+" not stored");
+            logd("deferForUserInput: configuration for netId=" + netId + " not stored");
             return true;
         }
 
@@ -1153,7 +1152,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         sScanAlarmIntentCount++; // Used for debug only
                         startScan(SCAN_ALARM_SOURCE, mDelayedScanCounter.incrementAndGet(), null, null);
                         if (VDBG)
-                            loge("WiFiStateMachine SCAN ALARM -> " + mDelayedScanCounter.get());
+                            logd("SCAN ALARM -> " + mDelayedScanCounter.get());
                     }
                 },
                 new IntentFilter(ACTION_START_SCAN));
@@ -1165,7 +1164,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         sendMessage(CMD_RESTART_AUTOJOIN_OFFLOAD, 0,
                                 mRestartAutoJoinOffloadCounter, "pno alarm");
                         if (DBG)
-                            loge("WiFiStateMachine PNO START ALARM sent");
+                            logd("PNO START ALARM sent");
                     }
                 },
                 new IntentFilter(ACTION_START_PNO));
@@ -1448,7 +1447,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (PDBG) {
             String state;
             if (enabled) state = "enabled"; else state = "disabled";
-            loge("setScanAlarm " + state
+            logd("setScanAlarm " + state
                     + " defaultperiod " + mDefaultFrameworkScanIntervalMs
                     + " mBackgroundScanSupported " + mBackgroundScanSupported);
         }
@@ -1508,14 +1507,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             bundle.putLong(SCAN_REQUEST_TIME, System.currentTimeMillis());
             sendMessageDelayed(CMD_START_SCAN, SCAN_ALARM_SOURCE,
                     mDelayedScanCounter.get(), bundle, milli);
-            if (DBG) loge("startDelayedScan send -> " + mDelayedScanCounter + " milli " + milli);
+            if (DBG) logd("startDelayedScan send -> " + mDelayedScanCounter + " milli " + milli);
         } else if (mBackgroundScanSupported == false
                 && !mScreenOn && getCurrentState() == mDisconnectedState) {
             setScanAlarm(true);
-            if (DBG) loge("startDelayedScan start scan alarm -> "
+            if (DBG) logd("startDelayedScan start scan alarm -> "
                     + mDelayedScanCounter + " milli " + milli);
         } else {
-            if (DBG) loge("startDelayedScan unhandled -> "
+            if (DBG) logd("startDelayedScan unhandled -> "
                     + mDelayedScanCounter + " milli " + milli);
         }
     }
@@ -1745,9 +1744,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mTxTime = stats.tx_time;
                 mRxTime = stats.rx_time;
                 mRunningBeaconCount = stats.beacon_rx;
-                if (dbg) {
-                    // loge(stats.toString());
-                }
             }
         }
         if (stats == null || mWifiLinkLayerStatsSupported <= 0) {
@@ -1795,10 +1791,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (DBG) {
             String ts = String.format("[%,d ms]", now);
             if (workSource != null) {
-                loge(ts + " noteScanStart" + workSource.toString()
+                if (DBG) logd(ts + " noteScanStart" + workSource.toString()
                         + " uid " + Integer.toString(callingUid));
             } else {
-                loge(ts + " noteScanstart no scan source"
+                if (DBG) logd(ts + " noteScanstart no scan source"
                         + " uid " + Integer.toString(callingUid));
             }
         }
@@ -1831,10 +1827,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (DBG) {
             String ts = String.format("[%,d ms]", now);
             if (mScanWorkSource != null)
-                loge(ts + " noteScanEnd " + mScanWorkSource.toString()
+                logd(ts + " noteScanEnd " + mScanWorkSource.toString()
                         + " onTime=" + mOnTimeThisScan);
             else
-                loge(ts + " noteScanEnd no scan source"
+                logd(ts + " noteScanEnd no scan source"
                         + " onTime=" + mOnTimeThisScan);
         }
         if (mScanWorkSource != null) {
@@ -2534,7 +2530,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             //long now = SystemClock.elapsedRealtimeNanos();
             //String ts = String.format("[%,d us]", now/1000);
 
-            loge(" " + state + " " + getLogRecString(message));
+            logd(" " + state + " " + getLogRecString(message));
         }
     }
 
@@ -3161,7 +3157,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             return false;
         }
 
-        loge("configureSsidWhiteList success");
+        logd("configureSsidWhiteList success");
         return true;
     }
 
@@ -3210,7 +3206,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (reason == null) {
                 reason = "";
             }
-            loge("startGScanConnectedModeOffload " + reason);
+            logd("startGScanConnectedModeOffload " + reason);
         }
         stopGScan("startGScanConnectedModeOffload " + reason);
         if (!mScreenOn) return false;
@@ -3246,14 +3242,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
         mConnectedModeGScanOffloadStarted = true;
         if (DBG) {
-            loge("startGScanConnectedModeOffload success");
+            logd("startGScanConnectedModeOffload success");
         }
         return true;
     }
 
     private boolean startGScanDisconnectedModeOffload(String reason) {
         if (DBG) {
-            loge("startGScanDisconnectedModeOffload " + reason);
+            logd("startGScanDisconnectedModeOffload " + reason);
         }
         stopGScan("startGScanDisconnectedModeOffload " + reason);
         if (USE_PAUSE_SCANS) {
@@ -3424,7 +3420,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private void handleScreenStateChanged(boolean screenOn) {
         mScreenOn = screenOn;
         if (PDBG) {
-            loge(" handleScreenStateChanged Enter: screenOn=" + screenOn
+            logd(" handleScreenStateChanged Enter: screenOn=" + screenOn
                     + " mUserWantsSuspendOpt=" + mUserWantsSuspendOpt
                     + " state " + getCurrentState().getName()
                     + " suppState:" + mSupplicantStateTracker.getSupplicantStateName());
@@ -3867,9 +3863,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                             String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
                             if (!xssid.equals(networkDetail.getTrimmedSSID())) {
-                                Log.d(Utils.hs2LogTag(getClass()),
-                                        String.format("Inconsistent SSID on BSSID '%s':" +
-                                                        " '%s' vs '%s': %s",
+                                logd(String.format(
+                                        "Inconsistent SSID on BSSID '%s': '%s' vs '%s': %s",
                                         bssid, xssid, networkDetail.getSSID(), infoElements));
                             }
 
@@ -3933,7 +3928,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (selection == null) {
                 selection = "<none>";
             }
-            loge("wifi setScanResults state" + getCurrentState()
+            logd("wifi setScanResults state" + getCurrentState()
                     + " sup_state=" + state
                     + " debouncing=" + linkDebouncing
                     + " mConnectionRequests=" + mConnectionRequests
@@ -3995,7 +3990,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         if (PDBG) {
-            loge("fetchRssiLinkSpeedAndFrequencyNative rssi="
+            logd("fetchRssiLinkSpeedAndFrequencyNative rssi="
                     + Integer.toString(newRssi) + " linkspeed="
                     + Integer.toString(newLinkSpeed));
         }
@@ -4068,13 +4063,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 } else if ((mWifiInfo.txSuccessRate > 5) || (mWifiInfo.rxSuccessRate > 30)) {
                     delta -= 6;
                 }
-                loge("WifiStateMachine shouldSwitchNetwork "
+                logd("shouldSwitchNetwork "
                         + " txSuccessRate=" + String.format("%.2f", mWifiInfo.txSuccessRate)
                         + " rxSuccessRate=" + String.format("%.2f", mWifiInfo.rxSuccessRate)
                         + " delta " + networkDelta + " -> " + delta);
             }
         } else {
-            loge("WifiStateMachine shouldSwitchNetwork "
+            logd("shouldSwitchNetwork "
                     + " delta " + networkDelta + " -> " + delta);
         }
         if (delta > 0) {
@@ -4246,7 +4241,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             else if (isHighRSSI) rssiStatus += " highRSSI ";
             else if (isLowRSSI) rssiStatus += " lowRSSI ";
             if (isBadLinkspeed) rssiStatus += " lowSpeed ";
-            loge("calculateWifiScore freq=" + Integer.toString(mWifiInfo.getFrequency())
+            logd("calculateWifiScore freq=" + Integer.toString(mWifiInfo.getFrequency())
                     + " speed=" + Integer.toString(mWifiInfo.getLinkSpeed())
                     + " score=" + Integer.toString(mWifiInfo.score)
                     + rssiStatus
@@ -4263,13 +4258,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (mWifiInfo.linkStuckCount < 5)
                 mWifiInfo.linkStuckCount += 1;
             sb.append(String.format(" ls+=%d", mWifiInfo.linkStuckCount));
-            if (PDBG) loge(" bad link -> stuck count ="
+            if (PDBG) logd(" bad link -> stuck count ="
                     + Integer.toString(mWifiInfo.linkStuckCount));
         } else if (mWifiInfo.txBadRate < 0.3) {
             if (mWifiInfo.linkStuckCount > 0)
                 mWifiInfo.linkStuckCount -= 1;
             sb.append(String.format(" ls-=%d", mWifiInfo.linkStuckCount));
-            if (PDBG) loge(" good link -> stuck count ="
+            if (PDBG) logd(" good link -> stuck count ="
                     + Integer.toString(mWifiInfo.linkStuckCount));
         }
 
@@ -4284,7 +4279,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (isBadLinkspeed) {
             score -= 4;
             if (PDBG) {
-                loge(" isBadLinkspeed   ---> count=" + mBadLinkspeedcount
+                logd(" isBadLinkspeed   ---> count=" + mBadLinkspeedcount
                         + " score=" + Integer.toString(score));
             }
         } else if ((isGoodLinkspeed) && (mWifiInfo.txSuccessRate > 5)) {
@@ -4309,14 +4304,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         score -= mWifiInfo.badRssiCount * 2 + mWifiInfo.lowRssiCount;
         sb.append(String.format(",%d", score));
 
-        if (PDBG) loge(" badRSSI count" + Integer.toString(mWifiInfo.badRssiCount)
+        if (PDBG) logd(" badRSSI count" + Integer.toString(mWifiInfo.badRssiCount)
                 + " lowRSSI count" + Integer.toString(mWifiInfo.lowRssiCount)
                 + " --> score " + Integer.toString(score));
 
 
         if (isHighRSSI) {
             score += 5;
-            if (PDBG) loge(" isHighRSSI       ---> score=" + Integer.toString(score));
+            if (PDBG) logd(" isHighRSSI       ---> score=" + Integer.toString(score));
         }
         sb.append(String.format(",%d]", score));
 
@@ -4331,7 +4326,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         //report score
         if (score != mWifiInfo.score) {
             if (DBG) {
-                loge("calculateWifiScore() report new score " + Integer.toString(score));
+                logd("calculateWifiScore() report new score " + Integer.toString(score));
             }
             mWifiInfo.score = score;
             if (mNetworkAgent != null) {
@@ -4510,7 +4505,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(" isprov");
                 }
             }
-            loge(sb.toString());
+            logd(sb.toString());
         }
 
         // If we just configured or lost IP configuration, do the needful.
@@ -4529,7 +4524,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // TODO: disconnect here instead. If our configuration is not usable, there's no
                     // point in staying connected, and if mLinkProperties is out of sync with
                     // reality, that will cause problems in the future.
-                    loge("IPv4 config succeeded, but not provisioned");
+                    logd("IPv4 config succeeded, but not provisioned");
                 }
                 break;
 
@@ -4613,7 +4608,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 InetAddress gateway = route.getGateway();
                 if (gateway instanceof Inet4Address) {
                     if (PDBG) {
-                        loge("updateDefaultRouteMacAddress found Ipv4 default :"
+                        logd("updateDefaultRouteMacAddress found Ipv4 default :"
                                 + gateway.getHostAddress());
                     }
                     address = macAddressFromRoute(gateway.getHostAddress());
@@ -4631,7 +4626,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                                 address = macAddressFromRoute(gateway.getHostAddress());
                                 if (PDBG) {
-                                    loge("updateDefaultRouteMacAddress reachable (tried again) :"
+                                    logd("updateDefaultRouteMacAddress reachable (tried again) :"
                                             + gateway.getHostAddress() + " found " + address);
                                 }
                             }
@@ -5006,8 +5001,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private void handleIPv4Success(DhcpResults dhcpResults, int reason) {
 
         if (PDBG) {
-            loge("wifistatemachine handleIPv4Success <" + dhcpResults.toString() + ">");
-            loge("link address " + dhcpResults.ipAddress);
+            logd("handleIPv4Success <" + dhcpResults.toString() + ">");
+            logd("link address " + dhcpResults.ipAddress);
         }
 
         Inet4Address addr;
@@ -5020,7 +5015,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             int previousAddress = mWifiInfo.getIpAddress();
             int newAddress = NetworkUtils.inetAddressToInt(addr);
             if (previousAddress != newAddress) {
-                loge("handleIPv4Success, roaming and address changed" +
+                logd("handleIPv4Success, roaming and address changed" +
                         mWifiInfo + " got: " + addr);
             }
         }
@@ -5042,7 +5037,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (c != null) {
             ScanResult result = getCurrentScanResult();
             if (result == null) {
-                loge("WifiStateMachine: handleSuccessfulIpConfiguration and no scan results" +
+                logd("WifiStateMachine: handleSuccessfulIpConfiguration and no scan results" +
                         c.configKey());
             } else {
                 // Clear the per BSSID failure count
@@ -5064,7 +5059,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
              }
         }
         if (PDBG) {
-            loge("wifistatemachine handleIPv4Failure");
+            logd("handleIPv4Failure");
         }
         updateLinkProperties(reason);
     }
@@ -5947,7 +5942,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             String p2pSuppState = System.getProperty("init.svc.p2p_supplicant");
             if (p2pSuppState == null) p2pSuppState = "unknown";
 
-            loge("SupplicantStoppingState: stopSupplicant "
+            logd("SupplicantStoppingState: stopSupplicant "
                     + " init.svc.wpa_supplicant=" + suppState
                     + " init.svc.p2p_supplicant=" + p2pSuppState);
             mWifiMonitor.stopSupplicant();
@@ -6076,7 +6071,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         public void enter() {
 
             if (PDBG) {
-                loge("DriverStartedState enter");
+                logd("DriverStartedState enter");
             }
 
             mWifiLogger.startLogging(mVerboseLoggingLevel > 0);
@@ -6164,7 +6159,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiNative.setWifiLinkLayerStats("wlan0", 1);
 
             if (PDBG) {
-                loge("Driverstarted State enter done, epno=" + mHalBasedPnoDriverSupported
+                logd("Driverstarted State enter done, epno=" + mHalBasedPnoDriverSupported
                      + " feature=" + mHalFeatureSet);
             }
         }
@@ -6182,7 +6177,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (DBG) log("set frequency band " + band);
                     if (mWifiNative.setBand(band)) {
 
-                        if (PDBG)  loge("did set frequency band " + band);
+                        if (PDBG)  logd("did set frequency band " + band);
 
                         mFrequencyBand.set(band);
                         // Flush old data - like scan results
@@ -6190,7 +6185,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         // Fetch the latest scan results when frequency band is set
 //                        startScanNative(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, null);
 
-                        if (PDBG)  loge("done set frequency band " + band);
+                        if (PDBG)  logd("done set frequency band " + band);
 
                     } else {
                         loge("Failed to set frequency band " + band);
@@ -7001,7 +6996,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     String substr = (String) message.obj;
                     String en = message.what == WifiMonitor.SSID_TEMP_DISABLED ?
                             "temp-disabled" : "re-enabled";
-                    loge("ConnectModeState SSID state=" + en + " nid="
+                    logd("ConnectModeState SSID state=" + en + " nid="
                             + Integer.toString(message.arg1) + " [" + substr + "]");
                     synchronized(mScanResultCache) {
                         mWifiConfigStore.handleSSIDStateChange(message.arg1, message.what ==
@@ -7057,7 +7052,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     if (!recordUidIfAuthorized(config, message.sendingUid,
                             /* onlyAnnotate */ false)) {
-                        loge("Not authorized to update network "
+                        logw("Not authorized to update network "
                              + " config=" + config.SSID
                              + " cnid=" + config.networkId
                              + " uid=" + message.sendingUid);
@@ -7096,7 +7091,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     netId = message.arg1;
                     if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId,
                             /* onlyAnnotate */ false)) {
-                        loge("Not authorized to remove network "
+                        logw("Not authorized to remove network "
                              + " cnid=" + netId
                              + " uid=" + message.sendingUid);
                         replyToMessage(message, message.what, FAILURE);
@@ -7179,7 +7174,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_SAVE_CONFIG:
                     ok = mWifiConfigStore.saveConfig();
 
-                    if (DBG) loge("wifistatemachine did save config " + ok);
+                    if (DBG) logd("did save config " + ok);
                     replyToMessage(message, CMD_SAVE_CONFIG, ok ? SUCCESS : FAILURE);
 
                     // Inform the backup manager about a data change
@@ -7317,7 +7312,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     config = (WifiConfiguration) message.obj;
                     netId = message.arg1;
                     int roam = message.arg2;
-                    loge("CMD_AUTO_CONNECT sup state "
+                    logd("CMD_AUTO_CONNECT sup state "
                             + mSupplicantStateTracker.getSupplicantStateName()
                             + " my state " + getCurrentState().getName()
                             + " nid=" + Integer.toString(netId)
@@ -7331,21 +7326,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     autoRoamSetBSSID(netId, config.BSSID);
 
                     /* Save the network config */
-                    loge("CMD_AUTO_CONNECT will save config -> " + config.SSID
+                    logd("CMD_AUTO_CONNECT will save config -> " + config.SSID
                             + " nid=" + Integer.toString(netId));
                     result = mWifiConfigStore.saveNetwork(config, WifiConfiguration.UNKNOWN_UID);
                     netId = result.getNetworkId();
-                    loge("CMD_AUTO_CONNECT did save config -> "
+                    logd("CMD_AUTO_CONNECT did save config -> "
                             + " nid=" + Integer.toString(netId));
 
                     // Since we updated the config,read it back from config store:
                     config = mWifiConfigStore.getWifiConfiguration(netId);
                     if (config == null) {
-                        loge("CMD_AUTO_CONNECT couldnt update the config, got null config");
+                        loge("CMD_AUTO_CONNECT couldn't update the config, got null config");
                         break;
                     }
                     if (netId != config.networkId) {
-                        loge("CMD_AUTO_CONNECT couldnt update the config, want"
+                        loge("CMD_AUTO_CONNECT couldn't update the config, want"
                                 + " nid=" + Integer.toString(netId) + " but got" + config.networkId);
                         break;
                     }
@@ -7399,7 +7394,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             if (!mScreenOn && mLegacyPnoEnabled && mBackgroundScanSupported) {
                                 int delay = 60 * 1000;
                                 if (VDBG) {
-                                    loge("Starting PNO alarm: " + delay);
+                                    logd("Starting PNO alarm: " + delay);
                                 }
                                 mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                                        System.currentTimeMillis() + delay,
@@ -7440,7 +7435,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         // disregarded.
                         if (!recordUidIfAuthorized(config, message.sendingUid,
                                 /* onlyAnnotate */ true)) {
-                            loge("Not authorized to update network "
+                            logw("Not authorized to update network "
                                  + " config=" + config.SSID
                                  + " cnid=" + config.networkId
                                  + " uid=" + message.sendingUid);
@@ -7457,7 +7452,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             // (either AUTO_JOIN_DELETED or ephemeral; see WifiConfigStore#
                             // getConfiguredNetworks). Remove those bits and update the config.
                             config = savedConfig;
-                            loge("CONNECT_NETWORK updating existing config with id=" +
+                            logd("CONNECT_NETWORK updating existing config with id=" +
                                     config.networkId + " configKey=" + configKey);
                             config.ephemeral = false;
                             config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_ENABLED;
@@ -7470,7 +7465,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     config = mWifiConfigStore.getWifiConfiguration(netId);
 
                     if (config == null) {
-                        loge("CONNECT_NETWORK no config for id=" + Integer.toString(netId) + " "
+                        logd("CONNECT_NETWORK no config for id=" + Integer.toString(netId) + " "
                                 + mSupplicantStateTracker.getSupplicantStateName() + " my state "
                                 + getCurrentState().getName());
                         replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
@@ -7478,7 +7473,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         break;
                     } else {
                         String wasSkipped = config.autoJoinBailedDueToLowRssi ? " skipped" : "";
-                        loge("CONNECT_NETWORK id=" + Integer.toString(netId)
+                        logd("CONNECT_NETWORK id=" + Integer.toString(netId)
                                 + " config=" + config.SSID
                                 + " cnid=" + config.networkId
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
@@ -7578,7 +7573,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     lastSavedConfigurationAttempt = new WifiConfiguration(config);
                     int nid = config.networkId;
-                    loge("SAVE_NETWORK id=" + Integer.toString(nid)
+                    logd("SAVE_NETWORK id=" + Integer.toString(nid)
                                 + " config=" + config.SSID
                                 + " nid=" + config.networkId
                                 + " supstate=" + mSupplicantStateTracker.getSupplicantStateName()
@@ -7588,7 +7583,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     boolean checkUid = (message.what == WifiManager.SAVE_NETWORK);
                     if (checkUid && !recordUidIfAuthorized(config, message.sendingUid,
                             /* onlyAnnotate */ false)) {
-                        loge("Not authorized to update network "
+                        logw("Not authorized to update network "
                              + " config=" + config.SSID
                              + " cnid=" + config.networkId
                              + " uid=" + message.sendingUid);
@@ -7618,7 +7613,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         broadcastWifiCredentialChanged(WifiManager.WIFI_CREDENTIAL_SAVED, config);
 
                         if (VDBG) {
-                           loge("Success save network nid="
+                           logd("Success save network nid="
                                     + Integer.toString(result.getNetworkId()));
                         }
 
@@ -7664,7 +7659,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId,
                             /* onlyAnnotate */ false)) {
-                        loge("Not authorized to forget network "
+                        logw("Not authorized to forget network "
                              + " cnid=" + netId
                              + " uid=" + message.sendingUid);
                         replyToMessage(message, WifiManager.FORGET_NETWORK_FAILED,
@@ -7870,7 +7865,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 first = false;
             }
             //if (DBG) {
-            loge("WifiStateMachine starting scan for " + config.configKey() + " with " + freqs);
+            logd("starting scan for " + config.configKey() + " with " + freqs);
             //}
             // Call wifi native to start the scan
             if (startScanNative(
@@ -7885,7 +7880,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
             return true;
         } else {
-            if (DBG) loge("WifiStateMachine no channels for " + config.configKey());
+            if (DBG) logd("no channels for " + config.configKey());
             return false;
         }
     }
@@ -7901,13 +7896,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (config == null)
             return;
         if (DBG) {
-            loge(dbg + " " + mTargetRoamBSSID + " config " + config.configKey()
+            logd(dbg + " " + mTargetRoamBSSID + " config " + config.configKey()
                     + " config.bssid " + config.BSSID);
         }
         config.autoJoinBSSID = "any";
         config.BSSID = "any";
         if (DBG) {
-           loge(dbg + " " + config.SSID
+           logd(dbg + " " + config.SSID
                     + " nid=" + Integer.toString(config.networkId));
         }
         mWifiConfigStore.saveWifiConfigBSSID(config);
@@ -7987,7 +7982,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
               case DhcpStateMachine.CMD_POST_DHCP_ACTION:
                   handlePostDhcpSetup();
                   if (message.arg1 == DhcpStateMachine.DHCP_SUCCESS) {
-                      if (DBG) log("WifiStateMachine DHCP successful");
+                      if (DBG) log("DHCP successful");
                       handleIPv4Success((DhcpResults) message.obj, DhcpStateMachine.DHCP_SUCCESS);
                       // We advance to mConnectedState because handleIPv4Success will call
                       // updateLinkProperties, which then sends CMD_IP_CONFIGURATION_SUCCESSFUL.
@@ -7999,7 +7994,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                           if (config != null) {
                               count = config.numConnectionFailures;
                           }
-                          log("WifiStateMachine DHCP failure count=" + count);
+                          log("DHCP failure count=" + count);
                       }
                       handleIPv4Failure(DhcpStateMachine.DHCP_FAILURE);
                       // As above, we transition to mDisconnectingState via updateLinkProperties.
@@ -8048,13 +8043,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     deferMessage(message);
                     break;
                 case CMD_START_SCAN:
-                    //if (DBG) {
-                        loge("WifiStateMachine CMD_START_SCAN source " + message.arg1
+                    if (DBG) {
+                        logd("CMD_START_SCAN source " + message.arg1
                               + " txSuccessRate="+String.format( "%.2f", mWifiInfo.txSuccessRate)
                               + " rxSuccessRate="+String.format( "%.2f", mWifiInfo.rxSuccessRate)
                               + " targetRoamBSSID=" + mTargetRoamBSSID
                               + " RSSI=" + mWifiInfo.getRssi());
-                    //}
+                    }
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
                         // Check if the CMD_START_SCAN message is obsolete (and thus if it should
                         // not be processed) and restart the scan if neede
@@ -8068,14 +8063,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 mWifiConfigStore.wifiAssociatedShortScanIntervalMilli.get(),
                                 null, null)) {
                             messageHandlingStatus = MESSAGE_HANDLING_STATUS_OBSOLETE;
-                            loge("WifiStateMachine L2Connected CMD_START_SCAN source "
+                            logd("L2Connected CMD_START_SCAN source "
                                     + message.arg1
                                     + " " + message.arg2 + ", " + mDelayedScanCounter
                                     + " -> obsolete");
                             return HANDLED;
                         }
                         if (mP2pConnected.get()) {
-                            loge("WifiStateMachine L2Connected CMD_START_SCAN source "
+                            logd("L2Connected CMD_START_SCAN source "
                                     + message.arg1
                                     + " " + message.arg2 + ", " + mDelayedScanCounter
                                     + " ignore because P2P is connected");
@@ -8086,7 +8081,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         boolean restrictChannelList = false;
                         long now_ms = System.currentTimeMillis();
                         if (DBG) {
-                            loge("WifiStateMachine CMD_START_SCAN with age="
+                            logd("CMD_START_SCAN with age="
                                     + Long.toString(now_ms - lastFullBandConnectedTimeMilli)
                                     + " interval=" + fullBandConnectedTimeIntervalMilli
                                     + " maxinterval=" + maxFullBandConnectedTimeIntervalMilli);
@@ -8096,7 +8091,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                     (now_ms - lastFullBandConnectedTimeMilli)
                                     > fullBandConnectedTimeIntervalMilli) {
                                 if (DBG) {
-                                    loge("WifiStateMachine CMD_START_SCAN try full band scan age="
+                                    logd("CMD_START_SCAN try full band scan age="
                                          + Long.toString(now_ms - lastFullBandConnectedTimeMilli)
                                          + " interval=" + fullBandConnectedTimeIntervalMilli
                                          + " maxinterval=" + maxFullBandConnectedTimeIntervalMilli);
@@ -8110,7 +8105,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                     mWifiConfigStore.maxRxPacketForFullScans) {
                                 // Too much traffic at the interface, hence no full band scan
                                 if (DBG) {
-                                    loge("WifiStateMachine CMD_START_SCAN " +
+                                    logd("CMD_START_SCAN " +
                                             "prevent full band scan due to pkt rate");
                                 }
                                 tryFullBandScan = false;
@@ -8124,7 +8119,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 restrictChannelList = true;
                                 if (mWifiConfigStore.alwaysEnableScansWhileAssociated.get() == 0) {
                                     if (DBG) {
-                                     loge("WifiStateMachine CMD_START_SCAN source " + message.arg1
+                                     logd("CMD_START_SCAN source " + message.arg1
                                         + " ...and ignore scans"
                                         + " tx=" + String.format("%.2f", mWifiInfo.txSuccessRate)
                                         + " rx=" + String.format("%.2f", mWifiInfo.rxSuccessRate));
@@ -8137,7 +8132,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                         WifiConfiguration currentConfiguration = getCurrentWifiConfiguration();
                         if (DBG) {
-                            loge("WifiStateMachine CMD_START_SCAN full=" +
+                            logd("CMD_START_SCAN full=" +
                                     tryFullBandScan);
                         }
                         if (currentConfiguration != null) {
@@ -8157,7 +8152,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                             * mWifiConfigStore.associatedFullScanBackoff.get() / 8;
 
                                     if (DBG) {
-                                        loge("WifiStateMachine CMD_START_SCAN bump interval ="
+                                        logd("CMD_START_SCAN bump interval ="
                                         + fullBandConnectedTimeIntervalMilli);
                                     }
                                 }
@@ -8167,7 +8162,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 if (!startScanForConfiguration(
                                         currentConfiguration, restrictChannelList)) {
                                     if (DBG) {
-                                        loge("WifiStateMachine starting scan, " +
+                                        logd("starting scan, " +
                                                 " did not find channels -> full");
                                     }
                                     lastFullBandConnectedTimeMilli = now_ms;
@@ -8179,7 +8174,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                                 * mWifiConfigStore.associatedFullScanBackoff.get() / 8;
 
                                         if (DBG) {
-                                            loge("WifiStateMachine CMD_START_SCAN bump interval ="
+                                            logd("CMD_START_SCAN bump interval ="
                                                     + fullBandConnectedTimeIntervalMilli);
                                         }
                                     }
@@ -8189,7 +8184,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             }
 
                         } else {
-                            loge("CMD_START_SCAN : connected mode and no configuration");
+                            logd("CMD_START_SCAN : connected mode and no configuration");
                             messageHandlingStatus = MESSAGE_HANDLING_STATUS_HANDLING_ERROR;
                         }
                     } else {
@@ -8258,11 +8253,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (!linkDebouncing && mWifiConfigStore.enableLinkDebouncing) {
 
                         // Ignore if we are not debouncing
-                        loge("CMD_DELAYED_NETWORK_DISCONNECT and not debouncing - ignore "
+                        logd("CMD_DELAYED_NETWORK_DISCONNECT and not debouncing - ignore "
                                 + message.arg1);
                         return HANDLED;
                     } else {
-                        loge("CMD_DELAYED_NETWORK_DISCONNECT and debouncing - disconnect "
+                        logd("CMD_DELAYED_NETWORK_DISCONNECT and debouncing - disconnect "
                                 + message.arg1);
 
                         linkDebouncing = false;
@@ -8276,7 +8271,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_ASSOCIATED_BSSID:
                     if ((String) message.obj == null) {
-                        loge("Associated command w/o BSSID");
+                        logw("Associated command w/o BSSID");
                         break;
                     }
                     mLastBssid = (String) message.obj;
@@ -8341,7 +8336,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     startDhcp();
                 }
                 obtainingIpWatchdogCount++;
-                loge("Start Dhcp Watchdog " + obtainingIpWatchdogCount);
+                logd("Start Dhcp Watchdog " + obtainingIpWatchdogCount);
                 // Get Link layer stats so as we get fresh tx packet counters
                 getWifiLinkLayerStats(true);
                 sendMessageDelayed(obtainMessage(CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER,
@@ -8352,7 +8347,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 StaticIpConfiguration config = mWifiConfigStore.getStaticIpConfiguration(
                         mLastNetworkId);
                 if (config.ipAddress == null) {
-                    loge("Static IP lacks address");
+                    logd("Static IP lacks address");
                     sendMessage(CMD_STATIC_IP_FAILURE);
                 } else {
                     InterfaceConfiguration ifcg = new InterfaceConfiguration();
@@ -8405,7 +8400,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                   break;
               case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
                   if (message.arg1 == obtainingIpWatchdogCount) {
-                      loge("ObtainingIpAddress: Watchdog Triggered, count="
+                      logd("ObtainingIpAddress: Watchdog Triggered, count="
                               + obtainingIpWatchdogCount);
                       handleIpConfigurationLost();
                       transitionTo(mDisconnectingState);
@@ -8491,7 +8486,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             // Make sure we disconnect if roaming fails
             roamWatchdogCount++;
-            loge("Start Roam Watchdog " + roamWatchdogCount);
+            logd("Start Roam Watchdog " + roamWatchdogCount);
             sendMessageDelayed(obtainMessage(CMD_ROAM_WATCHDOG_TIMER,
                     roamWatchdogCount, 0), ROAM_GUARD_TIMER_MSEC);
             mAssociated = false;
@@ -8590,7 +8585,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                    break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
                     // Auth error while roaming
-                    loge("SSID_TEMP_DISABLED nid=" + Integer.toString(mLastNetworkId)
+                    logd("SSID_TEMP_DISABLED nid=" + Integer.toString(mLastNetworkId)
                             + " id=" + Integer.toString(message.arg1)
                             + " isRoaming=" + isRoaming()
                             + " roam=" + Integer.toString(mAutoRoaming));
@@ -8617,7 +8612,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         @Override
         public void exit() {
-            loge("WifiStateMachine: Leaving Roaming state");
+            logd("WifiStateMachine: Leaving Roaming state");
         }
     }
 
@@ -8656,7 +8651,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             if (testNetworkDisconnect) {
                 testNetworkDisconnectCounter++;
-                loge("ConnectedState Enter start disconnect test " +
+                logd("ConnectedState Enter start disconnect test " +
                         testNetworkDisconnectCounter);
                 sendMessageDelayed(obtainMessage(CMD_TEST_NETWORK_DISCONNECT,
                         testNetworkDisconnectCounter, 0), 15000);
@@ -8851,7 +8846,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         break;
                     }
 
-                    loge("CMD_AUTO_ROAM sup state "
+                    logd("CMD_AUTO_ROAM sup state "
                             + mSupplicantStateTracker.getSupplicantStateName()
                             + " my state " + getCurrentState().getName()
                             + " nid=" + Integer.toString(netId)
@@ -8862,7 +8857,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     /* Save the BSSID so as to lock it @ firmware */
                     if (!autoRoamSetBSSID(config, bssid) && !linkDebouncing) {
-                        loge("AUTO_ROAM nothing to do");
+                        logd("AUTO_ROAM nothing to do");
                         // Same BSSID, nothing to do
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                         break;
@@ -8913,7 +8908,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         @Override
         public void exit() {
-            loge("WifiStateMachine: Leaving Connected state");
+            logd("WifiStateMachine: Leaving Connected state");
             setScanAlarm(false);
             mLastDriverRoamAttempt = 0;
 
@@ -8929,7 +8924,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         public void enter() {
 
             if (PDBG) {
-                loge(" Enter DisconnectingState State scan interval "
+                logd(" Enter DisconnectingState State scan interval "
                         + mWifiConfigStore.wifiDisconnectedShortScanIntervalMilli.get()
                         + " mLegacyPnoEnabled= " + mLegacyPnoEnabled
                         + " screenOn=" + mScreenOn);
@@ -8942,7 +8937,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             // find the target SSID in its cache),
             // Therefore we end up stuck that state, hence the need for the watchdog.
             disconnectingWatchdogCount++;
-            loge("Start Disconnecting Watchdog " + disconnectingWatchdogCount);
+            logd("Start Disconnecting Watchdog " + disconnectingWatchdogCount);
             sendMessageDelayed(obtainMessage(CMD_DISCONNECTING_WATCHDOG_TIMER,
                     disconnectingWatchdogCount, 0), DISCONNECTING_GUARD_TIMER_MSEC);
         }
@@ -8994,7 +8989,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
 
             if (PDBG) {
-                loge(" Enter DisconnectedState scan interval "
+                logd(" Enter DisconnectedState scan interval "
                         + mWifiConfigStore.wifiDisconnectedShortScanIntervalMilli.get()
                         + " mLegacyPnoEnabled= " + mLegacyPnoEnabled
                         + " screenOn=" + mScreenOn
@@ -9095,7 +9090,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     StateChangeResult stateChangeResult = (StateChangeResult) message.obj;
                     if (DBG) {
-                        loge("SUPPLICANT_STATE_CHANGE_EVENT state=" + stateChangeResult.state +
+                        logd("SUPPLICANT_STATE_CHANGE_EVENT state=" + stateChangeResult.state +
                                 " -> state= " + WifiInfo.getDetailedStateOf(stateChangeResult.state)
                                 + " debouncing=" + linkDebouncing);
                     }
@@ -9121,7 +9116,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         if (!checkAndRestartDelayedScan(message.arg2,
                                 true, period, null, null)) {
                             messageHandlingStatus = MESSAGE_HANDLING_STATUS_OBSOLETE;
-                            loge("WifiStateMachine Disconnected CMD_START_SCAN source "
+                            logd("Disconnected CMD_START_SCAN source "
                                     + message.arg1
                                     + " " + message.arg2 + ", " + mDelayedScanCounter
                                     + " -> obsolete");
@@ -9211,7 +9206,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         }
                         mDisconnectedPnoAlarmCount++;
                         if (VDBG) {
-                            loge("Starting PNO alarm " + delay);
+                            logd("Starting PNO alarm " + delay);
                         }
                         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                                 System.currentTimeMillis() + delay,
