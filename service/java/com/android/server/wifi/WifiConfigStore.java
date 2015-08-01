@@ -2180,7 +2180,7 @@ public class WifiConfigStore extends IpConfigStore {
                         }
                     }
                     if (config.linkedConfigurations != null) {
-                        loge("writeKnownNetworkHistory write linked "
+                        log("writeKnownNetworkHistory write linked "
                                 + config.linkedConfigurations.size());
 
                         for (String key : config.linkedConfigurations.keySet()) {
@@ -2653,8 +2653,6 @@ public class WifiConfigStore extends IpConfigStore {
                     loge("failed to set id_str: " + config.FQDN);
                     break setVariables;
                 }
-            } else {
-                log("Config is : " + config);
             }
 
             if (config.BSSID != null) {
@@ -2990,7 +2988,7 @@ public class WifiConfigStore extends IpConfigStore {
                     + " " + currentConfig.configKey());
         }
 
-        if (DBG) log("will read network variables netId=" + Integer.toString(netId));
+        if (VDBG) log("will read network variables netId=" + Integer.toString(netId));
 
         readNetworkVariables(currentConfig);
 
