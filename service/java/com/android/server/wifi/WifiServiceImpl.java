@@ -745,7 +745,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 final long energyUsed = (long)((stats.tx_time * txCurrent +
                         stats.rx_time * rxCurrent +
                         rxIdleTime * rxIdleCurrent) * voltage);
-                if (VDBG) {
+                if (VDBG || rxIdleTime < 0 || stats.on_time < 0 || stats.tx_time < 0 ||
+                        stats.rx_time < 0 || energyUsed < 0) {
                     StringBuilder sb = new StringBuilder();
                     sb.append(" rxIdleCur=" + rxIdleCurrent);
                     sb.append(" rxCur=" + rxCurrent);
