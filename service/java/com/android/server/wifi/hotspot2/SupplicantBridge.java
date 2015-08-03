@@ -111,7 +111,7 @@ public class SupplicantBridge {
             Map<Constants.ANQPElementType, ANQPElement> elements = parseWPSData(bssData);
             Log.d(Utils.hs2LogTag(getClass()), String.format("%s ANQP response for %012x: %s",
                     success ? "successful" : "failed", bssid, elements));
-            mConfigStore.notifyANQPResponse(scanDetail, elements);
+            mConfigStore.notifyANQPResponse(scanDetail, success ? elements : null);
         }
         catch (IOException ioe) {
             Log.e(Utils.hs2LogTag(getClass()), "Failed to parse ANQP: " +
