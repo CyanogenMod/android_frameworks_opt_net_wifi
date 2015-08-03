@@ -2323,7 +2323,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (key.equals(CONFIG_KEY)) {
 
                     config = mConfiguredNetworks.getByConfigKey(value);
-                    
+
                     // skip reading that configuration data
                     // since we don't have a corresponding network ID
                     if (config == null) {
@@ -4209,6 +4209,38 @@ public class WifiConfigStore extends IpConfigStore {
         }
         return found;
     }
+
+    /**
+     * Handle blacklisting per BSSID and unblacklisting
+     *
+     * @param enable
+     * @param BSSID
+     * @param reason
+     */
+    void handleDisabledAPs( boolean enable, String BSSID, int reason) {
+        if (BSSID == null)
+            return;
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            if (getScanDetailCache(config) != null) {
+                for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
+                    if (scanDetail.getBSSIDString().equals(BSSID)) {
+                        if (enable) {
+                            config.BSSID = "any";
+                            scanDetail.getScanResult().setAutoJoinStatus(ScanResult.ENABLED);
+                            // enable auto join for the blacklisted BSSID
+                            config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+                        } else {
+                            // blacklist only the specified BSSID
+                            scanDetail.getScanResult().setAutoJoinStatus(ScanResult.AUTO_ROAM_DISABLED);
+                            config.BSSID = BSSID;
+                            config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     int getMaxDhcpRetries() {
         return Settings.Global.getInt(mContext.getContentResolver(),

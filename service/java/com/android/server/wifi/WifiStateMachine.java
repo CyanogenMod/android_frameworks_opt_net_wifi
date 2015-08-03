@@ -1047,6 +1047,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     // Used for debug and stats gathering
     private static int sScanAlarmIntentCount = 0;
+    private boolean isPropFeatureEnabled = false;
+
+    private static int DEFAULT_SCORE = NetworkAgent.WIFI_BASE_SCORE;
 
     final static int frameworkMinScanIntervalSaneValue = 10000;
 
@@ -1180,6 +1183,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
+        addCneAction(filter);
+
         mContext.registerReceiver(
                 new BroadcastReceiver() {
                     @Override
@@ -1190,6 +1195,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             sendMessage(CMD_SCREEN_STATE_CHANGED, 1);
                         } else if (action.equals(Intent.ACTION_SCREEN_OFF)) {
                             sendMessage(CMD_SCREEN_STATE_CHANGED, 0);
+                        }  else {
+                            handleCneAction(intent, action);
                         }
                     }
                 }, filter);
@@ -3744,6 +3751,101 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
     }*/
 
+    /**
+     * Allow blacklist by BSSID
+     *
+     * @param enable
+     * @param bssid
+     * @param reason
+     */
+    private void handleBSSIDBlacklist(boolean enable, String bssid, int reason) {
+        if (DBG) log("Blacklisting BSSID: " + bssid + ",reason:" + reason + ",enable:" + enable );
+        if (bssid != null) {
+            // Tell configStore to black list it
+            synchronized(mScanResultCache) {
+                mWifiAutoJoinController.handleBSSIDBlackList( enable, bssid, reason );
+                mWifiConfigStore.handleDisabledAPs( enable, bssid, reason );
+            }
+        }
+    }
+
+    /**
+     * Update the score based on indication of wifi quality
+     *
+     * @param state
+     */
+    private void handleStateChange(int state) {
+        int offset;
+        if (DBG) log("handle state change: " + state);
+        if(state == 0) {
+            // wifi is not good, reduce the score
+            mWifiInfo.score = 1;
+        } else {
+            // wifi is good, increase the score
+            mWifiInfo.score = NetworkAgent.WIFI_BASE_SCORE;
+        }
+        if(mNetworkAgent != null) {
+            mNetworkAgent.sendNetworkScore(mWifiInfo.score);
+        }
+    }
+
+    /**
+     * Handle change of preference
+     *
+     * @param featureId
+     * @param featureParam
+     * @param value
+     */
+    private void handlePrefChange(int featureId, int featureParam, int value) {
+        if (DBG) log("handle pref change : featurevalue: " + value);
+        if(featureId == 1 && featureParam == 1) {
+            if(value == 2/*enabled*/) {
+                DEFAULT_SCORE = 1;
+                isPropFeatureEnabled = true;
+            } else if(value == 1/*disabled*/) {
+                DEFAULT_SCORE = NetworkAgent.WIFI_BASE_SCORE;
+                isPropFeatureEnabled = false;
+            }
+        }
+    }
+
+    /**
+    * register for additional intents
+    */
+    private void addCneAction(IntentFilter filter) {
+        int val = SystemProperties.getInt("persist.cne.feature", 0);
+        boolean isPropFeatureAvail = (val == 3) ? true : false;
+        if (isPropFeatureAvail) {
+            DEFAULT_SCORE = 1;
+            filter.addAction("com.quicinc.cne.CNE_PREFERENCE_CHANGED");
+            filter.addAction("prop_state_change");
+            filter.addAction("blacklist_bad_bssid");
+        }
+    }
+
+    /**
+    * handle intents for preference change, wifi quality indication,
+    * and blackisting/unblacklisting indication
+    */
+    private void handleCneAction(Intent intent, String action) {
+        if (null == action) return;
+        if (action.equals("com.quicinc.cne.CNE_PREFERENCE_CHANGED")) {
+            int featureId = intent.getIntExtra("cneFeatureId", -1);
+            int featureParam = intent.getIntExtra("cneFeatureParameter", -1);
+            int featureVal = intent.getIntExtra("cneParameterValue", -1);
+            handlePrefChange(featureId, featureParam, featureVal);
+        } else if (action.equals("prop_state_change")) {
+            int state = intent.getIntExtra("state", 0);
+            handleStateChange(state);
+        } else if (action.equals("blacklist_bad_bssid") ) {
+            // 1 = blacklist, 0 = unblacklist
+            int blacklist = intent.getIntExtra("blacklistBSSID", -1);
+            String bssid  =  intent.getStringExtra("BSSIDToBlacklist");
+            int reason = intent.getIntExtra("blacklistReason", -1 );
+            handleBSSIDBlacklist( ( blacklist == 0) ? true : false, bssid, reason );
+        }
+    }
+
     private static final String IE_STR = "ie=";
     private static final String ID_STR = "id=";
     private static final String BSSID_STR = "bssid=";
@@ -4367,9 +4469,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (DBG) {
                 logd("calculateWifiScore() report new score " + Integer.toString(score));
             }
-            mWifiInfo.score = score;
-            if (mNetworkAgent != null) {
-                mNetworkAgent.sendNetworkScore(score);
+            if (!isPropFeatureEnabled) {
+                mWifiInfo.score = score;
+                if(mNetworkAgent != null) {
+                    mNetworkAgent.sendNetworkScore(score);
+                }
             }
         }
         wifiScoringReport = sb.toString();
@@ -7970,7 +8074,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     + " config.bssid " + config.BSSID);
         }
         config.autoJoinBSSID = "any";
-        config.BSSID = "any";
+
+        // If an app specified a BSSID then dont over-write it
+        if ( !mWifiAutoJoinController.isBlacklistedBSSID(config.BSSID) ) {
+            config.BSSID = "any";
+        }
+
         if (DBG) {
            logd(dbg + " " + config.SSID
                     + " nid=" + Integer.toString(config.networkId));
@@ -7996,7 +8105,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
             mNetworkAgent = new WifiNetworkAgent(getHandler().getLooper(), mContext,
                     "WifiNetworkAgent", mNetworkInfo, mNetworkCapabilitiesFilter,
-                    mLinkProperties, 60);
+                    mLinkProperties, DEFAULT_SCORE);
 
             // We must clear the config BSSID, as the wifi chipset may decide to roam
             // from this point on and having the BSSID specified in the network block would

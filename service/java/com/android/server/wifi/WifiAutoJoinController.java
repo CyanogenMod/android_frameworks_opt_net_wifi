@@ -68,6 +68,8 @@ public class WifiAutoJoinController {
 
     private final HashMap<String, ScanDetail> scanResultCache = new HashMap<>();
 
+    private ArrayList<String> mBlacklistedBssids;
+
     private WifiConnectionStatistics mWifiConnectionStatistics;
 
     /**
@@ -132,6 +134,7 @@ public class WifiAutoJoinController {
                     + " service " + Context.NETWORK_SCORE_SERVICE);
             mNetworkScoreCache = null;
         }
+        mBlacklistedBssids = new ArrayList<String>();
     }
 
     void enableVerboseLogging(int verbose) {
@@ -1228,6 +1231,43 @@ public class WifiAutoJoinController {
     }
 
     /**
+     * Add or remove the BSSID from list of blacklisted BSSID's
+     *
+     * @param enable
+     * @param bssid
+     * @param reason
+     */
+    void handleBSSIDBlackList(boolean enable, String bssid, int reason) {
+        if( reason == 5 ) // Enable Auto Join for all BSSIDs
+        {
+            mBlacklistedBssids.clear();
+            return;
+        }
+        if( !enable ) {
+            if( !mBlacklistedBssids.contains(bssid) )
+            {
+                mBlacklistedBssids.add(bssid);
+            }
+        }
+        else {
+            if( mBlacklistedBssids.contains(bssid) ) {
+                mBlacklistedBssids.remove(bssid);
+            }
+        }
+    }
+
+    /**
+     * Is BSSID blacklisted
+     *
+     * @param bssid
+     *
+     * @return boolean
+     */
+    boolean isBlacklistedBSSID( String bssid ) {
+        return mBlacklistedBssids.contains(bssid);
+    }
+
+    /**
      * Set whether connections to untrusted connections are allowed.
      */
     void setAllowUntrustedConnections(boolean allow) {
@@ -1519,6 +1559,14 @@ public class WifiAutoJoinController {
          */
         for (WifiConfiguration config : list) {
             if (config.SSID == null) {
+                continue;
+            }
+
+            if ( this.isBlacklistedBSSID(config.BSSID) ) {
+                if (DBG) {
+                    logDbg("attemptAutoJoin skip candidate as AP is Blacklisted config.SSID = "
+                        + config.SSID + " config.BSSID=" + config.BSSID);
+                }
                 continue;
             }
 
