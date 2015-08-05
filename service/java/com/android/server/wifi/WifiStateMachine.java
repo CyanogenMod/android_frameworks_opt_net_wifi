@@ -1355,7 +1355,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     PendingIntent getPrivateBroadcast(String action, int requestCode) {
         Intent intent = new Intent(action, null);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-        //intent.setPackage(this.getClass().getPackage().getName());
+        // TODO: Find the correct value so this is not hard coded
         intent.setPackage("android");
         return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
     }
@@ -4027,7 +4027,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 || state == SupplicantState.GROUP_HANDSHAKE
                 || (/* keep autojoin enabled if user has manually selected a wifi network,
                         so as to make sure we reliably remain connected to this network */
-                mConnectionRequests == 0 && selection == null)) {
+                mConnectionRequests == 0 && selection == null)
+                || mInDelayedStop) {
             // Dont attempt auto-joining again while we are already attempting to join
             // and/or obtaining Ip address
             attemptAutoJoin = false;
@@ -6395,7 +6396,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     /* send regular delayed shut down */
                     Intent driverStopIntent = new Intent(ACTION_DELAYED_DRIVER_STOP, null);
-                    driverStopIntent.setPackage(this.getClass().getPackage().getName());
+                    driverStopIntent.setPackage("android");
                     driverStopIntent.putExtra(DELAYED_STOP_COUNTER, mDelayedStopCounter);
                     mDriverStopIntent = PendingIntent.getBroadcast(mContext,
                             DRIVER_STOP_REQUEST, driverStopIntent,
