@@ -607,8 +607,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     static final int CMD_STATIC_IP_FAILURE                              = BASE + 16;
     /* Indicates supplicant stop failed */
     static final int CMD_STOP_SUPPLICANT_FAILED                         = BASE + 17;
-    /* Delayed stop to avoid shutting down driver too quick*/
-    static final int CMD_DELAYED_STOP_DRIVER                            = BASE + 18;
     /* A delayed message sent to start driver when it fail to come up */
     static final int CMD_DRIVER_START_TIMED_OUT                         = BASE + 19;
 
@@ -919,14 +917,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     int mRunningBeaconCount = 0;
 
-    /**
-     * Starting and shutting down driver too quick causes problems leading to driver
-     * being in a bad state. Delay driver stop.
-     */
-    private final int mDriverStopDelayMs;
-    private int mDelayedStopCounter;
-    private boolean mInDelayedStop = false;
-
     // there is a delay between StateMachine change country code and Supplicant change country code
     // here save the current WifiStateMachine set country code
     private volatile String mSetCountryCode = null;
@@ -1066,11 +1056,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String ACTION_START_PNO =
             "com.android.server.WifiManager.action.START_PNO";
 
-    private static final String DELAYED_STOP_COUNTER = "DelayedStopCounter";
-    private static final int DRIVER_STOP_REQUEST = 0;
-    private static final String ACTION_DELAYED_DRIVER_STOP =
-            "com.android.server.WifiManager.action.DELAYED_DRIVER_STOP";
-
     /**
      * Keep track of whether WIFI is running.
      */
@@ -1170,9 +1155,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mNoNetworksPeriodicScan = mContext.getResources().getInteger(
                 R.integer.config_wifi_no_network_periodic_scan_interval);
 
-        mDriverStopDelayMs = mContext.getResources().getInteger(
-                R.integer.config_wifi_driver_stop_delay);
-
         mBackgroundScanSupported = mContext.getResources().getBoolean(
                 R.bool.config_wifi_background_scan_support);
 
@@ -1243,16 +1225,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         }
                     }
                 }, filter);
-
-        mContext.registerReceiver(
-                new BroadcastReceiver() {
-                    @Override
-                    public void onReceive(Context context, Intent intent) {
-                        int counter = intent.getIntExtra(DELAYED_STOP_COUNTER, 0);
-                        sendMessage(CMD_DELAYED_STOP_DRIVER, counter, 0);
-                    }
-                },
-                new IntentFilter(ACTION_DELAYED_DRIVER_STOP));
 
         mContext.getContentResolver().registerContentObserver(Settings.Global.getUriFor(
                         Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED), false,
@@ -1332,7 +1304,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     PendingIntent getPrivateBroadcast(String action, int requestCode) {
         Intent intent = new Intent(action, null);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-        //intent.setPackage(this.getClass().getPackage().getName());
         intent.setPackage("android");
         return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
     }
@@ -5559,7 +5530,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_STOP_SUPPLICANT_FAILED:
                 case CMD_START_DRIVER:
                 case CMD_STOP_DRIVER:
-                case CMD_DELAYED_STOP_DRIVER:
                 case CMD_DRIVER_START_TIMED_OUT:
                 case CMD_START_AP:
                 case CMD_START_AP_SUCCESS:
@@ -6214,8 +6184,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             mWifiLogger.startLogging(mVerboseLoggingLevel > 0);
             mIsRunning = true;
-            mInDelayedStop = false;
-            mDelayedStopCounter++;
             updateBatteryWorkSource(null);
             /**
              * Enable bluetooth coexistence scan mode when bluetooth connection is active.
@@ -6335,43 +6303,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_STOP_DRIVER:
                     int mode = message.arg1;
 
-                    /* Already doing a delayed stop */
-                    if (mInDelayedStop) {
-                        if (DBG) log("Already in delayed stop");
-                        break;
-                    }
-                    /* disconnect right now, but leave the driver running for a bit */
+                    log("stop driver");
                     mWifiConfigStore.disableAllNetworks();
 
-                    mInDelayedStop = true;
-                    mDelayedStopCounter++;
-                    if (DBG) log("Delayed stop message " + mDelayedStopCounter);
-
-                    /* send regular delayed shut down */
-                    Intent driverStopIntent = new Intent(ACTION_DELAYED_DRIVER_STOP, null);
-                    driverStopIntent.setPackage(this.getClass().getPackage().getName());
-                    driverStopIntent.putExtra(DELAYED_STOP_COUNTER, mDelayedStopCounter);
-                    mDriverStopIntent = PendingIntent.getBroadcast(mContext,
-                            DRIVER_STOP_REQUEST, driverStopIntent,
-                            PendingIntent.FLAG_UPDATE_CURRENT);
-
-                    mAlarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis()
-                            + mDriverStopDelayMs, mDriverStopIntent);
-                    break;
-                case CMD_START_DRIVER:
-                    if (mInDelayedStop) {
-                        mInDelayedStop = false;
-                        mDelayedStopCounter++;
-                        mAlarmManager.cancel(mDriverStopIntent);
-                        if (DBG) log("Delayed stop ignored due to start");
-                        if (mOperationalMode == CONNECT_MODE) {
-                            mWifiConfigStore.enableAllNetworks();
-                        }
-                    }
-                    break;
-                case CMD_DELAYED_STOP_DRIVER:
-                    if (DBG) log("delayed stop " + message.arg1 + " " + mDelayedStopCounter);
-                    if (message.arg1 != mDelayedStopCounter) break;
                     if (getCurrentState() != mDisconnectedState) {
                         mWifiNative.disconnect();
                         handleNetworkDisconnect();
@@ -6383,6 +6317,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         transitionTo(mWaitForP2pDisableState);
                     } else {
                         transitionTo(mDriverStoppingState);
+                    }
+                    break;
+                case CMD_START_DRIVER:
+                    if (mOperationalMode == CONNECT_MODE) {
+                        mWifiConfigStore.enableAllNetworks();
                     }
                     break;
                 case CMD_START_PACKET_FILTERING:
@@ -6467,7 +6406,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case WifiMonitor.SUP_DISCONNECTION_EVENT:
                     mTransitionToState = mInitialState;
                     break;
-                case CMD_DELAYED_STOP_DRIVER:
+                case CMD_STOP_DRIVER:
                     mTransitionToState = mDriverStoppingState;
                     break;
                 case CMD_STOP_SUPPLICANT:
