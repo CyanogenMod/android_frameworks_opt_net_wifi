@@ -229,6 +229,28 @@ static wifi_interface_handle getIfaceHandle(JNIEnv *env, jclass cls, jint index)
     return (wifi_interface_handle) getStaticLongArrayField(env, cls, WifiIfaceHandleVarName, index);
 }
 
+jboolean setSSIDField(JNIEnv *env, jobject obj, const char *rawSsid) {
+
+    jmethodID methodID = env->GetStaticMethodID(mCls, "setSsid", "([BLandroid/net/wifi/ScanResult;)Z");
+    if (methodID == NULL) {
+        ALOGE("Error in getting method ID setSsid");
+        return false;
+    }
+
+    int len = strlen(rawSsid);
+
+    if (len > 0) {
+        jbyteArray ssidBytes = env->NewByteArray(len);
+        env->SetByteArrayRegion(ssidBytes, 0, len, (jbyte *) rawSsid);
+        jboolean ret = env->CallStaticBooleanMethod(mCls, methodID, ssidBytes, obj);
+        env->DeleteLocalRef(ssidBytes);
+        return ret;
+    } else {
+        //empty SSID or SSID start with \0
+        return true;
+    }
+}
+
 static jobject createScanResult(JNIEnv *env, wifi_scan_result *result) {
 
     // ALOGD("creating scan result");
@@ -240,8 +262,11 @@ static jobject createScanResult(JNIEnv *env, wifi_scan_result *result) {
     }
 
     ALOGV("setting SSID to %s", result->ssid);
-    //jstring jssid = env->NewStringUTF(result->ssid);
-    setStringField(env, scanResult, "SSID", result->ssid);
+
+    if(!setSSIDField(env, scanResult, result->ssid)) {
+        ALOGE("Error on set SSID");
+        return NULL;
+    }
 
     char bssid[32];
     sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", result->bssid[0], result->bssid[1],
@@ -613,8 +638,10 @@ static jobject android_net_wifi_getScanResults(
                     return NULL;
                 }
 
-                setStringField(env, scanResult, "SSID", results[j].ssid);
-
+                if(!setSSIDField(env, scanResult, results[j].ssid)) {
+                    ALOGE("Error on set SSID");
+                    return NULL;
+                }
                 char bssid[32];
                 sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[j].bssid[0],
                         results[j].bssid[1], results[j].bssid[2], results[j].bssid[3],
@@ -751,7 +778,10 @@ static void onHotlistApFound(wifi_request_id id,
             return;
         }
 
-        setStringField(env, scanResult, "SSID", results[i].ssid);
+        if(!setSSIDField(env, scanResult, results[i].ssid)) {
+            ALOGE("Can not set SSID");
+            return;
+        }
 
         char bssid[32];
         sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[i].bssid[0], results[i].bssid[1],
@@ -801,7 +831,10 @@ static void onHotlistApLost(wifi_request_id id,
             return;
         }
 
-        setStringField(env, scanResult, "SSID", results[i].ssid);
+        if(!setSSIDField(env, scanResult, results[i].ssid)) {
+            ALOGE("Error on set SSID");
+            return;
+        }
 
         char bssid[32];
         sprintf(bssid, "%02x:%02x:%02x:%02x:%02x:%02x", results[i].bssid[0], results[i].bssid[1],
