@@ -40,11 +40,16 @@ import com.android.server.connectivity.KeepalivePacketData;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.Deflater;
-
+import libcore.util.HexEncoding;
 /**
  * Native calls for bring up/shut down of the supplicant daemon and for
  * sending requests to the supplicant daemon
@@ -1403,6 +1408,46 @@ public class WifiNative {
         }
     }
 
+    public static  WifiSsid createWifiSsid (byte[] rawSsid) {
+        String ssidHexString = String.valueOf(HexEncoding.encode(rawSsid));
+
+        if (ssidHexString == null) {
+            return null;
+        }
+
+        WifiSsid wifiSsid = WifiSsid.createFromHex(ssidHexString);
+
+        return wifiSsid;
+    }
+
+    public static String ssidConvert(byte[] rawSsid) {
+        String ssid;
+
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+        try {
+            CharBuffer decoded = decoder.decode(ByteBuffer.wrap(rawSsid));
+            ssid = decoded.toString();
+        } catch (CharacterCodingException cce) {
+            ssid = null;
+        }
+
+        if (ssid == null) {
+            ssid = new String(rawSsid, StandardCharsets.ISO_8859_1);
+        }
+
+        return ssid;
+    }
+
+    public static boolean setSsid(byte[] rawSsid, ScanResult result) {
+        if (rawSsid == null || rawSsid.length == 0 || result == null) {
+            return false;
+        }
+
+        result.SSID = ssidConvert(rawSsid);
+        result.wifiSsid = createWifiSsid(rawSsid);
+        return true;
+    }
+
     static void populateScanResult(ScanResult result, byte bytes[], String dbg) {
         int num = 0;
         if (bytes == null) return;
@@ -1829,10 +1874,10 @@ public class WifiNative {
 
                 if (cancelRangeRequestNative(sWlan0Index, sRttCmdId, params)) {
                     sRttEventHandler = null;
-                    Log.v(TAG, "Xin: RTT cancel Request Successfully");
+                    Log.v(TAG, "RTT cancel Request Successfully");
                     return true;
                 } else {
-                    Log.e(TAG, "Xin:RTT cancel Request failed");
+                    Log.e(TAG, "RTT cancel Request failed");
                     return false;
                 }
             } else {
