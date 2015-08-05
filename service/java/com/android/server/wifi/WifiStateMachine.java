@@ -9007,8 +9007,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     /**
                      * screen lit and => delayed timer
                      */
-                    startDelayedScan(mWifiConfigStore.wifiDisconnectedShortScanIntervalMilli.get(),
-                            null, null);
+                    startDelayedScan(500, null, null);
                 } else {
                     /**
                      * screen dark and PNO supported => scan alarm disabled
