@@ -1363,6 +1363,10 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
     return hal_fn.wifi_set_scanning_mac_oui(handle, (byte *)bytes) == WIFI_SUCCESS;
 }
 
+static jboolean android_net_wifi_is_get_channels_for_band_supported(JNIEnv *env, jclass cls){
+    return (hal_fn.wifi_get_valid_channels == wifi_get_valid_channels_stub);
+}
+
 static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
         jint iface, jint band)  {
 
@@ -2270,7 +2274,7 @@ static JNINativeMethod gWifiMethods[] = {
     { "setBssidBlacklistNative", "(II[Ljava/lang/String;)Z",
             (void*)android_net_wifi_setBssidBlacklist},
     { "setSsidWhitelistNative", "(II[Ljava/lang/String;)Z",
-             (void*)android_net_wifi_setSsidWhitelist},
+            (void*)android_net_wifi_setSsidWhitelist},
     {"setLoggingEventHandlerNative", "(II)Z", (void *) android_net_wifi_set_log_handler},
     {"resetLogHandlerNative", "(II)Z", (void *) android_net_wifi_reset_log_handler},
     { "startSendingOffloadedPacketNative", "(II[B[B[BI)I",
@@ -2280,7 +2284,9 @@ static JNINativeMethod gWifiMethods[] = {
     {"startRssiMonitoringNative", "(IIBB)I",
             (void*)android_net_wifi_start_rssi_monitoring_native},
     {"stopRssiMonitoringNative", "(II)I",
-            (void*)android_net_wifi_stop_rssi_monitoring_native}
+            (void*)android_net_wifi_stop_rssi_monitoring_native},
+    {"isGetChannelsForBandSupportedNative", "()Z",
+            (void*)android_net_wifi_is_get_channels_for_band_supported}
 };
 
 int register_android_net_wifi_WifiNative(JNIEnv* env) {
