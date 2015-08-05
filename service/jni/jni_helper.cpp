@@ -417,17 +417,25 @@ void setObjectField(JNIEnv *env, jobject obj, const char *name, const char *type
     env->DeleteLocalRef(cls);
 }
 
-void setStringField(JNIEnv *env, jobject obj, const char *name, const char *value)
+jboolean setStringField(JNIEnv *env, jobject obj, const char *name, const char *value)
 {
+
     jstring str = env->NewStringUTF(value);
 
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        return false;
+    }
+
     if (str == NULL) {
-        THROW(env, "Error in accessing class");
-        return;
+        ALOGE("Error in string allocation");
+        return false;
     }
 
     setObjectField(env, obj, name, "Ljava/lang/String;", str);
     env->DeleteLocalRef(str);
+    return true;
 }
 
 void reportEvent(JNIEnv *env, jclass cls, const char *method, const char *signature, ...)
