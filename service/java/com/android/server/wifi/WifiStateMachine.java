@@ -5280,14 +5280,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (config.apChannel == 0) {
                 config.apChannel = chooseApChannel(config.apBand);
                 if (config.apChannel == 0) {
-                    //fail to get available channel
-                    sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_NO_CHANNEL);
-                    return;
+                    if(mWifiNative.isGetChannelsForBandSupported()) {
+                        //fail to get available channel
+                        sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_NO_CHANNEL);
+                        return;
+                    } else {
+                        //for some old device, wifiHal may not be supportedget valid channels are not
+                        //supported
+                        config.apBand = 0;
+                        config.apChannel = 6;
+                    }
                 }
             }
         } else {
             //for some old device, wifiHal may not be supported
-            config.apChannel = 0;
+            config.apBand = 0;
             config.apChannel = 6;
         }
         // Start hostapd on a separate thread
