@@ -2069,14 +2069,18 @@ static jboolean android_net_wifi_setSsidWhitelist(
 
 static jint android_net_wifi_start_sending_offloaded_packet(JNIEnv *env, jclass cls, jint iface,
                     jint idx, jbyteArray srcMac, jbyteArray dstMac, jbyteArray pkt, jint period)  {
-    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    JNIHelper helper(env);
+    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
     ALOGD("Start packet offload [%d] = %p", idx, handle);
     wifi_error ret;
     wifi_request_id id = idx;
-    byte * pkt_data =  (byte *)env->GetByteArrayElements(pkt, NULL);
+    
+    ScopedBytesRO pktBytes(env, pkt), srcMacBytes(env, srcMac), dstMacBytes(env, dstMac);
+
+    byte * pkt_data = (byte*) pktBytes.get();
     unsigned short pkt_len = env->GetArrayLength(pkt);
-    byte* src_mac_addr = (byte *)env->GetByteArrayElements(srcMac, NULL);
-    byte* dst_mac_addr = (byte *)env->GetByteArrayElements(dstMac, NULL);
+    byte* src_mac_addr = (byte*) srcMacBytes.get();
+    byte* dst_mac_addr = (byte*) dstMacBytes.get();
     int i;
     char macAddr[32];
     sprintf(macAddr, "%0x:%0x:%0x:%0x:%0x:%0x", src_mac_addr[0], src_mac_addr[1],
@@ -2100,7 +2104,8 @@ static jint android_net_wifi_start_sending_offloaded_packet(JNIEnv *env, jclass 
 static jint android_net_wifi_stop_sending_offloaded_packet(JNIEnv *env, jclass cls,
                     jint iface, jint idx) {
     int ret;
-    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    JNIHelper helper(env);
+    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
     ALOGD("Stop packet offload [%d] = %p", idx, handle);
     ret =  hal_fn.wifi_stop_sending_offloaded_packet(idx, handle);
     ALOGD("ret= %d\n", ret);
@@ -2113,16 +2118,16 @@ static void onRssiThresholdbreached(wifi_request_id id, u8 *cur_bssid, s8 cur_rs
     ALOGD("BSSID %02x:%02x:%02x:%02x:%02x:%02x\n",
             cur_bssid[0], cur_bssid[1], cur_bssid[2],
             cur_bssid[3], cur_bssid[4], cur_bssid[5]);
-    JNIEnv *env = NULL;
-    mVM->AttachCurrentThread(&env, NULL);
+    JNIHelper helper(mVM);
     //ALOGD("onRssiThresholdbreached called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
-    reportEvent(env, mCls, "onRssiThresholdBreached", "(IB)V", id, cur_rssi);
+    helper.reportEvent(mCls, "onRssiThresholdBreached", "(IB)V", id, cur_rssi);
 }
 
 static jint android_net_wifi_start_rssi_monitoring_native(JNIEnv *env, jclass cls, jint iface,
         jint idx, jbyte maxRssi, jbyte minRssi) {
 
-    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    JNIHelper helper(env);
+    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
     ALOGD("Start Rssi monitoring = %p", handle);
     ALOGD("MinRssi %d MaxRssi %d", minRssi, maxRssi);
     wifi_error ret;
@@ -2135,7 +2140,8 @@ static jint android_net_wifi_start_rssi_monitoring_native(JNIEnv *env, jclass cl
 
 static jint android_net_wifi_stop_rssi_monitoring_native(JNIEnv *env, jclass cls,
         jint iface, jint idx) {
-    wifi_interface_handle handle = getIfaceHandle(env, cls, iface);
+    JNIHelper helper(env);
+    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
     ALOGD("Stop Rssi monitoring = %p", handle);
     wifi_error ret;
     wifi_request_id id = idx;
