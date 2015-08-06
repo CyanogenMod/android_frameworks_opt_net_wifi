@@ -1293,7 +1293,6 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
     }
 
     wifi_error ret = hal_fn.wifi_set_scanning_mac_oui(handle, (byte *)bytes);
-    env->ReleaseByteArrayElements(param, bytes, 0);
     return ret == WIFI_SUCCESS;
 }
 
