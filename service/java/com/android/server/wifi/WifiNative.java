@@ -1903,10 +1903,24 @@ public class WifiNative {
 
     synchronized public static int [] getChannelsForBand(int band) {
         synchronized (mLock) {
-            return getChannelsForBandNative(sWlan0Index, band);
+            if (isHalStarted()) {
+                return getChannelsForBandNative(sWlan0Index, band);
+	    } else {
+                return null;
+            }
         }
     }
 
+    private static native boolean isGetChannelsForBandSupportedNative();
+    synchronized public static boolean isGetChannelsForBandSupported(){
+        synchronized (mLock) {
+            if (isHalStarted()) {
+                return isGetChannelsForBandSupportedNative();
+	    } else {
+                return false;
+            }
+        }
+    }
 
     private static native boolean setDfsFlagNative(int iface, boolean dfsOn);
     synchronized public static boolean setDfsFlag(boolean dfsOn) {
