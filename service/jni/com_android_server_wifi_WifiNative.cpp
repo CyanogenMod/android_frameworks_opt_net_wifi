@@ -1285,8 +1285,8 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
         return false;
     }
 
-    ScopedBytesRO paramBytes(env, param);
-    const jbyte* bytes = paramBytes.get();
+    ScopedBytesRW paramBytes(env, param);
+    jbyte* bytes = paramBytes.get();
     if (bytes == NULL) {
         ALOGE("failed to get array");
         return false;
