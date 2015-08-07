@@ -1292,9 +1292,7 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
         return false;
     }
 
-    wifi_error ret = hal_fn.wifi_set_scanning_mac_oui(handle, (byte *)bytes);
-    env->ReleaseByteArrayElements(param, bytes, 0);
-    return ret == WIFI_SUCCESS;
+    return hal_fn.wifi_set_scanning_mac_oui(handle, (byte *)bytes) == WIFI_SUCCESS;
 }
 
 static jboolean android_net_wifi_is_get_channels_for_band_supported(JNIEnv *env, jclass cls){
