@@ -4174,16 +4174,11 @@ public class WifiConfigStore extends IpConfigStore {
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
             if (enabled) {
-                loge("SSID re-enabled for  " + config.configKey() +
+                loge("Ignoring SSID re-enabled from supplicant:  " + config.configKey() +
                         " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
                         + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
-                //TODO: http://b/16381983 Fix Wifi Network Blacklisting
-                //TODO: really I don't know if re-enabling is right but we
-                //TODO: should err on the side of trying to connect
-                //TODO: even if the attempt will fail
-                if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE) {
-                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
-                }
+                //We should not re-enable the BSSID based on Supplicant reanable.
+                // Framework will re-enable it after its own blacklist timer expires
             } else {
                 loge("SSID temp disabled for  " + config.configKey() +
                         " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
