@@ -7879,12 +7879,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private void updateCapabilities(WifiConfiguration config) {
-        if (config.ephemeral) {
-            mNetworkCapabilities.removeCapability(
-                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
-        } else {
-            mNetworkCapabilities.addCapability(
-                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+        if (config != null) {
+            if (config.ephemeral) {
+                mNetworkCapabilities.removeCapability(
+                        NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            } else {
+                mNetworkCapabilities.addCapability(
+                        NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            }
         }
         mNetworkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
                 mWifiInfo.getRssi() : NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED);
