@@ -281,7 +281,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     public void processRssiThreshold(byte curRssi) {
-        for (int i = 0; i < mRssiRanges.length; i++) {
+        for (int i = 1; i < mRssiRanges.length; i++) {
             if (curRssi < mRssiRanges[i]) {
                 // Assume sorted values(ascending order) for rssi,
                 // bounded by high(127) and low(-127) at extremeties
@@ -7879,12 +7879,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private void updateCapabilities(WifiConfiguration config) {
-        if (config.ephemeral) {
-            mNetworkCapabilities.removeCapability(
-                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
-        } else {
-            mNetworkCapabilities.addCapability(
-                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+        if (config != null) {
+            if (config.ephemeral) {
+                mNetworkCapabilities.removeCapability(
+                        NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            } else {
+                mNetworkCapabilities.addCapability(
+                        NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            }
         }
         mNetworkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
                 mWifiInfo.getRssi() : NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED);
