@@ -3604,8 +3604,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private void setFrequencyBand() {
         int band = Settings.Global.getInt(mContext.getContentResolver(),
                 Settings.Global.WIFI_FREQUENCY_BAND, WifiManager.WIFI_FREQUENCY_BAND_AUTO);
-        setFrequencyBand(band, false);
+
+        if (mWifiNative.setBand(band)) {
+            mFrequencyBand.set(band);
+            if (PDBG) {
+                logd("done set frequency band " + band);
+            }
+        } else {
+            loge("Failed to set frequency band " + band);
+        }
     }
+
+
 
     private void setSuspendOptimizationsNative(int reason, boolean enabled) {
         if (DBG) {
@@ -5755,6 +5765,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mLastSignalLevel = -1;
 
                     mWifiInfo.setMacAddress(mWifiNative.getMacAddress());
+                    /* set frequency band of operation */
+                    setFrequencyBand();
                     mWifiNative.enableSaveConfig();
                     mWifiConfigStore.loadAndEnableAllNetworks();
                     if (mWifiConfigStore.enableVerboseLogging.get() > 0) {
@@ -6093,8 +6105,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
              * driver are changed to reduce interference with bluetooth
              */
             mWifiNative.setBluetoothCoexistenceScanMode(mBluetoothConnectionActive);
-            /* set frequency band of operation */
-            setFrequencyBand();
             /* initialize network state */
             setNetworkDetailedState(DetailedState.DISCONNECTED);
 
