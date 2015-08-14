@@ -605,11 +605,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         int getCsph() {
             int csph = 0;
             for (ScanSettings settings : getScanSettings()) {
-                int num_channels = settings.channels == null ? 0 : settings.channels.length;
-                if (num_channels == 0 && settings.band != 0) {
-                    num_channels = getChannelsForBand(settings.band).length;
-                }
-
+                int num_channels = getChannelsForScanSettings(settings).length;
                 int scans_per_Hour = settings.periodInMs == 0 ? 1 : (3600 * 1000) / settings.periodInMs;
                 csph += num_channels * scans_per_Hour;
             }
@@ -1253,23 +1249,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return false;
         }
 
-        int minSupportedPeriodMs = 0;
-        if (settings.channels != null) {
-            minSupportedPeriodMs = settings.channels.length * MIN_PERIOD_PER_CHANNEL_MS;
-        } else {
-            if ((settings.band & WifiScanner.WIFI_BAND_24_GHZ) == 0) {
-                /* 2.4 GHz band has 11 to 13 channels */
-                minSupportedPeriodMs += 1000;
-            }
-            if ((settings.band & WifiScanner.WIFI_BAND_5_GHZ) == 0) {
-                /* 5 GHz band has another 10 channels */
-                minSupportedPeriodMs += 1000;
-            }
-            if ((settings.band & WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY) == 0) {
-                /* DFS requires passive scan which takes longer time */
-                minSupportedPeriodMs += 2000;
-            }
+        int channelCount = getChannelsForScanSettings(settings).length;
+        if (channelCount == 0) {
+            loge("No channels specified");
+            return false;
         }
+        int minSupportedPeriodMs = channelCount * MIN_PERIOD_PER_CHANNEL_MS;
 
         if (settings.periodInMs < minSupportedPeriodMs) {
             localLog("Failing scan request because minSupportedPeriodMs is "
@@ -1886,6 +1871,19 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return mChannels[0];
         else
             return mChannels[band];
+    }
+
+    private static ChannelSpec[] getChannelsForScanSettings(ScanSettings settings) {
+        if (settings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+            if(settings.channels != null) {
+                return settings.channels;
+            }
+            else {
+                return new ChannelSpec[0];
+            }
+        } else {
+            return getChannelsForBand(settings.band);
+        }
     }
 
     private static boolean isDfs(int channel) {
