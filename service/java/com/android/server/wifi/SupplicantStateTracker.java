@@ -28,6 +28,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiConfiguration.KeyMgmt;
 import android.net.wifi.WifiManager;
 import android.os.Handler;
 import android.os.Message;
@@ -126,6 +127,13 @@ class SupplicantStateTracker extends StateMachine {
             mWifiConfigStore.enableAllNetworks();
             mNetworksDisabledDuringConnect = false;
         }
+         WifiConfiguration config =  mWifiConfigStore.getWifiConfiguration(netId);
+         if ((config != null) &&
+                config.allowedKeyManagement.get(KeyMgmt.WPA_EAP) &&
+                (disableReason == WifiConfiguration.DISABLED_AUTH_FAILURE)) {
+             config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
+         }
+
         /* Disable failed network */
         mWifiConfigStore.disableNetwork(netId, disableReason);
     }
