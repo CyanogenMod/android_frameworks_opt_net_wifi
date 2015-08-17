@@ -1858,9 +1858,21 @@ public class WifiConfigStore extends IpConfigStore {
                 config.setIpAssignment(IpAssignment.DHCP);
                 config.setProxySettings(ProxySettings.NONE);
 
-                if (mConfiguredNetworks.getByConfigKey(config.configKey()) != null) {
+                WifiConfiguration possibleOldConfig =
+                        mConfiguredNetworks.getByConfigKey(config.configKey());
+                if (possibleOldConfig != null) {
                     // That SSID is already known, just ignore this duplicate entry
-                    if (showNetworks) localLog("discarded duplicate network ", config.networkId);
+                    if (showNetworks) {
+                        localLog("update duplicate network " + possibleOldConfig.networkId + " with "
+                                + config.networkId);
+                    }                    
+                    // This can happen after the user manually connected to an AP and try to use WPS
+                    // to connect the AP later.In this way, supplicant will create a new network for
+                    // the AP although there is an existing network already.
+                    mWifiNative.removeNetwork(possibleOldConfig.networkId);
+                    mConfiguredNetworks.remove(possibleOldConfig.networkId);
+                    mConfiguredNetworks.put(config.networkId, config);
+
                 } else if(WifiServiceImpl.isValid(config)){
                     mConfiguredNetworks.put(config.networkId, config);
                     if (showNetworks) localLog("loaded configured network", config.networkId);
