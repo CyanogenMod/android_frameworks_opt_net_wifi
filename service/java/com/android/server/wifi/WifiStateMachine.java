@@ -3514,7 +3514,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     + " suppState:" + mSupplicantStateTracker.getSupplicantStateName());
         }
         enableRssiPolling(screenOn);
-        if (screenOn) enableAllNetworks();
         if (mUserWantsSuspendOpt.get()) {
             if (screenOn) {
                 sendMessage(CMD_SET_SUSPEND_OPT_ENABLED, 0, 0);
@@ -8412,9 +8411,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         break;
                     }
                     return NOT_HANDLED;
-                    /* Ignore */
-                case WifiMonitor.NETWORK_CONNECTION_EVENT:
-                    break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
                         if (mWifiConfigStore.enableChipWakeUpWhenAssociated.get()) {
