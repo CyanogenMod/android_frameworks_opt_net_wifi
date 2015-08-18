@@ -726,6 +726,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public WifiActivityEnergyInfo reportActivityInfo() {
         enforceAccessPermission();
+        if ((getSupportedFeatures() & WifiManager.WIFI_FEATURE_LINK_LAYER_STATS) == 0) {
+            return null;
+        }
         WifiLinkLayerStats stats;
         WifiActivityEnergyInfo energyInfo = null;
         if (mWifiStateMachineChannel != null) {
@@ -765,7 +768,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                         WifiActivityEnergyInfo.STACK_STATE_STATE_IDLE, stats.tx_time,
                         stats.rx_time, rxIdleTime, energyUsed);
             }
-            return energyInfo;
+            if (energyInfo != null && energyInfo.isValid()) {
+                return energyInfo;
+            } else {
+                return null;
+            }
         } else {
             Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
             return null;
