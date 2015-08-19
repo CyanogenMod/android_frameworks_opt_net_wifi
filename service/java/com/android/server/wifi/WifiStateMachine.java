@@ -4485,8 +4485,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         final boolean linkChanged = !newLp.equals(mLinkProperties);
         final boolean wasProvisioned = isProvisioned(mLinkProperties);
         final boolean isProvisioned = isProvisioned(newLp);
-        final boolean lostIPv4Provisioning =
-                mLinkProperties.hasIPv4Address() && !newLp.hasIPv4Address();
+        // TODO: Teach LinkProperties how to understand static assignment
+        // and simplify all this provisioning change detection logic by
+        // unifying it under LinkProperties.compareProvisioning().
+        final boolean lostProvisioning =
+                (wasProvisioned && !isProvisioned) ||
+                (mLinkProperties.hasIPv4Address() && !newLp.hasIPv4Address()) ||
+                (mLinkProperties.isIPv6Provisioned() && !newLp.isIPv6Provisioned());
         final DetailedState detailedState = getNetworkDetailedState();
 
         if (linkChanged) {
@@ -4499,6 +4504,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
             }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
+        }
+
+        if (lostProvisioning) {
+            log("Lost IP layer provisioning!" +
+                    " was: " + mLinkProperties +
+                    " now: " + newLp);
         }
 
         if (DBG) {
@@ -4557,7 +4568,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 // DHCP failed. If we're not already provisioned, or we had IPv4 and now lost it,
                 // give up and disconnect.
                 // If we're already provisioned (e.g., IPv6-only network), stay connected.
-                if (!isProvisioned || lostIPv4Provisioning) {
+                if (!isProvisioned || lostProvisioning) {
                     sendMessage(CMD_IP_CONFIGURATION_LOST);
                 } else {
                     // DHCP failed, but we're provisioned (e.g., if we're on an IPv6-only network).
@@ -4588,7 +4599,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             case CMD_UPDATE_LINKPROPERTIES:
                 // IP addresses, DNS servers, etc. changed. Act accordingly.
-                if (wasProvisioned && !isProvisioned) {
+                if (lostProvisioning) {
                     // We no longer have a usable network configuration. Disconnect.
                     sendMessage(CMD_IP_CONFIGURATION_LOST);
                 } else if (!wasProvisioned && isProvisioned) {
