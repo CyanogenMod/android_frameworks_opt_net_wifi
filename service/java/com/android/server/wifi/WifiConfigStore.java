@@ -2332,6 +2332,9 @@ public class WifiConfigStore extends IpConfigStore {
                 } else if (config != null) {
                     switch (key) {
                         case SSID_KEY:
+                            if (config.isPasspoint()) {
+                                break;
+                            }
                             ssid = value;
                             if (config.SSID != null && !config.SSID.equals(ssid)) {
                                 loge("Error parsing network history file, mismatched SSIDs");
