@@ -703,6 +703,8 @@ public class WifiStateMachine extends StateMachine {
      */
     private final int mDefaultFrameworkScanIntervalMs;
 
+    private int mDefaultDisconnectedScanIntervelWhenP2pConnected = 180000;
+
     private int mDisconnectedScanPeriodMs = 10000;
 
     /**
@@ -966,6 +968,9 @@ public class WifiStateMachine extends StateMachine {
             period = frameworkMinScanIntervalSaneValue;
         }
         mDefaultFrameworkScanIntervalMs = period;
+        Settings.Global.putInt(mContext.getContentResolver(),
+            Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
+            mDefaultDisconnectedScanIntervelWhenP2pConnected);
         mDriverStopDelayMs = mContext.getResources().getInteger(
                 R.integer.config_wifi_driver_stop_delay);
 
@@ -1017,7 +1022,6 @@ public class WifiStateMachine extends StateMachine {
         int val = SystemProperties.getInt("persist.cne.feature", 0);
         boolean isPropFeatureAvail = (val == 3) ? true : false;
         if (isPropFeatureAvail) {
-            DEFAULT_SCORE = 1;
             filter.addAction("com.quicinc.cne.CNE_PREFERENCE_CHANGED");
             filter.addAction("prop_state_change");
             filter.addAction("blacklist_bad_bssid");
@@ -2347,11 +2351,11 @@ public class WifiStateMachine extends StateMachine {
         return mWifiNative.getNfcWpsConfigurationToken(netId);
     }
 
-    void enableBackgroundScan(boolean enable) {
+    boolean enableBackgroundScan(boolean enable) {
         if (enable) {
             mWifiConfigStore.enableAllNetworks();
         }
-        mWifiNative.enableBackgroundScan(enable);
+        return mWifiNative.enableBackgroundScan(enable);
     }
 
     /**
@@ -3155,10 +3159,8 @@ public class WifiStateMachine extends StateMachine {
         log("handle pref change : featurevalue: " + value);
         if(featureId == FEATURE_ID && featureParam == FEATURE_PARAM) {
             if(value == FEATURE_ON) {
-                DEFAULT_SCORE = 1;
                 isPropFeatureEnabled = true;
             } else if(value == FEATURE_OFF) {
-                DEFAULT_SCORE = NetworkAgent.WIFI_BASE_SCORE;
                 isPropFeatureEnabled = false;
             }
         }
@@ -3204,7 +3206,11 @@ public class WifiStateMachine extends StateMachine {
                 startDelayedScan(500, null, null);
             } else if (getCurrentState() == mDisconnectedState) {
                 // Scan after 200ms
-                startDelayedScan(200, null, null);
+                if (mWifiConfigStore.getConfiguredNetworks().size() != 0) {
+                    startDelayedScan(200, null, null);
+                } else {
+                    startDelayedScan((int)mFrameworkScanIntervalMs, null, null);
+                }
             }
         } else if (startBackgroundScanIfNeeded) {
             // Screen Off and Disconnected and chipset doesn't support scan offload
@@ -3213,19 +3219,18 @@ public class WifiStateMachine extends StateMachine {
             //              => will use scan offload (i.e. background scan)
             if (!mBackgroundScanSupported) {
                 setScanAlarm(true);
-            } else {
-                mEnableBackgroundScan = true;
             }
+        }
+        if (mBackgroundScanSupported) {
+            mEnableBackgroundScan = (screenOn == false);
         }
         if (DBG) logd("backgroundScan enabled=" + mEnableBackgroundScan
                 + " startBackgroundScanIfNeeded:" + startBackgroundScanIfNeeded);
         if (startBackgroundScanIfNeeded) {
             if (mEnableBackgroundScan) {
-                if (!mWifiNative.enableBackgroundScan(true)) {
+                if (!enableBackgroundScan(true)) {
                     handlePnoFailError();
                 }
-            } else {
-               mWifiNative.enableBackgroundScan(false);
             }
         }
         if (DBG) log("handleScreenStateChanged Exit: " + screenOn);
@@ -6475,7 +6480,7 @@ public class WifiStateMachine extends StateMachine {
                          // Hence issue PNO SCAN if authentication fails
                          // and LCD is off.
                         if (!mIsScanOngoing) {
-                            if (!mWifiNative.enableBackgroundScan(true)) {
+                            if (!enableBackgroundScan(true)) {
                                 handlePnoFailError();
                             }
                         }
@@ -7424,6 +7429,11 @@ public class WifiStateMachine extends StateMachine {
                     return NOT_HANDLED;
                     /* Ignore */
                 case WifiMonitor.NETWORK_CONNECTION_EVENT:
+                    if (DBG) log("Network connection established");
+                    String bssid = (String) message.obj;
+                    if (bssid != null) {
+                        sendNetworkStateChangeBroadcast(bssid);
+                    }
                     break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
@@ -8120,7 +8130,11 @@ public class WifiStateMachine extends StateMachine {
                 /**
                  * screen lit and => delayed timer
                  */
-                startDelayedScan(mDisconnectedScanPeriodMs, null, null);
+                if (mWifiConfigStore.getConfiguredNetworks().size() != 0) {
+                    startDelayedScan(mDisconnectedScanPeriodMs, null, null);
+                } else {
+                    startDelayedScan((int)mFrameworkScanIntervalMs, null, null);
+                }
             } else {
                 /**
                  * screen dark and PNO supported => scan alarm disabled
@@ -8133,7 +8147,7 @@ public class WifiStateMachine extends StateMachine {
                      * cleared
                      */
                     if (!mIsScanOngoing) {
-                        if (!mWifiNative.enableBackgroundScan(true)) {
+                        if (!enableBackgroundScan(true)) {
                             handlePnoFailError();
                         }
                     }
@@ -8225,10 +8239,6 @@ public class WifiStateMachine extends StateMachine {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_REFUSED;
                         return HANDLED;
                     }
-                    /* Disable background scan temporarily during a regular scan */
-                    if (mEnableBackgroundScan) {
-                        enableBackgroundScan(false);
-                    }
                     if (message.arg1 == SCAN_ALARM_SOURCE) {
                         // Check if the CMD_START_SCAN message is obsolete (and thus if it should
                         // not be processed) and restart the scan
@@ -8237,6 +8247,9 @@ public class WifiStateMachine extends StateMachine {
                            period = (int)Settings.Global.getLong(mContext.getContentResolver(),
                                     Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
                                     mDisconnectedScanPeriodMs);
+                        }
+                        if (mWifiConfigStore.getConfiguredNetworks().size() == 0) {
+                            period = (int)mFrameworkScanIntervalMs;
                         }
                         if (!checkAndRestartDelayedScan(message.arg2,
                                 true, period, null, null)) {
@@ -8247,16 +8260,36 @@ public class WifiStateMachine extends StateMachine {
                                     + " -> obsolete");
                             return HANDLED;
                         }
+                        /*
+                         * Disable background scan temporarily during a
+                         * regular scan.
+                         */
+                        if (mEnableBackgroundScan) {
+                            enableBackgroundScan(false);
+                        }
                         handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                         ret = HANDLED;
                     } else {
+                        /*
+                         * The SCAN request is not handled in this state and
+                         * would eventually might/will get handled in the
+                         * parent's state. The PNO, if already enabled had to
+                         * get disabled before the SCAN trigger. Hence, stop
+                         * the PNO if already enabled in this state, though the
+                         * SCAN request is not handled(PNO disable before the
+                         * SCAN trigger in any other state is not the right
+                         * place to issue).
+                         */
+                        if (mEnableBackgroundScan) {
+                            enableBackgroundScan(false);
+                        }
                         ret = NOT_HANDLED;
                     }
                     break;
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                     /* Re-enable background scan when a pending scan result is received */
                     if (mEnableBackgroundScan && mIsScanOngoing) {
-                        if (!mWifiNative.enableBackgroundScan(true)) {
+                        if (!enableBackgroundScan(true)) {
                             handlePnoFailError();
                         }
                     }
@@ -8279,7 +8312,7 @@ public class WifiStateMachine extends StateMachine {
                                     ++mPeriodicScanToken, 0), mSupplicantScanIntervalMs);
                     } else if (mEnableBackgroundScan && !mP2pConnected.get() &&
                                (mWifiConfigStore.getConfiguredNetworks().size() != 0)) {
-                        if (!mWifiNative.enableBackgroundScan(true)) {
+                        if (!enableBackgroundScan(true)) {
                             handlePnoFailError();
                         } else {
                             if (DBG) log("Stop periodic scan on PNO success");

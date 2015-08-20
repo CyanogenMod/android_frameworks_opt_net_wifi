@@ -651,6 +651,14 @@ public class WifiNative {
         }
     }
 
+    public boolean startWpsPbc(String bssid, int priority) {
+        if (TextUtils.isEmpty(bssid)) {
+            return doBooleanCommand("WPS_PBC" + " prio=" + priority);
+        } else {
+            return doBooleanCommand("WPS_PBC " + bssid + " prio=" + priority);
+        }
+    }
+
     public boolean startWpsPbc(String iface, String bssid) {
         synchronized (mLock) {
             if (TextUtils.isEmpty(bssid)) {
@@ -679,6 +687,14 @@ public class WifiNative {
             return doStringCommand("WPS_PIN any");
         } else {
             return doStringCommand("WPS_PIN " + bssid);
+        }
+    }
+
+    public String startWpsPinDisplay(String bssid, int priority) {
+        if (TextUtils.isEmpty(bssid)) {
+            return doStringCommand("WPS_PIN any" + " prio=" + priority);
+        } else {
+            return doStringCommand("WPS_PIN " + bssid + " prio=" + priority);
         }
     }
 
