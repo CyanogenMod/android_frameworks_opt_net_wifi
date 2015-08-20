@@ -116,6 +116,9 @@ class WifiController extends StateMachine {
     static final int CMD_USER_PRESENT               = BASE + 12;
     static final int CMD_AP_START_FAILURE           = BASE + 13;
 
+    private static final int WIFI_DISABLED = 0;
+    private static final int WIFI_ENABLED = 1;
+
     private DefaultState mDefaultState = new DefaultState();
     private StaEnabledState mStaEnabledState = new StaEnabledState();
     private ApStaDisabledState mApStaDisabledState = new ApStaDisabledState();
@@ -441,6 +444,10 @@ class WifiController extends StateMachine {
                     break;
                 case CMD_SET_AP:
                     if (msg.arg1 == 1) {
+                        if (msg.arg2 == 0) { // previous wifi state has not been saved yet
+                            Settings.Global.putInt(mContext.getContentResolver(),
+                                    Settings.Global.WIFI_SAVED_STATE, WIFI_DISABLED);
+                        }
                         mWifiStateMachine.setHostApRunning((WifiConfiguration) msg.obj,
                                 true);
                         transitionTo(mApEnabledState);
@@ -509,6 +516,15 @@ class WifiController extends StateMachine {
                         transitionTo(mEcmState);
                         break;
                     }
+                case CMD_SET_AP:
+                    if (msg.arg1 == 1) {
+                        // remeber that we were enabled
+                        Settings.Global.putInt(mContext.getContentResolver(),
+                                Settings.Global.WIFI_SAVED_STATE, WIFI_ENABLED);
+                        deferMessage(obtainMessage(msg.what, msg.arg1, 1, msg.obj));
+                        transitionTo(mApStaDisabledState);
+                    }
+                    break;
                 default:
                     return NOT_HANDLED;
 
@@ -567,7 +583,9 @@ class WifiController extends StateMachine {
                 case CMD_SET_AP:
                     // Before starting tethering, turn off supplicant for scan mode
                     if (msg.arg1 == 1) {
-                        deferMessage(msg);
+                        Settings.Global.putInt(mContext.getContentResolver(),
+                                Settings.Global.WIFI_SAVED_STATE, WIFI_DISABLED);
+                        deferMessage(obtainMessage(msg.what, msg.arg1, 1, msg.obj));
                         transitionTo(mApStaDisabledState);
                     }
                     break;
@@ -617,7 +635,19 @@ class WifiController extends StateMachine {
                 case CMD_SET_AP:
                     if (msg.arg1 == 0) {
                         mWifiStateMachine.setHostApRunning(null, false);
-                        transitionTo(mApStaDisabledState);
+                        int wifiSavedState = Settings.Global.getInt(mContext.getContentResolver(),
+                                Settings.Global.WIFI_SAVED_STATE, WIFI_DISABLED);
+                        if (wifiSavedState == WIFI_ENABLED) {
+                            transitionTo(mStaEnabledState);
+                        }
+                        else {
+                            if (mSettingsStore.isScanAlwaysAvailable()) {
+                                transitionTo(mStaDisabledWithScanState);
+                            }
+                            else {
+                                transitionTo(mApStaDisabledState);
+                            }
+                        }
                     }
                     break;
                 case CMD_AP_START_FAILURE:
