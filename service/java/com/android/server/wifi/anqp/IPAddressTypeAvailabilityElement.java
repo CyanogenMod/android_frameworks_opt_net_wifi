@@ -29,7 +29,7 @@ public class IPAddressTypeAvailabilityElement extends ANQPElement {
         mV6Availability = IPv6Availability.values()[ipField & 0x3];
 
         ipField = (ipField >> 2) & 0x3f;
-        mV4Availability = ipField <= IPv4Availability.values().length ?
+        mV4Availability = ipField < IPv4Availability.values().length ?
                 IPv4Availability.values()[ipField] :
                 IPv4Availability.Unknown;
     }
