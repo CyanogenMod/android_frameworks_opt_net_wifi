@@ -444,7 +444,15 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
             if (mInIdleMode) {
                 // Need to send an immediate scan result broadcast in case the
                 // caller is waiting for a result ..
-                mWifiStateMachine.sendScanResultsAvailableBroadcast(/* scanSucceeded = */ false);
+
+                // clear calling identity to send broadcast
+                long callingIdentity = Binder.clearCallingIdentity();
+                try {
+                    mWifiStateMachine.sendScanResultsAvailableBroadcast(/* scanSucceeded = */ false);
+                } finally {
+                    // restore calling identity
+                    Binder.restoreCallingIdentity(callingIdentity);
+                }
                 mScanPending = true;
                 return;
             }
