@@ -8360,6 +8360,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         break;
                     }
                     return NOT_HANDLED;
+                case WifiMonitor.NETWORK_CONNECTION_EVENT:
+                    break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
                         if (mWifiConfigStore.enableChipWakeUpWhenAssociated.get()) {
