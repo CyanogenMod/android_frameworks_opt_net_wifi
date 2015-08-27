@@ -203,7 +203,6 @@ public class ConfigBuilder {
         enterpriseConfig.setCaCertificate(caCert);
         enterpriseConfig.setAnonymousIdentity("anonymous@" + credential.getRealm());
         enterpriseConfig.setRealm(credential.getRealm());
-        enterpriseConfig.setDomainSuffixMatch(homeSP.getFQDN());
 
         return config;
     }
