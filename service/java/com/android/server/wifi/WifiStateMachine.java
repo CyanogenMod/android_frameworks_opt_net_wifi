@@ -1018,7 +1018,6 @@ public class WifiStateMachine extends StateMachine {
         int val = SystemProperties.getInt("persist.cne.feature", 0);
         boolean isPropFeatureAvail = (val == 3) ? true : false;
         if (isPropFeatureAvail) {
-            DEFAULT_SCORE = 1;
             filter.addAction("com.quicinc.cne.CNE_PREFERENCE_CHANGED");
             filter.addAction("prop_state_change");
             filter.addAction("blacklist_bad_bssid");
@@ -3112,10 +3111,8 @@ public class WifiStateMachine extends StateMachine {
         log("handle pref change : featurevalue: " + value);
         if(featureId == FEATURE_ID && featureParam == FEATURE_PARAM) {
             if(value == FEATURE_ON) {
-                DEFAULT_SCORE = 1;
                 isPropFeatureEnabled = true;
             } else if(value == FEATURE_OFF) {
-                DEFAULT_SCORE = NetworkAgent.WIFI_BASE_SCORE;
                 isPropFeatureEnabled = false;
             }
         }
