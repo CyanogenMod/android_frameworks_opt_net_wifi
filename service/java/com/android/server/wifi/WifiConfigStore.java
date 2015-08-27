@@ -1279,6 +1279,7 @@ public class WifiConfigStore extends IpConfigStore {
             /* create a temporary SSID with providerFriendlyName */
             Long csum = getChecksum(config.FQDN);
             config.SSID = csum.toString();
+            config.enterpriseConfig.setDomainSuffixMatch(config.FQDN);
         }
 
         NetworkUpdateResult result = addOrUpdateNetworkNative(config, uid);
