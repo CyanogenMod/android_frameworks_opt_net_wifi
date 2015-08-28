@@ -375,11 +375,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private int mSupplicantStopFailureToken = 0;
 
     /**
-     * Timeout for acquired wake lock while a scan is running
-     */
-    private static final int SCAN_WAKE_LOCK_TIME_OUT_MSECS = 5 * 1000;
-
-    /**
      * Tether state change notification time out
      */
     private static final int TETHER_NOTIFICATION_TIME_OUT_MSECS = 5000;
@@ -412,9 +407,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     // Wakelock held during wifi start/stop and driver load/unload
     private PowerManager.WakeLock mWakeLock;
-
-    // Wakelock held during wifi scan
-    private PowerManager.WakeLock mScanWakeLock;
 
     private Context mContext;
 
@@ -1250,9 +1242,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         PowerManager powerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
         mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, getName());
 
-        mScanWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiScan");
-        mScanWakeLock.setReferenceCounted(false);
-
         mSuspendWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiSuspend");
         mSuspendWakeLock.setReferenceCounted(false);
 
@@ -1857,8 +1846,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 batteryWorkSource = new WorkSource(Process.WIFI_UID);
             }
 
-            mScanWakeLock.setWorkSource(batteryWorkSource);
-            mScanWakeLock.acquire(SCAN_WAKE_LOCK_TIME_OUT_MSECS);
             try {
                 mBatteryStats.noteWifiScanStartedFromSource(batteryWorkSource);
             } catch (RemoteException e) {
@@ -1889,8 +1876,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 log(e.toString());
             } finally {
                 mScanWorkSource = null;
-                mScanWakeLock.release();
-                mScanWakeLock.setWorkSource(null);
             }
         }
     }
