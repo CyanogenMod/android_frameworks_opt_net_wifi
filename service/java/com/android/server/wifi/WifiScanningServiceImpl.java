@@ -38,7 +38,6 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
-import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.WorkSource;
@@ -70,11 +69,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final int INVALID_KEY = 0;                               // same as WifiScanner
     private static final int MIN_PERIOD_PER_CHANNEL_MS = 200;               // DFS needs 120 ms
     private static final int UNKNOWN_PID = -1;
-
-    /**
-     * Timeout for acquired wake lock while a scan is running
-     */
-    private static final int SCAN_WAKE_LOCK_TIME_OUT_MSECS = 5 * 1000;
 
     private static final LocalLog mLocalLog = new LocalLog(1024);
 
@@ -221,7 +215,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private WifiScanningStateMachine mStateMachine;
     private ClientHandler mClientHandler;
     private IBatteryStats mBatteryStats;
-    private PowerManager mPowerManager;
     private final WifiNative.ScanCapabilities mScanCapabilities = new WifiNative.ScanCapabilities();
 
     WifiScanningServiceImpl() { }
@@ -232,15 +225,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     public void startService(Context context) {
         mContext = context;
-        mPowerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
-        mBatteryStats = BatteryStatsService.getService();
 
         HandlerThread thread = new HandlerThread("WifiScanningService");
         thread.start();
 
         mClientHandler = new ClientHandler(thread.getLooper());
         mStateMachine = new WifiScanningStateMachine(thread.getLooper());
-        mWifiChangeStateMachine = new WifiChangeStateMachine(thread.getLooper(), mPowerManager);
+        mWifiChangeStateMachine = new WifiChangeStateMachine(thread.getLooper());
+        mBatteryStats = BatteryStatsService.getService();
 
         mContext.registerReceiver(
                 new BroadcastReceiver() {
@@ -560,19 +552,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         private final Messenger mMessenger;
         private final int mUid;
         private final WorkSource mWorkSource;
-        private final PowerManager.WakeLock mFullScanWakeLock;
         private boolean mScanWorkReported = false;
-        private boolean mFullScanRequested = false;
 
         ClientInfo(int uid, AsyncChannel c, Messenger m) {
             mChannel = c;
             mMessenger = m;
             mUid = uid;
             mWorkSource = new WorkSource(uid, TAG);
-            mFullScanWakeLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
-                    "WifiScan");
-            mFullScanWakeLock.setReferenceCounted(false);
-            mFullScanWakeLock.setWorkSource(mWorkSource);
             if (DBG) localLog("New client, channel: " + c + " messenger: " + m);
         }
 
@@ -621,21 +607,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             if (mScanWorkReported) {
                 reportBatchedScanStop();
                 mScanWorkReported = false;
-                mFullScanRequested = false;
             }
             if (mScanSettings.isEmpty() == false) {
                 reportBatchedScanStart();
                 mScanWorkReported = true;
-
-                for (ScanSettings settings : getScanSettings()) {
-                    if (settings.reportEvents == WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) {
-                        mFullScanRequested = true;
-                    }
-                }
-                // make sure to charge first full scan even if there are no results
-                if (mFullScanRequested) {
-                    mFullScanWakeLock.acquire(SCAN_WAKE_LOCK_TIME_OUT_MSECS);
-                }
             }
         }
 
@@ -757,7 +732,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 /* this is a single shot scan; stop the scan now */
                 mStateMachine.sendMessage(CMD_STOP_SCAN_INTERNAL, 0, handler, this);
             }
-            mFullScanWakeLock.release();
         }
 
         void deliverScanResults(int handler, ScanData results[]) {
@@ -768,7 +742,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         void reportFullScanResult(ScanResult result) {
             Iterator<Integer> it = mScanSettings.keySet().iterator();
-            boolean reportedFullScanResult = false;
             while (it.hasNext()) {
                 int handler = it.next();
                 ScanSettings settings = mScanSettings.get(handler);
@@ -784,12 +757,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         newResult.informationElements = result.informationElements.clone();
                         mChannel.sendMessage(
                                 WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, newResult);
-                        reportedFullScanResult = true;
                     }
                 }
-            }
-            if (mFullScanRequested && reportedFullScanResult) {
-                mFullScanWakeLock.acquire(SCAN_WAKE_LOCK_TIME_OUT_MSECS);
             }
         }
 
@@ -1441,10 +1410,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         PendingIntent mTimeoutIntent;
         ScanResult    mCurrentBssids[];
 
-        WifiChangeStateMachine(Looper looper, PowerManager powerManager) {
+        WifiChangeStateMachine(Looper looper) {
             super("SignificantChangeStateMachine", looper);
 
-            mClientInfo = new ClientInfoLocal();
             mClients.put(null, mClientInfo);
 
             addState(mDefaultState);
@@ -1780,7 +1748,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             sendMessage(WIFI_CHANGE_CMD_CHANGE_DETECTED, 0, 0, results);
         }
 
-        ClientInfo mClientInfo;
+        ClientInfo mClientInfo = new ClientInfoLocal();
         private static final int SCAN_COMMAND_ID = 1;
 
         void addScanRequest(ScanSettings settings) {
