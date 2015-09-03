@@ -16,12 +16,8 @@
 
 package com.android.server.wifi;
 
-import com.android.internal.app.IBatteryStats;
-import com.android.internal.util.Protocol;
-
 import android.support.v4.util.CircularArray;
 import android.util.Base64;
-import android.util.LocalLog;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
@@ -30,6 +26,9 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Calendar;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.zip.Deflater;
 
 /**
@@ -65,9 +64,10 @@ class WifiLogger  {
     public static final int REPORT_REASON_UNEXPECTED_DISCONNECT     = 5;
     public static final int REPORT_REASON_SCAN_FAILURE              = 6;
     public static final int REPORT_REASON_USER_ACTION               = 7;
+    public static final int REPORT_REASON_REACHABLIITY_LOST         = 8;
 
-    /** number of ring buffer entries to cache */
-    public static final int MAX_RING_BUFFERS                        = 10;
+    /** time for which ring buffer entries to cache */
+    public static final int RING_BUFFER_CACHE_TIME_SEC              = 3600;
 
     /** number of bug reports to hold */
     public static final int MAX_BUG_REPORTS                         = 4;
@@ -259,11 +259,67 @@ class WifiLogger  {
         }
     }
 
+    static class TimeLimitedCircularArray<E> {
+        private class Tuple {
+            E data;
+            long timestamp;
+        }
+        private List<Tuple> mList;
+        private long mMaxTimeSec;
+        TimeLimitedCircularArray(int maxTimeSec) {
+            mList = new LinkedList<Tuple>();
+            mMaxTimeSec = maxTimeSec;
+        }
+
+        public final void addLast(E e) {
+            long now = System.currentTimeMillis()/1000;
+            long sential = now - mMaxTimeSec;
+            for (Iterator<Tuple> it = mList.iterator(); it.hasNext(); ) {
+                Tuple t = it.next();
+                if (t.timestamp < sential) {
+                    it.remove();
+                } else {
+                    break;
+                }
+            }
+
+            Tuple t = new Tuple();
+            t.data = e;
+            t.timestamp = now;
+            mList.add(t);
+        }
+
+        public final int size() {
+            return mList.size();
+        }
+
+        private class CustomIterator implements Iterator<E> {
+            Iterator<Tuple> mInnerIterator;
+            CustomIterator(Iterator<Tuple> it) {
+                mInnerIterator = it;
+            }
+            public boolean hasNext() {
+                return mInnerIterator.hasNext();
+            }
+            public E next() {
+                Tuple t = (Tuple) mInnerIterator.next();
+                return t.data;
+            }
+            public void remove() {
+                mInnerIterator.remove();
+            }
+        }
+
+        public Iterator<E> getIterator() {
+            return new CustomIterator(mList.iterator());
+        }
+    }
+
     private final LimitedCircularArray<BugReport> mLastAlerts =
             new LimitedCircularArray<BugReport>(MAX_ALERT_REPORTS);
     private final LimitedCircularArray<BugReport> mLastBugReports =
             new LimitedCircularArray<BugReport>(MAX_BUG_REPORTS);
-    private final HashMap<String, LimitedCircularArray<byte[]>> mRingBufferData = new HashMap();
+    private final HashMap<String, TimeLimitedCircularArray<byte[]>> mRingBufferData = new HashMap();
 
     private final WifiNative.WifiLoggerEventHandler mHandler =
             new WifiNative.WifiLoggerEventHandler() {
@@ -279,7 +335,7 @@ class WifiLogger  {
     };
 
     synchronized void onRingBufferData(WifiNative.RingBufferStatus status, byte[] buffer) {
-        LimitedCircularArray<byte[]> ring = mRingBufferData.get(status.name);
+        TimeLimitedCircularArray<byte[]> ring = mRingBufferData.get(status.name);
         if (ring != null) {
             ring.addLast(buffer);
         }
@@ -301,7 +357,7 @@ class WifiLogger  {
                 if (DBG) Log.d(TAG, "RingBufferStatus is: \n" + buffer.name);
                 if (mRingBufferData.containsKey(buffer.name) == false) {
                     mRingBufferData.put(buffer.name,
-                            new LimitedCircularArray<byte[]>(MAX_RING_BUFFERS));
+                            new TimeLimitedCircularArray<byte[]>(RING_BUFFER_CACHE_TIME_SEC));
                 }
                 if ((buffer.flag & RING_BUFFER_FLAG_HAS_PER_PACKET_ENTRIES) != 0) {
                     mPerPacketRingBuffer = buffer;
@@ -393,10 +449,11 @@ class WifiLogger  {
             for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
                 /* this will push data in mRingBuffers */
                 WifiNative.getRingBufferData(buffer.name);
-                LimitedCircularArray<byte[]> data = mRingBufferData.get(buffer.name);
+                TimeLimitedCircularArray<byte[]> data = mRingBufferData.get(buffer.name);
                 byte[][] buffers = new byte[data.size()][];
-                for (int i = 0; i < data.size(); i++) {
-                    buffers[i] = data.get(i).clone();
+                Iterator<byte[]> it = data.getIterator();
+                for (int i = 0; it.hasNext(); i++) {
+                    buffers[i] = it.next().clone();
                 }
                 report.ringBuffers.put(buffer.name, buffers);
             }
