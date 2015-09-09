@@ -1857,11 +1857,24 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     int startWifiIPPacketOffload(int slot, KeepalivePacketData packetData, int intervalSeconds) {
-        return mWifiNative.startSendingOffloadedPacket(slot, packetData, intervalSeconds * 1000);
+        int ret = mWifiNative.startSendingOffloadedPacket(slot, packetData, intervalSeconds * 1000);
+        if (ret != 0) {
+            loge("startWifiIPPacketOffload(" + slot + ", " + intervalSeconds +
+                    "): hardware error " + ret);
+            return ConnectivityManager.PacketKeepalive.ERROR_HARDWARE_ERROR;
+        } else {
+            return ConnectivityManager.PacketKeepalive.SUCCESS;
+        }
     }
 
     int stopWifiIPPacketOffload(int slot) {
-        return mWifiNative.stopSendingOffloadedPacket(slot);
+        int ret = mWifiNative.stopSendingOffloadedPacket(slot);
+        if (ret != 0) {
+            loge("stopWifiIPPacketOffload(" + slot + "): hardware error " + ret);
+            return ConnectivityManager.PacketKeepalive.ERROR_HARDWARE_ERROR;
+        } else {
+            return ConnectivityManager.PacketKeepalive.SUCCESS;
+        }
     }
 
     int startRssiMonitoringOffload(byte maxRssi, byte minRssi) {
