@@ -38,8 +38,10 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.os.WorkSource;
 import android.provider.Settings;
+import android.telephony.SubscriptionManager;
 import android.util.Slog;
 
+import android.widget.Toast;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
@@ -604,6 +606,36 @@ class WifiController extends StateMachine {
     }
 
     class ApEnabledState extends State {
+
+        private SubscriptionManager.OnSubscriptionsChangedListener mSubListener;
+
+        @Override
+        public void enter() {
+            mSubListener = new SubscriptionManager.OnSubscriptionsChangedListener() {
+                    boolean firstChange = true;
+                    @Override
+                    public void onSubscriptionsChanged() {
+                        if (firstChange) {
+                            // we always get a state change on registration.
+                            firstChange = false;
+                            return;
+                        }
+                        Toast.makeText(mContext,
+                                com.android.internal.R.string.subscription_change_disabled_wifi_ap,
+                                Toast.LENGTH_SHORT).show();
+                        log("disabling Wifi AP due to Subscription change");
+                        WifiController.this.obtainMessage(CMD_SET_AP, 0, 0, null).sendToTarget();
+                    }
+            };
+            SubscriptionManager.from(mContext).addOnSubscriptionsChangedListener(mSubListener);
+        }
+
+        @Override
+        public void exit() {
+            SubscriptionManager.from(mContext).removeOnSubscriptionsChangedListener(mSubListener);
+            mSubListener = null;
+        }
+
         @Override
         public boolean processMessage(Message msg) {
             switch (msg.what) {
