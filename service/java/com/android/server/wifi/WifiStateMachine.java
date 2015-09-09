@@ -8265,7 +8265,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_IP_REACHABILITY_LOST:
                     if (DBG && message.obj != null) log((String) message.obj);
-                    mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_REACHABLIITY_LOST);
                     handleIpReachabilityLost();
                     transitionTo(mDisconnectingState);
                     break;
