@@ -27,6 +27,7 @@ import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pProvDiscEvent;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Message;
+import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
@@ -680,6 +681,11 @@ public class WifiMonitor {
                 int space = eventStr.indexOf(' ');
                 if (space != -1) {
                     iface = eventStr.substring(7, space);
+                    if ((SystemProperties.getInt("persist.fst.rate.upgrade.en", 0) == 1) &&
+                        iface.startsWith("wlan1")) {
+                        Log.i(TAG, "Ignoring fst rate upgrade event: " + eventStr);
+                        return false;
+                    }
                     if (!mIfaceMap.containsKey(iface) && iface.startsWith("p2p-")) {
                         // p2p interfaces are created dynamically, but we have
                         // only one P2p state machine monitoring all of them; look
