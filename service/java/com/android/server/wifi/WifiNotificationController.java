@@ -18,6 +18,7 @@ package com.android.server.wifi;
 
 import android.app.Notification;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.TaskStackBuilder;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
@@ -28,10 +29,11 @@ import android.database.ContentObserver;
 import android.net.NetworkInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
+import android.os.AsyncTask;
 import android.os.Handler;
-import android.os.Message;
 import android.os.UserHandle;
 import android.provider.Settings;
+import com.android.internal.R;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -45,6 +47,11 @@ final class WifiNotificationController {
      */
     private static final int ICON_NETWORKS_AVAILABLE =
             com.android.internal.R.drawable.stat_notify_wifi_in_range;
+    /**
+     * Intent that the user requests the wifi be turned off from the notification
+     */
+    private static final String ACTION_TURN_WIFI_OFF
+            = "com.android.server.WifiService.ACTION_TURN_WIFI_OFF";
     /**
      * When a notification is shown, we wait this amount before possibly showing it again.
      */
@@ -86,6 +93,11 @@ final class WifiNotificationController {
      * something other than scanning, we reset this to 0.
      */
     private int mNumScansSinceNetworkStateChange;
+    /**
+     * Turns wifi off when run (IntentFilter responsible for specifying the action
+     * {@link #ACTION_TURN_WIFI_OFF})
+     */
+    private BroadcastReceiver mNotificationBroadcastReceiver = null;
 
     private final Context mContext;
     private final WifiStateMachine mWifiStateMachine;
@@ -221,7 +233,6 @@ final class WifiNotificationController {
         NotificationManager notificationManager = (NotificationManager) mContext
                 .getSystemService(Context.NOTIFICATION_SERVICE);
 
-        Message message;
         if (visible) {
 
             // Not enough time has passed to show the notification again
@@ -229,32 +240,61 @@ final class WifiNotificationController {
                 return;
             }
 
-            if (mNotification == null) {
-                // Cache the Notification object.
-                mNotification = new Notification();
-                mNotification.when = 0;
-                mNotification.icon = ICON_NETWORKS_AVAILABLE;
-                mNotification.flags = Notification.FLAG_AUTO_CANCEL;
-                mNotification.contentIntent = TaskStackBuilder.create(mContext)
-                        .addNextIntentWithParentStack(
-                                new Intent(WifiManager.ACTION_PICK_WIFI_NETWORK))
-                        .getPendingIntent(0, 0, null, UserHandle.CURRENT);
-            }
-
             CharSequence title = mContext.getResources().getQuantityText(
                     com.android.internal.R.plurals.wifi_available, numNetworks);
             CharSequence details = mContext.getResources().getQuantityText(
                     com.android.internal.R.plurals.wifi_available_detailed, numNetworks);
-            mNotification.tickerText = title;
-            mNotification.color = mContext.getResources().getColor(
-                    com.android.internal.R.color.system_notification_accent_color);
-            mNotification.setLatestEventInfo(mContext, title, details, mNotification.contentIntent);
 
+            if (mNotification == null) {
+                final int color = mContext.getResources().getColor(
+                        com.android.internal.R.color.system_notification_accent_color);
+                // Cache the Notification object.
+                final CharSequence wifiOffText = mContext.getText(
+                        com.android.internal.R.string.notify_turn_wifi_off_title);
+                final PendingIntent wifiOffPi = PendingIntent.getBroadcast(mContext, 0,
+                        new Intent(ACTION_TURN_WIFI_OFF).setPackage(
+                                mContext.getPackageName()),
+                        PendingIntent.FLAG_UPDATE_CURRENT);
+                mNotification = new Notification.Builder(mContext)
+                        .setWhen(0)
+                        .setSmallIcon(ICON_NETWORKS_AVAILABLE)
+                        .setColor(color)
+                        .setAutoCancel(true)
+                        .setContentIntent(TaskStackBuilder.create(mContext)
+                                .addNextIntentWithParentStack(
+                                        new Intent(WifiManager.ACTION_PICK_WIFI_NETWORK))
+                                .getPendingIntent(0, 0, null, UserHandle.CURRENT))
+                        .addAction(0, wifiOffText, wifiOffPi)
+                        .setTicker(title)
+                        .setContentTitle(title)
+                        .setContentText(details)
+                        .build();
+            }
             mNotificationRepeatTime = System.currentTimeMillis() + NOTIFICATION_REPEAT_DELAY_MS;
 
             notificationManager.notifyAsUser(null, ICON_NETWORKS_AVAILABLE, mNotification,
                     UserHandle.ALL);
+
+            if (mNotificationBroadcastReceiver == null) {
+                mNotificationBroadcastReceiver = new BroadcastReceiver() {
+                    @Override
+                    public void onReceive(Context context, Intent intent) {
+                        AsyncTask.execute(new Runnable() {
+                            public void run() {
+                                WifiManager wifiManager = (WifiManager)
+                                        mContext.getSystemService(Context.WIFI_SERVICE);
+                                wifiManager.setWifiEnabled(false);
+                            }
+                        });
+                    }
+                };
+            }
+            mContext.registerReceiver(mNotificationBroadcastReceiver,
+                    new IntentFilter(ACTION_TURN_WIFI_OFF));
         } else {
+            if  (mNotificationBroadcastReceiver != null) {
+                mContext.unregisterReceiver(mNotificationBroadcastReceiver);
+            }
             notificationManager.cancelAsUser(null, ICON_NETWORKS_AVAILABLE, UserHandle.ALL);
         }
 
