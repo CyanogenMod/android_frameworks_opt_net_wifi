@@ -281,10 +281,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     public void processRssiThreshold(byte curRssi) {
-        for (int i = 1; i < mRssiRanges.length; i++) {
+        if (curRssi == Byte.MAX_VALUE || curRssi == Byte.MIN_VALUE) {
+            Log.wtf(TAG, "processRssiThreshold: Invalid rssi " + curRssi);
+            return;
+        }
+        for (int i = 0; i < mRssiRanges.length; i++) {
             if (curRssi < mRssiRanges[i]) {
                 // Assume sorted values(ascending order) for rssi,
-                // bounded by high(127) and low(-127) at extremeties
+                // bounded by high(127) and low(-128) at extremeties
                 byte maxRssi = mRssiRanges[i];
                 byte minRssi = mRssiRanges[i-1];
                 Log.d(TAG, "Re-program rssi thresholds" + "maxRssi=" + maxRssi
@@ -7931,10 +7935,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_PNO_NETWORK_FOUND:
                     processPnoNetworkFound((ScanResult[])message.obj);
                     break;
-                case CMD_RSSI_THRESHOLD_BREACH:
-                    byte curRssi = (byte)message.arg1;
-                    processRssiThreshold(curRssi);
-                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -8532,6 +8532,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mWifiInfo.setBSSID((String) message.obj);
                         sendNetworkStateChangeBroadcast(mLastBssid);
                     }
+                    break;
+                case CMD_START_RSSI_MONITORING_OFFLOAD:
+                    byte currRssi = (byte)message.arg1;
+                    processRssiThreshold(currRssi);
+                    break;
+                case CMD_STOP_RSSI_MONITORING_OFFLOAD:
+                    stopRssiMonitoringOffload();
+                    break;
+                case CMD_RSSI_THRESHOLD_BREACH:
+                    byte curRssi = (byte)message.arg1;
+                    processRssiThreshold(curRssi);
                     break;
                 default:
                     return NOT_HANDLED;
@@ -9172,13 +9183,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mNetworkAgent.onPacketKeepaliveEvent(slot, result);
                         break;
                     }
-                case CMD_START_RSSI_MONITORING_OFFLOAD:
-                    byte currRssi = (byte)message.arg1;
-                    processRssiThreshold(currRssi);
-                    break;
-                case CMD_STOP_RSSI_MONITORING_OFFLOAD:
-                    stopRssiMonitoringOffload();
-                    break;
                 default:
                     return NOT_HANDLED;
             }
