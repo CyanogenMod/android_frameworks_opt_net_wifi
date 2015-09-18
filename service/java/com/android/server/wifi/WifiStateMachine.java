@@ -8131,6 +8131,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             try {
                 mIpReachabilityMonitor = new IpReachabilityMonitor(
+                        mContext,
                         mInterfaceName,
                         new IpReachabilityMonitor.Callback() {
                             @Override
