@@ -654,6 +654,17 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             reportScanWorkUpdate();
         }
 
+        void removeAllScanRequests() {
+            Iterator<Map.Entry<Integer, ScanSettings>> it = mScanSettings.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<Integer, ScanSettings> entry = it.next();
+                ScanSettings settings = entry.getValue();
+                Log.d(TAG, "Pending scan removed, handler=" + entry.getKey() +
+                      ", period=" + settings.periodInMs);
+                it.remove();
+            }
+        }
+
         Iterator<Map.Entry<Integer, ScanSettings>> getScans() {
             return mScanSettings.entrySet().iterator();
         }
@@ -1234,6 +1245,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         logScanRequest("addScanRequest", ci, handler, settings);
+        removeAllScanRequests();
         ci.addScanRequest(settings, handler);
         if (resetBuckets()) {
             return true;
@@ -1257,6 +1269,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         logScanRequest("addSingleScanRequest", ci, handler, settings);
+        removeAllScanRequests();
         ci.addScanRequest(settings, handler);
         if (resetBuckets()) {
             /* reset periodInMs to 0 to indicate single shot scan */
@@ -1274,6 +1287,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             logScanRequest("removeScanRequest", ci, handler, null);
             ci.removeScanRequest(handler);
             resetBuckets();
+        }
+    }
+
+    void removeAllScanRequests() {
+        Collection<ClientInfo> clients = mClients.values();
+        for (ClientInfo ci : clients) {
+            ci.removeAllScanRequests();
         }
     }
 
