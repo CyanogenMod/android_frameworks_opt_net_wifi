@@ -1606,7 +1606,9 @@ public class WifiNative {
     synchronized public static void stopScan() {
         synchronized (mLock) {
             if (isHalStarted()) {
-                stopScanNative(sWlan0Index, sScanCmdId);
+                if (sScanCmdId != 0) {
+                    stopScanNative(sWlan0Index, sScanCmdId);
+                }
                 sScanSettings = null;
                 sScanEventHandler = null;
                 sScanCmdId = 0;
@@ -2452,9 +2454,18 @@ public class WifiNative {
         sWifiRssiEventHandler = rssiEventHandler;
         synchronized (mLock) {
             if (isHalStarted()) {
+                if (sRssiMonitorCmdId != 0) {
+                    stopRssiMonitoring();
+                }
+
                 sRssiMonitorCmdId = getNewCmdIdLocked();
                 Log.d(TAG, "sRssiMonitorCmdId = " + sRssiMonitorCmdId);
-                return startRssiMonitoringNative(sWlan0Index, sRssiMonitorCmdId, maxRssi, minRssi);
+                int ret = startRssiMonitoringNative(sWlan0Index, sRssiMonitorCmdId,
+                        maxRssi, minRssi);
+                if (ret != 0) { // if not success
+                    sRssiMonitorCmdId = 0;
+                }
+                return ret;
             } else {
                 return -1;
             }
@@ -2467,7 +2478,12 @@ public class WifiNative {
         Log.d(TAG, "stopRssiMonitoring, cmdId " + sRssiMonitorCmdId);
         synchronized (mLock) {
             if (isHalStarted()) {
-                return stopRssiMonitoringNative(sWlan0Index, sRssiMonitorCmdId);
+                int ret = 0;
+                if (sRssiMonitorCmdId != 0) {
+                    ret = stopRssiMonitoringNative(sWlan0Index, sRssiMonitorCmdId);
+                }
+                sRssiMonitorCmdId = 0;
+                return ret;
             } else {
                 return -1;
             }
