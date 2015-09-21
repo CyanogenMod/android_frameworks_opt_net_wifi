@@ -8400,6 +8400,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     return NOT_HANDLED;
                 case WifiMonitor.NETWORK_CONNECTION_EVENT:
+                    mWifiInfo.setBSSID((String) message.obj);
+                    mLastNetworkId = message.arg1;
+                    mWifiInfo.setNetworkId(mLastNetworkId);
+                    if(!mLastBssid.equals((String) message.obj)) {
+                        mLastBssid = (String) message.obj;
+                        sendNetworkStateChangeBroadcast(mLastBssid);
+                    }
                     break;
                 case CMD_RSSI_POLL:
                     if (message.arg1 == mRssiPollToken) {
