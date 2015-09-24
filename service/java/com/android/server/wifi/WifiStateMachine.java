@@ -922,10 +922,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private int mDelayedStopCounter;
     private boolean mInDelayedStop = false;
 
-    // there is a delay between StateMachine change country code and Supplicant change country code
-    // here save the current WifiStateMachine set country code
-    private volatile String mSetCountryCode = null;
-
     // config option that indicate whether or not to reset country code to default when
     // cellular radio indicates country code loss
     private boolean mRevertCountryCodeOnCellularLoss = false;
@@ -1112,8 +1108,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             WifiTrafficPoller trafficPoller) {
         super("WifiStateMachine");
         mContext = context;
-        mSetCountryCode = Settings.Global.getString(
-                mContext.getContentResolver(), Settings.Global.WIFI_COUNTRY_CODE);
         mInterfaceName = wlanInterface;
         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_WIFI, 0, NETWORKTYPE, "");
         mBatteryStats = IBatteryStats.Stub.asInterface(ServiceManager.getService(
@@ -2443,7 +2437,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         // if mCountryCodeSequence == 0, it is the first time to set country code, always set
         // else only when the new country code is different from the current one to set
         int countryCodeSequence = mCountryCodeSequence.get();
-        if (countryCodeSequence == 0 || TextUtils.equals(countryCode, mSetCountryCode) == false) {
+        String currentCountryCode = getCurrentCountryCode();
+
+        if (countryCodeSequence == 0
+                || TextUtils.equals(countryCode, currentCountryCode) == false) {
 
             countryCodeSequence = mCountryCodeSequence.incrementAndGet();
             if (TextUtils.isEmpty(countryCode)) {
@@ -2453,7 +2450,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     countryCode = mDefaultCountryCode;
                 }
             }
-            mSetCountryCode = countryCode;
             sendMessage(CMD_SET_COUNTRY_CODE, countryCodeSequence, persist ? 1 : 0,
                     countryCode);
         }
@@ -2476,8 +2472,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      *
      * @param countryCode following ISO 3166 format
      */
-    public String getCountryCode() {
-        return mSetCountryCode;
+    public String getCurrentCountryCode() {
+        return Settings.Global.getString(
+                mContext.getContentResolver(), Settings.Global.WIFI_COUNTRY_CODE);
     }
 
 
@@ -2608,7 +2605,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         pw.println("mSuspendOptNeedsDisabled " + mSuspendOptNeedsDisabled);
         pw.println("Supplicant status " + mWifiNative.status(true));
         pw.println("mLegacyPnoEnabled " + mLegacyPnoEnabled);
-        pw.println("mSetCountryCode " + mSetCountryCode);
         pw.println("mDriverSetCountryCode " + mDriverSetCountryCode);
         pw.println("mConnectedModeGScanOffloadStarted " + mConnectedModeGScanOffloadStarted);
         pw.println("mGScanPeriodMilli " + mGScanPeriodMilli);
@@ -5331,8 +5327,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         //not available, like razor, we regress to original implementaion (2GHz, channel 6)
         if (mWifiNative.isHalStarted()) {
             //set country code through HAL Here
-            if (mSetCountryCode != null) {
-                if (!mWifiNative.setCountryCodeHal(mSetCountryCode.toUpperCase(Locale.ROOT))) {
+            String countryCode = getCurrentCountryCode();
+
+            if (countryCode != null) {
+                if (!mWifiNative.setCountryCodeHal(countryCode.toUpperCase(Locale.ROOT))) {
                     if (config.apBand != 0) {
                         Log.e(TAG, "Fail to set country code. Can not setup Softap on 5GHz");
                         //countrycode is mandatory for 5GHz
@@ -5632,7 +5630,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_BLACKLIST_NETWORK:
                 case CMD_CLEAR_BLACKLIST:
                 case CMD_SET_OPERATIONAL_MODE:
-                case CMD_SET_COUNTRY_CODE:
                 case CMD_SET_FREQUENCY_BAND:
                 case CMD_RSSI_POLL:
                 case CMD_ENABLE_ALL_NETWORKS:
@@ -5665,6 +5662,24 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_STARTED_GSCAN_DBG:
                 case CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    break;
+                case CMD_SET_COUNTRY_CODE:
+                    String country = (String) message.obj;
+                    final boolean persist = (message.arg2 == 1);
+                    final int sequence = message.arg1;
+                    if (sequence != mCountryCodeSequence.get()) {
+                        if (DBG) log("set country code ignored due to sequnce num");
+                        break;
+                    }
+
+                    if (persist) {
+                        country = country.toUpperCase(Locale.ROOT);
+                        if (DBG) log("set country code " + (country == null ? "(null)" : country));
+                        Settings.Global.putString(mContext.getContentResolver(),
+                                Settings.Global.WIFI_COUNTRY_CODE,
+                                country == null ? "" : country);
+                    }
+
                     break;
                 case DhcpStateMachine.CMD_ON_QUIT:
                     mDhcpStateMachine = null;
