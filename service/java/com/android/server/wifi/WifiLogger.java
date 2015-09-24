@@ -35,7 +35,7 @@ import java.util.zip.Deflater;
 /**
  * Tracks various logs for framework
  */
-class WifiLogger  {
+class WifiLogger extends DummyWifiLogger  {
 
     private static final String TAG = "WifiLogger";
     private static final boolean DBG = false;
@@ -92,6 +92,7 @@ class WifiLogger  {
         mWifiStateMachine = wifiStateMachine;
     }
 
+    @Override
     public synchronized void startLogging(boolean verboseEnabled) {
         mFirmwareVersion = WifiNative.getFirmwareVersion();
         mDriverVersion = WifiNative.getDriverVersion();
@@ -112,6 +113,7 @@ class WifiLogger  {
         }
     }
 
+    @Override
     public synchronized void startPacketLog() {
         if (mPerPacketRingBuffer != null) {
             startLoggingRingBuffer(mPerPacketRingBuffer);
@@ -120,6 +122,7 @@ class WifiLogger  {
         }
     }
 
+    @Override
     public synchronized void stopPacketLog() {
         if (mPerPacketRingBuffer != null) {
             stopLoggingRingBuffer(mPerPacketRingBuffer);
@@ -128,6 +131,7 @@ class WifiLogger  {
         }
     }
 
+    @Override
     public synchronized void stopLogging() {
         if (mLogLevel != VERBOSE_NO_LOG) {
             //resetLogHandler only can be used when you terminate all logging since all handler will
@@ -143,17 +147,20 @@ class WifiLogger  {
         }
     }
 
+    @Override
     public synchronized void captureBugReportData(int reason) {
         BugReport report = captureBugreport(reason, true);
         mLastBugReports.addLast(report);
     }
 
+    @Override
     public synchronized void captureAlertData(int errorCode, byte[] alertData) {
         BugReport report = captureBugreport(errorCode, /* captureFWDump = */ true);
         report.alertData = alertData;
         mLastAlerts.addLast(report);
     }
 
+    @Override
     public synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("Chipset information :-----------------------------------------------");
         pw.println("FW Version is: " + mFirmwareVersion);
@@ -236,7 +243,7 @@ class WifiLogger  {
         }
     }
 
-    static class LimitedCircularArray<E> {
+    private static class LimitedCircularArray<E> {
         private CircularArray<E> mArray;
         private int mMax;
         LimitedCircularArray(int max) {

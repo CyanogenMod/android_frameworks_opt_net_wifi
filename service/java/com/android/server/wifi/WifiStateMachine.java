@@ -194,7 +194,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private WifiAutoJoinController mWifiAutoJoinController;
     private INetworkManagementService mNwService;
     private ConnectivityManager mCm;
-    private WifiLogger mWifiLogger;
+    private DummyWifiLogger mWifiLogger;
     private WifiApConfigStore mWifiApConfigStore;
     private final boolean mP2pSupported;
     private final AtomicBoolean mP2pConnected = new AtomicBoolean(false);
@@ -1130,7 +1130,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
         mWifiMonitor = new WifiMonitor(this, mWifiNative);
-        mWifiLogger = new WifiLogger(this);
+
+        boolean enableFirmwareLogs = mContext.getResources().getBoolean(
+                R.bool.config_wifi_enable_wifi_firmware_debugging);
+
+        if (enableFirmwareLogs) {
+            mWifiLogger = new WifiLogger(this);
+        } else {
+            mWifiLogger = new DummyWifiLogger();
+        }
 
         mWifiInfo = new WifiInfo();
         mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
