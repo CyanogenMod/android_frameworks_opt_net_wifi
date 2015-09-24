@@ -1209,7 +1209,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public String getCountryCode() {
         enforceConnectivityInternalPermission();
-        String country = mWifiStateMachine.getCountryCode();
+        String country = mWifiStateMachine.getCurrentCountryCode();
         return country;
     }
     /**
