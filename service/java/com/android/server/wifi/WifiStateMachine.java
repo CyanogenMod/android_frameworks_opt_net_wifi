@@ -52,7 +52,7 @@ import android.net.DhcpStateMachine;
 import android.net.Network;
 import android.net.dhcp.DhcpClient;
 import android.net.InterfaceConfiguration;
-import android.net.IpReachabilityMonitor;
+import android.net.ip.IpReachabilityMonitor;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.NetworkAgent;
