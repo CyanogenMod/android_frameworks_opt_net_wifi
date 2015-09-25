@@ -1320,7 +1320,12 @@ public class WifiConfigStore extends IpConfigStore {
             // Sort by descending priority
             Collections.sort(sortedWifiConfigurations, new Comparator<WifiConfiguration>() {
                 public int compare(WifiConfiguration a, WifiConfiguration b) {
-                    return a.priority >= b.priority ? 1 : -1;
+                    if (a.priority < b.priority) {
+                        return -1;
+                    } else if (a.priority > b.priority) {
+                        return 1;
+                    }
+                    return 0;
                 }
             });
         }
