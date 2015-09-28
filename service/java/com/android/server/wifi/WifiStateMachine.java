@@ -2420,24 +2420,32 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         // wifi connection is terminated; ignore resetting of code
         // for now (it is unclear what the chipset should do when
         // country code is reset)
+
         // if mCountryCodeSequence == 0, it is the first time to set country code, always set
         // else only when the new country code is different from the current one to set
-        int countryCodeSequence = mCountryCodeSequence.get();
-        String currentCountryCode = getCurrentCountryCode();
 
-        if (countryCodeSequence == 0
-                || TextUtils.equals(countryCode, currentCountryCode) == false) {
+        if (TextUtils.isEmpty(countryCode)) {
+            if (DBG) log("Ignoring resetting of country code");
+        } else {
+            int countryCodeSequence = mCountryCodeSequence.get();
+            String currentCountryCode = getCurrentCountryCode();
+            if (countryCodeSequence == 0
+                    || TextUtils.equals(countryCode, currentCountryCode) == false) {
 
-            countryCodeSequence = mCountryCodeSequence.incrementAndGet();
-            if (TextUtils.isEmpty(countryCode)) {
-                if (mRevertCountryCodeOnCellularLoss && !TextUtils.isEmpty(mDefaultCountryCode)) {
-                    if (DBG) Log.d(TAG,"Reverting wifi country code to default of "
-                                    + mDefaultCountryCode);
-                    countryCode = mDefaultCountryCode;
-                }
+                countryCodeSequence = mCountryCodeSequence.incrementAndGet();
+                sendMessage(CMD_SET_COUNTRY_CODE, countryCodeSequence, persist ? 1 : 0, 
+                        countryCode);
             }
-            sendMessage(CMD_SET_COUNTRY_CODE, countryCodeSequence, persist ? 1 : 0,
-                    countryCode);
+        }
+    }
+
+    /**
+     * reset the country code to default
+     */
+    public synchronized void resetCountryCode() {
+        if (mRevertCountryCodeOnCellularLoss && TextUtils.isEmpty(mDefaultCountryCode) == false) {
+            logd("resetting country code to " + mDefaultCountryCode);
+            setCountryCode(mDefaultCountryCode, /* persist = */ true);
         }
     }
 
@@ -2456,13 +2464,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     /**
      * Get the country code
      *
-     * @param countryCode following ISO 3166 format
+     * @return countryCode following ISO 3166 format
      */
     public String getCurrentCountryCode() {
         return Settings.Global.getString(
                 mContext.getContentResolver(), Settings.Global.WIFI_COUNTRY_CODE);
     }
-
 
     /**
      * Set the operational frequency band
@@ -3691,9 +3698,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (!mRevertCountryCodeOnCellularLoss || TextUtils.isEmpty(mDefaultCountryCode) ) {
             countryCode = Settings.Global.getString(mContext.getContentResolver(),
                     Settings.Global.WIFI_COUNTRY_CODE);
+            Log.d(TAG,"Initialize wifi country code to persisted value of " + countryCode);
         } else {
-            Log.d(TAG,"Initialize wifi country code to default of "
-                                    + mDefaultCountryCode);
+            Log.d(TAG,"Initialize wifi country code to default of " + mDefaultCountryCode);
             countryCode = mDefaultCountryCode;
         }
 
@@ -3720,8 +3727,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             loge("Failed to set frequency band " + band);
         }
     }
-
-
 
     private void setSuspendOptimizationsNative(int reason, boolean enabled) {
         if (DBG) {
