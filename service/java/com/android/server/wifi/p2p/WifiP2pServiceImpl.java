@@ -495,8 +495,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         private OngoingGroupRemovalState mOngoingGroupRemovalState = new OngoingGroupRemovalState();
 
         private WifiNative mWifiNative = WifiNative.getP2pNativeInterface();
-        private WifiMonitor mWifiMonitor = new WifiMonitor(this, mWifiNative);
-
+        private WifiMonitor mWifiMonitor = WifiMonitor.getInstance();
         private final WifiP2pDeviceList mPeers = new WifiP2pDeviceList();
         /* During a connection, supplicant can tell us that a device was lost. From a supplicant's
          * perspective, the discovery stops during connection and it purges device since it does
@@ -555,6 +554,70 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
             }
             setLogRecSize(50);
             setLogOnlyTransitions(true);
+
+            String interfaceName = mWifiNative.getInterfaceName();
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.AP_STA_CONNECTED_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.AP_STA_DISCONNECTED_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.AUTHENTICATION_FAILURE_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.NETWORK_CONNECTION_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.NETWORK_DISCONNECTION_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_DEVICE_FOUND_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_DEVICE_LOST_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_FIND_STOPPED_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_GO_NEGOTIATION_FAILURE_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_GO_NEGOTIATION_REQUEST_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_GO_NEGOTIATION_SUCCESS_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_GROUP_FORMATION_FAILURE_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_GROUP_FORMATION_SUCCESS_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_GROUP_REMOVED_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_GROUP_STARTED_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_INVITATION_RECEIVED_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_INVITATION_RESULT_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_PROV_DISC_ENTER_PIN_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_PROV_DISC_FAILURE_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_PROV_DISC_PBC_REQ_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_PROV_DISC_PBC_RSP_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_PROV_DISC_SHOW_PIN_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.P2P_SERV_DISC_RESP_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.SCAN_RESULTS_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.SUP_CONNECTION_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.SUP_DISCONNECTION_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.WPS_FAIL_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.WPS_OVERLAP_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.WPS_SUCCESS_EVENT, getHandler());
+            mWifiMonitor.registerHandler(interfaceName,
+                    WifiMonitor.WPS_TIMEOUT_EVENT, getHandler());
         }
 
     class DefaultState extends State {
@@ -901,7 +964,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     } catch (IllegalStateException ie) {
                         loge("Unable to change interface settings: " + ie);
                     }
-                    mWifiMonitor.startMonitoring();
+                    mWifiMonitor.startMonitoring(mWifiNative.getInterfaceName());
                     transitionTo(mP2pEnablingState);
                     break;
                 default:
@@ -967,7 +1030,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                     }
                     if (mGroups.clear()) sendP2pPersistentGroupsChangedBroadcast();
 
-                    mWifiMonitor.stopMonitoring();
+                    mWifiMonitor.stopMonitoring(mWifiNative.getInterfaceName());
                     transitionTo(mP2pDisablingState);
                     break;
                 case WifiP2pManager.SET_DEVICE_NAME:
