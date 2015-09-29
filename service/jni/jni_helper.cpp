@@ -1,5 +1,5 @@
 /*
- * Copyright 2008, The Android Open Source Project
+ * Copyright 2016, The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -239,6 +239,30 @@ jlong JNIHelper::getLongArrayField(jobject obj, const char *name, int index)
     jlong value = elem[index];
     mEnv->ReleaseLongArrayElements(array, elem, 0);
     return value;
+}
+
+void JNIHelper::getByteArrayField(jobject obj, const char *name, byte* buf, int size) {
+    JNIObject<jclass> cls(*this, mEnv->GetObjectClass(obj));
+    jfieldID field = mEnv->GetFieldID(cls, name, "[B");
+    if (field == 0) {
+        THROW(*this, "Error in accessing field definition");
+        return;
+    }
+
+    JNIObject<jbyteArray> array(*this, (jbyteArray)mEnv->GetObjectField(obj, field));
+    if (array == NULL) {
+        THROW(*this, "Error in accessing array");
+        return;
+    }
+
+    jbyte *elem = mEnv->GetByteArrayElements(array, 0);
+    if (elem == NULL) {
+        THROW(*this, "Error in accessing index element");
+        return;
+    }
+
+    memcpy(buf, elem, size);
+    mEnv->ReleaseByteArrayElements(array, elem, 0);
 }
 
 jlong JNIHelper::getStaticLongArrayField(jobject obj, const char *name, int index)
@@ -494,6 +518,27 @@ void JNIHelper::reportEvent(jclass cls, const char *method, const char *signatur
     }
 
     mEnv->CallStaticVoidMethodV(cls, methodID, params);
+    if (mEnv->ExceptionCheck()) {
+        mEnv->ExceptionDescribe();
+        mEnv->ExceptionClear();
+    }
+
+    va_end(params);
+}
+
+void JNIHelper::callMethod(jobject obj, const char *method, const char *signature, ...)
+{
+    va_list params;
+    va_start(params, signature);
+
+    jclass cls = mEnv->GetObjectClass(obj);
+    jmethodID methodID = mEnv->GetMethodID(cls, method, signature);
+    if (methodID == 0) {
+        ALOGE("Error in getting method ID");
+        return;
+    }
+
+    mEnv->CallVoidMethodV(obj, methodID, params);
     if (mEnv->ExceptionCheck()) {
         mEnv->ExceptionDescribe();
         mEnv->ExceptionClear();
