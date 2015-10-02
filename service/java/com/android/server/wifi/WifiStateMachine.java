@@ -1197,7 +1197,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     "but there is no default country code!! Resetting ...");
             mRevertCountryCodeOnCellularLoss = false;
         } else if (mRevertCountryCodeOnCellularLoss) {
-            logd("will revert to " + mDefaultCountryCode + " on MCC loss");
+            logd("initializing with and will revert to " + mDefaultCountryCode + " on MCC loss");
+        }
+
+        if (mRevertCountryCodeOnCellularLoss) {
+            Settings.Global.putString(mContext.getContentResolver(),
+                    Settings.Global.WIFI_COUNTRY_CODE, mDefaultCountryCode);
         }
 
         mUserWantsSuspendOpt.set(Settings.Global.getInt(mContext.getContentResolver(),
@@ -3708,16 +3713,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * Set the country code from the system setting value, if any.
      */
     private void initializeCountryCode() {
-        String countryCode;
-        if (!mRevertCountryCodeOnCellularLoss || TextUtils.isEmpty(mDefaultCountryCode) ) {
-            countryCode = Settings.Global.getString(mContext.getContentResolver(),
-                    Settings.Global.WIFI_COUNTRY_CODE);
-            Log.d(TAG,"Initialize wifi country code to persisted value of " + countryCode);
-        } else {
-            Log.d(TAG,"Initialize wifi country code to default of " + mDefaultCountryCode);
-            countryCode = mDefaultCountryCode;
-        }
-
+        String countryCode = getCurrentCountryCode();
         if (countryCode != null && !countryCode.isEmpty()) {
             setCountryCode(countryCode, false);
         } else {
@@ -6117,11 +6113,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         } else {
                             loge("Failed to set country code " + country);
                         }
-                        if (persist) {
-                            Settings.Global.putString(mContext.getContentResolver(),
-                                    Settings.Global.WIFI_COUNTRY_CODE,
-                                    country == null ? "" : country);
-                        }
+                    }
+
+                    if (persist) {
+                        Settings.Global.putString(mContext.getContentResolver(),
+                                Settings.Global.WIFI_COUNTRY_CODE,
+                                country == null ? "" : country);
                     }
 
                     mWifiP2pChannel.sendMessage(WifiP2pServiceImpl.SET_COUNTRY_CODE, country);
