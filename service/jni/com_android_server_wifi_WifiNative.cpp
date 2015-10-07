@@ -32,7 +32,7 @@
 #include "jni_helper.h"
 #include "rtt.h"
 #include "wifi_hal_stub.h"
-#define REPLY_BUF_SIZE 4096 // wpa_supplicant's maximum size.
+#define REPLY_BUF_SIZE 4096 + 1         // wpa_supplicant's maximum size + 1 for nul
 #define EVENT_BUF_SIZE 2048
 
 namespace android {
@@ -138,7 +138,12 @@ static jboolean doBooleanCommand(JNIEnv* env, jstring javaCommand) {
     if (!doCommand(env, javaCommand, reply, sizeof(reply))) {
         return JNI_FALSE;
     }
-    return (strcmp(reply, "OK") == 0);
+    jboolean result = (strcmp(reply, "OK") == 0);
+    if (!result) {
+        ScopedUtfChars command(env, javaCommand);
+        ALOGI("command '%s' returned '%s", command.c_str(), reply);
+    }
+    return result;
 }
 
 // Send a command to the supplicant, and return the reply as a String.
