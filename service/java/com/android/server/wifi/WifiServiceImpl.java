@@ -34,14 +34,11 @@ import android.net.Network;
 import android.net.NetworkScorerAppManager;
 import android.net.NetworkUtils;
 import android.net.Uri;
-import android.net.wifi.BatchedScanResult;
-import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.IWifiManager;
 import android.net.wifi.ScanInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
 import android.net.wifi.WifiActivityEnergyInfo;
-import android.net.wifi.WifiChannel;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConnectionStatistics;
 import android.net.wifi.WifiEnterpriseConfig;
@@ -431,44 +428,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
-     * see {@link android.net.wifi.WifiManager#getChannelList}
-     */
-    public List<WifiChannel> getChannelList() {
-        enforceAccessPermission();
-        if (mWifiStateMachineChannel != null) {
-            return mWifiStateMachine.syncGetChannelList(mWifiStateMachineChannel);
-        } else {
-            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
-            return null;
-        }
-    }
-
-    // Start a location scan.
-    // L release: A location scan is implemented as a normal scan and avoids scanning DFS channels
-    // Deprecated: Will soon remove implementation
-    public void startLocationRestrictedScan(WorkSource workSource) {
-        enforceChangePermission();
-        enforceLocationHardwarePermission();
-        List<WifiChannel> channels = getChannelList();
-        if (channels == null) {
-            Slog.e(TAG, "startLocationRestrictedScan cant get channels");
-            return;
-        }
-        ScanSettings settings = new ScanSettings();
-        for (WifiChannel channel : channels) {
-            if (!channel.isDFS) {
-                settings.channelSet.add(channel);
-            }
-        }
-        if (workSource == null) {
-            // Make sure we always have a workSource indicating the origin of the scan
-            // hence if there is none, pick an internal WifiStateMachine one
-            workSource = new WorkSource(WifiStateMachine.DFS_RESTRICTED_SCAN_REQUEST);
-        }
-        startScan(settings, workSource);
-    }
-
-    /**
      * see {@link android.net.wifi.WifiManager#startScan}
      * and {@link android.net.wifi.WifiManager#startCustomizedScan}
      *
@@ -511,30 +470,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 settings, workSource);
     }
 
-    public boolean isBatchedScanSupported() {
-        return false;
-    }
-
-    public void pollBatchedScan() { }
-
     public String getWpsNfcConfigurationToken(int netId) {
         enforceConnectivityInternalPermission();
         return mWifiStateMachine.syncGetWpsNfcConfigurationToken(netId);
     }
-
-    /**
-     * see {@link android.net.wifi.WifiManager#requestBatchedScan()}
-     */
-    public boolean requestBatchedScan(BatchedScanSettings requested, IBinder binder,
-            WorkSource workSource) {
-        return false;
-    }
-
-    public List<BatchedScanResult> getBatchedScanResults(String callingPackage) {
-        return null;
-    }
-
-    public void stopBatchedScan(BatchedScanSettings settings) { }
 
     boolean mInIdleMode;
     boolean mScanPending;
@@ -1306,34 +1245,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         info.leaseDuration = dhcpResults.leaseDuration;
 
         return info;
-    }
-
-    /**
-     * see {@link android.net.wifi.WifiManager#startWifi}
-     *
-     */
-    public void startWifi() {
-        enforceConnectivityInternalPermission();
-        /* TODO: may be add permissions for access only to connectivity service
-         * TODO: if a start issued, keep wifi alive until a stop issued irrespective
-         * of WifiLock & device idle status unless wifi enabled status is toggled
-         */
-
-        mWifiStateMachine.setDriverStart(true);
-        mWifiStateMachine.reconnectCommand();
-    }
-
-    /**
-     * see {@link android.net.wifi.WifiManager#stopWifi}
-     *
-     */
-    public void stopWifi() {
-        enforceConnectivityInternalPermission();
-        /*
-         * TODO: if a stop is issued, wifi is brought up only by startWifi
-         * unless wifi enabled status is toggled
-         */
-        mWifiStateMachine.setDriverStart(false);
     }
 
     /**
