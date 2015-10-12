@@ -3815,21 +3815,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
 
-    /*
-    void ageOutScanResults(int age) {
-        synchronized(mScanResultCache) {
-            // Trim mScanResults, which prevent WifiStateMachine to return
-            // obsolete scan results to queriers
-            long now = System.CurrentTimeMillis();
-            for (int i = 0; i < mScanResults.size(); i++) {
-                ScanResult result = mScanResults.get(i);
-                if ((result.seen > now || (now - result.seen) > age)) {
-                    mScanResults.remove(i);
-                }
-            }
-        }
-    }*/
-
     private static final String IE_STR = "ie=";
     private static final String ID_STR = "id=";
     private static final String BSSID_STR = "bssid=";
@@ -3840,8 +3825,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String SSID_STR = "ssid=";
     private static final String DELIMITER_STR = "====";
     private static final String END_STR = "####";
-
-    int emptyScanResultCount = 0;
 
     // Used for matching BSSID strings, at least one characteer must be a non-zero number
     private static Pattern mNotZero = Pattern.compile("[1-9a-fA-F]");
@@ -3902,22 +3885,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (sid == -1) break;
         }
 
-        // Age out scan results, we return all scan results found in the last 12 seconds,
-        // and NOT all scan results since last scan.
-        // ageOutScanResults(12000);
-
         scanResults = scanResultsBuf.toString();
+
         if (TextUtils.isEmpty(scanResults)) {
-            emptyScanResultCount++;
-            if (emptyScanResultCount > 10) {
-                // If we got too many empty scan results, the current scan cache is stale,
-                // hence clear it.
-                mScanResults = new ArrayList<>();
-            }
+            mScanResults = new ArrayList<>();
             return;
         }
-
-        emptyScanResultCount = 0;
 
         mWifiConfigStore.trimANQPCache(false);
 
