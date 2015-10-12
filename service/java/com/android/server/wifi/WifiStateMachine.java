@@ -6664,6 +6664,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_START_SCAN:
                     handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                     break;
+                case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
+                    SupplicantState state = handleSupplicantStateChange(message);
+                    if(DBG) log("SupplicantState= " + state);
+                    break;
                 default:
                     return NOT_HANDLED;
             }
