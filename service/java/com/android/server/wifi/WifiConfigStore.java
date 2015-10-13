@@ -1022,6 +1022,8 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
+        mWifiNative.setHs20(config.isPasspoint());
+
         if (updatePriorities)
             mWifiNative.saveConfig();
         else

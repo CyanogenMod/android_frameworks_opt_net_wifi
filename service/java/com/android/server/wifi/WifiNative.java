@@ -678,6 +678,14 @@ public class WifiNative {
         doBooleanCommand("SCAN_INTERVAL " + scanInterval);
     }
 
+    public void setHs20(boolean hs20) {
+        if (hs20) {
+            doBooleanCommand("SET HS20 1");
+        } else {
+            doBooleanCommand("SET HS20 0");
+        }
+    }
+
     public void startTdls(String macAddr, boolean enable) {
         if (enable) {
             doBooleanCommand("TDLS_DISCOVER " + macAddr);
