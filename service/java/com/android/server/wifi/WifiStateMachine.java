@@ -9302,9 +9302,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             } else {
                 if (mScreenOn) {
                     /**
-                     * screen lit and => delayed timer
+                     * screen lit and => start scan immediately
                      */
-                    startDelayedScan(500, null, null);
+                    startScan(UNKNOWN_SCAN_SOURCE, 0, null, null);
                 } else {
                     /**
                      * screen dark and PNO supported => scan alarm disabled
