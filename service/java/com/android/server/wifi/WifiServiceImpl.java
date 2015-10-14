@@ -1009,7 +1009,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         long ident = Binder.clearCallingIdentity();
         try {
             if (!canReadPeerMacAddresses && !isActiveNetworkScorer
-                    && !isLocationEnabled()) {
+                    && !isLocationEnabled(callingPackage)) {
                 return new ArrayList<ScanResult>();
             }
             if (!canReadPeerMacAddresses && !isActiveNetworkScorer
@@ -1116,9 +1116,12 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         mWifiStateMachine.setOSUSelection(osuID);
     }
 
-    private boolean isLocationEnabled() {
-        return Settings.Secure.getInt(mContext.getContentResolver(), Settings.Secure.LOCATION_MODE,
-                Settings.Secure.LOCATION_MODE_OFF) != Settings.Secure.LOCATION_MODE_OFF;
+    private boolean isLocationEnabled(String callingPackage) {
+        boolean legacyForegroundApp = !isMApp(mContext, callingPackage)
+                && isForegroundApp(callingPackage);
+        return legacyForegroundApp || Settings.Secure.getInt(mContext.getContentResolver(),
+                Settings.Secure.LOCATION_MODE, Settings.Secure.LOCATION_MODE_OFF)
+                != Settings.Secure.LOCATION_MODE_OFF;
     }
 
     /**
@@ -2181,13 +2184,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 && checkAppOppAllowed(AppOpsManager.OP_COARSE_LOCATION, callingPackage, uid)) {
             return true;
         }
-        boolean apiLevel23App = true;
-        try {
-            apiLevel23App = mContext.getPackageManager().getApplicationInfo(
-                    callingPackage, 0).targetSdkVersion >= Build.VERSION_CODES.M;
-        } catch (PackageManager.NameNotFoundException e) {
-            // In case of exception, assume app's API level is 23+
-        }
+        boolean apiLevel23App = isMApp(mContext, callingPackage);
         // Pre-M apps running in the foreground should continue getting scan results
         if (!apiLevel23App && isForegroundApp(callingPackage)) {
             return true;
@@ -2199,6 +2196,16 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
     private boolean checkAppOppAllowed(int op, String callingPackage, int uid) {
         return mAppOps.noteOp(op, uid, callingPackage) == AppOpsManager.MODE_ALLOWED;
+    }
+
+    private static boolean isMApp(Context context, String pkgName) {
+        try {
+            return context.getPackageManager().getApplicationInfo(pkgName, 0)
+                    .targetSdkVersion >= Build.VERSION_CODES.M;
+        } catch (PackageManager.NameNotFoundException e) {
+            // In case of exception, assume M app (more strict checking)
+        }
+        return true;
     }
 
     /**
