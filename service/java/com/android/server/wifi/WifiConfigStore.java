@@ -2265,7 +2265,7 @@ public class WifiConfigStore extends IpConfigStore {
         });
     }
 
-    public void setLastSelectedConfiguration(int netId) {
+    public void setAndEnableLastSelectedConfiguration(int netId) {
         if (VDBG) {
             loge("setLastSelectedConfiguration " + Integer.toString(netId));
         }
@@ -2277,6 +2277,10 @@ public class WifiConfigStore extends IpConfigStore {
                 lastSelectedConfiguration = null;
             } else {
                 lastSelectedConfiguration = selected.configKey();
+                if (selected.status == Status.DISABLED) {
+                    mWifiNative.enableNetwork(netId, false);
+                }
+                selected.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 selected.numConnectionFailures = 0;
                 selected.numIpConfigFailures = 0;
                 selected.numAuthFailures = 0;

@@ -4032,7 +4032,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
         // Loose last selected configuration if we have been disconnected for 5 minutes
         if (getDisconnectedTimeMilli() > mWifiConfigStore.wifiConfigLastSelectionHysteresis) {
-            mWifiConfigStore.setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+            mWifiConfigStore.setAndEnableLastSelectedConfiguration(
+                    WifiConfiguration.INVALID_NETWORK_ID);
         }
 
         if (attemptAutoJoin) {
@@ -6037,7 +6038,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_SET_OPERATIONAL_MODE:
                     mOperationalMode = message.arg1;
                     mWifiConfigStore.
-                            setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+                            setAndEnableLastSelectedConfiguration(
+                                    WifiConfiguration.INVALID_NETWORK_ID);
                     break;
                 case CMD_TARGET_BSSID:
                     // Trying to associate to this BSSID
@@ -6615,7 +6617,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                         // Loose last selection choice since user toggled WiFi
                         mWifiConfigStore.
-                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+                                setAndEnableLastSelectedConfiguration(
+                                        WifiConfiguration.INVALID_NETWORK_ID);
 
                         mOperationalMode = CONNECT_MODE;
                         transitionTo(mDisconnectedState);
@@ -7248,7 +7251,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 // Interpret this as a connect attempt
                                 // Set the last selected configuration so as to allow the system to
                                 // stick the last user choice without persisting the choice
-                                mWifiConfigStore.setLastSelectedConfiguration(res);
+                                mWifiConfigStore.setAndEnableLastSelectedConfiguration(res);
                                 mWifiConfigStore.updateLastConnectUid(config, message.sendingUid);
                                 mWifiConfigStore.writeKnownNetworkHistory(false);
 
@@ -7298,7 +7301,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 updateConfigurationHistory(netId, true, false);
                         // Set the last selected configuration so as to allow the system to
                         // stick the last user choice without persisting the choice
-                        mWifiConfigStore.setLastSelectedConfiguration(netId);
+                        mWifiConfigStore.setAndEnableLastSelectedConfiguration(netId);
 
                         // Remember time of last connection attempt
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
@@ -7416,7 +7419,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         }
                         // Disconnect now, as we don't have any way to fullfill
                         // the  supplicant request.
-                        mWifiConfigStore.setLastSelectedConfiguration(
+                        mWifiConfigStore.setAndEnableLastSelectedConfiguration(
                                 WifiConfiguration.INVALID_NETWORK_ID);
                         mWifiNative.disconnect();
                     }
@@ -7445,7 +7448,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 /* Do a redundant disconnect without transition */
                 case CMD_DISCONNECT:
-                    mWifiConfigStore.setLastSelectedConfiguration
+                    mWifiConfigStore.setAndEnableLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
                     mWifiNative.disconnect();
                     break;
@@ -7559,7 +7562,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             // The default value is 30 minutes : see the code path at bottom of
                             // setScanResults() function.
                             mWifiConfigStore.
-                                 setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+                                 setAndEnableLastSelectedConfiguration(
+                                         WifiConfiguration.INVALID_NETWORK_ID);
                         }
                         mAutoRoaming = roam;
                         if (isRoaming() || linkDebouncing) {
@@ -7688,7 +7692,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mWifiConfigStore.checkConfigOverridePermission(message.sendingUid);
                     mWifiAutoJoinController.updateConfigurationHistory(netId, true, persist);
 
-                    mWifiConfigStore.setLastSelectedConfiguration(netId);
+                    mWifiConfigStore.setAndEnableLastSelectedConfiguration(netId);
 
                     didDisconnect = false;
                     if (mLastNetworkId != WifiConfiguration.INVALID_NETWORK_ID
@@ -7872,7 +7876,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             loge("Invalid setup for WPS");
                             break;
                     }
-                    mWifiConfigStore.setLastSelectedConfiguration
+                    mWifiConfigStore.setAndEnableLastSelectedConfiguration
                             (WifiConfiguration.INVALID_NETWORK_ID);
                     if (wpsResult.status == Status.SUCCESS) {
                         replyToMessage(message, WifiManager.START_WPS_SUCCEEDED, wpsResult);
@@ -8275,7 +8279,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         }
                     }
                     mWifiConfigStore.
-                                setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+                                setAndEnableLastSelectedConfiguration(
+                                        WifiConfiguration.INVALID_NETWORK_ID);
                     break;
                 case CMD_SET_COUNTRY_CODE:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
@@ -8973,9 +8978,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 // Clear last-selected status, as being last-selected also avoids
                                 // disabling auto-join.
                                 if (mWifiConfigStore.isLastSelectedConfiguration(config)) {
-                                    mWifiConfigStore.setLastSelectedConfiguration(
+                                    mWifiConfigStore.setAndEnableLastSelectedConfiguration(
                                         WifiConfiguration.INVALID_NETWORK_ID);
                                 }
+                                config.setAutoJoinStatus(
+                                        WifiConfiguration.AUTO_JOIN_DISABLED_USER_ACTION);
+                                mWifiConfigStore.disableNetwork(config.networkId,
+                                    WifiConfiguration.DISABLED_UNKNOWN_REASON);
                             }
                             config.numNoInternetAccessReports += 1;
                             config.dirty = true;
@@ -9355,7 +9364,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         transitionTo(mScanModeState);
                     }
                     mWifiConfigStore.
-                            setLastSelectedConfiguration(WifiConfiguration.INVALID_NETWORK_ID);
+                            setAndEnableLastSelectedConfiguration(
+                                    WifiConfiguration.INVALID_NETWORK_ID);
                     break;
                     /* Ignore network disconnect */
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
