@@ -1897,6 +1897,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     // If workSource is not null, blame is given to it, otherwise blame is given to callingUid.
     private void noteScanStart(int callingUid, WorkSource workSource) {
+        if (lastStartScanTimeStamp != 0) {
+            noteScanEnd();
+        }
         long now = System.currentTimeMillis();
         lastStartScanTimeStamp = now;
         lastScanDuration = 0;
@@ -1931,6 +1934,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private void noteScanEnd() {
+        closeRadioScanStats();
         long now = System.currentTimeMillis();
         if (lastStartScanTimeStamp != 0) {
             lastScanDuration = now - lastStartScanTimeStamp;
@@ -6018,7 +6022,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                 case WifiMonitor.SCAN_FAILED_EVENT:
                     maybeRegisterNetworkFactory(); // Make sure our NetworkFactory is registered
-                    closeRadioScanStats();
                     noteScanEnd();
                     setScanResults();
                     if (mIsFullScanOngoing || mSendScanResultsBroadcast) {
