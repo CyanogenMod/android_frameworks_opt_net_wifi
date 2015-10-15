@@ -2064,29 +2064,24 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     private boolean checkCallerCanAccessScanResults(String callingPackage, int uid) {
         if (ActivityManager.checkUidPermission(Manifest.permission.ACCESS_FINE_LOCATION, uid)
                 == PackageManager.PERMISSION_GRANTED
-                && isAppOppAllowed(AppOpsManager.OP_FINE_LOCATION, callingPackage, uid)) {
+                && checkAppOppAllowed(AppOpsManager.OP_FINE_LOCATION, callingPackage, uid)) {
             return true;
         }
 
         if (ActivityManager.checkUidPermission(Manifest.permission.ACCESS_COARSE_LOCATION, uid)
                 == PackageManager.PERMISSION_GRANTED
-                && isAppOppAllowed(AppOpsManager.OP_COARSE_LOCATION, callingPackage, uid)) {
+                && checkAppOppAllowed(AppOpsManager.OP_COARSE_LOCATION, callingPackage, uid)) {
             return true;
         }
-        // Enforce location permission for apps targeting M and later versions
-        boolean enforceLocationPermission = true;
+        boolean apiLevel23App = true;
         try {
-            enforceLocationPermission = mContext.getPackageManager().getApplicationInfo(
+            apiLevel23App = mContext.getPackageManager().getApplicationInfo(
                     callingPackage, 0).targetSdkVersion >= Build.VERSION_CODES.M;
         } catch (PackageManager.NameNotFoundException e) {
-            // In case of exception, enforce permission anyway
-        }
-        if (enforceLocationPermission) {
-            throw new SecurityException("Need ACCESS_COARSE_LOCATION or "
-                    + "ACCESS_FINE_LOCATION permission to get scan results");
+            // In case of exception, assume app's API level is 23+
         }
         // Pre-M apps running in the foreground should continue getting scan results
-        if (isForegroundApp(callingPackage)) {
+        if (!apiLevel23App && isForegroundApp(callingPackage)) {
             return true;
         }
         Log.e(TAG, "Permission denial: Need ACCESS_COARSE_LOCATION or ACCESS_FINE_LOCATION "
@@ -2094,7 +2089,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return false;
     }
 
-    private boolean isAppOppAllowed(int op, String callingPackage, int uid) {
+    private boolean checkAppOppAllowed(int op, String callingPackage, int uid) {
         return mAppOps.noteOp(op, uid, callingPackage) == AppOpsManager.MODE_ALLOWED;
     }
 
