@@ -392,8 +392,8 @@ public class WifiConfigStore extends IpConfigStore {
 
     public static final int maxNumScanCacheEntries = 128;
 
-    public final AtomicBoolean enableHalBasedPno = new AtomicBoolean(true);
-    public final AtomicBoolean enableSsidWhitelist = new AtomicBoolean(true);
+    public final AtomicBoolean enableHalBasedPno = new AtomicBoolean(false);
+    public final AtomicBoolean enableSsidWhitelist = new AtomicBoolean(false);
     public final AtomicBoolean enableAutoJoinWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableFullBandScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableChipWakeUpWhenAssociated = new AtomicBoolean(true);
