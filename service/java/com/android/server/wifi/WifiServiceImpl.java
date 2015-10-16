@@ -1913,7 +1913,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         return mWifiStateMachine.getEnableAutoJoinWhenAssociated();
     }
     public void setHalBasedAutojoinOffload(int enabled) {
-        enforceChangePermission();
+        enforceConnectivityInternalPermission();
         mWifiStateMachine.setHalBasedAutojoinOffload(enabled);
     }
 
