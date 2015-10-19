@@ -205,14 +205,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     WifiConfiguration config = (WifiConfiguration) msg.obj;
                     int networkId = msg.arg1;
                     if (msg.what == WifiManager.SAVE_NETWORK) {
-                        Slog.e("WiFiServiceImpl ", "SAVE"
+                        Slog.d("WiFiServiceImpl ", "SAVE"
                                 + " nid=" + Integer.toString(networkId)
                                 + " uid=" + msg.sendingUid
                                 + " name="
                                 + mContext.getPackageManager().getNameForUid(msg.sendingUid));
                     }
                     if (msg.what == WifiManager.CONNECT_NETWORK) {
-                        Slog.e("WiFiServiceImpl ", "CONNECT "
+                        Slog.d("WiFiServiceImpl ", "CONNECT "
                                 + " nid=" + Integer.toString(networkId)
                                 + " uid=" + msg.sendingUid
                                 + " name="
@@ -787,7 +787,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     sb.append(" rx_time=" + stats.rx_time);
                     sb.append(" rxIdleTime=" + rxIdleTime);
                     sb.append(" energy=" + energyUsed);
-                    Log.e(TAG, " reportActivityInfo: " + sb.toString());
+                    Log.d(TAG, " reportActivityInfo: " + sb.toString());
                 }
 
                 // Convert the LinkLayerStats into EnergyActivity
