@@ -650,6 +650,12 @@ class WifiController extends StateMachine {
                         }
                     }
                     break;
+                case CMD_EMERGENCY_MODE_CHANGED:
+                    if (msg.arg1 == 1) {
+                        mWifiStateMachine.setHostApRunning(null, false);
+                        transitionTo(mEcmState);
+                        break;
+                    }
                 case CMD_AP_START_FAILURE:
                     if(!mSettingsStore.isScanAlwaysAvailable()) {
                         transitionTo(mApStaDisabledState);
@@ -667,6 +673,7 @@ class WifiController extends StateMachine {
         @Override
         public void enter() {
             mWifiStateMachine.setSupplicantRunning(false);
+            mWifiStateMachine.clearANQPCache();
         }
 
         @Override
