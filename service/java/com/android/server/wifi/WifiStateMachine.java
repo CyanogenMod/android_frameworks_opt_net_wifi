@@ -212,7 +212,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private int mNumScanResultsReturned;
 
     private boolean mScreenOn = false;
-
+    private int mCurrentAssociateNetworkId = -1;
     /* Chipset supports background scan */
     private final boolean mBackgroundScanSupported;
 
@@ -4052,7 +4052,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             synchronized (mScanResultCache) {
                 // AutoJoincontroller will directly acces the scan result list and update it with
                 // ScanResult status
-                mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
+                mNumScanResultsKnown = 1mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
             }
         }
         if (linkDebouncing) {
@@ -6923,6 +6923,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             case WifiMonitor.GAS_QUERY_START_EVENT:
                 s = "WifiMonitor.GAS_QUERY_START_EVENT";
                 break;
+            case WifiMonitor.RSN_PMKID_MISMATCH_EVENT:
+                s =  "WifiMonitor.RSN_PMKID_MISMATCH_EVENT";
+                break;
             case CMD_SET_OPERATIONAL_MODE:
                 s = "CMD_SET_OPERATIONAL_MODE";
                 break;
@@ -7241,6 +7244,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (state == SupplicantState.COMPLETED) {
                         if (mIpReachabilityMonitor != null) {
                             mIpReachabilityMonitor.probeAll();
+                        }
+                    }
+
+                    if (state == SupplicantState.ASSOCIATED) {
+                        StateChangeResult stateChangeResult = (StateChangeResult) message.obj;
+                        if (stateChangeResult != null) {
+                            mCurrentAssociateNetworkId = stateChangeResult.networkId;
                         }
                     }
                     break;
@@ -9554,6 +9564,22 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_SCREEN_STATE_CHANGED:
                     handleScreenStateChanged(message.arg1 != 0);
+                    break;
+                case WifiMonitor.RSN_PMKID_MISMATCH_EVENT:
+                    //WAR: In release M, there is a TLS bugs for some radius. M upgrade the TLS to
+                    // 1.2. However,some old radius can not support it. So if possibly disconnected
+                    // due to TLS failure, we will toggler the TLS version between 1.1 and 1.2 for
+                    // next retry connection
+                    int nid = mCurrentAssociateNetworkId;
+                    WifiConfiguration currentNet = mWifiConfigStore.getWifiConfiguration(nid);
+                    if (currentNet != null && currentNet.enterpriseConfig != null) {
+                        currentNet.enterpriseConfig.setTls12Enable(
+                                !currentNet.enterpriseConfig.getTls12Enable());
+                        mWifiConfigStore.saveNetwork(currentNet, WifiConfiguration.UNKNOWN_UID);
+                        Log.e(TAG, "NetWork ID =" + nid + " switch to TLS1.2: " +
+                            currentNet.enterpriseConfig.getTls12Enable());
+                    }
+
                     break;
                 default:
                     ret = NOT_HANDLED;
