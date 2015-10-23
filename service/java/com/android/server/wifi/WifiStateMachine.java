@@ -4057,7 +4057,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             synchronized (mScanResultCache) {
                 // AutoJoincontroller will directly acces the scan result list and update it with
                 // ScanResult status
-                mNumScanResultsKnown = 1mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
+                mNumScanResultsKnown = mWifiAutoJoinController.newSupplicantResults(attemptAutoJoin);
             }
         }
         if (linkDebouncing) {
