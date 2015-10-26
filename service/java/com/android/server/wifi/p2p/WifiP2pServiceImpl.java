@@ -2880,6 +2880,11 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         String deviceName = Settings.Global.getString(mContext.getContentResolver(),
                 Settings.Global.WIFI_P2P_DEVICE_NAME);
         if (deviceName == null) {
+            String wifi_direct_name = mContext.getResources().getString(
+                R.string.def_wifi_direct_name);
+            if (!TextUtils.isEmpty(wifi_direct_name)){
+                    return wifi_direct_name;
+            }
             /* We use the 4 digits of the ANDROID_ID to have a friendly
              * default that has low likelihood of collision with a peer */
             String id = Settings.Secure.getString(mContext.getContentResolver(),
