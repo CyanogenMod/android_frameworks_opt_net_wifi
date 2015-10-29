@@ -4056,9 +4056,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * Fetch RSSI, linkspeed, and frequency on current connection
      */
     private void fetchRssiLinkSpeedAndFrequencyNative() {
-        int newRssi = -1;
-        int newLinkSpeed = -1;
-        int newFrequency = -1;
+        Integer newRssi = null;
+        Integer newLinkSpeed = null;
+        Integer newFrequency = null;
 
         String signalPoll = mWifiNative.signalPoll();
 
@@ -4082,12 +4082,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         if (PDBG) {
-            logd("fetchRssiLinkSpeedAndFrequencyNative rssi="
-                    + Integer.toString(newRssi) + " linkspeed="
-                    + Integer.toString(newLinkSpeed));
+            logd("fetchRssiLinkSpeedAndFrequencyNative rssi=" + newRssi +
+                 " linkspeed=" + newLinkSpeed + " freq=" + newFrequency);
         }
 
-        if (newRssi > WifiInfo.INVALID_RSSI && newRssi < WifiInfo.MAX_RSSI) {
+        if (newRssi != null && newRssi > WifiInfo.INVALID_RSSI && newRssi < WifiInfo.MAX_RSSI) {
             // screen out invalid values
             /* some implementations avoid negative values by adding 256
              * so we need to adjust for that here.
@@ -4115,10 +4114,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             updateCapabilities(getCurrentWifiConfiguration());
         }
 
-        if (newLinkSpeed != -1) {
+        if (newLinkSpeed != null) {
             mWifiInfo.setLinkSpeed(newLinkSpeed);
         }
-        if (newFrequency > 0) {
+        if (newFrequency != null && newFrequency > 0) {
             if (ScanResult.is5GHz(newFrequency)) {
                 mWifiConnectionStatistics.num5GhzConnected++;
             }
