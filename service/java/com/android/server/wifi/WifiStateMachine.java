@@ -1613,35 +1613,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         return result;
     }
 
-    public List<WifiChannel> syncGetChannelList(AsyncChannel channel) {
-        Message resultMsg = channel.sendMessageSynchronously(CMD_GET_CAPABILITY_FREQ);
-        List<WifiChannel> list = null;
-        if (resultMsg.obj != null) {
-            list = new ArrayList<WifiChannel>();
-            String freqs = (String) resultMsg.obj;
-            String[] lines = freqs.split("\n");
-            for (String line : lines)
-                if (line.contains("MHz")) {
-                    // line format: " 52 = 5260 MHz (NO_IBSS) (DFS)"
-                    WifiChannel c = new WifiChannel();
-                    String[] prop = line.split(" ");
-                    if (prop.length < 5) continue;
-                    try {
-                        c.channelNum = Integer.parseInt(prop[1]);
-                        c.freqMHz = Integer.parseInt(prop[3]);
-                    } catch (NumberFormatException e) {
-                    }
-                    c.isDFS = line.contains("(DFS)");
-                    list.add(c);
-                } else if (line.contains("Mode[B] Channels:")) {
-                    // B channels are the same as G channels, skipped
-                    break;
-                }
-        }
-        resultMsg.recycle();
-        return (list != null && list.size() > 0) ? list : null;
-    }
-
     /**
      * When settings allowing making use of untrusted networks change, trigger a scan
      * so as to kick of autojoin.
