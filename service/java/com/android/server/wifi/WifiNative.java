@@ -37,6 +37,9 @@ import android.util.LocalLog;
 import android.util.Log;
 
 import com.android.server.connectivity.KeepalivePacketData;
+import com.android.server.wifi.hotspot2.NetworkDetail;
+import com.android.server.wifi.hotspot2.SupplicantBridge;
+import com.android.server.wifi.hotspot2.Utils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -391,13 +394,20 @@ public class WifiNative {
      * Format of results:
      * =================
      * id=1
-     * bssid=68:7f:74:d7:1b:6e
+     * bssid=68:7f:76:d7:1a:6e
      * freq=2412
-     * level=-43
-     * tsf=1344621975160944
-     * age=2623
+     * level=-44
+     * tsf=1344626243700342
      * flags=[WPA2-PSK-CCMP][WPS][ESS]
-     * ssid=zubyb
+     * ssid=zfdy
+     * ====
+     * id=2
+     * bssid=68:5f:74:d7:1a:6f
+     * freq=5180
+     * level=-73
+     * tsf=1344626243700373
+     * flags=[WPA2-PSK-CCMP][WPS][ESS]
+     * ssid=zuby
      * ====
      *
      * RANGE=ALL gets all scan results
@@ -420,8 +430,127 @@ public class WifiNative {
      *  wpa_supplicant_ctrl_iface_bss:4315
      *  print_bss_info
      */
-    public String scanResults(int sid) {
-        return doStringCommandWithoutLogging("BSS RANGE=" + sid + "- MASK=0x29d87");
+    private String getRawScanResults(String range) {
+        return doStringCommandWithoutLogging("BSS RANGE=" + range + " MASK=0x29d87");
+    }
+
+    private static final String BSS_IE_STR = "ie=";
+    private static final String BSS_ID_STR = "id=";
+    private static final String BSS_BSSID_STR = "bssid=";
+    private static final String BSS_FREQ_STR = "freq=";
+    private static final String BSS_LEVEL_STR = "level=";
+    private static final String BSS_TSF_STR = "tsf=";
+    private static final String BSS_FLAGS_STR = "flags=";
+    private static final String BSS_SSID_STR = "ssid=";
+    private static final String BSS_DELIMITER_STR = "====";
+    private static final String BSS_END_STR = "####";
+
+    public ArrayList<ScanDetail> getScanResults() {
+        int next_sid = 0;
+        ArrayList<ScanDetail> results = new ArrayList<>();
+        while(next_sid >= 0) {
+            String rawResult = getRawScanResults(next_sid+"-");
+            next_sid = -1;
+
+            if (TextUtils.isEmpty(rawResult))
+                break;
+
+            String[] lines = rawResult.split("\n");
+
+
+            // note that all these splits and substrings keep references to the original
+            // huge string buffer while the amount we really want is generally pretty small
+            // so make copies instead (one example b/11087956 wasted 400k of heap here).
+            final int bssidStrLen = BSS_BSSID_STR.length();
+            final int flagLen = BSS_FLAGS_STR.length();
+
+            String bssid = "";
+            int level = 0;
+            int freq = 0;
+            long tsf = 0;
+            String flags = "";
+            WifiSsid wifiSsid = null;
+            String infoElements = null;
+            List<String> anqpLines = null;
+
+            for (String line : lines) {
+                if (line.startsWith(BSS_ID_STR)) { // Will find the last id line
+                    try {
+                        next_sid = Integer.parseInt(line.substring(BSS_ID_STR.length())) + 1;
+                    } catch (NumberFormatException e) {
+                        // Nothing to do
+                    }
+                } else if (line.startsWith(BSS_BSSID_STR)) {
+                    bssid = new String(line.getBytes(), bssidStrLen, line.length() - bssidStrLen);
+                } else if (line.startsWith(BSS_FREQ_STR)) {
+                    try {
+                        freq = Integer.parseInt(line.substring(BSS_FREQ_STR.length()));
+                    } catch (NumberFormatException e) {
+                        freq = 0;
+                    }
+                } else if (line.startsWith(BSS_LEVEL_STR)) {
+                    try {
+                        level = Integer.parseInt(line.substring(BSS_LEVEL_STR.length()));
+                        /* some implementations avoid negative values by adding 256
+                         * so we need to adjust for that here.
+                         */
+                        if (level > 0) level -= 256;
+                    } catch (NumberFormatException e) {
+                        level = 0;
+                    }
+                } else if (line.startsWith(BSS_TSF_STR)) {
+                    try {
+                        tsf = Long.parseLong(line.substring(BSS_TSF_STR.length()));
+                    } catch (NumberFormatException e) {
+                        tsf = 0;
+                    }
+                } else if (line.startsWith(BSS_FLAGS_STR)) {
+                    flags = new String(line.getBytes(), flagLen, line.length() - flagLen);
+                } else if (line.startsWith(BSS_SSID_STR)) {
+                    wifiSsid = WifiSsid.createFromAsciiEncoded(
+                            line.substring(BSS_SSID_STR.length()));
+                } else if (line.startsWith(BSS_IE_STR)) {
+                    infoElements = line;
+                } else if (SupplicantBridge.isAnqpAttribute(line)) {
+                    if (anqpLines == null) {
+                        anqpLines = new ArrayList<>();
+                    }
+                    anqpLines.add(line);
+                } else if (line.startsWith(BSS_DELIMITER_STR) || line.startsWith(BSS_END_STR)) {
+                    if (bssid != null) {
+                        try {
+                            NetworkDetail networkDetail =
+                                    new NetworkDetail(bssid, infoElements, anqpLines, freq);
+
+                            String xssid = (wifiSsid != null) ? wifiSsid.toString() : WifiSsid.NONE;
+                            if (!xssid.equals(networkDetail.getTrimmedSSID())) {
+                                Log.d(TAG, String.format(
+                                        "Inconsistent SSID on BSSID '%s': '%s' vs '%s': %s",
+                                        bssid, xssid, networkDetail.getSSID(), infoElements));
+                            }
+
+                            if (networkDetail.hasInterworking()) {
+                                Log.d(TAG, "HSNwk: '" + networkDetail);
+                            }
+
+                            results.add(new ScanDetail(networkDetail, wifiSsid, bssid,
+                                     flags, level, freq, tsf));
+                        } catch (IllegalArgumentException iae) {
+                            Log.d(TAG, "Failed to parse information elements: " + iae);
+                        }
+                    }
+                    bssid = null;
+                    level = 0;
+                    freq = 0;
+                    tsf = 0;
+                    flags = "";
+                    wifiSsid = null;
+                    infoElements = null;
+                    anqpLines = null;
+                }
+            }
+        }
+        return results;
     }
 
     public String doCustomCommand(String command) {
