@@ -2116,11 +2116,12 @@ public class WifiNative {
                     Log.e(TAG,"Can not reset handler Before set any handler");
                     return false;
                 }
-                sWifiLoggerEventHandler = null;
                 if (resetLogHandlerNative(sWlan0Index, sLogCmdId)) {
                     sLogCmdId = -1;
+                    sWifiLoggerEventHandler = null;
                     return true;
                 } else {
+                    sWifiLoggerEventHandler = null;
                     return false;
                 }
             } else {
