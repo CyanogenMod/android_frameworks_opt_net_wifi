@@ -1533,12 +1533,6 @@ public class WifiAutoJoinController {
 
         // Find the currently connected network: ask the supplicant directly
         int supplicantNetId = getNetID(mWifiNative.status(true));
-        if (supplicantNetId == WifiConfiguration.INVALID_NETWORK_ID) {
-            if (VDBG) {
-                logDbg("attemptAutoJoin getNetID returned invalid supplicantNetId");
-            }
-            return false;
-        }
 
         if (DBG) {
             String conf = "";
