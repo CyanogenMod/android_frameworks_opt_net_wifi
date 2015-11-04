@@ -1400,8 +1400,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 getHandler());
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.RX_HS20_ANQP_ICON_EVENT,
                 getHandler());
-        mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.SCAN_FAILED_EVENT, getHandler());
-        mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.SCAN_RESULTS_EVENT, getHandler());
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.SSID_REENABLED, getHandler());
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.SSID_TEMP_DISABLED, getHandler());
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.SUP_CONNECTION_EVENT, getHandler());
@@ -1997,7 +1995,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
     }
 
-    private void handleScanRequest(int type, Message message) {
+    private void handleScanRequest(Message message) {
         ScanSettings settings = null;
         WorkSource workSource = null;
 
@@ -2018,7 +2016,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         // call wifi native to start the scan
-        if (startScanNative(type, freqs)) {
+        if (startScanNative(freqs)) {
             // only count battery consumption if scan request is accepted
             noteScanStart(message.arg1, workSource);
             // a full scan covers everything, clearing scan request buffer
@@ -2069,17 +2067,57 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
 
+    // TODO this is a temporary measure to bridge between WifiScanner and WifiStateMachine until
+    // scan functionality is refactored out of WifiStateMachine.
+    private WifiScanner.ScanListener mLastNativeScanListener = null;
+    private volatile ArrayList<ScanDetail> mLastNativeScanResults = new ArrayList<ScanDetail>();
     /**
      * return true iff scan request is accepted
      */
-    private boolean startScanNative(int type, Set<Integer> freqs) {
-        if (mWifiNative.scan(type, freqs)) {
-            mIsScanOngoing = true;
-            mIsFullScanOngoing = (freqs == null);
-            lastScanFreqs = freqs;
-            return true;
+    private boolean startScanNative(Set<Integer> freqs) {
+        if (mLastNativeScanListener != null) {
+            mWifiScanner.stopScan(mLastNativeScanListener);
+            mLastNativeScanListener = null;
         }
-        return false;
+        WifiScanner.ScanSettings settings = new WifiScanner.ScanSettings();
+        if (freqs == null) {
+            settings.band = WifiScanner.WIFI_BAND_BOTH_WITH_DFS;
+        } else {
+            settings.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
+            int index = 0;
+            settings.channels = new WifiScanner.ChannelSpec[freqs.size()];
+            for (Integer freq : freqs) {
+                settings.channels[index++] = new WifiScanner.ChannelSpec(freq);
+            }
+        }
+        settings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN
+                | WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT;
+        mLastNativeScanListener = new WifiScanner.ScanListener() {
+                private final ArrayList<ScanDetail> mNewScanResults = new ArrayList<>();
+
+                public void onSuccess() {
+                    // the scan started successfully, but has not completed yet
+                }
+                public void onFailure(int reason, String description) {
+                    Log.e(TAG, "Scan failed: reason=" + reason + ", " + description);
+                    sendMessage(WifiMonitor.SCAN_FAILED_EVENT);
+                }
+                public void onResults(WifiScanner.ScanData[] results) {
+                    mLastNativeScanResults = mNewScanResults;
+                    sendMessage(WifiMonitor.SCAN_RESULTS_EVENT);
+                }
+                public void onFullResult(ScanResult fullScanResult) {
+                    mNewScanResults.add(ScanDetailUtil.toScanDetail(fullScanResult));
+                }
+                public void onPeriodChanged(int periodInMs) {
+                    // does not occur for single scan
+                }
+            };
+        mWifiScanner.startScan(settings, mLastNativeScanListener);
+        mIsScanOngoing = true;
+        mIsFullScanOngoing = (freqs == null);
+        lastScanFreqs = freqs;
+        return true;
     }
 
     /**
@@ -3943,7 +3981,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mNumScanResultsKnown = 0;
         mNumScanResultsReturned = 0;
 
-        ArrayList<ScanDetail> scanResults = mWifiNative.getScanResults();
+        ArrayList<ScanDetail> scanResults = mLastNativeScanResults;
 
         if (scanResults.isEmpty()) {
             mScanResults = new ArrayList<>();
@@ -5011,13 +5049,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mWifiNative.BLUETOOTH_COEXISTENCE_MODE_SENSE);
 
         mDhcpActive = false;
-    }
-
-    void connectScanningService() {
-
-        if (mWifiScanner == null) {
-            mWifiScanner = (WifiScanner) mContext.getSystemService(Context.WIFI_SCANNING_SERVICE);
-        }
     }
 
     private void handleIPv4Success(DhcpResults dhcpResults, int reason) {
@@ -6155,9 +6186,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     class DriverStartedState extends State {
         @Override
         public void enter() {
-
             if (PDBG) {
                 logd("DriverStartedState enter");
+            }
+
+            // We can't do this in the constructor because WifiStateMachine is created before the
+            // wifi scanning service is initialized
+            if (mWifiScanner == null) {
+                mWifiScanner =
+                        (WifiScanner) mContext.getSystemService(Context.WIFI_SCANNING_SERVICE);
             }
 
             mWifiLogger.startLogging(mVerboseLoggingLevel > 0);
@@ -6252,7 +6289,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             switch(message.what) {
                 case CMD_START_SCAN:
-                    handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                    handleScanRequest(message);
                     break;
                 case CMD_SET_FREQUENCY_BAND:
                     int band =  message.arg1;
@@ -6265,7 +6302,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         // Flush old data - like scan results
                         mWifiNative.bssFlush();
                         // Fetch the latest scan results when frequency band is set
-//                        startScanNative(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, null);
+                        // startScanNative(null);
 
                         if (PDBG)  logd("done set frequency band " + band);
 
@@ -6541,7 +6578,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 // Handle scan. All the connection related commands are
                 // handled only in ConnectModeState
                 case CMD_START_SCAN:
-                    handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                    handleScanRequest(message);
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     SupplicantState state = handleSupplicantStateChange(message);
@@ -7037,11 +7074,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     class ConnectModeState extends State {
-
-        @Override
-        public void enter() {
-            connectScanningService();
-        }
 
         @Override
         public boolean processMessage(Message message) {
@@ -8089,8 +8121,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             logd("starting scan for " + config.configKey() + " with " + freqs);
             //}
             // Call wifi native to start the scan
-            if (startScanNative(
-                    WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs)) {
+            if (startScanNative(freqs)) {
                 // Only count battery consumption if scan request is accepted
                 noteScanStart(SCAN_ALARM_SOURCE, null);
                 messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
@@ -8383,8 +8414,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                         + fullBandConnectedTimeIntervalMilli);
                                     }
                                 }
-                                handleScanRequest(
-                                        WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                                handleScanRequest(message);
                             } else {
                                 if (!startScanForConfiguration(
                                         currentConfiguration, restrictChannelList)) {
@@ -8405,8 +8435,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                                     + fullBandConnectedTimeIntervalMilli);
                                         }
                                     }
-                                    handleScanRequest(
-                                                WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                                    handleScanRequest(message);
                                 }
                             }
 
@@ -9357,7 +9386,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         }
                         /* Disable background scan temporarily during a regular scan */
                         enableBackgroundScan(false);
-                        handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                        handleScanRequest(message);
                         ret = HANDLED;
                     } else {
 
