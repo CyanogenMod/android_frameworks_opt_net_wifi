@@ -16,8 +16,12 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 import android.app.AlarmManager;
 import android.os.Handler;
@@ -156,8 +160,7 @@ public class MockAlarmManager {
                             mListener.onAlarm();
                         }
                     });
-            }
-            else { // normally gets dispatched in main looper
+            } else { // normally gets dispatched in main looper
                 mListener.onAlarm();
             }
         }

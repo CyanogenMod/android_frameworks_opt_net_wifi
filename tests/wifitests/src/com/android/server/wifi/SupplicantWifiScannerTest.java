@@ -21,15 +21,21 @@ import static com.android.server.wifi.ScanTestUtil.assertScanDatasEquals;
 import static com.android.server.wifi.ScanTestUtil.createFreqSet;
 import static com.android.server.wifi.ScanTestUtil.installWlanWifiNative;
 import static com.android.server.wifi.ScanTestUtil.setupMockChannels;
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
+
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
 import android.test.suitebuilder.annotation.SmallTest;
-
-import com.android.server.wifi.WifiNative;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -38,7 +44,6 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -46,35 +51,35 @@ import java.util.Set;
  */
 @SmallTest
 public class SupplicantWifiScannerTest {
-    @Mock Context context;
-    MockAlarmManager alarmManager;
-    MockWifiMonitor wifiMonitor;
-    MockLooper looper;
-    @Mock WifiNative wifiNative;
+    @Mock Context mContext;
+    MockAlarmManager mAlarmManager;
+    MockWifiMonitor mWifiMonitor;
+    MockLooper mLooper;
+    @Mock WifiNative mWifiNative;
 
-    SupplicantWifiScannerImpl scanner;
+    SupplicantWifiScannerImpl mScanner;
 
     @Before
     public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
 
-        looper = new MockLooper();
-        alarmManager = new MockAlarmManager();
-        wifiMonitor = new MockWifiMonitor();
+        mLooper = new MockLooper();
+        mAlarmManager = new MockAlarmManager();
+        mWifiMonitor = new MockWifiMonitor();
 
         // Setup WifiNative
-        setupMockChannels(wifiNative,
+        setupMockChannels(mWifiNative,
                 new int[]{2400, 2450},
                 new int[]{5150, 5175},
                 new int[]{5600, 5650});
-        when(wifiNative.getInterfaceName()).thenReturn("a_test_interface_name");
-        installWlanWifiNative(wifiNative);
+        when(mWifiNative.getInterfaceName()).thenReturn("a_test_interface_name");
+        installWlanWifiNative(mWifiNative);
 
-        when(context.getSystemService(Context.ALARM_SERVICE))
-                .thenReturn(alarmManager.getAlarmManager());
+        when(mContext.getSystemService(Context.ALARM_SERVICE))
+                .thenReturn(mAlarmManager.getAlarmManager());
 
-        scanner = new SupplicantWifiScannerImpl(context, WifiNative.getWlanNativeInterface(),
-                looper.getLooper());
+        mScanner = new SupplicantWifiScannerImpl(mContext, WifiNative.getWlanNativeInterface(),
+                mLooper.getLooper());
     }
 
     @Test
@@ -88,11 +93,11 @@ public class SupplicantWifiScannerTest {
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(0, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(0, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(1, 2450)},
-                    new int[] {2400, 2450})
+                    ScanResults.create(1, 2450),
+                    createFreqSet(2400, 2450))
         };
 
         doSuccessfulTest(settings, expectedPeriods);
@@ -104,52 +109,26 @@ public class SupplicantWifiScannerTest {
                 .withBasePeriod(10000)
                 .withMaxApPerScan(2)
                 .addBucketWithBand(10000,
-                        WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN |
-                        WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT,
+                        WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN
+                        | WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT,
                         WifiScanner.WIFI_BAND_24_GHZ)
                 .build();
 
-        WifiNative.ScanEventHandler eventHandler = mock(WifiNative.ScanEventHandler.class);
-
-        InOrder order = inOrder(eventHandler, wifiNative);
-
-        Set<Integer> requestedFreqs = createFreqSet(2400, 2450);
-
-        // All scans succeed
-        when(wifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
-
-        // Start scan
-        scanner.startBatchedScan(settings, eventHandler);
-
-        ArrayList<ScanDetail> nativeResults = new ArrayList<>();
-        nativeResults.add(new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 1"),
-                        "00:00:00:00:00:00", "", -70, 2450, Long.MAX_VALUE, 0));
-        nativeResults.add(new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 2"),
-                        "AA:BB:CC:DD:EE:FF", "", -66, 2400, Long.MAX_VALUE, 0));
-        nativeResults.add(new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 3"),
-                        "00:00:00:00:00:00", "", -80, 2450, Long.MAX_VALUE, 0));
-        nativeResults.add(new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 4"),
-                        "AA:BB:CC:11:22:33", "", -65, 2450, Long.MAX_VALUE, 0));
-
-        ScanResult[] expectedResults = new ScanResult[] {
-            nativeResults.get(3).getScanResult(),
-            nativeResults.get(1).getScanResult()
-        };
-        WifiScanner.ScanData[] expectedScanDatas = new WifiScanner.ScanData[] {
-            new WifiScanner.ScanData(0, 0, expectedResults)
-        };
-        ScanResult[] expectedFullResults = new ScanResult[] {
-            nativeResults.get(0).getScanResult(),
-            nativeResults.get(1).getScanResult(),
-            nativeResults.get(2).getScanResult(),
-            nativeResults.get(3).getScanResult()
+        ScanPeriod[] expectedPeriods = new ScanPeriod[] {
+            new ScanPeriod(ScanPeriod.ReportType.FULL_AND_RESULT,
+                    ScanResults.createOverflowing(0, 2,
+                            new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 1"),
+                                    "00:00:00:00:00:00", "", -70, 2450, Long.MAX_VALUE, 0),
+                            new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 2"),
+                                    "AA:BB:CC:DD:EE:FF", "", -66, 2400, Long.MAX_VALUE, 0),
+                            new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 3"),
+                                    "00:00:00:00:00:00", "", -80, 2450, Long.MAX_VALUE, 0),
+                            new ScanDetail(WifiSsid.createFromAsciiEncoded("TEST AP 4"),
+                                    "AA:BB:CC:11:22:33", "", -65, 2450, Long.MAX_VALUE, 0)),
+                    createFreqSet(2400, 2450))
         };
 
-
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
-
-        expectSuccessfulScan(order, eventHandler, requestedFreqs, nativeResults, expectedScanDatas,
-                expectedFullResults);
+        doSuccessfulTest(settings, expectedPeriods);
     }
 
     @Test
@@ -158,18 +137,18 @@ public class SupplicantWifiScannerTest {
                 .withBasePeriod(10000)
                 .withMaxApPerScan(10)
                 .addBucketWithBand(10000,
-                        WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN |
-                        WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT,
+                        WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN
+                        | WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT,
                         WifiScanner.WIFI_BAND_24_GHZ)
                 .build();
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.FULL_AND_RESULT,
-                    new ScanResults[] {new ScanResults(0, 2400, 2450, 2400, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(0, 2400, 2450, 2400, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.FULL_AND_RESULT,
-                    new ScanResults[] {new ScanResults(1, 2450, 2400, 2450, 2400)},
-                    new int[] {2400, 2450})
+                    ScanResults.create(1, 2450, 2400, 2450, 2400),
+                    createFreqSet(2400, 2450))
         };
 
         doSuccessfulTest(settings, expectedPeriods);
@@ -184,21 +163,21 @@ public class SupplicantWifiScannerTest {
                         WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN,
                         WifiScanner.WIFI_BAND_24_GHZ)
                 .addBucketWithBand(20000,
-                        WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN |
-                        WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT,
+                        WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN
+                        | WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT,
                         WifiScanner.WIFI_BAND_5_GHZ)
                 .build();
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.FULL_AND_RESULT,
-                    new ScanResults[] {new ScanResults(0, 2400, 2450, 2400, 5175)},
-                    new int[] {2400, 2450, 5150, 5175}),
+                    ScanResults.create(0, 2400, 2450, 2400, 5175),
+                    createFreqSet(2400, 2450, 5150, 5175)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(1, 2450, 2400, 2450, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(1, 2450, 2400, 2450, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.FULL_AND_RESULT,
-                    new ScanResults[] {new ScanResults(2, 2450, 2400, 2450, 5150)},
-                    new int[] {2400, 2450, 5150, 5175})
+                    ScanResults.create(2, 2450, 2400, 2450, 5150),
+                    createFreqSet(2400, 2450, 5150, 5175))
         };
 
         doSuccessfulTest(settings, expectedPeriods);
@@ -216,14 +195,14 @@ public class SupplicantWifiScannerTest {
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.NONE,
-                    new ScanResults[] {new ScanResults(0, 2400, 2400, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(0, 2400, 2400, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.NONE,
-                    new ScanResults[] {new ScanResults(1, 2400, 2400, 2450)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(1, 2400, 2400, 2450),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.NONE,
-                    new ScanResults[] {new ScanResults(2, 2400, 2450, 2400)},
-                    new int[] {2400, 2450})
+                    ScanResults.create(2, 2400, 2450, 2400),
+                    createFreqSet(2400, 2450))
         };
 
         doSuccessfulTest(settings, expectedPeriods);
@@ -242,31 +221,31 @@ public class SupplicantWifiScannerTest {
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.NONE,
-                    new ScanResults[] {new ScanResults(0, 2400, 2400, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(0, 2400, 2400, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.NONE,
-                    new ScanResults[] {new ScanResults(1, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(1, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
                     new ScanResults[] {
-                        new ScanResults(0, 2400, 2400, 2400),
-                        new ScanResults(1, 2400),
-                        new ScanResults(2, 2450)
+                        ScanResults.create(0, 2400, 2400, 2400),
+                        ScanResults.create(1, 2400),
+                        ScanResults.create(2, 2450)
                     },
-                    new int[] {2400, 2450}),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.NONE,
-                    new ScanResults[] {new ScanResults(3, 2400, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(3, 2400, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.NONE,
-                    new ScanResults[] {new ScanResults(4, 2400, 2450)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(4, 2400, 2450),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
                     new ScanResults[] {
-                        new ScanResults(3, 2400, 2400),
-                        new ScanResults(4, 2400, 2450),
-                        new ScanResults(5, 2450)
+                        ScanResults.create(3, 2400, 2400),
+                        ScanResults.create(4, 2400, 2450),
+                        ScanResults.create(5, 2450)
                     },
-                    new int[] {2400, 2450})
+                    createFreqSet(2400, 2450))
         };
 
         doSuccessfulTest(settings, expectedPeriods);
@@ -287,26 +266,26 @@ public class SupplicantWifiScannerTest {
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(0, 2400, 5175)},
-                    new int[] {2400, 2450, 5150, 5175, 5650}),
+                    ScanResults.create(0, 2400, 5175),
+                    createFreqSet(2400, 2450, 5150, 5175, 5650)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(1, 2400)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(1, 2400),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(2, 2450, 5650)},
-                    new int[] {2400, 2450, 5650}),
+                    ScanResults.create(2, 2450, 5650),
+                    createFreqSet(2400, 2450, 5650)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(3, 2450, 5175)},
-                    new int[] {2400, 2450, 5150, 5175}),
+                    ScanResults.create(3, 2450, 5175),
+                    createFreqSet(2400, 2450, 5150, 5175)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(4)},
-                    new int[] {2400, 2450, 5650}),
+                    ScanResults.create(4, new int[0]),
+                    createFreqSet(2400, 2450, 5650)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(5, 2400, 2400, 2400, 2450)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(5, 2400, 2400, 2400, 2450),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(6, 5150, 5650, 5650)},
-                    new int[] {2400, 2450, 5150, 5175, 5650})
+                    ScanResults.create(6, 5150, 5650, 5650),
+                    createFreqSet(2400, 2450, 5150, 5175, 5650))
         };
 
         doSuccessfulTest(settings, expectedPeriods);
@@ -326,22 +305,22 @@ public class SupplicantWifiScannerTest {
         // expected scan frequencies
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] { new ScanResults(0, 2400, 5175) },
-                    new int[] {2400, 2450, 5150, 5175, 5650}),
+                    ScanResults.create(0, 2400, 5175),
+                    createFreqSet(2400, 2450, 5150, 5175, 5650)),
             null,
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] { new ScanResults(1, 5650) },
-                    new int[] {5650}),
+                    ScanResults.create(1, 5650),
+                    createFreqSet(5650)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] { new ScanResults(2, 2450, 5175) },
-                    new int[] {2400, 2450, 5150, 5175}),
+                    ScanResults.create(2, 2450, 5175),
+                    createFreqSet(2400, 2450, 5150, 5175)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] { new ScanResults(3, 5650, 5650, 5650) },
-                    new int[] {5650}),
+                    ScanResults.create(3, 5650, 5650, 5650),
+                    createFreqSet(5650)),
             null,
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] { new ScanResults(4, 2400, 2400, 2400, 2450) },
-                    new int[] {2400, 2450, 5150, 5175, 5650})
+                    ScanResults.create(4, 2400, 2400, 2400, 2450),
+                    createFreqSet(2400, 2450, 5150, 5175, 5650))
         };
 
         doSuccessfulTest(settings, expectedPeriods);
@@ -359,22 +338,22 @@ public class SupplicantWifiScannerTest {
 
         Set<Integer> freqs = createFreqSet(2400, 2450); // expected scan frequencies
 
-        InOrder order = inOrder(eventHandler, wifiNative);
+        InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scans fail
-        when(wifiNative.scan(anyInt(), any(Set.class))).thenReturn(false);
+        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(false);
 
         // Start scan
-        scanner.startBatchedScan(settings, eventHandler);
+        mScanner.startBatchedScan(settings, eventHandler);
 
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+        assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
         expectFailedScanStart(order, eventHandler, freqs);
 
         // Fire alarm to start next scan
         dispatchOnlyAlarm();
 
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+        assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
         expectFailedScanStart(order, eventHandler, freqs);
 
@@ -394,22 +373,22 @@ public class SupplicantWifiScannerTest {
 
         Set<Integer> freqs = createFreqSet(2400, 2450); // expected scan frequencies
 
-        InOrder order = inOrder(eventHandler, wifiNative);
+        InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(wifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
 
         // Start scan
-        scanner.startBatchedScan(settings, eventHandler);
+        mScanner.startBatchedScan(settings, eventHandler);
 
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+        assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
         expectFailedEventScan(order, eventHandler, freqs);
 
         // Fire alarm to start next scan
         dispatchOnlyAlarm();
 
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+        assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
         expectFailedEventScan(order, eventHandler, freqs);
 
@@ -432,36 +411,36 @@ public class SupplicantWifiScannerTest {
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(0, 2400, 2450, 2450)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(0, 2400, 2450, 2450),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(1, 2400)},
-                    new int[] {2400, 2450})
+                    ScanResults.create(1, 2400),
+                    createFreqSet(2400, 2450))
         };
 
-        InOrder order = inOrder(eventHandler, wifiNative);
+        InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(wifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
 
         // Start scan
-        scanner.startBatchedScan(settings, eventHandler);
+        mScanner.startBatchedScan(settings, eventHandler);
 
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+        assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
         expectSuccessfulScan(order, eventHandler, expectedPeriods[0]);
 
         // alarm for next period
-        assertEquals(1, alarmManager.getPendingCount());
+        assertEquals(1, mAlarmManager.getPendingCount());
 
-        scanner.pauseBatchedScan();
+        mScanner.pauseBatchedScan();
 
         // onPause callback (previous results were flushed)
         order.verify(eventHandler).onScanPaused(new WifiScanner.ScanData[0]);
 
-        assertEquals("no pending alarms", 0, alarmManager.getPendingCount());
+        assertEquals("no pending alarms", 0, mAlarmManager.getPendingCount());
 
-        scanner.restartBatchedScan();
+        mScanner.restartBatchedScan();
 
         // onRestarted callback
         order.verify(eventHandler).onScanRestarted();
@@ -487,47 +466,47 @@ public class SupplicantWifiScannerTest {
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(0, 2400, 2450, 2450)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(0, 2400, 2450, 2450),
+                    createFreqSet(2400, 2450)),
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(1, 2400)},
-                    new int[] {2400, 2450})
+                    ScanResults.create(1, 2400),
+                    createFreqSet(2400, 2450))
         };
 
-        InOrder order = inOrder(eventHandler, wifiNative);
+        InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(wifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
 
         // Start scan
-        scanner.startBatchedScan(settings, eventHandler);
+        mScanner.startBatchedScan(settings, eventHandler);
 
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+        assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
         // alarm for next period
-        assertEquals(1, alarmManager.getPendingCount());
+        assertEquals(1, mAlarmManager.getPendingCount());
 
-        order.verify(wifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP),
+        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP),
                 eq(expectedPeriods[0].getScanFreqs()));
 
-        scanner.pauseBatchedScan();
+        mScanner.pauseBatchedScan();
 
         // onPause callback (no pending results)
         order.verify(eventHandler).onScanPaused(new WifiScanner.ScanData[0]);
 
-        assertEquals("no pending alarms", 0, alarmManager.getPendingCount());
+        assertEquals("no pending alarms", 0, mAlarmManager.getPendingCount());
 
         // Setup scan results
-        when(wifiNative.getScanResults()).thenReturn(expectedPeriods[0].getResultsToBeDelivered()[0]
-                .getScanDetailArrayList());
+        when(mWifiNative.getScanResults()).thenReturn(expectedPeriods[0]
+                .getResultsToBeDelivered()[0].getScanDetailArrayList());
 
         // Notify scan has finished
-        wifiMonitor.sendMessage(wifiNative.getInterfaceName(), WifiMonitor.SCAN_RESULTS_EVENT);
-        assertEquals("dispatch message after results event", 1, looper.dispatchAll());
+        mWifiMonitor.sendMessage(mWifiNative.getInterfaceName(), WifiMonitor.SCAN_RESULTS_EVENT);
+        assertEquals("dispatch message after results event", 1, mLooper.dispatchAll());
 
         // listener should not be notified
 
-        scanner.restartBatchedScan();
+        mScanner.restartBatchedScan();
 
         // onRestarted callback
         order.verify(eventHandler).onScanRestarted();
@@ -561,40 +540,40 @@ public class SupplicantWifiScannerTest {
 
         ScanPeriod[] expectedPeriods = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(0, 2400, 2450, 2450)},
-                    new int[] {2400, 2450}),
+                    ScanResults.create(0, 2400, 2450, 2450),
+                    createFreqSet(2400, 2450)),
         };
 
         ScanPeriod[] expectedPeriods2 = new ScanPeriod[] {
             new ScanPeriod(ScanPeriod.ReportType.RESULT,
-                    new ScanResults[] {new ScanResults(1, 5150, 5175, 5175)},
-                    new int[] {5150, 5175}),
+                    ScanResults.create(1, 5150, 5175, 5175),
+                    createFreqSet(5150, 5175)),
         };
 
-        InOrder order = inOrder(eventHandler, wifiNative);
+        InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(wifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
 
         // Start scan
-        scanner.startBatchedScan(settings, eventHandler);
+        mScanner.startBatchedScan(settings, eventHandler);
 
-        assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+        assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
         expectSuccessfulScan(order, eventHandler, expectedPeriods[0]);
 
         // alarm for next period
-        assertEquals(1, alarmManager.getPendingCount());
+        assertEquals(1, mAlarmManager.getPendingCount());
 
-        scanner.pauseBatchedScan();
+        mScanner.pauseBatchedScan();
 
         // onPause callback (previous results were flushed)
         order.verify(eventHandler).onScanPaused(new WifiScanner.ScanData[0]);
 
-        assertEquals("no pending alarms", 0, alarmManager.getPendingCount());
+        assertEquals("no pending alarms", 0, mAlarmManager.getPendingCount());
 
         // Start new scan
-        scanner.startBatchedScan(settings2, eventHandler);
+        mScanner.startBatchedScan(settings2, eventHandler);
 
         expectSuccessfulScan(order, eventHandler, expectedPeriods2[0]);
 
@@ -610,22 +589,21 @@ public class SupplicantWifiScannerTest {
     private void doSuccessfulTest(WifiNative.ScanSettings settings, ScanPeriod[] expectedPeriods) {
         WifiNative.ScanEventHandler eventHandler = mock(WifiNative.ScanEventHandler.class);
 
-        InOrder order = inOrder(eventHandler, wifiNative);
+        InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scans succeed
-        when(wifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
 
         // Start scan
-        scanner.startBatchedScan(settings, eventHandler);
+        mScanner.startBatchedScan(settings, eventHandler);
 
         for (int i = 0; i < expectedPeriods.length; ++i) {
             ScanPeriod period = expectedPeriods[i];
             if (period == null) { // no scan should be scheduled
                 // alarm for next period
-                assertEquals(1, alarmManager.getPendingCount());
-            }
-            else {
-                assertEquals("alarm for next period", 1, alarmManager.getPendingCount());
+                assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
+            } else {
+                assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
                 expectSuccessfulScan(order, eventHandler, expectedPeriods[i]);
             }
@@ -673,14 +651,14 @@ public class SupplicantWifiScannerTest {
             Set<Integer> scanFreqs, ArrayList<ScanDetail> nativeResults,
             WifiScanner.ScanData[] expectedScanResults, ScanResult[] fullResults) {
         // Verify scan started
-        order.verify(wifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
+        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
 
         // Setup scan results
-        when(wifiNative.getScanResults()).thenReturn(nativeResults);
+        when(mWifiNative.getScanResults()).thenReturn(nativeResults);
 
         // Notify scan has finished
-        wifiMonitor.sendMessage(wifiNative.getInterfaceName(), WifiMonitor.SCAN_RESULTS_EVENT);
-        assertEquals("dispatch message after results event", 1, looper.dispatchAll());
+        mWifiMonitor.sendMessage(mWifiNative.getInterfaceName(), WifiMonitor.SCAN_RESULTS_EVENT);
+        assertEquals("dispatch message after results event", 1, mLooper.dispatchAll());
 
         if (fullResults != null) {
             for (ScanResult result : fullResults) {
@@ -691,29 +669,29 @@ public class SupplicantWifiScannerTest {
         if (expectedScanResults != null) {
             // Verify scan results delivered
             order.verify(eventHandler).onScanStatus();
-            assertScanDatasEquals(expectedScanResults, scanner.getLatestBatchedScanResults(true));
+            assertScanDatasEquals(expectedScanResults, mScanner.getLatestBatchedScanResults(true));
         }
     }
 
     private void expectFailedScanStart(InOrder order, WifiNative.ScanEventHandler eventHandler,
             Set<Integer> scanFreqs) {
         // Verify scan started
-        order.verify(wifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
+        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
     }
 
     private void expectFailedEventScan(InOrder order, WifiNative.ScanEventHandler eventHandler,
             Set<Integer> scanFreqs) {
         // Verify scan started
-        order.verify(wifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
+        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
 
         // Notify scan has failed
-        wifiMonitor.sendMessage(wifiNative.getInterfaceName(), WifiMonitor.SCAN_FAILED_EVENT);
-        assertEquals("dispatch message after results event", 1, looper.dispatchAll());
+        mWifiMonitor.sendMessage(mWifiNative.getInterfaceName(), WifiMonitor.SCAN_FAILED_EVENT);
+        assertEquals("dispatch message after results event", 1, mLooper.dispatchAll());
     }
 
     private void dispatchOnlyAlarm() {
-        assertEquals("dispatch only one alarm", 1, alarmManager.dispatchAll());
-        assertEquals("dispatch only one message", 1, looper.dispatchAll());
+        assertEquals("dispatch only one alarm", 1, mAlarmManager.dispatchAll());
+        assertEquals("dispatch only one message", 1, mLooper.dispatchAll());
     }
 
     private static class ScanPeriod {
@@ -734,10 +712,16 @@ public class SupplicantWifiScannerTest {
         private final ScanResults[] mDeliveredResults;
         private final Set<Integer> mRequestedFreqs;
 
-        public ScanPeriod(ReportType reportType, ScanResults[] deliveredResults, int[] freqs) {
+        public ScanPeriod(ReportType reportType, ScanResults deliveredResult,
+                Set<Integer> requestedFreqs) {
+            this(reportType, new ScanResults[] {deliveredResult}, requestedFreqs);
+        }
+
+        public ScanPeriod(ReportType reportType, ScanResults[] deliveredResults,
+                Set<Integer> requestedFreqs) {
             mReportType = reportType;
             mDeliveredResults = deliveredResults;
-            mRequestedFreqs = createFreqSet(freqs);
+            mRequestedFreqs = requestedFreqs;
         }
 
         public boolean expectResults() {

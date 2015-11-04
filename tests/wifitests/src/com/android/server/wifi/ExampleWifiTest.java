@@ -16,7 +16,7 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertTrue;
 
 import android.test.suitebuilder.annotation.SmallTest;
 
