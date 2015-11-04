@@ -58,14 +58,10 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
 
         mChannelHelper = new HalChannelHelper(wifiNative);
 
-        // We can't enable these until WifiStateMachine switches to using WifiScanner because
-        //   WifiMonitor only supports sending results to one listener
-        // TODO Enable these
-        // Also need to fix tests again when this is enabled
-        // WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-        //         WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
-        // WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-        //         WifiMonitor.SCAN_RESULTS_EVENT, mEventHandler);
+        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+                WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
+        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+                WifiMonitor.SCAN_RESULTS_EVENT, mEventHandler);
     }
 
     @Override
