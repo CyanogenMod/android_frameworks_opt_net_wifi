@@ -69,6 +69,7 @@ import android.util.Slog;
 
 import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
+import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
@@ -359,9 +360,26 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                         if (mSettingsStore.handleAirplaneModeToggled()) {
                             mWifiController.sendMessage(CMD_AIRPLANE_TOGGLED);
                         }
+                        if (mSettingsStore.isAirplaneModeOn()) {
+                            Log.d(TAG, "resetting country code because Airplane mode is ON");
+                            mWifiStateMachine.resetCountryCode();
+                        }
                     }
                 },
                 new IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED));
+
+        mContext.registerReceiver(
+                new BroadcastReceiver() {
+                    @Override
+                    public void onReceive(Context context, Intent intent) {
+                        String state = intent.getStringExtra(IccCardConstants.INTENT_KEY_ICC_STATE);
+                        if (state.equals(IccCardConstants.INTENT_VALUE_ICC_ABSENT)) {
+                            Log.d(TAG, "resetting country code because SIM is removed");
+                            mWifiStateMachine.resetCountryCode();
+                        }
+                    }
+                },
+                new IntentFilter(TelephonyIntents.ACTION_SIM_STATE_CHANGED));
 
         // Adding optimizations of only receiving broadcasts when wifi is enabled
         // can result in race conditions when apps toggle wifi in the background
@@ -1109,7 +1127,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public String getCountryCode() {
         enforceConnectivityInternalPermission();
-        String country = mWifiStateMachine.getCountryCode();
+        String country = mWifiStateMachine.getCurrentCountryCode();
         return country;
     }
     /**

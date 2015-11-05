@@ -23,6 +23,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.net.wifi.IWifiScanner;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
@@ -32,6 +33,7 @@ import android.net.wifi.WifiScanner.ChannelSpec;
 import android.net.wifi.WifiScanner.ScanData;
 import android.net.wifi.WifiScanner.ScanSettings;
 import android.net.wifi.WifiSsid;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -656,6 +658,17 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             reportScanWorkUpdate();
         }
 
+        void removeAllScanRequests() {
+            Iterator<Map.Entry<Integer, ScanSettings>> it = mScanSettings.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<Integer, ScanSettings> entry = it.next();
+                ScanSettings settings = entry.getValue();
+                Log.d(TAG, "Pending scan removed, handler=" + entry.getKey() +
+                      ", period=" + settings.periodInMs);
+                it.remove();
+            }
+        }
+
         Iterator<Map.Entry<Integer, ScanSettings>> getScans() {
             return mScanSettings.entrySet().iterator();
         }
@@ -1247,6 +1260,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         logScanRequest("addScanRequest", ci, handler, settings);
+        removeAllScanRequests();
         ci.addScanRequest(settings, handler);
         if (resetBuckets()) {
             return true;
@@ -1270,6 +1284,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         logScanRequest("addSingleScanRequest", ci, handler, settings);
+        removeAllScanRequests();
         ci.addScanRequest(settings, handler);
         if (resetBuckets()) {
             /* reset periodInMs to 0 to indicate single shot scan */
@@ -1287,6 +1302,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             logScanRequest("removeScanRequest", ci, handler, null);
             ci.removeScanRequest(handler);
             resetBuckets();
+        }
+    }
+
+    void removeAllScanRequests() {
+        Collection<ClientInfo> clients = mClients.values();
+        for (ClientInfo ci : clients) {
+            ci.removeAllScanRequests();
         }
     }
 
@@ -1899,6 +1921,15 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     @Override
     protected void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+        if (mContext.checkCallingOrSelfPermission(android.Manifest.permission.DUMP)
+                != PackageManager.PERMISSION_GRANTED) {
+            pw.println("Permission Denial: can't dump WifiScanner from from pid="
+                    + Binder.getCallingPid()
+                    + ", uid=" + Binder.getCallingUid()
+                    + " without permission "
+                    + android.Manifest.permission.DUMP);
+            return;
+        }
         mStateMachine.dump(fd, pw, args);
     }
 
