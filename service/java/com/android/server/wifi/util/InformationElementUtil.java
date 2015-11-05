@@ -92,12 +92,12 @@ public class InformationElementUtil {
         }
 
         public int getCenterFreq0(int primaryFrequency) {
-            //20 or 40 MHz
-            if (secondChannelOffset != 0) {//40MHz
+            //40 MHz
+            if (secondChannelOffset != 0) {
                 if (secondChannelOffset == 1) {
-                    return primaryFrequency + 20;
+                    return primaryFrequency + 10;
                 } else if (secondChannelOffset == 3) {
-                    return primaryFrequency - 20;
+                    return primaryFrequency - 10;
                 } else {
                     Log.e("HtOperation", "Error on secondChannelOffset: " + secondChannelOffset);
                     return 0;
