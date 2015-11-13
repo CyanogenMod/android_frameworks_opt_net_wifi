@@ -1494,6 +1494,25 @@ public class WifiNative {
         return doBooleanCommand("NFC_REPORT_HANDOVER RESP P2P " + requestMessage + " 00");
     }
 
+
+    /* kernel logging support */
+    private static native byte[] readKernelLogNative();
+
+    synchronized public String readKernelLog() {
+        byte[] bytes = readKernelLogNative();
+        if (bytes != null) {
+            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+            try {
+                CharBuffer decoded = decoder.decode(ByteBuffer.wrap(bytes));
+                return decoded.toString();
+            } catch (CharacterCodingException cce) {
+                return new String(bytes, StandardCharsets.ISO_8859_1);
+            }
+        } else {
+            return "*** failed to read kernel log ***";
+        }
+    }
+
     /* WIFI HAL support */
 
     // HAL command ids

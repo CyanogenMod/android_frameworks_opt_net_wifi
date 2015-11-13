@@ -16,14 +16,16 @@
 
 package com.android.server.wifi;
 
-import android.support.v4.util.CircularArray;
 import android.util.Base64;
 import android.util.Log;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.FileDescriptor;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.zip.Deflater;
@@ -77,9 +79,6 @@ class WifiLogger extends BaseWifiLogger {
     private static final int MinBufferSizes[] = new int[] { 0, 16384, 16384, 65536 };
 
     private int mLogLevel = VERBOSE_NO_LOG;
-    private String mFirmwareVersion;
-    private String mDriverVersion;
-    private int mSupportedFeatureSet;
     private WifiNative.RingBufferStatus[] mRingBuffers;
     private WifiNative.RingBufferStatus mPerPacketRingBuffer;
     private WifiStateMachine mWifiStateMachine;
@@ -104,10 +103,15 @@ class WifiLogger extends BaseWifiLogger {
         } else {
             mLogLevel = VERBOSE_NORMAL_LOG;
         }
+
         if (mRingBuffers == null) {
-            if (fetchRingBuffers()) {
-                startLoggingAllExceptPerPacketBuffers();
-            }
+            fetchRingBuffers();
+        }
+
+        if (mRingBuffers == null) {
+            /* log level chagned, so restart logging with new levels */
+            stopLoggingAllBuffers();
+            startLoggingAllExceptPerPacketBuffers();
         }
     }
 
@@ -160,10 +164,7 @@ class WifiLogger extends BaseWifiLogger {
 
     @Override
     public synchronized void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
-        pw.println("Chipset information :-----------------------------------------------");
-        pw.println("FW Version is: " + mFirmwareVersion);
-        pw.println("Driver Version is: " + mDriverVersion);
-        pw.println("Supported Feature set: " + mSupportedFeatureSet);
+        dump(pw);
 
         for (int i = 0; i < mLastAlerts.size(); i++) {
             pw.println("--------------------------------------------------------------------");
@@ -190,6 +191,8 @@ class WifiLogger extends BaseWifiLogger {
         HashMap<String, byte[][]> ringBuffers = new HashMap();
         byte[] fwMemoryDump;
         byte[] alertData;
+        LimitedCircularArray<String> kernelLogLines;
+        LimitedCircularArray<String> logcatLines;
 
         public String toString() {
             StringBuilder builder = new StringBuilder();
@@ -209,6 +212,22 @@ class WifiLogger extends BaseWifiLogger {
                 builder.append("errorCode = ").append(errorCode);
                 builder.append("data \n");
                 builder.append(compressToBase64(alertData)).append("\n");
+            }
+
+            if (kernelLogLines != null) {
+                builder.append("kernel log: \n");
+                for (int i = 0; i < kernelLogLines.size(); i++) {
+                    builder.append(kernelLogLines.get(i)).append("\n");
+                }
+                builder.append("\n");
+            }
+
+            if (logcatLines != null) {
+                builder.append("system log: \n");
+                for (int i = 0; i < logcatLines.size(); i++) {
+                    builder.append(logcatLines.get(i)).append("\n");
+                }
+                builder.append("\n");
             }
 
             for (HashMap.Entry<String, byte[][]> e : ringBuffers.entrySet()) {
@@ -242,25 +261,25 @@ class WifiLogger extends BaseWifiLogger {
     }
 
     private static class LimitedCircularArray<E> {
-        private CircularArray<E> mArray;
+        private ArrayList<E> mArrayList;
         private int mMax;
         LimitedCircularArray(int max) {
-            mArray = new CircularArray<E>();
+            mArrayList = new ArrayList<E>(max);
             mMax = max;
         }
 
         public final void addLast(E e) {
-            if (mArray.size() >= mMax)
-                mArray.popFirst();
-            mArray.addLast(e);
+            if (mArrayList.size() >= mMax)
+                mArrayList.remove(0);
+            mArrayList.add(e);
         }
 
         public final int size() {
-            return mArray.size();
+            return mArrayList.size();
         }
 
         public final E get(int i) {
-            return mArray.get(i);
+            return mArrayList.get(i);
         }
     }
 
@@ -407,6 +426,9 @@ class WifiLogger extends BaseWifiLogger {
             }
         }
 
+        report.logcatLines = getOutput("logcat -d", 127);
+        report.kernelLogLines = getKernelLog(127);
+
         if (captureFWDump) {
             report.fwMemoryDump = mWifiNative.getFwMemoryDump();
         }
@@ -452,4 +474,43 @@ class WifiLogger extends BaseWifiLogger {
 
         return result;
     }
+
+    private LimitedCircularArray<String> getOutput(String cmdLine, int maxLines) {
+        LimitedCircularArray<String> lines = new LimitedCircularArray<String>(maxLines);
+        try {
+            if (DBG) Log.d(TAG, "Executing '" + cmdLine + "' ...");
+            Process process = Runtime.getRuntime().exec(cmdLine);
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lines.addLast(line);
+            }
+            reader = new BufferedReader(
+                    new InputStreamReader(process.getErrorStream()));
+            while ((line = reader.readLine()) != null) {
+                lines.addLast(line);
+            }
+            process.waitFor();
+            if (DBG) Log.d(TAG, "Lines added for '" + cmdLine + "'.");
+        } catch (InterruptedException e) {
+            Log.e(TAG, "Could not wait for '" + cmdLine + "': " + e);
+        } catch (IOException e) {
+            Log.e(TAG, "Could not open '" + cmdLine + "': " + e);
+        }
+        return lines;
+    }
+
+    private LimitedCircularArray<String> getKernelLog(int maxLines) {
+        if (DBG) Log.d(TAG, "Reading kernel log ...");
+        LimitedCircularArray<String> lines = new LimitedCircularArray<String>(maxLines);
+        String log = mWifiNative.readKernelLog();
+        String logLines[] = log.split("\n");
+        for (int i = 0; i < logLines.length; i++) {
+            lines.addLast(logLines[i]);
+        }
+        if (DBG) Log.d(TAG, "Added " + logLines.length + " lines");
+        return lines;
+    }
+
 }

@@ -131,7 +131,6 @@ LOCAL_SRC_FILES := $(filter-out $(call all-java-files-under, \
 endif
 
 LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt services
-LOCAL_STATIC_JAVA_LIBRARIES := ksoap2 android-support-v4
 LOCAL_REQUIRED_MODULES := services
 LOCAL_MODULE_TAGS :=
 LOCAL_MODULE := wifi-service
