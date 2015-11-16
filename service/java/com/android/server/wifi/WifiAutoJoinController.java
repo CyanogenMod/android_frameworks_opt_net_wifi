@@ -1365,6 +1365,13 @@ public class WifiAutoJoinController {
             logDbg("attemptAutoJoin() status=" + wpaStatus);
         }
 
+        if (wpaStatus == null) {
+            if (VDBG) {
+                logDbg("wpaStatus is null");
+            }
+            return WifiConfiguration.INVALID_NETWORK_ID;
+        }
+
         try {
             int id = WifiConfiguration.INVALID_NETWORK_ID;
             String state = null;
