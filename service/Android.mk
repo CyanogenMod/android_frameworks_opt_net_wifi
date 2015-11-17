@@ -126,7 +126,7 @@ LOCAL_SRC_FILES := $(call all-java-files-under, java) \
 
 LOCAL_JNI_SHARED_LIBRARIES := libandroid_runtime
 LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt services
-LOCAL_STATIC_JAVA_LIBRARIES := ksoap2 android-support-v4 org.cyanogenmod.platform.sdk
+LOCAL_STATIC_JAVA_LIBRARIES := ksoap2 android-support-v4
 LOCAL_REQUIRED_MODULES := services
 LOCAL_MODULE_TAGS :=
 LOCAL_MODULE := wifi-service

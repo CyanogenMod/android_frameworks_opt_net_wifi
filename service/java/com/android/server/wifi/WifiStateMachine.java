@@ -116,7 +116,6 @@ import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
-import cyanogenmod.providers.CMSettings;
 
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -1325,8 +1324,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                 });
 
-        mContext.getContentResolver().registerContentObserver(CMSettings.System.getUriFor(
-                CMSettings.System.WIFI_AUTO_CONNECT_TYPE), false,
+        mContext.getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                Settings.System.WIFI_AUTO_CONNECT_TYPE), false,
                 new ContentObserver(getHandler()) {
                     @Override
                     public void onChange(boolean selfChange) {
@@ -10563,9 +10562,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     boolean shouldAutoConnect() {
-         int autoConnectPolicy = CMSettings.System.getInt(
+         int autoConnectPolicy = Settings.System.getInt(
                  mContext.getContentResolver(),
-                 CMSettings.System.WIFI_AUTO_CONNECT_TYPE,
+                 Settings.System.WIFI_AUTO_CONNECT_TYPE,
                  WIFI_AUTO_CONNECT_TYPE_AUTO);
          if (DBG) {
              if (autoConnectPolicy == WIFI_AUTO_CONNECT_TYPE_AUTO) {
