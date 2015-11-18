@@ -338,13 +338,13 @@ static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
     if (halHandle == NULL) {
 
         if(init_wifi_hal_func_table(&hal_fn) != 0 ) {
-            ALOGD("Can not initialize the basic function pointer table");
+            ALOGE("Can not initialize the basic function pointer table");
             return false;
         }
 
         wifi_error res = init_wifi_vendor_hal_func_table(&hal_fn);
         if (res != WIFI_SUCCESS) {
-            ALOGD("Can not initialize the vendor function pointer table");
+            ALOGE("Can not initialize the vendor function pointer table");
 	    return false;
         }
 
@@ -1523,7 +1523,7 @@ static jobject android_net_wifi_get_driver_version(JNIEnv *env, jclass cls, jint
         free(buffer);
         return driver_version.detach();
     } else {
-        ALOGD("Fail to get driver version");
+        ALOGE("Fail to get driver version");
         free(buffer);
         return NULL;
     }
@@ -1553,7 +1553,7 @@ static jobject android_net_wifi_get_firmware_version(JNIEnv *env, jclass cls, ji
         free(buffer);
         return firmware_version.detach();
     } else {
-        ALOGD("Fail to get Firmware version");
+        ALOGE("Fail to get Firmware version");
         free(buffer);
         return NULL;
     }
@@ -1827,7 +1827,7 @@ static void onPnoNetworkFound(wifi_request_id id,
             scanResults = helper.newObjectArray(
                     num_results, "android/net/wifi/ScanResult", scanResult);
             if (scanResults == 0) {
-                ALOGD("cant allocate array");
+                ALOGE("cant allocate array");
             } else {
                 ALOGD("allocated array %u", helper.getArrayLength(scanResults));
             }
@@ -1875,7 +1875,7 @@ static jboolean android_net_wifi_setPnoListNative(
     if (list == NULL) {
         // stop pno
         int result = hal_fn.wifi_set_epno_list(id, handle, 0, NULL, handler);
-        ALOGE(" setPnoListNative: STOP result = %d", result);
+        ALOGD(" setPnoListNative: STOP result = %d", result);
         return result >= 0;
     }
 
@@ -1891,7 +1891,7 @@ static jboolean android_net_wifi_setPnoListNative(
 
         JNIObject<jobject> pno_net = helper.getObjectArrayElement((jobjectArray)list, i);
         if (pno_net == NULL) {
-            ALOGD("setPnoListNative: could not get element %d", i);
+            ALOGE("setPnoListNative: could not get element %d", i);
             continue;
         }
 
@@ -1913,7 +1913,7 @@ static jboolean android_net_wifi_setPnoListNative(
            return false;
         }
 
-        if (ssid_len > 1 && ssid[0] == '"' && ssid[ssid_len-1])
+        if (ssid_len > 1 && ssid[0] == '"' && ssid[ssid_len-1] == '"')
         {
             // strip leading and trailing '"'
             ssid++;
@@ -1931,13 +1931,13 @@ static jboolean android_net_wifi_setPnoListNative(
         net_list[i].auth_bit_field = a;
         int f = helper.getIntField(pno_net, "flags");
         net_list[i].flags = f;
-        ALOGE(" setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]", i,
+        ALOGD(" setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]", i,
                 (signed)net_list[i].rssi_threshold, net_list[i].rssi_threshold,
                 net_list[i].auth_bit_field, a, net_list[i].flags, f, net_list[i].ssid);
     }
 
     int result = hal_fn.wifi_set_epno_list(id, handle, len, net_list, handler);
-    ALOGE(" setPnoListNative: result %d", result);
+    ALOGD(" setPnoListNative: result %d", result);
 
     return result >= 0;
 }
@@ -1963,12 +1963,12 @@ static jboolean android_net_wifi_setLazyRoam(
         params.alert_roam_rssi_trigger = helper.getIntField(roam_param, "alert_roam_rssi_trigger");
         status = hal_fn.wifi_set_gscan_roam_params(id, handle, &params);
     }
-    ALOGE("android_net_wifi_setLazyRoam configured params status=%d\n", status);
+    ALOGD("android_net_wifi_setLazyRoam configured params status=%d\n", status);
 
     if (status >= 0) {
         int doEnable = enabled ? 1 : 0;
         status = hal_fn.wifi_enable_lazy_roam(id, handle, doEnable);
-        ALOGE("android_net_wifi_setLazyRoam enabled roam status=%d\n", status);
+        ALOGD("android_net_wifi_setLazyRoam enabled roam status=%d\n", status);
     }
     return status >= 0;
 }
@@ -1992,7 +1992,7 @@ static jboolean android_net_wifi_setBssidBlacklist(
 
             JNIObject<jobject> jbssid = helper.getObjectArrayElement(list, i);
             if (jbssid == NULL) {
-                ALOGD("configure BSSID blacklist: could not get element %d", i);
+                ALOGE("configure BSSID blacklist: could not get element %d", i);
                 continue;
             }
 
@@ -2039,7 +2039,7 @@ static jboolean android_net_wifi_setSsidWhitelist(
 
                 JNIObject<jobject> jssid = helper.getObjectArrayElement(list, i);
                 if (jssid == NULL) {
-                    ALOGD("configure SSID whitelist: could not get element %d", i);
+                    ALOGE("configure SSID whitelist: could not get element %d", i);
                     free(ssids);
                    return false;
                 }
