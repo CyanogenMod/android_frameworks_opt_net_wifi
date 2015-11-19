@@ -1334,7 +1334,7 @@ public class WifiConfigStore extends IpConfigStore {
             // that has an RSSI too low for us to attempt joining it.
             int threshold = thresholdInitialAutoJoinAttemptMin24RSSI.get();
             Log.e(TAG, "found sortedWifiConfigurations : " + config.configKey());
-            WifiNative.WifiPnoNetwork network = mWifiNative.new WifiPnoNetwork(config, threshold);
+            WifiNative.WifiPnoNetwork network = new WifiNative.WifiPnoNetwork(config, threshold);
             mCachedPnoList.add(network);
         }
     }
@@ -1355,7 +1355,6 @@ public class WifiConfigStore extends IpConfigStore {
             return null;
         }
         for (String configKey : config.linkedConfigurations.keySet()) {
-
             // Sanity check that the linked configuration is still valid
             WifiConfiguration link = getWifiConfiguration(configKey);
             if (link == null) {

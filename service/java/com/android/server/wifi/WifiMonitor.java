@@ -539,7 +539,7 @@ public class WifiMonitor {
     public WifiMonitor(StateMachine stateMachine, WifiNative wifiNative) {
         if (DBG) Log.d(TAG, "Creating WifiMonitor");
         mWifiNative = wifiNative;
-        mInterfaceName = wifiNative.mInterfaceName;
+        mInterfaceName = wifiNative.getInterfaceName();
         mStateMachine = stateMachine;
         mMonitoring = false;
 
@@ -653,7 +653,7 @@ public class WifiMonitor {
             Log.e(TAG, "killSupplicant p2p" + p2pSupported
                     + " init.svc.wpa_supplicant=" + suppState
                     + " init.svc.p2p_supplicant=" + p2pSuppState);
-            WifiNative.killSupplicant(p2pSupported);
+            mWifiNative.killSupplicant(p2pSupported);
             mConnected = false;
             for (WifiMonitor m : mIfaceMap.values()) {
                 m.mMonitoring = false;

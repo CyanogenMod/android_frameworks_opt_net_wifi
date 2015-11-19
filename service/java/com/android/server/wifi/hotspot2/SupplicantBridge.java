@@ -87,7 +87,7 @@ public class SupplicantBridge {
         synchronized (mRequestMap) {
             mRequestMap.put(scanDetail.getNetworkDetail().getBSSID(), scanDetail);
         }
-        String result = mSupplicantHook.doCustomCommand(anqpGet);
+        String result = mSupplicantHook.doCustomSupplicantCommand(anqpGet);
         if (result != null && result.startsWith("OK")) {
             Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail + " (" + anqpGet + ")");
             return true;
@@ -100,7 +100,7 @@ public class SupplicantBridge {
     }
 
     public boolean doIconQuery(long bssid, String fileName) {
-        String result = mSupplicantHook.doCustomCommand("HS20_ICON_REQUEST " +
+        String result = mSupplicantHook.doCustomSupplicantCommand("HS20_ICON_REQUEST " +
                 Utils.macToString(bssid) + " " + fileName);
         return result != null && result.startsWith("OK");
     }

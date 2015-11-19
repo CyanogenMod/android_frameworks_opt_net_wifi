@@ -1092,11 +1092,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     long mGScanStartTimeMilli;
     long mGScanPeriodMilli;
 
-    public WifiStateMachine(Context context, String wlanInterface,
-                            WifiTrafficPoller trafficPoller) {
+    public WifiStateMachine(Context context, WifiTrafficPoller trafficPoller) {
         super("WifiStateMachine");
         mContext = context;
-        mInterfaceName = wlanInterface;
+        mWifiNative = WifiNative.getWlanNativeInterface();
+        // TODO refactor WifiNative use of context out into it's own class
+        mWifiNative.initContext(mContext);
+        mInterfaceName = mWifiNative.getInterfaceName();
         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_WIFI, 0, NETWORKTYPE, "");
         mBatteryStats = IBatteryStats.Stub.asInterface(ServiceManager.getService(
                 BatteryStats.SERVICE_NAME));
@@ -1107,7 +1109,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mP2pSupported = mContext.getPackageManager().hasSystemFeature(
                 PackageManager.FEATURE_WIFI_DIRECT);
 
-        mWifiNative = new WifiNative(mInterfaceName, mContext);
         mWifiConfigStore = new WifiConfigStore(context,this,  mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
@@ -3219,7 +3220,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private void stopPnoOffload() {
 
         // clear the PNO list
-        if (!WifiNative.setPnoList(null, WifiStateMachine.this)) {
+        if (!mWifiNative.setPnoList(null, WifiStateMachine.this)) {
             Log.e(TAG, "Failed to stop pno");
         }
 
@@ -3233,7 +3234,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             return true;
         }
 
-       if (!WifiNative.setSsidWhitelist(mWhiteListedSsids)) {
+       if (!mWifiNative.setSsidWhitelist(mWhiteListedSsids)) {
             loge("configureSsidWhiteList couldnt program SSID list, size "
                     + mWhiteListedSsids.length);
             return false;
@@ -3248,7 +3249,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         boolean status;
         if (!useHalBasedAutoJoinOffload()) return false;
 
-        WifiNative.WifiLazyRoamParams params = mWifiNative.new WifiLazyRoamParams();
+        WifiNative.WifiLazyRoamParams params = new WifiNative.WifiLazyRoamParams();
         params.A_band_boost_threshold = mWifiConfigStore.bandPreferenceBoostThreshold5.get();
         params.A_band_penalty_threshold = mWifiConfigStore.bandPreferencePenaltyThreshold5.get();
         params.A_band_boost_factor = mWifiConfigStore.bandPreferenceBoostFactor5;
@@ -3261,7 +3262,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             Log.e(TAG, "configureLazyRoam " + params.toString());
         }
 
-        if (!WifiNative.setLazyRoam(true, params)) {
+        if (!mWifiNative.setLazyRoam(true, params)) {
 
             Log.e(TAG, "configureLazyRoam couldnt program params");
 
@@ -3280,7 +3281,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (DBG) {
             Log.e(TAG, "stopLazyRoam");
         }
-        return WifiNative.setLazyRoam(false, null);
+        return mWifiNative.setLazyRoam(false, null);
     }
 
     private boolean startGScanConnectedModeOffload(String reason) {
@@ -3379,7 +3380,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         WifiNative.WifiPnoNetwork list[]
                 = (WifiNative.WifiPnoNetwork[]) llist.toArray(new WifiNative.WifiPnoNetwork[0]);
 
-        if (!WifiNative.setPnoList(list, WifiStateMachine.this)) {
+        if (!mWifiNative.setPnoList(list, WifiStateMachine.this)) {
             Log.e(TAG, "Failed to set pno, length = " + list.length);
             return false;
         }
@@ -5067,7 +5068,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* SoftAP configuration */
     private boolean enableSoftAp() {
-        if (WifiNative.getInterfaces() != 0) {
+        if (mWifiNative.getInterfaces() != 0) {
             if (!mWifiNative.toggleInterface(0)) {
                 if (DBG) Log.e(TAG, "toggleInterface failed");
                 return false;
@@ -5083,7 +5084,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             Log.e(TAG, "Failed to reload AP firmware " + e);
         }
 
-        if (WifiNative.startHal() == false) {
+        if (mWifiNative.startHal() == false) {
             /* starting HAL is optional */
             Log.e(TAG, "Failed to start HAL");
         }
@@ -5506,7 +5507,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             WifiManager.BUSY);
                     break;
                 case CMD_GET_SUPPORTED_FEATURES:
-                    int featureSet = WifiNative.getSupportedFeatureSet();
+                    int featureSet = mWifiNative.getSupportedFeatureSet();
                     replyToMessage(message, message.what, featureSet);
                     break;
                 case CMD_FIRMWARE_ALERT:
@@ -5575,7 +5576,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     class InitialState extends State {
         @Override
         public void enter() {
-            WifiNative.stopHal();
+            mWifiNative.stopHal();
             mWifiNative.unloadDriver();
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
@@ -5639,7 +5640,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         */
                         mWifiMonitor.killSupplicant(mP2pSupported);
 
-                        if (WifiNative.startHal() == false) {
+                        if (mWifiNative.startHal() == false) {
                             /* starting HAL is optional */
                             loge("Failed to start HAL");
                         }
@@ -5791,7 +5792,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiNative.setExternalSim(true);
 
             /* turn on use of DFS channels */
-            WifiNative.setDfsFlag(true);
+            mWifiNative.setDfsFlag(true);
 
             /* set country code */
             initializeCountryCode();
@@ -6132,7 +6133,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_ENABLED);
             mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
 
-            mHalFeatureSet = WifiNative.getSupportedFeatureSet();
+            mHalFeatureSet = mWifiNative.getSupportedFeatureSet();
             if ((mHalFeatureSet & WifiManager.WIFI_FEATURE_HAL_EPNO)
                     == WifiManager.WIFI_FEATURE_HAL_EPNO) {
                 mHalBasedPnoDriverSupported = true;

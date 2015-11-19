@@ -143,8 +143,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     private final AppOpsManager mAppOps;
     private final UserManager mUserManager;
 
-    private String mInterfaceName;
-
     // Debug counter tracking scan requests sent by WifiManager
     private int scanRequestCounter = 0;
 
@@ -320,10 +318,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public WifiServiceImpl(Context context) {
         mContext = context;
 
-        mInterfaceName =  SystemProperties.get("wifi.interface", "wlan0");
-
-        mTrafficPoller = new WifiTrafficPoller(mContext, mInterfaceName);
-        mWifiStateMachine = new WifiStateMachine(mContext, mInterfaceName, mTrafficPoller);
+        mTrafficPoller = new WifiTrafficPoller(mContext,
+                WifiNative.getWlanNativeInterface().getInterfaceName());
+        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller);
         mWifiStateMachine.enableRssiPolling(true);
         mBatteryStats = BatteryStatsService.getService();
         mPowerManager = context.getSystemService(PowerManager.class);

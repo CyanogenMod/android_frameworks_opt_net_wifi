@@ -104,19 +104,17 @@ public final class RttService extends SystemService {
             }
         }
 
-        private Context mContext;
+        private final WifiNative mWifiNative;
+        private final Context mContext;
         private RttStateMachine mStateMachine;
         private ClientHandler mClientHandler;
 
-        RttServiceImpl() { }
-
         RttServiceImpl(Context context) {
             mContext = context;
+            mWifiNative = WifiNative.getWlanNativeInterface();
         }
 
-        public void startService(Context context) {
-            mContext = context;
-
+        public void startService() {
             HandlerThread thread = new HandlerThread("WifiRttService");
             thread.start();
 
@@ -336,7 +334,7 @@ public final class RttService extends SystemService {
                     switch (msg.what) {
                         case CMD_DRIVER_UNLOADED:
                             if (mOutstandingRequest != null) {
-                                WifiNative.cancelRtt(mOutstandingRequest.params);
+                                mWifiNative.cancelRtt(mOutstandingRequest.params);
                                 if (DBG) Log.d(TAG, "abort key: " + mOutstandingRequest.key);
                                 mOutstandingRequest.ci.reportAborted(mOutstandingRequest.key);
                                 mOutstandingRequest = null;
@@ -381,7 +379,7 @@ public final class RttService extends SystemService {
                             if (mOutstandingRequest != null
                                     && msg.arg2 == mOutstandingRequest.key) {
                                 if (DBG) Log.d(TAG, "Cancelling ongoing RTT of: " + msg.arg2);
-                                WifiNative.cancelRtt(mOutstandingRequest.params);
+                                mWifiNative.cancelRtt(mOutstandingRequest.params);
                                 mOutstandingRequest.ci.reportAborted(mOutstandingRequest.key);
                                 mOutstandingRequest = null;
                                 sendMessage(CMD_ISSUE_NEXT_REQUEST);
@@ -454,7 +452,7 @@ public final class RttService extends SystemService {
             while (mRequestQueue.isEmpty() == false) {
                 request = mRequestQueue.remove();
                 if(request !=  null) {
-                    if (WifiNative.requestRtt(request.params, mEventHandler)) {
+                    if (mWifiNative.requestRtt(request.params, mEventHandler)) {
                         if (DBG) Log.d(TAG, "Issued next RTT request with key: " + request.key);
                         return request;
                     } else {
@@ -471,7 +469,7 @@ public final class RttService extends SystemService {
         }
         @Override
         public RttManager.RttCapabilities getRttCapabilities() {
-            return WifiNative.getRttCapabilities();
+            return mWifiNative.getRttCapabilities();
         }
     }
 
@@ -498,7 +496,7 @@ public final class RttService extends SystemService {
             if (mImpl == null) {
                 mImpl = new RttServiceImpl(getContext());
             }
-            mImpl.startService(getContext());
+            mImpl.startService();
         }
     }
 

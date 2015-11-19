@@ -106,7 +106,6 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     private static final String NETWORKTYPE = "WIFI_P2P";
 
     private Context mContext;
-    private String mInterface;
     private Notification mNotification;
 
     INetworkManagementService mNwService;
@@ -359,8 +358,6 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     public WifiP2pServiceImpl(Context context) {
         mContext = context;
 
-        //STOPSHIP: get this from native side
-        mInterface = "p2p0";
         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_WIFI_P2P, 0, NETWORKTYPE, "");
 
         mP2pSupported = mContext.getPackageManager().hasSystemFeature(
@@ -497,7 +494,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         private UserAuthorizingJoinState mUserAuthorizingJoinState = new UserAuthorizingJoinState();
         private OngoingGroupRemovalState mOngoingGroupRemovalState = new OngoingGroupRemovalState();
 
-        private WifiNative mWifiNative = new WifiNative(mInterface);
+        private WifiNative mWifiNative = WifiNative.getP2pNativeInterface();
         private WifiMonitor mWifiMonitor = new WifiMonitor(this, mWifiNative);
 
         private final WifiP2pDeviceList mPeers = new WifiP2pDeviceList();
@@ -898,7 +895,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
             switch (message.what) {
                 case WifiStateMachine.CMD_ENABLE_P2P:
                     try {
-                        mNwService.setInterfaceUp(mInterface);
+                        mNwService.setInterfaceUp(mWifiNative.getInterfaceName());
                     } catch (RemoteException re) {
                         loge("Unable to change interface settings: " + re);
                     } catch (IllegalStateException ie) {

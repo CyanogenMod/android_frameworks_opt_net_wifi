@@ -47,7 +47,7 @@ public class WifiScanningService extends SystemService {
             if (mImpl == null) {
                 mImpl = new WifiScanningServiceImpl(getContext());
             }
-            mImpl.startService(getContext());
+            mImpl.startService();
         }
     }
 }
