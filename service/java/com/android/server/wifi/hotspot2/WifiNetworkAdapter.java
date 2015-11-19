@@ -51,18 +51,19 @@ public class WifiNetworkAdapter {
                 // This is a current mock implementation that blindly starts an OSU flow as soon
                 // as an SSID associated with an OSU is connected to.
 
-                OSUInfo osuInfo = getCurrentOSU();
+                if (OSUManager.R2_TEST) {
+                    OSUInfo osuInfo = getCurrentOSU();
 
-                if (!compareOSUs(mCurrentOSUInfo, osuInfo)) {
-                    mCurrentOSUInfo = osuInfo;
-                    Network network = osuInfo != null ? getCurrentNetwork() : null;
-                    Log.d(OSUManager.TAG, "OSU changed to " + osuInfo + ", network " + network);
-                    try {
-                        mOSUManager.initiateProvisioning(osuInfo, network);
-                    }
-                    catch (Throwable t) {
-                        Log.e(OSUManager.TAG, "Failed to initiate provisioning on " +
-                                osuInfo + ": " + t, t);
+                    if (!compareOSUs(mCurrentOSUInfo, osuInfo)) {
+                        mCurrentOSUInfo = osuInfo;
+                        Network network = osuInfo != null ? getCurrentNetwork() : null;
+                        Log.d(OSUManager.TAG, "OSU changed to " + osuInfo + ", network " + network);
+                        try {
+                            mOSUManager.initiateProvisioning(osuInfo, network);
+                        } catch (Throwable t) {
+                            Log.e(OSUManager.TAG, "Failed to initiate provisioning on " +
+                                    osuInfo + ": " + t, t);
+                        }
                     }
                 }
             }

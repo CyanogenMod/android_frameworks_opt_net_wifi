@@ -22,6 +22,7 @@ import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.HSOsuProvidersElement;
 import com.android.server.wifi.anqp.OSUProvider;
 import com.android.server.wifi.configparse.ConfigBuilder;
+import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.OMADMAdapter;
 import com.android.server.wifi.hotspot2.PasspointMatch;
@@ -65,6 +66,8 @@ import static com.android.server.wifi.anqp.Constants.ANQPElementType.HSOSUProvid
 
 public class OSUManager {
     public static final String TAG = "OSUMGR";
+    public static final boolean R2_TEST = true;
+
     private static final int MAX_SCAN_MISSES = 15;
     private static final long REMEDIATION_TIMEOUT = 120000L;
     // How many scan result batches to hang on to
@@ -270,7 +273,7 @@ public class OSUManager {
             }
         });
         mWifiNetworkAdapter.initialize();
-        mSubscriptionTimer.checkUpdates();
+        //mSubscriptionTimer.checkUpdates();    // !!! Looks like there's a bug associated with this.
     }
 
     public boolean enableOSUQueries() {
@@ -876,8 +879,12 @@ public class OSUManager {
         return mMOManager.getMOTree(homeSP);
     }
 
-    public void notifyIconReceived(long bssid, byte[] iconData) {
-        mIconCache.notifyIconReceived(bssid, iconData);
+    public void notifyIconReceived(IconEvent iconEvent) {
+        mIconCache.notifyIconReceived(iconEvent);
+    }
+
+    public void notifyIconFailed(long bssid) {
+        mIconCache.notifyIconFailed(bssid);
     }
 
     public void iconResult(OSUInfo osuInfo) {
@@ -943,10 +950,18 @@ public class OSUManager {
             }
             Log.d(TAG, "Wifi configuration " + nwkId + " " + (saved ? "saved" : "not saved"));
 
+            if (!saved) {
+                mUserInputListener.operationStatus(OSUOperationStatus.ProvisioningFailure,
+                        "Failed to save network configuration " + nwkId);
+                mMOManager.removeSP(homeSP.getFQDN(), this);
+                mWifiNetworkAdapter.detachOSUNetwork(osuNetwork,
+                        WifiConfiguration.INVALID_NETWORK_ID);
+                return;
+            }
+
             mUserInputListener.operationStatus(OSUOperationStatus.ProvisioningSuccess, null);
 
-            mWifiNetworkAdapter.detachOSUNetwork(osuNetwork, saved ?
-                    nwkId : WifiConfiguration.INVALID_NETWORK_ID);
+            mWifiNetworkAdapter.detachOSUNetwork(osuNetwork, nwkId);
 
             Log.d(TAG, "Done, done.");
             Log.d(TAG, "Private key: " + privateKey);
@@ -954,7 +969,8 @@ public class OSUManager {
                 StringBuilder sb = new StringBuilder();
                 sb.append(certEntry.getKey()).append('\n');
                 for (X509Certificate cert : certEntry.getValue()) {
-                    sb.append("   issued by ").append(cert.getIssuerX500Principal()).append(" to ").append(cert.getSubjectX500Principal()).append('\n');
+                    sb.append("   issued by ").append(cert.getIssuerX500Principal()).
+                            append(" to ").append(cert.getSubjectX500Principal()).append('\n');
                 }
                 Log.d(TAG, sb.toString());
             }

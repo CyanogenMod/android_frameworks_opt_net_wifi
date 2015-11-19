@@ -98,7 +98,7 @@ public class OSUSocketFactory {
             default:
                 throw new IOException("Bad URL: " + url);
         }
-        if (url.getHost().endsWith(".wi-fi.org")) {     // !!! Warning: Ruckus hack!
+        if (OSUManager.R2_TEST && url.getHost().endsWith(".wi-fi.org")) { // !!! Warning: Ruckus hack!
             mRemotes = new ArrayList<>(1);
             mRemotes.add(new InetSocketAddress(InetAddress.getByName("10.123.107.107"), port));
         }

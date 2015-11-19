@@ -73,6 +73,7 @@ import com.android.server.am.BatteryStatsService;
 import com.android.server.wifi.configparse.ConfigBuilder;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.osu.OSUInfo;
+import com.android.server.wifi.hotspot2.osu.OSUManager;
 
 import org.xml.sax.SAXException;
 
@@ -798,21 +799,23 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
             WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
-            if (config.isPasspoint() &&
-                    (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
-                     enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
-                try {
-                    verifyCert(enterpriseConfig.getCaCertificate());
-                } catch (CertPathValidatorException cpve) {
-                    Slog.e(TAG, "CA Cert " +
-                            enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
-                            " untrusted: " + cpve.getMessage());
-                    return -1;
-                } catch (GeneralSecurityException | IOException e) {
-                    Slog.e(TAG, "Failed to verify certificate" +
-                            enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
-                            ": " + e);
-                    return -1;
+            if (!OSUManager.R2_TEST) {
+                if (config.isPasspoint() &&
+                        (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
+                                enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
+                    try {
+                        verifyCert(enterpriseConfig.getCaCertificate());
+                    } catch (CertPathValidatorException cpve) {
+                        Slog.e(TAG, "CA Cert " +
+                                enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
+                                " untrusted: " + cpve.getMessage());
+                        return -1;
+                    } catch (GeneralSecurityException | IOException e) {
+                        Slog.e(TAG, "Failed to verify certificate" +
+                                enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
+                                ": " + e);
+                        return -1;
+                    }
                 }
             }
 
