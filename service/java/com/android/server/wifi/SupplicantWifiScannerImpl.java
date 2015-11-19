@@ -17,11 +17,7 @@
 package com.android.server.wifi;
 
 import android.app.AlarmManager;
-import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.os.Handler;
@@ -56,7 +52,6 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     private final Context mContext;
     private final WifiNative mWifiNative;
     private final AlarmManager mAlarmManager;
-    private final PendingIntent mScanPeriodIntent;
     private final Handler mEventHandler;
 
     private Object mSettingsLock = new Object();
@@ -77,29 +72,25 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     private WifiNative.HotlistEventHandler mHotlistHandler = null;
     private ChangeBuffer mHotlistChangeBuffer = new ChangeBuffer();
 
+    AlarmManager.OnAlarmListener mScanPeriodListener = new AlarmManager.OnAlarmListener() {
+            public void onAlarm() {
+                // in case we never got the results of the previous scan
+                // make sure we start a new scan
+                synchronized (mSettingsLock) {
+                    if (mLastScanSettings != null) {
+                        Log.w(TAG,
+                                "Did not get a scan results/failure event from previous scan");
+                        mLastScanSettings = null;
+                    }
+                    handleScanPeriod();
+                }
+            }
+        };
+
     public SupplicantWifiScannerImpl(Context context, WifiNative wifiNative, Looper looper) {
         mContext = context;
         mWifiNative = wifiNative;
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
-        mScanPeriodIntent = getPrivateBroadcast(ACTION_SCAN_PERIOD, 0);
-
-        mContext.registerReceiver(
-                new BroadcastReceiver() {
-                    @Override
-                    public void onReceive(Context context, Intent intent) {
-                        // in case we never got the results of the previous scan
-                        // make sure we start a new scan
-                        synchronized (mSettingsLock) {
-                            if (mLastScanSettings != null) {
-                                Log.w(TAG,
-                                        "Did not get a scan results/failure event from previous scan");
-                                mLastScanSettings = null;
-                            }
-                            handleScanPeriod();
-                        }
-                    }
-                },
-                new IntentFilter(ACTION_SCAN_PERIOD));
 
         mEventHandler = new Handler(looper, this);
         WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
@@ -197,7 +188,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     }
 
     private void unscheduleScansLocked() {
-        mAlarmManager.cancel(mScanPeriodIntent);
+        mAlarmManager.cancel(mScanPeriodListener);
         mLastScanSettings = null; // make sure that a running scan is marked as ended
     }
 
@@ -236,9 +227,10 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                         }
 
                         if (bucket.band != WifiScanner.WIFI_BAND_UNSPECIFIED) {
-                            int channels[] = mWifiNative.getChannelsForBand(bucket.band);
-                            for (int channel : channels) {
-                                freqs.add(channel);
+                            WifiScanner.ChannelSpec[] channels =
+                                    WifiChannelHelper.getChannelsForBand(bucket.band);
+                            for (WifiScanner.ChannelSpec channel : channels) {
+                                freqs.add(channel.frequency);
                             }
                         }
                         else {
@@ -269,7 +261,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 mNextScanPeriod++;
                 mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                         System.currentTimeMillis() + mScanSettings.base_period_ms,
-                        mScanPeriodIntent);
+                        "SupplicantWifiScannerImpl Period",
+                        mScanPeriodListener, mEventHandler);
             }
         }
     }
@@ -318,27 +311,29 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                     // was a cached result in wpa_supplicant
                 }
             }
+
+            if (mScanEventHandler != null) {
+                if ((mLastScanSettings.reportEvents &
+                             WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0) {
+                    for (ScanResult scanResult : scanResults) {
+                        mScanEventHandler.onFullScanResult(scanResult);
+                    }
+                }
+            }
+
             Collections.sort(scanResults, SCAN_RESULT_RSSI_COMPARATOR);
             ScanResult[] scanResultsArray =
                 new ScanResult[Math.min(mLastScanSettings.maxAps, scanResults.size())];
             for (int i = 0; i < scanResultsArray.length; ++i) {
                 scanResultsArray[i] = scanResults.get(i);
             }
-            WifiScanner.ScanData scanData = new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
-                    scanResultsArray);
 
             if ((mLastScanSettings.reportEvents & WifiScanner.REPORT_EVENT_NO_BATCH) == 0) {
-                mScanBuffer.add(scanData);
+                mScanBuffer.add(new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
+                                scanResultsArray));
             }
 
             if (mScanEventHandler != null) {
-                if ((mLastScanSettings.reportEvents &
-                             WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0) {
-                    for (ScanResult scanResult : scanResultsArray) {
-                        mScanEventHandler.onFullScanResult(scanResult);
-                    }
-                }
-
                 if ((mLastScanSettings.reportEvents &
                              WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0 ||
                       (mLastScanSettings.reportEvents &
@@ -367,20 +362,15 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     }
 
 
-    private PendingIntent getPrivateBroadcast(String action, int requestCode) {
-        Intent intent = new Intent(action, null);
-        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-        intent.setPackage("android");
-        return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
-    }
-
     @Override
     public WifiScanner.ScanData[] getLatestBatchedScanResults(boolean flush) {
-        WifiScanner.ScanData[] results = mScanBuffer.get();
-        if (flush) {
-            mScanBuffer.clear();
+        synchronized(mSettingsLock) {
+            WifiScanner.ScanData[] results = mScanBuffer.get();
+            if (flush) {
+                mScanBuffer.clear();
+            }
+            return results;
         }
-        return results;
     }
 
     @Override
