@@ -37,7 +37,7 @@ public class I18Name {
             throw new IOException("I18String too short: '" + compoundString + "'");
         }
         mLanguage = compoundString.substring(0, 3);
-        mText = compoundString.substring(4);
+        mText = compoundString.substring(3);
         mLocale = Locale.forLanguageTag(mLanguage);
     }
 

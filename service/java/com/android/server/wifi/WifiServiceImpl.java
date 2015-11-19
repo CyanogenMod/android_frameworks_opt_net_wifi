@@ -65,13 +65,15 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.Slog;
 
-import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
 import com.android.server.wifi.configparse.ConfigBuilder;
+import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.osu.OSUInfo;
+import com.android.server.wifi.hotspot2.osu.OSUManager;
 
 import org.xml.sax.SAXException;
 
@@ -95,23 +97,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
-import com.android.internal.R;
-import com.android.internal.app.IBatteryStats;
-import com.android.internal.telephony.TelephonyIntents;
-import com.android.internal.util.AsyncChannel;
-import com.android.server.am.BatteryStatsService;
-import com.android.server.wifi.configparse.ConfigBuilder;
-import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.osu.OSUInfo;
-
-import org.xml.sax.SAXException;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -812,21 +799,23 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
             WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
-            if (config.isPasspoint() &&
-                    (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
-                     enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
-                try {
-                    verifyCert(enterpriseConfig.getCaCertificate());
-                } catch (CertPathValidatorException cpve) {
-                    Slog.e(TAG, "CA Cert " +
-                            enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
-                            " untrusted: " + cpve.getMessage());
-                    return -1;
-                } catch (GeneralSecurityException | IOException e) {
-                    Slog.e(TAG, "Failed to verify certificate" +
-                            enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
-                            ": " + e);
-                    return -1;
+            if (!OSUManager.R2_TEST) {
+                if (config.isPasspoint() &&
+                        (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
+                                enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
+                    try {
+                        verifyCert(enterpriseConfig.getCaCertificate());
+                    } catch (CertPathValidatorException cpve) {
+                        Slog.e(TAG, "CA Cert " +
+                                enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
+                                " untrusted: " + cpve.getMessage());
+                        return -1;
+                    } catch (GeneralSecurityException | IOException e) {
+                        Slog.e(TAG, "Failed to verify certificate" +
+                                enterpriseConfig.getCaCertificate().getSubjectX500Principal() +
+                                ": " + e);
+                        return -1;
+                    }
                 }
             }
 
