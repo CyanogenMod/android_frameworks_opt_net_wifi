@@ -6327,6 +6327,25 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                     res = mWifiConfigManager.matchProviderWithCurrentNetwork((String) message.obj);
                     replyToMessage(message, message.what, res);
                     break;
+                case WifiMonitor.SUBNET_STATUS_UPDATE_EVENT:
+                    // subnet status change event comes from the supplicant
+                    // after roaming. IP refresh is required if the device
+                    // has roamed into a different IP subnet
+                    if (DBG) log("SUBNET_STATUS_UPDATE_EVENT event");
+                    if (getNetworkDetailedState() == DetailedState.CONNECTED) {
+                        int subnetStatus = message.arg1;
+                        // 0 = unknown, 1 = unchanged, 2 = changed
+                        if (subnetStatus == 2) {
+                            if (DBG) log("Change in IP subnet, announce loss of IP reachability");
+                            sendMessage(CMD_IP_REACHABILITY_LOST);
+                        }
+                    }
+                    break;
+                case CMD_IP_REACHABILITY_LOST:
+                    if (DBG && message.obj != null) log((String) message.obj);
+                    handleIpReachabilityLost();
+                    transitionTo(mDisconnectingState);
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -7417,6 +7436,25 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                         mNetworkAgent.onPacketKeepaliveEvent(slot, result);
                         break;
                     }
+                case WifiMonitor.SUBNET_STATUS_UPDATE_EVENT:
+                    // subnet status change event comes from the supplicant
+                    // after roaming. IP refresh is required if the device
+                    // has roamed into a different IP subnet
+                    if (DBG) log("SUBNET_STATUS_UPDATE_EVENT event");
+                    if (getNetworkDetailedState() == DetailedState.CONNECTED) {
+                        int subnetStatus = message.arg1;
+                        // 0 = unknown, 1 = unchanged, 2 = changed
+                        if (subnetStatus == 2) {
+                            if (DBG) log("Change in IP subnet, announce loss of IP reachability");
+                            sendMessage(CMD_IP_REACHABILITY_LOST);
+                        }
+                    }
+                    break;
+                case CMD_IP_REACHABILITY_LOST:
+                    if (DBG && message.obj != null) log((String) message.obj);
+                    handleIpReachabilityLost();
+                    transitionTo(mDisconnectingState);
+                    break;
                 default:
                     return NOT_HANDLED;
             }
