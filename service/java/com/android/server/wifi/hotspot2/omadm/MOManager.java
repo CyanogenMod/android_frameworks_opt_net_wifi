@@ -243,7 +243,15 @@ public class MOManager {
 
         OMAConstructed dummyRoot = new OMAConstructed(null, TAG_PerProviderSubscription, null);
         buildHomeSPTree(homeSP, dummyRoot, mSPs.size() + 1);
-        addSP(dummyRoot, osuManager);
+        try {
+            addSP(dummyRoot, osuManager);
+        }
+        catch (FileNotFoundException fnfe) {
+            // No file to load a pre-build MO tree from, create a new one and save it.
+            MOTree tree = new MOTree(OMAConstants.PPS_URN, OMAConstants.OMAVersion, dummyRoot);
+            writeMO(tree, mPpsFile, osuManager);
+        }
+        mSPs.put(homeSP.getFQDN(), homeSP);
     }
 
     public HomeSP addSP(MOTree instanceTree, OSUManager osuManager) throws IOException {
@@ -698,14 +706,15 @@ public class MOManager {
             }
         }
 
-        UpdateInfo subscriptionUpdate = new UpdateInfo(ppsRoot.getChild(TAG_SubscriptionUpdate));
+        OMANode updateNode = ppsRoot.getChild(TAG_SubscriptionUpdate);
+        UpdateInfo subscriptionUpdate = updateNode != null ? new UpdateInfo(updateNode) : null;
         OMANode subNode = ppsRoot.getChild(TAG_SubscriptionParameters);
         SubscriptionParameters subscriptionParameters = subNode != null ?
                 new SubscriptionParameters(subNode) : null;
 
         return new HomeSP(ssids, fqdn, roamingConsortiums, otherHomePartners,
                 matchAnyOIs, matchAllOIs, friendlyName, iconURL, credential,
-                policy, getInteger(ppsRoot.getChild(TAG_CredentialPriority)),
+                policy, getInteger(ppsRoot.getChild(TAG_CredentialPriority), 0),
                 aaaTrustRoots, subscriptionUpdate, subscriptionParameters);
     }
 
@@ -884,6 +893,13 @@ public class MOManager {
 
     public static String getString(OMANode stringNode) {
         return stringNode != null ? stringNode.getValue() : null;
+    }
+
+    private static int getInteger(OMANode intNode, int dflt) throws OMAException {
+        if (intNode == null) {
+            return dflt;
+        }
+        return getInteger(intNode);
     }
 
     private static int getInteger(OMANode intNode) throws OMAException {

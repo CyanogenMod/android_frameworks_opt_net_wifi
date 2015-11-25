@@ -88,6 +88,7 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidator;
+import java.security.cert.CertPathValidatorException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
@@ -800,10 +801,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
             WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
-            /* !!! Killed cert verification for testing.
             if (config.isPasspoint() &&
                     (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
-                enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
+                     enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
                 try {
                     verifyCert(enterpriseConfig.getCaCertificate());
                 } catch (CertPathValidatorException cpve) {
@@ -818,7 +818,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     return -1;
                 }
             }
-            */
 
             //TODO: pass the Uid the WifiStateMachine as a message parameter
             Slog.i("addOrUpdateNetwork", " uid = " + Integer.toString(Binder.getCallingUid())
