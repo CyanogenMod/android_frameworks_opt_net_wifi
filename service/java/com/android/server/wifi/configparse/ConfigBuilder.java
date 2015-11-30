@@ -200,7 +200,6 @@ public class ConfigBuilder {
 
         enterpriseConfig.setCaCertificate(caCert);
         enterpriseConfig.setAnonymousIdentity("anonymous@" + credential.getRealm());
-        enterpriseConfig.setRealm(credential.getRealm());
 
         return config;
     }
