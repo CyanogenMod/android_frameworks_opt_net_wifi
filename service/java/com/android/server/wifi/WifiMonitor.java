@@ -799,10 +799,7 @@ public class WifiMonitor {
         }
 
         if (!eventStr.startsWith(EVENT_PREFIX_STR)) {
-            if (eventStr.startsWith(WPA_EVENT_PREFIX_STR) &&
-                    0 < eventStr.indexOf(PASSWORD_MAY_BE_INCORRECT_STR)) {
-               sendMessage(iface, AUTHENTICATION_FAILURE_EVENT, eventLogCounter);
-            } else if (eventStr.startsWith(WPS_SUCCESS_STR)) {
+            if (eventStr.startsWith(WPS_SUCCESS_STR)) {
                 sendMessage(iface, WPS_SUCCESS_EVENT);
             } else if (eventStr.startsWith(WPS_FAIL_STR)) {
                 handleWpsFailEvent(eventStr, iface);
@@ -991,9 +988,18 @@ public class WifiMonitor {
             if (!match.find()) {
                 if (DBG) Log.d(TAG, "Assoc Reject: Could not parse assoc reject string");
             } else {
-                BSSID = match.group(1);
+                int groupNumber = match.groupCount();
+                int statusGroupNumber = -1;
+                if (groupNumber == 2) {
+                    BSSID = match.group(1);
+                    statusGroupNumber = 2;
+                } else {
+                    // Under such case Supplicant does not report BSSID
+                    BSSID = null;
+                    statusGroupNumber = 1;
+                }
                 try {
-                    status = Integer.parseInt(match.group(2));
+                    status = Integer.parseInt(match.group(statusGroupNumber));
                 } catch (NumberFormatException e) {
                     status = -1;
                 }
