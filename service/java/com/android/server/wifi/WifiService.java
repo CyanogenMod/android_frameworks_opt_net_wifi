@@ -17,12 +17,8 @@
 package com.android.server.wifi;
 
 import android.content.Context;
-import android.net.wifi.ScanResult;
-import android.net.wifi.WifiScanner;
 import android.util.Log;
 import com.android.server.SystemService;
-
-import java.util.List;
 
 public final class WifiService extends SystemService {
 
