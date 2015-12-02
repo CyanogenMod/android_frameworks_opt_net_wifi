@@ -1119,7 +1119,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mP2pSupported = mContext.getPackageManager().hasSystemFeature(
                 PackageManager.FEATURE_WIFI_DIRECT);
 
-        mWifiNative = new WifiNative(mInterfaceName);
+        mWifiNative = new WifiNative(mInterfaceName, mContext);
         mWifiConfigStore = new WifiConfigStore(context,this,  mWifiNative);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
