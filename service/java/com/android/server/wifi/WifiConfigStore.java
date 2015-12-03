@@ -878,7 +878,7 @@ public class WifiConfigStore extends IpConfigStore {
 
                 // Average the RSSI value
                 result.averageRssi(previousRssi, previousSeen,
-                        WifiAutoJoinController.mScanResultMaximumAge);
+                        WifiAutoJoinController.sScanResultMaximumAge);
                 if (VDBG) {
                     loge("updateConfiguration freq=" + result.frequency
                         + " BSSID=" + result.BSSID
