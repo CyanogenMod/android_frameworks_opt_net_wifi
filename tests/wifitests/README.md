@@ -14,6 +14,15 @@ runtest frameworks-wifi
 `runtest` will build the test project and push the APK to the connected device. It will then run the
 tests on the device. See `runtest --help` for options to specify individual test classes or methods.
 
+**WARNING:** You have to build wifi-service first before you run runtest for changes there to take
+effect. You can use the following command from your build root to build the wifi service and run
+tests.
+
+```
+mmm frameworks/opt/net/wifi/service && runtest frameworks-wifi
+```
+
+
 If you manually build and push the APK to the device you can run tests using
 
 ```
