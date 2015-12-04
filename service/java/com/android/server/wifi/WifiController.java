@@ -40,6 +40,7 @@ import android.os.WorkSource;
 import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 import android.util.Slog;
 
 import android.widget.Toast;
@@ -615,30 +616,54 @@ class WifiController extends StateMachine {
             mSubListener = new SubscriptionManager.OnSubscriptionsChangedListener() {
                     boolean firstChange = true;
                     SubscriptionInfo lastSub;
+                    String lastSubscriberId;
+
                     @Override
                     public void onSubscriptionsChanged() {
+                        TelephonyManager tm = (TelephonyManager)
+                            mContext.getSystemService(Context.TELEPHONY_SERVICE);
                         final SubscriptionInfo currentSub = SubscriptionManager.from(mContext)
                                 .getDefaultDataSubscriptionInfo();
-                        if (firstChange) {
-                            lastSub = currentSub;
-                            // we always get a state change on registration.
-                            firstChange = false;
-                            return;
-                        }
+
                         if (currentSub == null) {
                             // don't disable when we're not sure yet.
                             return;
                         }
-                        if (lastSub != null && currentSub.getSubscriptionId()
-                                == lastSub.getSubscriptionId()) {
+
+                        String currentSubscriberId =
+                            tm.getSubscriberId(currentSub.getSubscriptionId());
+
+                        if (currentSubscriberId == null) {
+                            // don't disable when we're not sure yet.
+                            return;
+                        }
+
+                        if (firstChange) {
+                            lastSub = currentSub;
+                            lastSubscriberId = currentSubscriberId;
+                            // we always get a state change on registration.
+                            firstChange = false;
+                            return;
+                        }
+
+                        // SubscriptionInfo#getSubscriptionId() returns a
+                        // framework handle and is not an IMSI. Don't use it to
+                        // determine if the sub changed.
+                        //
+                        // TelephonyManager#getSubscriberId() returns the IMSI,
+                        // so use that instead
+                        if (currentSubscriberId.equals(lastSubscriberId)) {
                             // don't disable if it's the same subscription
                             return;
                         }
+
                         lastSub = currentSub;
+                        lastSubscriberId = currentSubscriberId;
+
                         Toast.makeText(mContext,
                                 com.android.internal.R.string.subscription_change_disabled_wifi_ap,
                                 Toast.LENGTH_SHORT).show();
-                        log("disabling Wifi AP due to Subscription change");
+                        log("disabling Wifi AP due to Subscriber Id (IMSI) change");
                         WifiController.this.obtainMessage(CMD_SET_AP, 0, 0, null).sendToTarget();
                     }
             };
