@@ -216,6 +216,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private boolean mIsWiFiIpReachabilityEnabled ;
 
+    private int mCurrentAssociateNetworkId = -1;
+
     /* Chipset supports background scan */
     private final boolean mBackgroundScanSupported;
 
@@ -1398,7 +1400,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     PendingIntent getPrivateBroadcast(String action, int requestCode) {
         Intent intent = new Intent(action, null);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-        //intent.setPackage(this.getClass().getPackage().getName());
+        // TODO: Find the correct value so this is not hard coded
         intent.setPackage("android");
         return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
     }
@@ -1947,6 +1949,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     // If workSource is not null, blame is given to it, otherwise blame is given to callingUid.
     private void noteScanStart(int callingUid, WorkSource workSource) {
+        if (lastStartScanTimeStamp != 0) {
+            noteScanEnd();
+        }
         long now = System.currentTimeMillis();
         lastStartScanTimeStamp = now;
         lastScanDuration = 0;
@@ -1981,6 +1986,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private void noteScanEnd() {
+        closeRadioScanStats();
         long now = System.currentTimeMillis();
         if (lastStartScanTimeStamp != 0) {
             lastScanDuration = now - lastStartScanTimeStamp;
@@ -4039,8 +4045,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final String DELIMITER_STR = "====";
     private static final String END_STR = "####";
 
-    int emptyScanResultCount = 0;
-
     // Used for matching BSSID strings, at least one characteer must be a non-zero number
     private static Pattern mNotZero = Pattern.compile("[1-9a-fA-F]");
 
@@ -4100,22 +4104,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (sid == -1) break;
         }
 
-        // Age out scan results, we return all scan results found in the last 12 seconds,
-        // and NOT all scan results since last scan.
-        // ageOutScanResults(12000);
-
         scanResults = scanResultsBuf.toString();
+
         if (TextUtils.isEmpty(scanResults)) {
-            emptyScanResultCount++;
-            if (emptyScanResultCount > 10) {
-                // If we got too many empty scan results, the current scan cache is stale,
-                // hence clear it.
-                mScanResults = new ArrayList<>();
-            }
+            mScanResults = new ArrayList<>();
             return;
         }
-
-        emptyScanResultCount = 0;
 
         mWifiConfigStore.trimANQPCache(false);
 
@@ -4242,7 +4236,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 || state == SupplicantState.GROUP_HANDSHAKE
                 || (/* keep autojoin enabled if user has manually selected a wifi network,
                         so as to make sure we reliably remain connected to this network */
-                mConnectionRequests == 0 && selection == null)) {
+                mConnectionRequests == 0 && selection == null)
+                || mInDelayedStop) {
             // Dont attempt auto-joining again while we are already attempting to join
             // and/or obtaining Ip address
             attemptAutoJoin = false;
@@ -4291,9 +4286,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * Fetch RSSI, linkspeed, and frequency on current connection
      */
     private void fetchRssiLinkSpeedAndFrequencyNative() {
-        int newRssi = -1;
-        int newLinkSpeed = -1;
-        int newFrequency = -1;
+        Integer newRssi = null;
+        Integer newLinkSpeed = null;
+        Integer newFrequency = null;
 
         String signalPoll = mWifiNative.signalPoll();
 
@@ -4317,12 +4312,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         if (PDBG) {
-            logd("fetchRssiLinkSpeedAndFrequencyNative rssi="
-                    + Integer.toString(newRssi) + " linkspeed="
-                    + Integer.toString(newLinkSpeed));
+            logd("fetchRssiLinkSpeedAndFrequencyNative rssi=" + newRssi +
+                 " linkspeed=" + newLinkSpeed + " freq=" + newFrequency);
         }
 
-        if (newRssi > WifiInfo.INVALID_RSSI && newRssi < WifiInfo.MAX_RSSI) {
+        if (newRssi != null && newRssi > WifiInfo.INVALID_RSSI && newRssi < WifiInfo.MAX_RSSI) {
             // screen out invalid values
             /* some implementations avoid negative values by adding 256
              * so we need to adjust for that here.
@@ -4350,10 +4344,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             updateCapabilities(getCurrentWifiConfiguration());
         }
 
-        if (newLinkSpeed != -1) {
+        if (newLinkSpeed != null) {
             mWifiInfo.setLinkSpeed(newLinkSpeed);
         }
-        if (newFrequency > 0) {
+        if (newFrequency != null && newFrequency > 0) {
             if (ScanResult.is5GHz(newFrequency)) {
                 mWifiConnectionStatistics.num5GhzConnected++;
             }
@@ -6256,7 +6250,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case WifiMonitor.SCAN_RESULTS_EVENT:
                 case WifiMonitor.SCAN_FAILED_EVENT:
                     maybeRegisterNetworkFactory(); // Make sure our NetworkFactory is registered
-                    closeRadioScanStats();
                     noteScanEnd();
                     setScanResults();
                     if (mIsFullScanOngoing || mSendScanResultsBroadcast) {
@@ -6639,7 +6632,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     /* send regular delayed shut down */
                     Intent driverStopIntent = new Intent(ACTION_DELAYED_DRIVER_STOP, null);
-                    driverStopIntent.setPackage(mContext.getPackageName());
+                    driverStopIntent.setPackage("android");
                     driverStopIntent.putExtra(DELAYED_STOP_COUNTER, mDelayedStopCounter);
                     mDriverStopIntent = PendingIntent.getBroadcast(mContext,
                             DRIVER_STOP_REQUEST, driverStopIntent,
@@ -6928,6 +6921,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_START_SCAN:
                     handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
                     break;
+                case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
+                    SupplicantState state = handleSupplicantStateChange(message);
+                    if(DBG) log("SupplicantState= " + state);
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -7182,6 +7179,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case WifiMonitor.GAS_QUERY_START_EVENT:
                 s = "WifiMonitor.GAS_QUERY_START_EVENT";
+                break;
+            case WifiMonitor.RSN_PMKID_MISMATCH_EVENT:
+                s =  "WifiMonitor.RSN_PMKID_MISMATCH_EVENT";
                 break;
             case CMD_SET_OPERATIONAL_MODE:
                 s = "CMD_SET_OPERATIONAL_MODE";
@@ -7512,6 +7512,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (state == SupplicantState.COMPLETED) {
                         if (mIpReachabilityMonitor != null) {
                             mIpReachabilityMonitor.probeAll();
+                        }
+                    }
+
+                    if (state == SupplicantState.ASSOCIATED) {
+                        StateChangeResult stateChangeResult = (StateChangeResult) message.obj;
+                        if (stateChangeResult != null) {
+                            mCurrentAssociateNetworkId = stateChangeResult.networkId;
                         }
                     }
                     break;
@@ -9593,9 +9600,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             } else {
                 if (mScreenOn) {
                     /**
-                     * screen lit and => delayed timer
+                     * screen lit and => start scan immediately
                      */
-                    startDelayedScan(500, null, null);
+                    startScan(UNKNOWN_SCAN_SOURCE, 0, null, null);
                 } else {
                     /**
                      * screen dark and PNO supported => scan alarm disabled
@@ -9864,6 +9871,22 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_SCREEN_STATE_CHANGED:
                     handleScreenStateChanged(message.arg1 != 0);
+                    break;
+                case WifiMonitor.RSN_PMKID_MISMATCH_EVENT:
+                    //WAR: In release M, there is a TLS bugs for some radius. M upgrade the TLS to
+                    // 1.2. However,some old radius can not support it. So if possibly disconnected
+                    // due to TLS failure, we will toggler the TLS version between 1.1 and 1.2 for
+                    // next retry connection
+                    int nid = mCurrentAssociateNetworkId;
+                    WifiConfiguration currentNet = mWifiConfigStore.getWifiConfiguration(nid);
+                    if (currentNet != null && currentNet.enterpriseConfig != null) {
+                        currentNet.enterpriseConfig.setTls12Enable(
+                                !currentNet.enterpriseConfig.getTls12Enable());
+                        mWifiConfigStore.saveNetwork(currentNet, WifiConfiguration.UNKNOWN_UID);
+                        Log.e(TAG, "NetWork ID =" + nid + " switch to TLS1.2: " +
+                            currentNet.enterpriseConfig.getTls12Enable());
+                    }
+
                     break;
                 default:
                     ret = NOT_HANDLED;

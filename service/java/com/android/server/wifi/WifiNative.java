@@ -678,6 +678,14 @@ public class WifiNative {
         doBooleanCommand("SCAN_INTERVAL " + scanInterval);
     }
 
+    public void setHs20(boolean hs20) {
+        if (hs20) {
+            doBooleanCommand("SET HS20 1");
+        } else {
+            doBooleanCommand("SET HS20 0");
+        }
+    }
+
     public void startTdls(String macAddr, boolean enable) {
         if (enable) {
             doBooleanCommand("TDLS_DISCOVER " + macAddr);
@@ -1482,8 +1490,8 @@ public class WifiNative {
 
         int secondChanelOffset = 0;
         byte channelMode = 0;
-        byte centerFreqIndex1 = 0;
-        byte centerFreqIndex2 = 0;
+        int centerFreqIndex1 = 0;
+        int centerFreqIndex2 = 0;
 
         boolean is80211McRTTResponder = false;
 
@@ -1506,8 +1514,8 @@ public class WifiNative {
                 secondChanelOffset = bytes[inforStart + 1] & 0x3;
             } else if(type == EID_VHT_OPERATION) {
                 channelMode = bytes[inforStart];
-                centerFreqIndex1 = bytes[inforStart + 1];
-                centerFreqIndex2 = bytes[inforStart + 2];
+                centerFreqIndex1 = bytes[inforStart + 1] & 0xFF;
+                centerFreqIndex2 = bytes[inforStart + 2] & 0xFF;
             } else if (type == EID_EXTENDED_CAPS) {
                 int tempIndex = RTT_RESP_ENABLE_BIT / 8;
                 byte offset = RTT_RESP_ENABLE_BIT % 8;
