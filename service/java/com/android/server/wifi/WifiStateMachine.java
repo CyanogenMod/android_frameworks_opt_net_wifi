@@ -3822,6 +3822,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         if (mWifiNative.setBand(band)) {
             mFrequencyBand.set(band);
+            mWifiConfigStore.setConfiguredBand(band);
+            if (mFrequencyBand.get() == WifiManager.WIFI_FREQUENCY_BAND_2GHZ) {
+                mWifiNative.disable5GHzFrequencies(true);
+                mDisabled5GhzFrequencies = true;
+            } else if ((mFrequencyBand.get() != WifiManager.WIFI_FREQUENCY_BAND_2GHZ)
+                && (mDisabled5GhzFrequencies)) {
+                mWifiNative.disable5GHzFrequencies(false);
+                mDisabled5GhzFrequencies = false;
+            }
             if (PDBG) {
                 logd("done set frequency band " + band);
             }

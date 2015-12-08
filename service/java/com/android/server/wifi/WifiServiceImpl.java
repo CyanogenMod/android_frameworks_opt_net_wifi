@@ -1416,8 +1416,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                         BluetoothAdapter.STATE_DISCONNECTED);
                 mWifiStateMachine.sendBluetoothAdapterStateChange(state);
             } else if (action.equals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED)) {
-                boolean emergencyMode = intent.getBooleanExtra("phoneinECMState", false);
-                mWifiController.sendMessage(CMD_EMERGENCY_MODE_CHANGED, emergencyMode ? 1 : 0, 0);
+                if (mContext.getResources().getBoolean(R.bool.config_wifi_ecbm_mode_change)) {
+                    boolean emergencyMode = intent.getBooleanExtra("phoneinECMState", false);
+                    mWifiController.sendMessage(CMD_EMERGENCY_MODE_CHANGED, emergencyMode ? 1 : 0, 0);
+                }
             } else if (action.equals(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)) {
                 handleIdleModeChanged();
             } else if (action.equals(WifiManager.WIFI_AP_STATE_CHANGED_ACTION)) {
@@ -1467,9 +1469,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         intentFilter.addAction(WifiManager.WIFI_AP_STATE_CHANGED_ACTION);
         intentFilter.addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
         intentFilter.addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED);
-        if(mContext.getResources().getBoolean(R.bool.config_wifi_ecbm_mode_change)) {
-            intentFilter.addAction(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
-        }
+        intentFilter.addAction(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
         mContext.registerReceiver(mReceiver, intentFilter);
     }
 
