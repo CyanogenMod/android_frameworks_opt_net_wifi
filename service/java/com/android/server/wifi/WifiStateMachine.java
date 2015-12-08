@@ -6091,9 +6091,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             transitionTo(mSupplicantStartingState);
                         } else {
                             loge("Failed to start supplicant!");
+                            setWifiState(WifiManager.WIFI_STATE_FAILED);
                         }
                     } else {
                         loge("Failed to load driver");
+                        setWifiState(WifiManager.WIFI_STATE_FAILED);
                     }
                     break;
                 case CMD_START_AP:
