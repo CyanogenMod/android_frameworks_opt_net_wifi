@@ -65,14 +65,13 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.Slog;
 
+import com.android.internal.R;
 import com.android.internal.app.IBatteryStats;
 import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
 import com.android.server.wifi.configparse.ConfigBuilder;
-import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.osu.OSUInfo;
 
 import org.xml.sax.SAXException;
 
@@ -96,8 +95,23 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+
+import com.android.internal.R;
+import com.android.internal.app.IBatteryStats;
+import com.android.internal.telephony.TelephonyIntents;
+import com.android.internal.util.AsyncChannel;
+import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.configparse.ConfigBuilder;
+import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.osu.OSUInfo;
+
+import org.xml.sax.SAXException;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -235,7 +249,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     break;
                 }
                 case WifiManager.FORGET_NETWORK:
-                    if (isAdminUserOrProfile(msg.sendingUid)) {
+                    if (isOwner(msg.sendingUid)) {
                         mWifiStateMachine.sendMessage(Message.obtain(msg));
                     } else {
                         Slog.e(TAG, "Forget is not authorized for user");
@@ -860,7 +874,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public boolean removeNetwork(int netId) {
         enforceChangePermission();
 
-        if (!isAdminUserOrProfile(Binder.getCallingUid())) {
+        if (!isOwner(Binder.getCallingUid())) {
             Slog.e(TAG, "Remove is not authorized for user");
             return false;
         }
@@ -1087,26 +1101,29 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
-     * Returns true if uid is an application running under the admin user or a profile of the admin.
+     * Returns true if uid is an application running under the owner or a profile of the owner.
      *
      * Note: Should not be called if identity is cleared.
      */
-    private boolean isAdminUserOrProfile(int uid) {
+    private boolean isOwner(int uid) {
         long ident = Binder.clearCallingIdentity();
         int userId = UserHandle.getUserId(uid);
         try {
-            if (mUserManager.isUserAdmin(userId)) {
+            int ownerUser = UserHandle.USER_OWNER;
+            if (userId == ownerUser) {
                 return true;
-            } else {
-                UserInfo profileParent = mUserManager.getProfileParent(userId);
-                if (profileParent != null && profileParent.isAdmin()) {
+            }
+            List<UserInfo> profiles = mUserManager.getProfiles(ownerUser);
+            for (UserInfo profile : profiles) {
+                if (userId == profile.id) {
                     return true;
                 }
             }
-        } finally {
+            return false;
+        }
+        finally {
             Binder.restoreCallingIdentity(ident);
         }
-        return false;
     }
 
 
