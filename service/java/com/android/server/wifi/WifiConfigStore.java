@@ -27,6 +27,7 @@ import android.content.pm.PackageManager;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
+import android.net.Network;
 import android.net.NetworkInfo.DetailedState;
 import android.net.ProxyInfo;
 import android.net.StaticIpConfiguration;
@@ -60,6 +61,7 @@ import com.android.internal.R;
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.net.IpConfigStore;
 import com.android.server.wifi.anqp.ANQPElement;
+import com.android.server.wifi.anqp.ANQPFactory;
 import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.hotspot2.ANQPData;
 import com.android.server.wifi.hotspot2.AnqpCache;
@@ -68,6 +70,8 @@ import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.osu.OSUInfo;
+import com.android.server.wifi.hotspot2.osu.OSUManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
@@ -469,7 +473,7 @@ public class WifiConfigStore extends IpConfigStore {
             WifiEnterpriseConfig.CA_CERT_KEY, WifiEnterpriseConfig.SUBJECT_MATCH_KEY,
             WifiEnterpriseConfig.ENGINE_KEY, WifiEnterpriseConfig.ENGINE_ID_KEY,
             WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY, WifiEnterpriseConfig.ALTSUBJECT_MATCH_KEY,
-            WifiEnterpriseConfig.DOM_SUFFIX_MATCH_KEY, WifiEnterpriseConfig.PHASE1_KEY
+            WifiEnterpriseConfig.DOM_SUFFIX_MATCH_KEY
     };
 
 
@@ -525,6 +529,7 @@ public class WifiConfigStore extends IpConfigStore {
     private final SupplicantBridge mSupplicantBridge;
     private final MOManager mMOManager;
     private final SIMAccessor mSIMAccessor;
+    private final OSUManager mOSUManager;
 
     private WifiStateMachine mWifiStateMachine;
 
@@ -678,12 +683,16 @@ public class WifiConfigStore extends IpConfigStore {
         mAnqpCache = new AnqpCache();
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap<>();
+        mOSUManager = new OSUManager(this, mContext, mSupplicantBridge, mMOManager, mWifiStateMachine);
 
         mSIMAccessor = new SIMAccessor(mContext);
+
+        //mOSUManager.addMockOSUEnvironment(mOSUManager);     // !!! Uncomment to enable HS2.0r2
     }
 
     public void trimANQPCache(boolean all) {
         mAnqpCache.clear(all, DBG);
+        mOSUManager.tickleIconCache(all);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -773,7 +782,7 @@ public class WifiConfigStore extends IpConfigStore {
      * Fetch the list of currently configured networks
      * @return List of networks
      */
-    List<WifiConfiguration> getConfiguredNetworks() {
+    public List<WifiConfiguration> getConfiguredNetworks() {
         return getConfiguredNetworks(null);
     }
 
@@ -869,7 +878,7 @@ public class WifiConfigStore extends IpConfigStore {
 
                 // Average the RSSI value
                 result.averageRssi(previousRssi, previousSeen,
-                        WifiAutoJoinController.mScanResultMaximumAge);
+                        WifiAutoJoinController.sScanResultMaximumAge);
                 if (VDBG) {
                     loge("updateConfiguration freq=" + result.frequency
                         + " BSSID=" + result.BSSID
@@ -1325,7 +1334,7 @@ public class WifiConfigStore extends IpConfigStore {
             // that has an RSSI too low for us to attempt joining it.
             int threshold = thresholdInitialAutoJoinAttemptMin24RSSI.get();
             Log.e(TAG, "found sortedWifiConfigurations : " + config.configKey());
-            WifiNative.WifiPnoNetwork network = mWifiNative.new WifiPnoNetwork(config, threshold);
+            WifiNative.WifiPnoNetwork network = new WifiNative.WifiPnoNetwork(config, threshold);
             mCachedPnoList.add(network);
         }
     }
@@ -1346,7 +1355,6 @@ public class WifiConfigStore extends IpConfigStore {
             return null;
         }
         for (String configKey : config.linkedConfigurations.keySet()) {
-
             // Sanity check that the linked configuration is still valid
             WifiConfiguration link = getWifiConfiguration(configKey);
             if (link == null) {
@@ -1792,7 +1800,7 @@ public class WifiConfigStore extends IpConfigStore {
         mLastPriority = 0;
 
         mConfiguredNetworks.clear();
-        List<WifiConfiguration> configTlsResetList = new ArrayList<WifiConfiguration>();
+
         int last_id = -1;
         boolean done = false;
         while (!done) {
@@ -1851,23 +1859,27 @@ public class WifiConfigStore extends IpConfigStore {
                 config.setIpAssignment(IpAssignment.DHCP);
                 config.setProxySettings(ProxySettings.NONE);
 
-                if (mConfiguredNetworks.getByConfigKey(config.configKey()) != null) {
+                WifiConfiguration possibleOldConfig =
+                        mConfiguredNetworks.getByConfigKey(config.configKey());
+                if (possibleOldConfig != null) {
                     // That SSID is already known, just ignore this duplicate entry
-                    if (showNetworks) localLog("discarded duplicate network ", config.networkId);
+                    if (showNetworks) {
+                        localLog("update duplicate network " + possibleOldConfig.networkId + " with "
+                                + config.networkId);
+                    }                    
+                    // This can happen after the user manually connected to an AP and try to use WPS
+                    // to connect the AP later.In this way, supplicant will create a new network for
+                    // the AP although there is an existing network already.
+                    mWifiNative.removeNetwork(possibleOldConfig.networkId);
+                    mConfiguredNetworks.remove(possibleOldConfig.networkId);
+                    mConfiguredNetworks.put(config.networkId, config);
+
                 } else if(WifiServiceImpl.isValid(config)){
                     mConfiguredNetworks.put(config.networkId, config);
                     if (showNetworks) localLog("loaded configured network", config.networkId);
                 } else {
                     if (showNetworks) log("Ignoring loaded configured for network " + config.networkId
                         + " because config are not valid");
-                }
-
-                if (config != null && config.enterpriseConfig != null &&
-                        config.enterpriseConfig.getEapMethod() < WifiEnterpriseConfig.Eap.PWD) {
-                    if (!config.enterpriseConfig.getTls12Enable()) {
-                        //re-enable the TLS1.2 every time when load the network
-                        configTlsResetList.add(config);
-                    }
                 }
             }
 
@@ -1891,12 +1903,6 @@ public class WifiConfigStore extends IpConfigStore {
             logContents(SUPPLICANT_CONFIG_FILE);
             logContents(SUPPLICANT_CONFIG_FILE_BACKUP);
             logContents(networkHistoryConfigFile);
-        }
-
-        //reset TLS default to 1.2
-        for (WifiConfiguration config : configTlsResetList) {
-            config.enterpriseConfig.setTls12Enable(true);
-            addOrUpdateNetwork(config, WifiConfiguration.UNKNOWN_UID);
         }
     }
 
@@ -2044,10 +2050,10 @@ public class WifiConfigStore extends IpConfigStore {
             public void onWriteCalled(DataOutputStream out) throws IOException {
                 try {
                     if (homeSP != null) {
-                        mMOManager.addSP(homeSP);
+                        mMOManager.addSP(homeSP, mOSUManager);
                     }
                     else {
-                        mMOManager.removeSP(fqdn);
+                        mMOManager.removeSP(fqdn, mOSUManager);
                     }
                 } catch (IOException e) {
                     loge("Could not write " + PPS_FILE + " : " + e);
@@ -2258,7 +2264,7 @@ public class WifiConfigStore extends IpConfigStore {
         });
     }
 
-    public void setLastSelectedConfiguration(int netId) {
+    public void setAndEnableLastSelectedConfiguration(int netId) {
         if (VDBG) {
             loge("setLastSelectedConfiguration " + Integer.toString(netId));
         }
@@ -2270,6 +2276,10 @@ public class WifiConfigStore extends IpConfigStore {
                 lastSelectedConfiguration = null;
             } else {
                 lastSelectedConfiguration = selected.configKey();
+                if (selected.status == Status.DISABLED) {
+                    mWifiNative.enableNetwork(netId, false);
+                }
+                selected.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
                 selected.numConnectionFailures = 0;
                 selected.numIpConfigFailures = 0;
                 selected.numAuthFailures = 0;
@@ -2631,6 +2641,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         int netId = config.networkId;
         boolean newNetwork = false;
+        boolean existingMO = false;
         // networkId of INVALID_NETWORK_ID means we want to create a new network
         if (netId == INVALID_NETWORK_ID) {
             WifiConfiguration savedConfig = mConfiguredNetworks.getByConfigKey(config.configKey());
@@ -2640,6 +2651,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (mMOManager.getHomeSP(config.FQDN) != null) {
                     loge("addOrUpdateNetworkNative passpoint " + config.FQDN
                             + " was found, but no network Id");
+                    existingMO = true;
                 }
                 newNetwork = true;
                 netId = mWifiNative.addNetwork();
@@ -2935,7 +2947,7 @@ public class WifiConfigStore extends IpConfigStore {
         /* save HomeSP object for passpoint networks */
         HomeSP homeSP = null;
 
-        if (config.isPasspoint()) {
+        if (!existingMO && config.isPasspoint()) {
             try {
                 Credential credential =
                         new Credential(config.enterpriseConfig, mKeyStore, !newNetwork);
@@ -3042,7 +3054,7 @@ public class WifiConfigStore extends IpConfigStore {
         return config;
     }
 
-    private HomeSP getHomeSPForConfig(WifiConfiguration config) {
+    public HomeSP getHomeSPForConfig(WifiConfiguration config) {
         WifiConfiguration storedConfig = mConfiguredNetworks.get(config.networkId);
         return storedConfig != null && storedConfig.isPasspoint() ?
                 mMOManager.getHomeSP(storedConfig.FQDN) : null;
@@ -3260,6 +3272,21 @@ public class WifiConfigStore extends IpConfigStore {
 
     private Map<HomeSP, PasspointMatch> matchPasspointNetworks(ScanDetail scanDetail) {
         if (!mMOManager.isConfigured()) {
+            if (mOSUManager.enableOSUQueries()) {
+                NetworkDetail networkDetail = scanDetail.getNetworkDetail();
+                List<Constants.ANQPElementType> querySet =
+                        ANQPFactory.buildQueryList(networkDetail, false, true);
+
+                if (networkDetail.queriable(querySet)) {
+                    querySet = mAnqpCache.initiate(networkDetail, querySet);
+                    if (querySet != null) {
+                        if (mSupplicantBridge.startANQP(scanDetail, querySet)) {
+                            mOSUManager.anqpInitiated(scanDetail);
+                        }
+                    }
+                    updateAnqpCache(scanDetail, networkDetail.getANQPElements());
+                }
+            }
             return null;
         }
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();
@@ -3295,9 +3322,18 @@ public class WifiConfigStore extends IpConfigStore {
             Log.d(Utils.hs2LogTag(getClass()), " -- " +
                     homeSP.getFQDN() + ": match " + match + ", queried " + queried);
 
-            if (match == PasspointMatch.Incomplete && !queried) {
-                if (mAnqpCache.initiate(networkDetail)) {
-                    mSupplicantBridge.startANQP(scanDetail);
+            if ((match == PasspointMatch.Incomplete || mOSUManager.enableOSUQueries()) && !queried) {
+                boolean matchSet = match == PasspointMatch.Incomplete;
+                boolean osu = mOSUManager.enableOSUQueries();
+                List<Constants.ANQPElementType> querySet =
+                        ANQPFactory.buildQueryList(networkDetail, matchSet, osu);
+                if (networkDetail.queriable(querySet)) {
+                    querySet = mAnqpCache.initiate(networkDetail, querySet);
+                    if (querySet != null) {
+                        if (mSupplicantBridge.startANQP(scanDetail, querySet)) {
+                            mOSUManager.anqpInitiated(scanDetail);
+                        }
+                    }
                 }
                 queried = true;
             }
@@ -3306,13 +3342,47 @@ public class WifiConfigStore extends IpConfigStore {
         return matches;
     }
 
+    public Map<Constants.ANQPElementType, ANQPElement> getANQPData(NetworkDetail network) {
+        ANQPData data = mAnqpCache.getEntry(network);
+        return data != null ? data.getANQPElements() : null;
+    }
+
+    public SIMAccessor getSIMAccessor() {
+        return mSIMAccessor;
+    }
+
+    public void notifyScanComplete() {
+        mOSUManager.scanComplete();
+    }
+
+    public boolean isOSUNetwork(WifiConfiguration config) {
+        return mOSUManager.isOSU(Utils.unquote(config.SSID));
+    }
+
+    public void setOSUSelection(int osuID) {
+        mOSUManager.setOSUSelection(osuID);
+    }
+
     public void notifyANQPDone(Long bssid, boolean success) {
         mSupplicantBridge.notifyANQPDone(bssid, success);
     }
 
-    public void notifyANQPResponse(ScanDetail scanDetail,
-                                   Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
+    public void notifyIconReceived(long bssid, byte[] iconData) {
+        mOSUManager.notifyIconReceived(bssid, iconData);
+    }
 
+    public void wnmFrameReceived(String event) {
+        mOSUManager.wnmReceived(event);
+    }
+
+    public Collection<OSUInfo> getOSUInfos() {
+        return mOSUManager.getAvailableOSUs();
+    }
+
+    public void notifyANQPResponse(ScanDetail scanDetail,
+                               Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
+
+        mOSUManager.anqpDone(scanDetail, anqpElements);
         updateAnqpCache(scanDetail, anqpElements);
         if (anqpElements == null || anqpElements.isEmpty()) {
             return;
@@ -3325,7 +3395,6 @@ public class WifiConfigStore extends IpConfigStore {
 
         cacheScanResultForPasspointConfigs(scanDetail, matches);
     }
-
 
     private void updateAnqpCache(ScanDetail scanDetail,
                                  Map<Constants.ANQPElementType,ANQPElement> anqpElements)
@@ -3460,6 +3529,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         if (networkDetail.hasInterworking()) {
             Map<HomeSP, PasspointMatch> matches = matchPasspointNetworks(scanDetail);
+            mOSUManager.addScanResult(scanDetail.getNetworkDetail());
             if (matches != null) {
                 cacheScanResultForPasspointConfigs(scanDetail, matches);
                 return matches.size() != 0;

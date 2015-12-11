@@ -24,7 +24,7 @@ import com.android.server.SystemService;
 
 public class WifiScanningService extends SystemService {
 
-    private static final String TAG = "WifiScanningService";
+    static final String TAG = "WifiScanningService";
     WifiScanningServiceImpl mImpl;
 
     public WifiScanningService(Context context) {
@@ -47,7 +47,7 @@ public class WifiScanningService extends SystemService {
             if (mImpl == null) {
                 mImpl = new WifiScanningServiceImpl(getContext());
             }
-            mImpl.startService(getContext());
+            mImpl.startService();
         }
     }
 }

@@ -17,7 +17,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.ProtocolException;
-import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.CharBuffer;
@@ -80,19 +79,30 @@ public class SupplicantBridge {
         return elements;
     }
 
-    public void startANQP(ScanDetail scanDetail) {
-        String anqpGet = buildWPSQueryRequest(scanDetail.getNetworkDetail());
+    public boolean startANQP(ScanDetail scanDetail, List<Constants.ANQPElementType> elements) {
+        String anqpGet = buildWPSQueryRequest(scanDetail.getNetworkDetail(), elements);
+        if (anqpGet == null) {
+            return false;
+        }
         synchronized (mRequestMap) {
             mRequestMap.put(scanDetail.getNetworkDetail().getBSSID(), scanDetail);
         }
-        String result = mSupplicantHook.doCustomCommand(anqpGet);
+        String result = mSupplicantHook.doCustomSupplicantCommand(anqpGet);
         if (result != null && result.startsWith("OK")) {
-            Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail);
+            Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail + " (" + anqpGet + ")");
+            return true;
         }
         else {
             Log.d(Utils.hs2LogTag(getClass()), "ANQP failed on " +
                     scanDetail + ": " + result);
+            return false;
         }
+    }
+
+    public boolean doIconQuery(long bssid, String fileName) {
+        String result = mSupplicantHook.doCustomSupplicantCommand("HS20_ICON_REQUEST " +
+                Utils.macToString(bssid) + " " + fileName);
+        return result != null && result.startsWith("OK");
     }
 
     public void notifyANQPDone(Long bssid, boolean success) {
@@ -100,9 +110,11 @@ public class SupplicantBridge {
         synchronized (mRequestMap) {
             scanDetail = mRequestMap.remove(bssid);
         }
+
         if (scanDetail == null) {
-            Log.d(Utils.hs2LogTag(getClass()), String.format("Spurious %s ANQP response for %012x",
-                            success ? "successful" : "failed", bssid));
+            if (!success) {
+                mConfigStore.notifyIconReceived(bssid, null);
+            }
             return;
         }
 
@@ -123,71 +135,6 @@ public class SupplicantBridge {
         }
         mConfigStore.notifyANQPResponse(scanDetail, null);
     }
-
-    /*
-    public boolean addCredential(HomeSP homeSP, NetworkDetail networkDetail) {
-        Credential credential = homeSP.getCredential();
-        if (credential == null)
-            return false;
-
-        String nwkID = null;
-        if (mLastSSID != null) {
-            String nwkList = mSupplicantHook.doCustomCommand("LIST_NETWORKS");
-
-            BufferedReader reader = new BufferedReader(new StringReader(nwkList));
-            String line;
-            try {
-                while ((line = reader.readLine()) != null) {
-                    String[] tokens = line.split("\\t");
-                    if (tokens.length < 2 || ! Utils.isDecimal(tokens[0])) {
-                        continue;
-                    }
-                    if (unescapeSSID(tokens[1]).equals(mLastSSID)) {
-                        nwkID = tokens[0];
-                        Log.d("HS2J", "Network " + tokens[0] +
-                                " matches last SSID '" + mLastSSID + "'");
-                        break;
-                    }
-                }
-            }
-            catch (IOException ioe) {
-                //
-            }
-        }
-
-        if (nwkID == null) {
-            nwkID = mSupplicantHook.doCustomCommand("ADD_NETWORK");
-            Log.d("HS2J", "add_network: '" + nwkID + "'");
-            if (! Utils.isDecimal(nwkID)) {
-                return false;
-            }
-        }
-
-        List<String> credCommand = getWPSNetCommands(nwkID, networkDetail, credential);
-        for (String command : credCommand) {
-            String status = mSupplicantHook.doCustomCommand(command);
-            Log.d("HS2J", "Status of '" + command + "': '" + status + "'");
-        }
-
-        if (! networkDetail.getSSID().equals(mLastSSID)) {
-            mLastSSID = networkDetail.getSSID();
-            PrintWriter out = null;
-            try {
-                out = new PrintWriter(new OutputStreamWriter(
-                        new FileOutputStream(mLastSSIDFile, false), StandardCharsets.UTF_8));
-                out.println(mLastSSID);
-            } catch (IOException ioe) {
-            //
-            } finally {
-                if (out != null) {
-                    out.close();
-                }
-            }
-        }
-
-        return true;
-    }
-    */
 
     private static String escapeSSID(NetworkDetail networkDetail) {
         return escapeString(networkDetail.getSSID(), networkDetail.isSSID_UTF8());
@@ -217,29 +164,110 @@ public class SupplicantBridge {
         }
     }
 
-    private static String buildWPSQueryRequest(NetworkDetail networkDetail) {
+    /**
+     * Build a wpa_supplicant ANQP query command
+     * @param networkDetail The network to query.
+     * @param querySet elements to query
+     * @return A command string.
+     */
+    private static String buildWPSQueryRequest(NetworkDetail networkDetail,
+                                               List<Constants.ANQPElementType> querySet) {
+
+        boolean baseANQPElements = Constants.hasBaseANQPElements(querySet);
         StringBuilder sb = new StringBuilder();
-        sb.append("ANQP_GET ").append(networkDetail.getBSSIDString()).append(' ');
+        if (baseANQPElements) {
+            sb.append("ANQP_GET ");
+        }
+        else {
+            sb.append("HS20_ANQP_GET ");     // ANQP_GET does not work for a sole hs20:8 (OSU) query
+        }
+        sb.append(networkDetail.getBSSIDString()).append(' ');
 
         boolean first = true;
-        for (Constants.ANQPElementType elementType : ANQPFactory.getBaseANQPSet()) {
-            if (networkDetail.getAnqpOICount() == 0 &&
-                    elementType == Constants.ANQPElementType.ANQPRoamingConsortium) {
-                continue;
-            }
+        for (Constants.ANQPElementType elementType : querySet) {
             if (first) {
                 first = false;
             }
             else {
                 sb.append(',');
             }
-            sb.append(Constants.getANQPElementID(elementType));
-        }
-        if (networkDetail.getHSRelease() != null) {
-            for (Constants.ANQPElementType elementType : ANQPFactory.getHS20ANQPSet()) {
-                sb.append(",hs20:").append(Constants.getHS20ElementID(elementType));
+
+            Integer id = Constants.getANQPElementID(elementType);
+            if (id != null) {
+                sb.append(id);
+            }
+            else {
+                id = Constants.getHS20ElementID(elementType);
+                if (baseANQPElements) {
+                    sb.append("hs20:");
+                }
+                sb.append(id);
             }
         }
+
+        return sb.toString();
+    }
+
+    /**
+     * Build a wpa_supplicant ANQP query command
+     * @param networkDetail The network to query.
+     * @param matchSet Add ANQP elements necessary for SP matching.
+     * @param osu Add the OSU Provider list element.
+     * @return A command string.
+     */
+    private static String buildWPSQueryRequest(NetworkDetail networkDetail,
+                                               boolean matchSet, boolean osu) {
+        List<Constants.ANQPElementType> querySet = new ArrayList<>();
+
+        if (matchSet) {
+            querySet.addAll(ANQPFactory.getBaseANQPSet(networkDetail.getAnqpOICount() > 0));
+        }
+
+        if (networkDetail.getHSRelease() != null) {
+            boolean includeOSU = osu && networkDetail.getHSRelease() == NetworkDetail.HSRelease.R2;
+            if (matchSet) {
+                querySet.addAll(ANQPFactory.getHS20ANQPSet(includeOSU));
+            }
+            else if (includeOSU) {
+                querySet.add(Constants.ANQPElementType.HSOSUProviders);
+            }
+        }
+
+        if (querySet.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        if (matchSet) {
+            sb.append("ANQP_GET ");
+        }
+        else {
+            sb.append("HS20_ANQP_GET ");     // ANQP_GET does not work for a sole hs20:8 (OSU) query
+        }
+        sb.append(networkDetail.getBSSIDString()).append(' ');
+
+        boolean first = true;
+        for (Constants.ANQPElementType elementType : querySet) {
+            if (first) {
+                first = false;
+            }
+            else {
+                sb.append(',');
+            }
+
+            Integer id = Constants.getANQPElementID(elementType);
+            if (id != null) {
+                sb.append(id);
+            }
+            else {
+                id = Constants.getHS20ElementID(elementType);
+                if (matchSet) {
+                    sb.append("hs20:");
+                }
+                sb.append(id);
+            }
+        }
+
         return sb.toString();
     }
 

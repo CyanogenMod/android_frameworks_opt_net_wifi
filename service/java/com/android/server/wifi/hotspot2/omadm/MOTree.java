@@ -1,7 +1,5 @@
 package com.android.server.wifi.hotspot2.omadm;
 
-import android.util.Log;
-
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
@@ -13,13 +11,13 @@ import java.util.*;
 public class MOTree {
     public static final String MgmtTreeTag = "MgmtTree";
 
-    private static final String NodeTag = "Node";
-    private static final String NodeNameTag = "NodeName";
-    private static final String PathTag = "Path";
-    private static final String ValueTag = "Value";
-    private static final String RTPropTag = "RTProperties";
-    private static final String TypeTag = "Type";
-    private static final String DDFNameTag = "DDFName";
+    public static final String NodeTag = "Node";
+    public static final String NodeNameTag = "NodeName";
+    public static final String PathTag = "Path";
+    public static final String ValueTag = "Value";
+    public static final String RTPropTag = "RTProperties";
+    public static final String TypeTag = "Type";
+    public static final String DDFNameTag = "DDFName";
 
     private final String mUrn;
     private final String mDtdRev;
@@ -49,10 +47,40 @@ public class MOTree {
         }
     }
 
-    public MOTree(String urn, String rev, OMAConstructed root) {
+    public MOTree(String urn, String rev, OMAConstructed root) throws IOException {
         mUrn = urn;
         mDtdRev = rev;
         mRoot = root;
+    }
+
+    public static MOTree buildMgmtTree(String urn, String rev, OMAConstructed root) throws IOException {
+        OMAConstructed realRoot;
+        switch (urn) {
+            case OMAConstants.PPS_URN:
+                realRoot = new OMAConstructed(null, MgmtTreeTag, urn, "xmlns", OMAConstants.SyncML);
+                OMAConstructed pps = (OMAConstructed) realRoot.addChild(MOManager.TAG_PerProviderSubscription, urn, null, null);
+                pps.addChild(root);
+                return new MOTree(urn, rev, realRoot);
+            case OMAConstants.DevInfoURN:
+            case OMAConstants.DevDetailURN:
+            case OMAConstants.DevDetailXURN:
+                realRoot = new OMAConstructed(null, MgmtTreeTag, urn, "xmlns", OMAConstants.SyncML);
+                realRoot.addChild(root);
+                return new MOTree(urn, rev, realRoot);
+            default:
+                return new MOTree(urn, rev, root);
+        }
+    }
+
+    public static boolean hasMgmtTreeTag(String text) {
+        for (int n = 0; n < text.length(); n++) {
+            char ch = text.charAt(n);
+            if (ch > ' ') {
+                return text.regionMatches(true, n, '<' + MgmtTreeTag + '>',
+                        0, MgmtTreeTag.length() + 2);
+            }
+        }
+        return false;
     }
 
     private static class NodeData {
@@ -89,49 +117,55 @@ public class MOTree {
         if (!node.getTag().equals(NodeTag))
             throw new IOException("Node is a '" + node.getTag() + "' instead of a 'Node'");
 
-        Map<String, XMLNode> checkMap = new HashMap<String, XMLNode>(3);
+        Map<String, XMLNode> checkMap = new HashMap<>(3);
         String context = null;
-        List<NodeData> values = new ArrayList<NodeData>();
-        List<XMLNode> children = new ArrayList<XMLNode>();
+        List<NodeData> values = new ArrayList<>();
+        List<XMLNode> children = new ArrayList<>();
 
         NodeData curValue = null;
 
         for (XMLNode child : node.getChildren()) {
             XMLNode old = checkMap.put(child.getTag(), child);
 
-            if (child.getTag().equals(NodeNameTag)) {
-                if (curValue != null)
-                    throw new IOException(NodeNameTag + " not expected");
-                curValue = new NodeData(child.getText());
+            switch (child.getTag()) {
+                case NodeNameTag:
+                    if (curValue != null)
+                        throw new IOException(NodeNameTag + " not expected");
+                    curValue = new NodeData(child.getText());
 
-            } else if (child.getTag().equals(PathTag)) {
-                if (curValue == null || curValue.getPath() != null)
-                    throw new IOException(PathTag + " not expected");
-                curValue.setPath(child.getText());
+                    break;
+                case PathTag:
+                    if (curValue == null || curValue.getPath() != null)
+                        throw new IOException(PathTag + " not expected");
+                    curValue.setPath(child.getText());
 
-            } else if (child.getTag().equals(ValueTag)) {
-                if (!children.isEmpty())
-                    throw new IOException(ValueTag + " in constructed node");
-                if (curValue == null || curValue.getValue() != null)
-                    throw new IOException(ValueTag + " not expected");
-                curValue.setValue(child.getText());
-                values.add(curValue);
-                curValue = null;
+                    break;
+                case ValueTag:
+                    if (!children.isEmpty())
+                        throw new IOException(ValueTag + " in constructed node");
+                    if (curValue == null || curValue.getValue() != null)
+                        throw new IOException(ValueTag + " not expected");
+                    curValue.setValue(child.getText());
+                    values.add(curValue);
+                    curValue = null;
 
-            } else if (child.getTag().equals(RTPropTag)) {
-                if (old != null)
-                    throw new IOException("Duplicate " + RTPropTag);
-                XMLNode typeNode = getNextNode(child, TypeTag);
-                XMLNode ddfName = getNextNode(typeNode, DDFNameTag);
-                context = ddfName.getText();
-                if (context == null)
-                    throw new IOException("No text in " + DDFNameTag);
+                    break;
+                case RTPropTag:
+                    if (old != null)
+                        throw new IOException("Duplicate " + RTPropTag);
+                    XMLNode typeNode = getNextNode(child, TypeTag);
+                    XMLNode ddfName = getNextNode(typeNode, DDFNameTag);
+                    context = ddfName.getText();
+                    if (context == null)
+                        throw new IOException("No text in " + DDFNameTag);
 
-            } else if (child.getTag().equals(NodeTag)) {
-                if (!values.isEmpty())
-                    throw new IOException("Scalar node " + node.getText() + " has Node child");
-                children.add(child);
+                    break;
+                case NodeTag:
+                    if (!values.isEmpty())
+                        throw new IOException("Scalar node " + node.getText() + " has Node child");
+                    children.add(child);
 
+                    break;
             }
         }
 
@@ -220,5 +254,15 @@ public class MOTree {
         OMAConstructed root = OMANode.unmarshal(in);
 
         return new MOTree(urn, version, root);
+    }
+
+    public String toXml() {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append('<').append(MgmtTreeTag).append(">\n");
+        sb.append("<VerDTD>").append(mDtdRev).append("</VerDTD>\n");
+        mRoot.toXml(sb);
+        sb.append("</").append(MgmtTreeTag).append(">\n");
+        return sb.toString();
     }
 }

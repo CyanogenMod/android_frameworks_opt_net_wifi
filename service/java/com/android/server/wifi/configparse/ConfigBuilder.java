@@ -4,8 +4,6 @@ import android.content.Context;
 import android.net.Uri;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiEnterpriseConfig;
-import android.telephony.SubscriptionManager;
-import android.telephony.TelephonyManager;
 import android.util.Base64;
 import android.util.Log;
 
@@ -77,14 +75,14 @@ public class ConfigBuilder {
         else {
             inner = mimeContainer;
         }
-        return parse(inner, context);
+        return parse(inner);
     }
 
     private static void dropFile(Uri uri, Context context) {
         context.getContentResolver().delete(uri, null, null);
     }
 
-    private static WifiConfiguration parse(MIMEContainer root, Context context)
+    private static WifiConfiguration parse(MIMEContainer root)
             throws IOException, GeneralSecurityException, SAXException {
 
         if (root.getMimeContainers() == null) {
@@ -161,15 +159,15 @@ public class ConfigBuilder {
             throw new IOException("Missing profile");
         }
 
-        return buildConfig(moText, caCert, clientChain, clientKey, context);
+        HomeSP homeSP = MOManager.buildSP(moText);
+
+        return buildConfig(homeSP, caCert, clientChain, clientKey);
     }
 
-    private static WifiConfiguration buildConfig(String text, X509Certificate caCert,
-                                                 List<X509Certificate> clientChain, PrivateKey key,
-                                                 Context context)
-            throws IOException, SAXException, GeneralSecurityException {
+    public static WifiConfiguration buildConfig(HomeSP homeSP, X509Certificate caCert,
+                                                 List<X509Certificate> clientChain, PrivateKey key)
+            throws IOException, GeneralSecurityException {
 
-        HomeSP homeSP = MOManager.buildSP(text);
         Credential credential = homeSP.getCredential();
 
         WifiConfiguration config;
@@ -192,7 +190,7 @@ public class ConfigBuilder {
                     Log.i(TAG, "Client/CA cert and/or key included with " +
                             eapMethodID + " profile");
                 }
-                config = buildSIMConfig(homeSP, context);
+                config = buildSIMConfig(homeSP);
                 break;
             default:
                 throw new IOException("Unsupported EAP Method: " + eapMethodID);
@@ -202,7 +200,6 @@ public class ConfigBuilder {
 
         enterpriseConfig.setCaCertificate(caCert);
         enterpriseConfig.setAnonymousIdentity("anonymous@" + credential.getRealm());
-        enterpriseConfig.setRealm(credential.getRealm());
 
         return config;
     }
@@ -298,7 +295,7 @@ public class ConfigBuilder {
         return config;
     }
 
-    private static WifiConfiguration buildSIMConfig(HomeSP homeSP, Context context)
+    private static WifiConfiguration buildSIMConfig(HomeSP homeSP)
             throws IOException {
 
         Credential credential = homeSP.getCredential();

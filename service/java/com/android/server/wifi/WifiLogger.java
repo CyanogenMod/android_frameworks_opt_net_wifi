@@ -87,19 +87,21 @@ class WifiLogger extends DummyWifiLogger  {
     private WifiNative.RingBufferStatus[] mRingBuffers;
     private WifiNative.RingBufferStatus mPerPacketRingBuffer;
     private WifiStateMachine mWifiStateMachine;
+    private final WifiNative mWifiNative;
 
     public WifiLogger(WifiStateMachine wifiStateMachine) {
         mWifiStateMachine = wifiStateMachine;
+        mWifiNative = WifiNative.getWlanNativeInterface();
     }
 
     @Override
     public synchronized void startLogging(boolean verboseEnabled) {
-        mFirmwareVersion = WifiNative.getFirmwareVersion();
-        mDriverVersion = WifiNative.getDriverVersion();
-        mSupportedFeatureSet = WifiNative.getSupportedLoggerFeatureSet();
+        mFirmwareVersion = mWifiNative.getFirmwareVersion();
+        mDriverVersion = mWifiNative.getDriverVersion();
+        mSupportedFeatureSet = mWifiNative.getSupportedLoggerFeatureSet();
 
         if (mLogLevel == VERBOSE_NO_LOG)
-            WifiNative.setLoggingEventHandler(mHandler);
+            mWifiNative.setLoggingEventHandler(mHandler);
 
         if (verboseEnabled) {
             mLogLevel = VERBOSE_LOG_WITH_WAKEUP;
@@ -136,7 +138,7 @@ class WifiLogger extends DummyWifiLogger  {
         if (mLogLevel != VERBOSE_NO_LOG) {
             //resetLogHandler only can be used when you terminate all logging since all handler will
             //be removed. This also stop alert logging
-            if(!WifiNative.resetLogHandler()) {
+            if(!mWifiNative.resetLogHandler()) {
                 Log.e(TAG, "Fail to reset log handler");
             } else {
                 if (DBG) Log.d(TAG,"Reset log handler");
@@ -302,7 +304,7 @@ class WifiLogger extends DummyWifiLogger  {
     private boolean fetchRingBuffers() {
         if (mRingBuffers != null) return true;
 
-        mRingBuffers = WifiNative.getRingBufferStatus();
+        mRingBuffers = mWifiNative.getRingBufferStatus();
         if (mRingBuffers != null) {
             for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
                 if (DBG) Log.d(TAG, "RingBufferStatus is: \n" + buffer.name);
@@ -347,7 +349,7 @@ class WifiLogger extends DummyWifiLogger  {
         int minInterval = MinWakeupIntervals[mLogLevel];
         int minDataSize = MinBufferSizes[mLogLevel];
 
-        if (WifiNative.startLoggingRingBuffer(
+        if (mWifiNative.startLoggingRingBuffer(
                 mLogLevel, 0, minInterval, minDataSize, buffer.name) == false) {
             if (DBG) Log.e(TAG, "Could not start logging ring " + buffer.name);
             return false;
@@ -357,7 +359,7 @@ class WifiLogger extends DummyWifiLogger  {
     }
 
     private boolean stopLoggingRingBuffer(WifiNative.RingBufferStatus buffer) {
-        if (WifiNative.startLoggingRingBuffer(0, 0, 0, 0, buffer.name) == false) {
+        if (mWifiNative.startLoggingRingBuffer(0, 0, 0, 0, buffer.name) == false) {
             if (DBG) Log.e(TAG, "Could not stop logging ring " + buffer.name);
         }
         return true;
@@ -379,7 +381,7 @@ class WifiLogger extends DummyWifiLogger  {
         }
 
         for (WifiNative.RingBufferStatus element : mRingBuffers){
-            boolean result = WifiNative.getRingBufferData(element.name);
+            boolean result = mWifiNative.getRingBufferData(element.name);
             if (!result) {
                 Log.e(TAG, "Fail to get ring buffer data of: " + element.name);
                 return false;
@@ -399,7 +401,7 @@ class WifiLogger extends DummyWifiLogger  {
         if (mRingBuffers != null) {
             for (WifiNative.RingBufferStatus buffer : mRingBuffers) {
                 /* this will push data in mRingBuffers */
-                WifiNative.getRingBufferData(buffer.name);
+                mWifiNative.getRingBufferData(buffer.name);
                 LimitedCircularArray<byte[]> data = mRingBufferData.get(buffer.name);
                 byte[][] buffers = new byte[data.size()][];
                 for (int i = 0; i < data.size(); i++) {
@@ -410,7 +412,7 @@ class WifiLogger extends DummyWifiLogger  {
         }
 
         if (captureFWDump) {
-            report.fwMemoryDump = WifiNative.getFwMemoryDump();
+            report.fwMemoryDump = mWifiNative.getFwMemoryDump();
         }
         return report;
     }

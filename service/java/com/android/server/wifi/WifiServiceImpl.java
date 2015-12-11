@@ -34,13 +34,11 @@ import android.net.Network;
 import android.net.NetworkScorerAppManager;
 import android.net.NetworkUtils;
 import android.net.Uri;
-import android.net.wifi.BatchedScanResult;
-import android.net.wifi.BatchedScanSettings;
 import android.net.wifi.IWifiManager;
+import android.net.wifi.ScanInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
 import android.net.wifi.WifiActivityEnergyInfo;
-import android.net.wifi.WifiChannel;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConnectionStatistics;
 import android.net.wifi.WifiEnterpriseConfig;
@@ -95,7 +93,25 @@ import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.android.internal.R;
+import com.android.internal.app.IBatteryStats;
+import com.android.internal.telephony.TelephonyIntents;
+import com.android.internal.util.AsyncChannel;
+import com.android.server.am.BatteryStatsService;
+import com.android.server.wifi.configparse.ConfigBuilder;
+import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.osu.OSUInfo;
+
+import org.xml.sax.SAXException;
 
 import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
 import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
@@ -140,8 +156,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     private final PowerManager mPowerManager;
     private final AppOpsManager mAppOps;
     private final UserManager mUserManager;
-
-    private String mInterfaceName;
 
     // Debug counter tracking scan requests sent by WifiManager
     private int scanRequestCounter = 0;
@@ -201,14 +215,14 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     WifiConfiguration config = (WifiConfiguration) msg.obj;
                     int networkId = msg.arg1;
                     if (msg.what == WifiManager.SAVE_NETWORK) {
-                        Slog.e("WiFiServiceImpl ", "SAVE"
+                        Slog.d("WiFiServiceImpl ", "SAVE"
                                 + " nid=" + Integer.toString(networkId)
                                 + " uid=" + msg.sendingUid
                                 + " name="
                                 + mContext.getPackageManager().getNameForUid(msg.sendingUid));
                     }
                     if (msg.what == WifiManager.CONNECT_NETWORK) {
-                        Slog.e("WiFiServiceImpl ", "CONNECT "
+                        Slog.d("WiFiServiceImpl ", "CONNECT "
                                 + " nid=" + Integer.toString(networkId)
                                 + " uid=" + msg.sendingUid
                                 + " name="
@@ -318,10 +332,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public WifiServiceImpl(Context context) {
         mContext = context;
 
-        mInterfaceName =  SystemProperties.get("wifi.interface", "wlan0");
-
-        mTrafficPoller = new WifiTrafficPoller(mContext, mInterfaceName);
-        mWifiStateMachine = new WifiStateMachine(mContext, mInterfaceName, mTrafficPoller);
+        mTrafficPoller = new WifiTrafficPoller(mContext,
+                WifiNative.getWlanNativeInterface().getInterfaceName());
+        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller);
         mWifiStateMachine.enableRssiPolling(true);
         mBatteryStats = BatteryStatsService.getService();
         mPowerManager = context.getSystemService(PowerManager.class);
@@ -412,44 +425,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     }
 
     /**
-     * see {@link android.net.wifi.WifiManager#getChannelList}
-     */
-    public List<WifiChannel> getChannelList() {
-        enforceAccessPermission();
-        if (mWifiStateMachineChannel != null) {
-            return mWifiStateMachine.syncGetChannelList(mWifiStateMachineChannel);
-        } else {
-            Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
-            return null;
-        }
-    }
-
-    // Start a location scan.
-    // L release: A location scan is implemented as a normal scan and avoids scanning DFS channels
-    // Deprecated: Will soon remove implementation
-    public void startLocationRestrictedScan(WorkSource workSource) {
-        enforceChangePermission();
-        enforceLocationHardwarePermission();
-        List<WifiChannel> channels = getChannelList();
-        if (channels == null) {
-            Slog.e(TAG, "startLocationRestrictedScan cant get channels");
-            return;
-        }
-        ScanSettings settings = new ScanSettings();
-        for (WifiChannel channel : channels) {
-            if (!channel.isDFS) {
-                settings.channelSet.add(channel);
-            }
-        }
-        if (workSource == null) {
-            // Make sure we always have a workSource indicating the origin of the scan
-            // hence if there is none, pick an internal WifiStateMachine one
-            workSource = new WorkSource(WifiStateMachine.DFS_RESTRICTED_SCAN_REQUEST);
-        }
-        startScan(settings, workSource);
-    }
-
-    /**
      * see {@link android.net.wifi.WifiManager#startScan}
      * and {@link android.net.wifi.WifiManager#startCustomizedScan}
      *
@@ -492,30 +467,10 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                 settings, workSource);
     }
 
-    public boolean isBatchedScanSupported() {
-        return false;
-    }
-
-    public void pollBatchedScan() { }
-
     public String getWpsNfcConfigurationToken(int netId) {
         enforceConnectivityInternalPermission();
         return mWifiStateMachine.syncGetWpsNfcConfigurationToken(netId);
     }
-
-    /**
-     * see {@link android.net.wifi.WifiManager#requestBatchedScan()}
-     */
-    public boolean requestBatchedScan(BatchedScanSettings requested, IBinder binder,
-            WorkSource workSource) {
-        return false;
-    }
-
-    public List<BatchedScanResult> getBatchedScanResults(String callingPackage) {
-        return null;
-    }
-
-    public void stopBatchedScan(BatchedScanSettings settings) { }
 
     boolean mInIdleMode;
     boolean mScanPending;
@@ -752,6 +707,9 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
      */
     public WifiActivityEnergyInfo reportActivityInfo() {
         enforceAccessPermission();
+        if ((getSupportedFeatures() & WifiManager.WIFI_FEATURE_LINK_LAYER_STATS) == 0) {
+            return null;
+        }
         WifiLinkLayerStats stats;
         WifiActivityEnergyInfo energyInfo = null;
         if (mWifiStateMachineChannel != null) {
@@ -783,7 +741,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                     sb.append(" rx_time=" + stats.rx_time);
                     sb.append(" rxIdleTime=" + rxIdleTime);
                     sb.append(" energy=" + energyUsed);
-                    Log.e(TAG, " reportActivityInfo: " + sb.toString());
+                    Log.d(TAG, " reportActivityInfo: " + sb.toString());
                 }
 
                 // Convert the LinkLayerStats into EnergyActivity
@@ -791,7 +749,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
                         WifiActivityEnergyInfo.STACK_STATE_STATE_IDLE, stats.tx_time,
                         stats.rx_time, rxIdleTime, energyUsed);
             }
-            return energyInfo;
+            if (energyInfo != null && energyInfo.isValid()) {
+                return energyInfo;
+            } else {
+                return null;
+            }
         } else {
             Slog.e(TAG, "mWifiStateMachineChannel is not initialized");
             return null;
@@ -852,7 +814,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
 
             if (config.isPasspoint() &&
                     (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
-                enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
+                     enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
                 try {
                     verifyCert(enterpriseConfig.getCaCertificate());
                 } catch (CertPathValidatorException cpve) {
@@ -1006,6 +968,93 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
+    }
+
+    private static final long BSSIDNeighborDistance = 16;
+
+    /**
+     * An augmented version of getScanResults that returns ScanResults as well as OSU information
+     * wrapped in ScanInfo objects.
+     * @param callingPackage
+     * @return
+     */
+    public List<ScanInfo> getScanInfos(String callingPackage) {
+        List<ScanResult> scanResults = getScanResults(callingPackage);
+        Collection<OSUInfo> osuInfos = mWifiStateMachine.getOSUInfos();
+        Map<Long, Integer> rssiMap = new HashMap<>();
+
+        Map<String, List<ScanResult>> ssidMap = new HashMap<>();
+        for (ScanResult scanResult : scanResults) {
+            List<ScanResult> scanResultSet = ssidMap.get(scanResult.SSID);
+            if (scanResultSet == null) {
+                scanResultSet = new ArrayList<>();
+                ssidMap.put(scanResult.SSID, scanResultSet);
+            }
+            scanResultSet.add(scanResult);
+            rssiMap.put(Utils.parseMac(scanResult.BSSID), scanResult.level);
+        }
+
+        Map<String, List<OSUInfo>> osuSsids = new HashMap<>();
+        for (OSUInfo osuInfo : osuInfos) {
+            List<OSUInfo> osuSet = osuSsids.get(osuInfo.getSSID());
+            if (osuSet == null) {
+                osuSet = new ArrayList<>();
+                osuSsids.put(osuInfo.getSSID(), osuSet);
+            }
+            osuSet.add(osuInfo);
+        }
+
+        List<ScanInfo> scanInfos = new ArrayList<>();
+        for (Map.Entry<String, List<ScanResult>> entry : ssidMap.entrySet()) {
+            List<ScanResult> scanResultSet = entry.getValue();
+            List<OSUInfo> osuSet = osuSsids.get(entry.getKey());
+            if (osuSet != null) {
+                if (scanResultSet.size() > 1) {
+                    // If there are multiple scan results with the same matching OSU SSID, only drop
+                    // the ones that have adjacent BSSIDs to some OSU (assuming OSU SSIDs lives on
+                    // the same AP as the one advertising the OSU.
+                    for (ScanResult scanResult : scanResultSet) {
+                        boolean sameAP = false;
+                        for (OSUInfo osuInfo : osuSet) {
+                            if (Math.abs(Utils.parseMac(scanResult.BSSID) - osuInfo.getBSSID()) <
+                                    BSSIDNeighborDistance) {
+                                sameAP = true;
+                                break;
+                            }
+                        }
+                        if (!sameAP) {
+                            scanInfos.add(new ScanInfo(scanResult));
+                        }
+                    }
+                }
+                // Else simply don't add the scan result
+            }
+            else {
+                // No OSU match, retain the scan result
+                for (ScanResult scanResult : scanResultSet) {
+                    scanInfos.add(new ScanInfo(scanResult));
+                }
+            }
+        }
+
+        for (OSUInfo osuInfo : osuInfos) {
+            Integer rssi = rssiMap.get(osuInfo.getBSSID());
+            scanInfos.add(new ScanInfo(
+                    osuInfo.getBSSID(),
+                    rssi != null ? rssi : -40,
+                    osuInfo.getSSID(),
+                    osuInfo.getName(null),
+                    osuInfo.getServiceDescription(null),
+                    osuInfo.getIconFileElement().getType(),
+                    osuInfo.getIconFileElement().getIconData(),
+                    osuInfo.getOsuID()));
+        }
+
+        return scanInfos;
+    }
+
+    public void setOsuSelection(int osuID) {
+        mWifiStateMachine.setOSUSelection(osuID);
     }
 
     private boolean isLocationEnabled(String callingPackage) {
@@ -1201,34 +1250,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         info.leaseDuration = dhcpResults.leaseDuration;
 
         return info;
-    }
-
-    /**
-     * see {@link android.net.wifi.WifiManager#startWifi}
-     *
-     */
-    public void startWifi() {
-        enforceConnectivityInternalPermission();
-        /* TODO: may be add permissions for access only to connectivity service
-         * TODO: if a start issued, keep wifi alive until a stop issued irrespective
-         * of WifiLock & device idle status unless wifi enabled status is toggled
-         */
-
-        mWifiStateMachine.setDriverStart(true);
-        mWifiStateMachine.reconnectCommand();
-    }
-
-    /**
-     * see {@link android.net.wifi.WifiManager#stopWifi}
-     *
-     */
-    public void stopWifi() {
-        enforceConnectivityInternalPermission();
-        /*
-         * TODO: if a stop is issued, wifi is brought up only by startWifi
-         * unless wifi enabled status is toggled
-         */
-        mWifiStateMachine.setDriverStart(false);
     }
 
     /**
@@ -1888,10 +1909,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         synchronized (mMulticasters) {
             return (mMulticasters.size() > 0);
         }
-    }
-
-    public WifiMonitor getWifiMonitor() {
-        return mWifiStateMachine.getWifiMonitor();
     }
 
     public void enableVerboseLogging(int verbose) {
