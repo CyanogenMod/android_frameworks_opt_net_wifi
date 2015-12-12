@@ -37,15 +37,13 @@ import java.util.Set;
 public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callback {
     private static final String TAG = "SupplicantWifiScannerImpl";
     private static final boolean DBG = false;
-    private static final WifiScanner.ScanData[] EMPTY_SCAN_RESULT = new WifiScanner.ScanData[] {
-        new WifiScanner.ScanData(0, 0, new ScanResult[0])
-    };
 
     private final WifiNative mWifiNative;
     private final Handler mEventHandler;
     private boolean mReportSingleScanFullResults = false;
     private WifiNative.ScanEventHandler mSingleScanEventHandler = null;
-    private WifiScanner.ScanData mLatestSingleScanResult = null;
+    private WifiScanner.ScanData mLatestSingleScanResult =
+            new WifiScanner.ScanData(0, 0, new ScanResult[0]);
 
     public HalWifiScannerImpl(WifiNative wifiNative, Looper looper) {
         mWifiNative = wifiNative;
@@ -94,6 +92,11 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
     @Override
     public boolean startSingleScan(WifiNative.ScanSettings settings,
             WifiNative.ScanEventHandler eventHandler) {
+        if (eventHandler == null || settings == null) {
+            Log.w(TAG, "Invalid arguments for startSingleScan: settings=" + settings
+                    + ",eventHandler=" + eventHandler);
+            return false;
+        }
         if (mSingleScanEventHandler != null) {
             Log.w(TAG, "A single scan is already running");
             return false;
@@ -123,7 +126,7 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
         mSingleScanEventHandler = eventHandler;
         if (!mWifiNative.scan(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs)) {
             mSingleScanEventHandler = null;
-            return false;
+            // TODO call on failure callback in handler
         }
         return true;
     }
@@ -151,6 +154,11 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
     @Override
     public boolean startBatchedScan(WifiNative.ScanSettings settings,
             WifiNative.ScanEventHandler eventHandler) {
+        if (settings == null || eventHandler == null) {
+            Log.w(TAG, "Invalid arguments for startBatched: settings=" + settings
+                    + ",eventHandler=" + eventHandler);
+            return false;
+        }
         return mWifiNative.startScan(settings, eventHandler);
     }
 

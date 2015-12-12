@@ -26,9 +26,6 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.util.Log;
 
-import com.android.server.wifi.WifiMonitor;
-import com.android.server.wifi.WifiNative;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,6 +36,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
+ * Implementation of the WifiScanner HAL API that uses wpa_supplicant to perform all scans
  * @see com.android.server.wifi.WifiScannerImpl for more details on each method
  */
 public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handler.Callback {
@@ -60,16 +58,25 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     private Object mSettingsLock = new Object();
 
     // Next scan settings to apply when the previous scan completes
-    private WifiNative.ScanSettings mPendingScanSettings = null;
-    private WifiNative.ScanEventHandler mPendingScanEventHandler = null;
+    private WifiNative.ScanSettings mPendingBackgroundScanSettings = null;
+    private WifiNative.ScanEventHandler mPendingBackgroundScanEventHandler = null;
+    private WifiNative.ScanSettings mPendingSingleScanSettings = null;
+    private WifiNative.ScanEventHandler mPendingSingleScanEventHandler = null;
 
-    // Active scan settings
-    private WifiNative.ScanSettings mScanSettings = null;
-    private WifiNative.ScanEventHandler mScanEventHandler = null;
-    private int mNextScanPeriod = 0;
-    private int mNextScanId = 0;
+    // Active background scan settings/state
+    private WifiNative.ScanSettings mBackgroundScanSettings = null;
+    private WifiNative.ScanEventHandler mBackgroundScanEventHandler = null;
+    private int mNextBackgroundScanPeriod = 0;
+    private int mNextBackgroundScanId = 0;
+    private boolean mBackgroundScanPeriodPending = false;
+    private boolean mBackgroundScanPaused = false;
+    private ScanBuffer mBackgroundScanBuffer = new ScanBuffer(SCAN_BUFFER_CAPACITY);
+
+    private WifiScanner.ScanData mLatestSingleScanResult =
+            new WifiScanner.ScanData(0, 0, new ScanResult[0]);
+
+    // Settings for the currently running scan, null if no scan active
     private LastScanSettings mLastScanSettings = null;
-    private ScanBuffer mScanBuffer = new ScanBuffer(SCAN_BUFFER_CAPACITY);
 
     // Active hotlist settings
     private WifiNative.HotlistEventHandler mHotlistHandler = null;
@@ -77,14 +84,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
 
     AlarmManager.OnAlarmListener mScanPeriodListener = new AlarmManager.OnAlarmListener() {
             public void onAlarm() {
-                // in case we never got the results of the previous scan
-                // make sure we start a new scan
                 synchronized (mSettingsLock) {
-                    if (mLastScanSettings != null) {
-                        Log.w(TAG,
-                                "Did not get a scan results/failure event from previous scan");
-                        mLastScanSettings = null;
-                    }
                     handleScanPeriod();
                 }
             }
@@ -117,43 +117,67 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     @Override
     public boolean startSingleScan(WifiNative.ScanSettings settings,
             WifiNative.ScanEventHandler eventHandler) {
-        return false; // TODO implement
+        if (eventHandler == null || settings == null) {
+            Log.w(TAG, "Invalid arguments for startSingleScan: settings=" + settings
+                    + ",eventHandler=" + eventHandler);
+            return false;
+        }
+        if (mPendingSingleScanSettings != null
+                || (mLastScanSettings != null && mLastScanSettings.singleScanActive)) {
+            Log.w(TAG, "A single scan is already running");
+            return false;
+        }
+        synchronized (mSettingsLock) {
+            mPendingSingleScanSettings = settings;
+            mPendingSingleScanEventHandler = eventHandler;
+            processPendingScans();
+            return true;
+        }
     }
 
     @Override
     public WifiScanner.ScanData getLatestSingleScanResults() {
-        return null; // TODO implement
+        return mLatestSingleScanResult;
     }
 
     @Override
     public boolean startBatchedScan(WifiNative.ScanSettings settings,
             WifiNative.ScanEventHandler eventHandler) {
-        if (settings == null || eventHandler == null)
+        if (settings == null || eventHandler == null) {
+            Log.w(TAG, "Invalid arguments for startBatched: settings=" + settings
+                    + ",eventHandler=" + eventHandler);
             return false;
-
-        if (settings.max_ap_per_scan < 0 || settings.max_ap_per_scan > MAX_APS_PER_SCAN)
-            return false;
-        if (settings.num_buckets < 0 || settings.num_buckets > MAX_SCAN_BUCKETS)
-            return false;
-        if (settings.report_threshold_num_scans < 0 ||
-                settings.report_threshold_num_scans > SCAN_BUFFER_CAPACITY)
-            return false;
-        if (settings.report_threshold_percent < 0 || settings.report_threshold_percent > 100)
-            return false;
-        if (settings.base_period_ms <= 0)
-            return false;
-        for (int i = 0; i < settings.num_buckets; ++i) {
-            WifiNative.BucketSettings bucket = settings.buckets[i];
-            if (bucket.period_ms % settings.base_period_ms != 0)
-                return false;
         }
 
-        synchronized(mSettingsLock) {
+        if (settings.max_ap_per_scan < 0 || settings.max_ap_per_scan > MAX_APS_PER_SCAN) {
+            return false;
+        }
+        if (settings.num_buckets < 0 || settings.num_buckets > MAX_SCAN_BUCKETS) {
+            return false;
+        }
+        if (settings.report_threshold_num_scans < 0
+                || settings.report_threshold_num_scans > SCAN_BUFFER_CAPACITY) {
+            return false;
+        }
+        if (settings.report_threshold_percent < 0 || settings.report_threshold_percent > 100) {
+            return false;
+        }
+        if (settings.base_period_ms <= 0) {
+            return false;
+        }
+        for (int i = 0; i < settings.num_buckets; ++i) {
+            WifiNative.BucketSettings bucket = settings.buckets[i];
+            if (bucket.period_ms % settings.base_period_ms != 0) {
+                return false;
+            }
+        }
+
+        synchronized (mSettingsLock) {
             stopBatchedScan();
-            Log.d(TAG, "Starting scan num_buckets=" + settings.num_buckets + ", base_period=" +
-                    settings.base_period_ms + " ms");
-            mPendingScanSettings = settings;
-            mPendingScanEventHandler = eventHandler;
+            Log.d(TAG, "Starting scan num_buckets=" + settings.num_buckets + ", base_period="
+                    + settings.base_period_ms + " ms");
+            mPendingBackgroundScanSettings = settings;
+            mPendingBackgroundScanEventHandler = eventHandler;
             handleScanPeriod(); // Try to start scan immediately
             return true;
         }
@@ -161,42 +185,49 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
 
     @Override
     public void stopBatchedScan() {
-        synchronized(mSettingsLock) {
-            if (DBG) {Log.d(TAG, "Stopping scan"); }
-            mScanSettings = null;
-            mScanEventHandler = null;
-            mPendingScanSettings = null;
-            mPendingScanEventHandler = null;
+        synchronized (mSettingsLock) {
+            if (DBG) Log.d(TAG, "Stopping scan");
+            mBackgroundScanSettings = null;
+            mBackgroundScanEventHandler = null;
+            mPendingBackgroundScanSettings = null;
+            mPendingBackgroundScanEventHandler = null;
+            mBackgroundScanPaused = false;
+            mBackgroundScanPeriodPending = false;
             unscheduleScansLocked();
         }
     }
 
     @Override
     public void pauseBatchedScan() {
-        synchronized(mSettingsLock) {
-            if (DBG) { Log.d(TAG, "Pausing scan"); }
+        synchronized (mSettingsLock) {
+            if (DBG) Log.d(TAG, "Pausing scan");
             // if there isn't a pending scan then make the current scan pending
-            if (mPendingScanSettings == null) {
-                mPendingScanSettings = mScanSettings;
-                mPendingScanEventHandler = mScanEventHandler;
+            if (mPendingBackgroundScanSettings == null) {
+                mPendingBackgroundScanSettings = mBackgroundScanSettings;
+                mPendingBackgroundScanEventHandler = mBackgroundScanEventHandler;
             }
-            mScanSettings = null;
-            mScanEventHandler = null;
+            mBackgroundScanSettings = null;
+            mBackgroundScanEventHandler = null;
+            mBackgroundScanPeriodPending = false;
+            mBackgroundScanPaused = true;
 
             unscheduleScansLocked();
 
             WifiScanner.ScanData[] results = getLatestBatchedScanResults(/* flush = */ true);
-            if (mPendingScanEventHandler != null)
-                mPendingScanEventHandler.onScanPaused(results);
+            if (mPendingBackgroundScanEventHandler != null) {
+                mPendingBackgroundScanEventHandler.onScanPaused(results);
+            }
         }
     }
 
     @Override
     public void restartBatchedScan() {
-        synchronized(mSettingsLock) {
-            if (DBG) { Log.d(TAG, "Restarting scan"); }
-            if (mPendingScanEventHandler != null)
-                mPendingScanEventHandler.onScanRestarted();
+        synchronized (mSettingsLock) {
+            if (DBG) Log.d(TAG, "Restarting scan");
+            if (mPendingBackgroundScanEventHandler != null) {
+                mPendingBackgroundScanEventHandler.onScanRestarted();
+            }
+            mBackgroundScanPaused = false;
             handleScanPeriod();
         }
     }
@@ -207,76 +238,134 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     }
 
     private void handleScanPeriod() {
-        synchronized(mSettingsLock) {
+        synchronized (mSettingsLock) {
+            mBackgroundScanPeriodPending = true;
+            processPendingScans();
+        }
+    }
+
+    private void processPendingScans() {
+        synchronized (mSettingsLock) {
             if (mLastScanSettings != null) {
                 return;
             }
 
+            Set<Integer> freqs = new HashSet<>();
+            LastScanSettings newScanSettings = new LastScanSettings(SystemClock.elapsedRealtime());
+
             // Update scan settings if there is a pending scan
-            if (mPendingScanSettings != null) {
-                mScanSettings = mPendingScanSettings;
-                mScanEventHandler = mPendingScanEventHandler;
-                mNextScanPeriod = 0;
-                mPendingScanSettings = null;
-                mPendingScanEventHandler = null;
+            if (!mBackgroundScanPaused) {
+                if (mPendingBackgroundScanSettings != null) {
+                    mBackgroundScanSettings = mPendingBackgroundScanSettings;
+                    mBackgroundScanEventHandler = mPendingBackgroundScanEventHandler;
+                    mNextBackgroundScanPeriod = 0;
+                    mPendingBackgroundScanSettings = null;
+                    mPendingBackgroundScanEventHandler = null;
+                    mBackgroundScanPeriodPending = true;
+                }
+                if (mBackgroundScanPeriodPending) {
+                    if (mBackgroundScanSettings != null) {
+                        int reportEvents = WifiScanner.REPORT_EVENT_NO_BATCH; // default to no batch
+                        boolean haveBackgroundScanChannels = false;
+                        for (int bucket_id = 0; bucket_id < mBackgroundScanSettings.num_buckets;
+                                ++bucket_id) {
+                            WifiNative.BucketSettings bucket =
+                                    mBackgroundScanSettings.buckets[bucket_id];
+                            if (mNextBackgroundScanPeriod % (bucket.period_ms
+                                            / mBackgroundScanSettings.base_period_ms) == 0) {
+                                if ((bucket.report_events
+                                                & WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN) != 0) {
+                                    reportEvents |= WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
+                                }
+                                if ((bucket.report_events
+                                                & WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0) {
+                                    reportEvents |= WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT;
+                                }
+                                // only no batch if all buckets specify it
+                                if ((bucket.report_events
+                                                & WifiScanner.REPORT_EVENT_NO_BATCH) == 0) {
+                                    reportEvents &= ~WifiScanner.REPORT_EVENT_NO_BATCH;
+                                }
+
+                                if (bucket.band != WifiScanner.WIFI_BAND_UNSPECIFIED) {
+                                    WifiScanner.ChannelSpec[] channels =
+                                            WifiChannelHelper.getChannelsForBand(bucket.band);
+                                    for (WifiScanner.ChannelSpec channel : channels) {
+                                        freqs.add(channel.frequency);
+                                        haveBackgroundScanChannels = true;
+                                    }
+                                } else {
+                                    for (int channel_id = 0; channel_id < bucket.num_channels;
+                                            ++channel_id) {
+                                        WifiNative.ChannelSettings channel =
+                                                bucket.channels[channel_id];
+                                        freqs.add(channel.frequency);
+                                        haveBackgroundScanChannels = true;
+                                    }
+                                }
+                            }
+                        }
+                        if (haveBackgroundScanChannels) {
+                            newScanSettings.setBackgroundScan(mNextBackgroundScanId++,
+                                    mBackgroundScanSettings.max_ap_per_scan, reportEvents,
+                                    mBackgroundScanSettings.report_threshold_num_scans,
+                                    mBackgroundScanSettings.report_threshold_percent);
+                        }
+                    }
+
+                    mNextBackgroundScanPeriod++;
+                    mBackgroundScanPeriodPending = false;
+                    mAlarmManager.set(AlarmManager.RTC_WAKEUP,
+                            System.currentTimeMillis() + mBackgroundScanSettings.base_period_ms,
+                            "SupplicantWifiScannerImpl Period",
+                            mScanPeriodListener, mEventHandler);
+                }
             }
 
-            if (mScanSettings != null && mScanSettings.num_buckets > 0) {
-                Set<Integer> freqs = new HashSet<>();
-                int reportEvents = WifiScanner.REPORT_EVENT_NO_BATCH; // default to no batch
-                for (int bucket_id = 0; bucket_id < mScanSettings.num_buckets; ++bucket_id) {
-                    WifiNative.BucketSettings bucket = mScanSettings.buckets[bucket_id];
-                    if (mNextScanPeriod % (bucket.period_ms / mScanSettings.base_period_ms) == 0) {
-                        if ((bucket.report_events & WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN)
-                                != 0) {
-                            reportEvents |= WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
+            if (mPendingSingleScanSettings != null) {
+                boolean reportFullResults = false;
+                Set<Integer> singleScanFreqs = new HashSet<>();
+                for (int i = 0; i < mPendingSingleScanSettings.num_buckets; ++i) {
+                    WifiNative.BucketSettings bucketSettings =
+                            mPendingSingleScanSettings.buckets[i];
+                    if ((bucketSettings.report_events
+                                    & WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0) {
+                        reportFullResults = true;
+                    }
+                    if (bucketSettings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+                        for (int j = 0; j < bucketSettings.num_channels; ++j) {
+                            WifiNative.ChannelSettings channel = bucketSettings.channels[j];
+                            singleScanFreqs.add(channel.frequency);
                         }
-                        if ((bucket.report_events & WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT)
-                                != 0) {
-                            reportEvents |= WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT;
-                        }
-                        // only no batch if all buckets specify it
-                        if ((bucket.report_events & WifiScanner.REPORT_EVENT_NO_BATCH) == 0) {
-                            reportEvents &= ~WifiScanner.REPORT_EVENT_NO_BATCH;
-                        }
-
-                        if (bucket.band != WifiScanner.WIFI_BAND_UNSPECIFIED) {
-                            WifiScanner.ChannelSpec[] channels =
-                                    WifiChannelHelper.getChannelsForBand(bucket.band);
-                            for (WifiScanner.ChannelSpec channel : channels) {
-                                freqs.add(channel.frequency);
-                            }
-                        }
-                        else {
-                            for (int channel_id = 0; channel_id < bucket.num_channels;
-                                    ++channel_id) {
-                                WifiNative.ChannelSettings channel = bucket.channels[channel_id];
-                                freqs.add(channel.frequency);
-                            }
+                    } else {
+                        WifiScanner.ChannelSpec[] channels =
+                                WifiChannelHelper.getChannelsForBand(bucketSettings.band);
+                        for (WifiScanner.ChannelSpec channel : channels) {
+                            singleScanFreqs.add(channel.frequency);
                         }
                     }
                 }
-                if (freqs.size() > 0) {
-                    boolean success = mWifiNative.scan(
-                            WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs);
-                    if (success) {
-                        Log.d(TAG, "Starting wifi scan " + mNextScanId + " for " + freqs.size() +
-                                " freqs");
-                        mLastScanSettings = new LastScanSettings(mNextScanId++,
-                                SystemClock.elapsedRealtime(), mScanSettings.max_ap_per_scan,
-                                reportEvents, mScanSettings.report_threshold_num_scans,
-                                mScanSettings.report_threshold_percent);
-                    }
-                    else {
-                        Log.w(TAG, "Failed starting wifi scan for " + freqs.size() + " freqs");
-                    }
-                }
+                freqs.addAll(singleScanFreqs);
+                newScanSettings.setSingleScan(reportFullResults, singleScanFreqs,
+                        mPendingSingleScanEventHandler);
 
-                mNextScanPeriod++;
-                mAlarmManager.set(AlarmManager.RTC_WAKEUP,
-                        System.currentTimeMillis() + mScanSettings.base_period_ms,
-                        "SupplicantWifiScannerImpl Period",
-                        mScanPeriodListener, mEventHandler);
+                mPendingSingleScanSettings = null;
+                mPendingSingleScanEventHandler = null;
+            }
+
+            if (freqs.size() > 0) {
+                boolean success = mWifiNative.scan(
+                        WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs);
+                if (success) {
+                    // TODO handle scan timeout
+                    Log.d(TAG, "Starting wifi scan for " + freqs.size() + " freqs"
+                            + ", background=" + newScanSettings.backgroundScanActive
+                            + ", single=" + newScanSettings.singleScanActive);
+                    mLastScanSettings = newScanSettings;
+                } else {
+                    Log.w(TAG, "Failed starting wifi scan for " + freqs.size() + " freqs");
+                    // TODO indicate failure for single and background scans
+                }
             }
         }
     }
@@ -290,9 +379,11 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 synchronized (mSettingsLock) {
                     mLastScanSettings = null;
                 }
+                processPendingScans();
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
                 pollLatestScanData();
+                processPendingScans();
                 break;
             default:
                 // ignore unknown event
@@ -307,82 +398,108 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         }
     };
     private void pollLatestScanData() {
-        synchronized(mSettingsLock) {
-            if (mLastScanSettings == null || mScanSettings == null) {
+        synchronized (mSettingsLock) {
+            if (mLastScanSettings == null) {
                  // got a scan before we started scanning or after scan was canceled
                 return;
             }
 
-            if (DBG) { Log.d(TAG, "Polling scan data for scan: " + mLastScanSettings.scanId); }
+            if (DBG) Log.d(TAG, "Polling scan data for scan: " + mLastScanSettings.scanId);
             ArrayList<ScanDetail> nativeResults = mWifiNative.getScanResults();
-            List<ScanResult> scanResults = new ArrayList<>();
+            List<ScanResult> singleScanResults = new ArrayList<>();
+            List<ScanResult> backgroundScanResults = new ArrayList<>();
             for (int i = 0; i < nativeResults.size(); ++i) {
                 ScanResult result = nativeResults.get(i).getScanResult();
                 long timestamp_ms = result.timestamp / 1000; // convert us -> ms
                 if (timestamp_ms > mLastScanSettings.startTime) {
-                    scanResults.add(result);
-                }
-                else {
+                    if (mLastScanSettings.backgroundScanActive) {
+                        backgroundScanResults.add(result);
+                    }
+                    if (mLastScanSettings.singleScanActive
+                            && mLastScanSettings.singleScanFreqs.contains(result.frequency)) {
+                        singleScanResults.add(result);
+                    }
+                } else {
                     // was a cached result in wpa_supplicant
                 }
             }
 
-            if (mScanEventHandler != null) {
-                if ((mLastScanSettings.reportEvents &
-                             WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0) {
-                    for (ScanResult scanResult : scanResults) {
-                        mScanEventHandler.onFullScanResult(scanResult);
+            if (mLastScanSettings.backgroundScanActive) {
+                if (mBackgroundScanEventHandler != null) {
+                    if ((mLastScanSettings.reportEvents
+                                    & WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0) {
+                        for (ScanResult scanResult : backgroundScanResults) {
+                            mBackgroundScanEventHandler.onFullScanResult(scanResult);
+                        }
+                    }
+                }
+
+                Collections.sort(backgroundScanResults, SCAN_RESULT_RSSI_COMPARATOR);
+                ScanResult[] scanResultsArray = new ScanResult[Math.min(mLastScanSettings.maxAps,
+                            backgroundScanResults.size())];
+                for (int i = 0; i < scanResultsArray.length; ++i) {
+                    scanResultsArray[i] = backgroundScanResults.get(i);
+                }
+
+                if ((mLastScanSettings.reportEvents & WifiScanner.REPORT_EVENT_NO_BATCH) == 0) {
+                    mBackgroundScanBuffer.add(new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
+                                    scanResultsArray));
+                }
+
+                if (mBackgroundScanEventHandler != null) {
+                    if ((mLastScanSettings.reportEvents
+                                    & WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0
+                            || (mLastScanSettings.reportEvents
+                                    & WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN) != 0
+                            || (mLastScanSettings.reportEvents
+                                    == WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL
+                                    && (mBackgroundScanBuffer.size()
+                                            >= (mBackgroundScanBuffer.capacity()
+                                                    * mLastScanSettings.reportPercentThreshold
+                                                    / 100)
+                                            || mBackgroundScanBuffer.size()
+                                            >= mLastScanSettings.reportNumScansThreshold))) {
+                        mBackgroundScanEventHandler.onScanStatus();
+                    }
+                }
+
+                if (mHotlistHandler != null) {
+                    int event = mHotlistChangeBuffer.processScan(backgroundScanResults);
+                    if ((event & ChangeBuffer.EVENT_FOUND) != 0) {
+                        mHotlistHandler.onHotlistApFound(
+                                mHotlistChangeBuffer.getLastResults(ChangeBuffer.EVENT_FOUND));
+                    }
+                    if ((event & ChangeBuffer.EVENT_LOST) != 0) {
+                        mHotlistHandler.onHotlistApLost(
+                                mHotlistChangeBuffer.getLastResults(ChangeBuffer.EVENT_LOST));
                     }
                 }
             }
 
-            Collections.sort(scanResults, SCAN_RESULT_RSSI_COMPARATOR);
-            ScanResult[] scanResultsArray =
-                new ScanResult[Math.min(mLastScanSettings.maxAps, scanResults.size())];
-            for (int i = 0; i < scanResultsArray.length; ++i) {
-                scanResultsArray[i] = scanResults.get(i);
+            if (mLastScanSettings.singleScanActive
+                    && mLastScanSettings.singleScanEventHandler != null) {
+                if (mLastScanSettings.reportSingleScanFullResults) {
+                    for (ScanResult scanResult : singleScanResults) {
+                        mLastScanSettings.singleScanEventHandler.onFullScanResult(scanResult);
+                    }
+                }
+                Collections.sort(singleScanResults, SCAN_RESULT_RSSI_COMPARATOR);
+                mLatestSingleScanResult = new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
+                        singleScanResults.toArray(new ScanResult[singleScanResults.size()]));
+                mLastScanSettings.singleScanEventHandler.onScanResultsAvailable();
             }
 
-            if ((mLastScanSettings.reportEvents & WifiScanner.REPORT_EVENT_NO_BATCH) == 0) {
-                mScanBuffer.add(new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
-                                scanResultsArray));
-            }
-
-            if (mScanEventHandler != null) {
-                if ((mLastScanSettings.reportEvents &
-                             WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT) != 0 ||
-                      (mLastScanSettings.reportEvents &
-                             WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN) != 0 ||
-                      (mLastScanSettings.reportEvents == WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL
-                       && (mScanBuffer.size() >=
-                           (mScanBuffer.capacity() * mLastScanSettings.reportPercentThreshold
-                            / 100) ||
-                           mScanBuffer.size() >= mLastScanSettings.reportNumScansThreshold)) ) {
-                    mScanEventHandler.onScanStatus();
-                }
-            }
-
-            if (mHotlistHandler != null) {
-                int event = mHotlistChangeBuffer.processScan(scanResultsArray);
-                if ((event & ChangeBuffer.EVENT_FOUND) != 0) {
-                    mHotlistHandler.onHotlistApFound(
-                            mHotlistChangeBuffer.getLastResults(ChangeBuffer.EVENT_FOUND));
-                }
-                if ((event & ChangeBuffer.EVENT_LOST) != 0) {
-                    mHotlistHandler.onHotlistApLost(
-                            mHotlistChangeBuffer.getLastResults(ChangeBuffer.EVENT_LOST));
-                }
-            }
+            mLastScanSettings = null;
         }
     }
 
 
     @Override
     public WifiScanner.ScanData[] getLatestBatchedScanResults(boolean flush) {
-        synchronized(mSettingsLock) {
-            WifiScanner.ScanData[] results = mScanBuffer.get();
+        synchronized (mSettingsLock) {
+            WifiScanner.ScanData[] results = mBackgroundScanBuffer.get();
             if (flush) {
-                mScanBuffer.clear();
+                mBackgroundScanBuffer.clear();
             }
             return results;
         }
@@ -394,7 +511,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         if (settings == null || eventHandler == null) {
             return false;
         }
-        synchronized(mSettingsLock) {
+        synchronized (mSettingsLock) {
             mHotlistHandler = eventHandler;
             mHotlistChangeBuffer.setSettings(settings.bssidInfos, settings.apLostThreshold, 1);
             return true;
@@ -403,22 +520,30 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
 
     @Override
     public void resetHotlist() {
-        synchronized(mSettingsLock) {
+        synchronized (mSettingsLock) {
             mHotlistChangeBuffer.clearSettings();
             mHotlistHandler = null;
         }
     }
 
     private static class LastScanSettings {
-        int scanId;
-        long startTime;
-        int maxAps;
-        int reportEvents;
-        int reportNumScansThreshold;
-        int reportPercentThreshold;
+        public long startTime;
 
-        public LastScanSettings(int scanId, long startTime, int maxAps, int reportEvents,
+        public LastScanSettings(long startTime) {
+            this.startTime = startTime;
+        }
+
+        // Background settings
+        public boolean backgroundScanActive = false;
+        public int scanId;
+        public int maxAps;
+        public int reportEvents;
+        public int reportNumScansThreshold;
+        public int reportPercentThreshold;
+
+        public void setBackgroundScan(int scanId, int maxAps, int reportEvents,
                 int reportNumScansThreshold, int reportPercentThreshold) {
+            this.backgroundScanActive = true;
             this.scanId = scanId;
             this.startTime = startTime;
             this.maxAps = maxAps;
@@ -426,16 +551,30 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             this.reportNumScansThreshold = reportNumScansThreshold;
             this.reportPercentThreshold = reportPercentThreshold;
         }
+
+        // Single scan settings
+        public boolean singleScanActive = false;
+        public boolean reportSingleScanFullResults;
+        public Set<Integer> singleScanFreqs;
+        public WifiNative.ScanEventHandler singleScanEventHandler;
+
+        public void setSingleScan(boolean reportSingleScanFullResults,
+                Set<Integer> singleScanFreqs, WifiNative.ScanEventHandler singleScanEventHandler) {
+            singleScanActive = true;
+            this.reportSingleScanFullResults = reportSingleScanFullResults;
+            this.singleScanFreqs = singleScanFreqs;
+            this.singleScanEventHandler = singleScanEventHandler;
+        }
     }
 
 
     private static class ScanBuffer {
         private final ArrayDeque<WifiScanner.ScanData> mBuffer;
-        private int capacity;
+        private int mCapacity;
 
         public ScanBuffer(int capacity) {
-            mBuffer = new ArrayDeque<>(capacity);
-            this.capacity = capacity;
+            mCapacity = capacity;
+            mBuffer = new ArrayDeque<>(mCapacity);
         }
 
         public int size() {
@@ -443,11 +582,11 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         }
 
         public int capacity() {
-            return capacity;
+            return mCapacity;
         }
 
         public boolean isFull() {
-            return size() == capacity;
+            return size() == mCapacity;
         }
 
         public void add(WifiScanner.ScanData scanData) {
@@ -471,7 +610,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         public static int EVENT_LOST = 1;
         public static int EVENT_FOUND = 2;
 
-        private static int STATE_FOUND = 0;
+        public static int STATE_FOUND = 0;
 
         private WifiScanner.BssidInfo[] mBssidInfos = null;
         private int mApLostThreshold;
@@ -481,10 +620,10 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         private int[] mPendingEvent = null;
         private boolean mFiredEvents = false;
 
-        private static ScanResult findResult(ScanResult[] results, String bssid) {
-            for (int i = 0; i < results.length; ++i) {
-                if (bssid.equalsIgnoreCase(results[i].BSSID)) {
-                    return results[i];
+        private static ScanResult findResult(List<ScanResult> results, String bssid) {
+            for (int i = 0; i < results.size(); ++i) {
+                if (bssid.equalsIgnoreCase(results.get(i).BSSID)) {
+                    return results.get(i);
                 }
             }
             return null;
@@ -495,8 +634,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             mBssidInfos = bssidInfos;
             if (apLostThreshold <= 0) {
                 mApLostThreshold = 1;
-            }
-            else {
+            } else {
                 mApLostThreshold = apLostThreshold;
             }
             mMinEvents = minEvents;
@@ -506,8 +644,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 mMostRecentResult = new ScanResult[bssidInfos.length];
                 mPendingEvent = new int[bssidInfos.length];
                 mFiredEvents = false;
-            }
-            else {
+            } else {
                 mLostCount = null;
                 mMostRecentResult = null;
                 mPendingEvent = null;
@@ -537,7 +674,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
          * on the configured settings
          * @return The events that occurred
          */
-        public int processScan(ScanResult[] scanResults) {
+        public int processScan(List<ScanResult> scanResults) {
             if (mBssidInfos == null) {
                 return EVENT_NONE;
             }
@@ -567,34 +704,31 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                         if (mLostCount[i] >= mApLostThreshold) {
                             if (mPendingEvent[i] == EVENT_FOUND) {
                                 mPendingEvent[i] = EVENT_NONE;
-                            }
-                            else {
+                            } else {
                                 mPendingEvent[i] = EVENT_LOST;
                             }
                         }
                     }
-                }
-                else {
+                } else {
                     if (mLostCount[i] >= mApLostThreshold) {
                         if (mPendingEvent[i] == EVENT_LOST) {
                             mPendingEvent[i] = EVENT_NONE;
-                        }
-                        else {
+                        } else {
                             mPendingEvent[i] = EVENT_FOUND;
                         }
                     }
                     mLostCount[i] = STATE_FOUND;
                 }
                 if (DBG) {
-                    Log.d(TAG, "ChangeBuffer BSSID: " + mBssidInfos[i].bssid + "=" + mLostCount[i] +
-                            ", " + mPendingEvent[i] + ", rssi=" + rssi);
+                    Log.d(TAG, "ChangeBuffer BSSID: " + mBssidInfos[i].bssid + "=" + mLostCount[i]
+                            + ", " + mPendingEvent[i] + ", rssi=" + rssi);
                 }
                 if (mPendingEvent[i] != EVENT_NONE) {
                     ++eventCount;
                     eventType |= mPendingEvent[i];
                 }
             }
-            if (DBG) { Log.d(TAG, "ChangeBuffer events count=" + eventCount + ": " + eventType); }
+            if (DBG) Log.d(TAG, "ChangeBuffer events count=" + eventCount + ": " + eventType);
             if (eventCount >= mMinEvents) {
                 mFiredEvents = true;
                 return eventType;
