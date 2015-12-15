@@ -97,6 +97,7 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_set_bssid_blacklist = wifi_set_bssid_blacklist_stub;
     hal_fn->wifi_start_sending_offloaded_packet = wifi_start_sending_offloaded_packet_stub;
     hal_fn->wifi_stop_sending_offloaded_packet = wifi_stop_sending_offloaded_packet_stub;
+    hal_fn->wifi_get_wake_reason_stats = wifi_get_wake_reason_stats_stub;
     return 0;
 }
 
@@ -2152,6 +2153,47 @@ static jint android_net_wifi_stop_rssi_monitoring_native(JNIEnv *env, jclass cls
     return ret;
 }
 
+static jobject android_net_wifi_get_wlan_wake_reason_count(JNIEnv *env, jclass cls, jint iface) {
+
+    JNIHelper helper(env);
+    WLAN_DRIVER_WAKE_REASON_CNT wake_reason_cnt;
+    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
+    wifi_error ret;
+
+    ret = hal_fn.wifi_get_wake_reason_stats(handle, &wake_reason_cnt);
+
+    if (ret != WIFI_SUCCESS) {
+        ALOGE("android_net_wifi_get_wlan_wake_reason_count: failed to get wake reason count\n");
+        return NULL;
+    }
+
+    JNIObject<jobject> stats = helper.createObject( "android/net/wifi/WifiWakeReasonAndCounts");
+    if (stats == NULL) {
+        ALOGE("android_net_wifi_get_wlan_wake_reason_count: error allocating object\n");
+        return NULL;
+    }
+
+    helper.setIntField(stats, "totalCmdEventWake", wake_reason_cnt.total_cmd_event_wake);
+    helper.setIntField(stats, "totalDriverFwLocalWake", wake_reason_cnt.total_driver_fw_local_wake);
+    helper.setIntField(stats, "totalRxDataWake", wake_reason_cnt.total_rx_data_wake);
+    helper.setIntField(stats, "rxUnicast", wake_reason_cnt.rx_wake_details.rx_unicast_cnt);
+    helper.setIntField(stats, "rxMulticast", wake_reason_cnt.rx_wake_details.rx_multicast_cnt);
+    helper.setIntField(stats, "rxBroadcast", wake_reason_cnt.rx_wake_details.rx_broadcast_cnt);
+    helper.setIntField(stats, "icmp", wake_reason_cnt.rx_wake_pkt_classification_info.icmp_pkt);
+    helper.setIntField(stats, "icmp6", wake_reason_cnt.rx_wake_pkt_classification_info.icmp6_pkt);
+    helper.setIntField(stats, "icmp6Ra", wake_reason_cnt.rx_wake_pkt_classification_info.icmp6_ra);
+    helper.setIntField(stats, "icmp6Na", wake_reason_cnt.rx_wake_pkt_classification_info.icmp6_na);
+    helper.setIntField(stats, "icmp6Ns", wake_reason_cnt.rx_wake_pkt_classification_info.icmp6_ns);
+    helper.setIntField(stats, "ipv4RxMulticast",
+            wake_reason_cnt.rx_multicast_wake_pkt_info.ipv4_rx_multicast_addr_cnt);
+    helper.setIntField(stats, "ipv6Multicast",
+            wake_reason_cnt.rx_multicast_wake_pkt_info.ipv6_rx_multicast_addr_cnt);
+    helper.setIntField(stats, "otherRxMulticast",
+            wake_reason_cnt.rx_multicast_wake_pkt_info.other_rx_multicast_addr_cnt);
+    return stats.detach();
+}
+
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -2247,6 +2289,8 @@ static JNINativeMethod gWifiMethods[] = {
             (void*)android_net_wifi_start_rssi_monitoring_native},
     {"stopRssiMonitoringNative", "(II)I",
             (void*)android_net_wifi_stop_rssi_monitoring_native},
+    { "getWlanWakeReasonCountNative", "(I)Landroid/net/wifi/WifiWakeReasonAndCounts;",
+            (void*) android_net_wifi_get_wlan_wake_reason_count},
     {"isGetChannelsForBandSupportedNative", "()Z",
             (void*)android_net_wifi_is_get_channels_for_band_supported}
 };

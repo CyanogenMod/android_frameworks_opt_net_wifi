@@ -251,3 +251,8 @@ wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
 wifi_error wifi_stop_sending_offloaded_packet_stub(wifi_request_id id, wifi_interface_handle iface) {
     return WIFI_ERROR_NOT_SUPPORTED;
 }
+
+wifi_error wifi_get_wake_reason_stats_stub(wifi_interface_handle iface,
+                                    WLAN_DRIVER_WAKE_REASON_CNT *wifi_wake_reason_cnt) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}

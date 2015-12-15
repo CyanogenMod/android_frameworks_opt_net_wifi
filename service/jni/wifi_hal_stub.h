@@ -112,6 +112,8 @@ wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
         wifi_interface_handle iface, u8 *ip_packet, u16 ip_packet_len,
         u8 *src_mac_addr, u8 *dst_mac_addr, u32 period_msec);
 wifi_error wifi_stop_sending_offloaded_packet_stub(wifi_request_id id, wifi_interface_handle iface);
+wifi_error wifi_get_wake_reason_stats_stub(wifi_interface_handle iface,
+                                        WLAN_DRIVER_WAKE_REASON_CNT *wifi_wake_reason_cnt);
 #ifdef __cplusplus
 }
 #endif
