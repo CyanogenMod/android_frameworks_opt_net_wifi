@@ -1112,6 +1112,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private final IBatteryStats mBatteryStats;
 
     private String mTcpBufferSizes = null;
+    private int mTcpDelayedAckSegments = 1;
+    private int mTcpUserCfg = 0;
 
     // Used for debug and stats gathering
     private static int sScanAlarmIntentCount = 0;
@@ -1354,6 +1356,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         mTcpBufferSizes = mContext.getResources().getString(
                 com.android.internal.R.string.config_wifi_tcp_buffers);
+        mTcpDelayedAckSegments = SystemProperties.getInt("net.tcp.delack.wifi", 1);
+        mTcpUserCfg = SystemProperties.getInt("net.tcp.usercfg.wifi", 0);
 
         addState(mDefaultState);
             addState(mInitialState, mDefaultState);
@@ -4754,6 +4758,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (!TextUtils.isEmpty(mTcpBufferSizes)) {
             newLp.setTcpBufferSizes(mTcpBufferSizes);
         }
+        newLp.setTcpDelayedAckSegments(mTcpDelayedAckSegments);
+        newLp.setTcpUserCfg(mTcpUserCfg);
 
         // IPv4/v6 addresses, IPv6 routes and IPv6 DNS servers come from netlink.
         LinkProperties netlinkLinkProperties = mNetlinkTracker.getLinkProperties();
@@ -8481,6 +8487,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (!TextUtils.isEmpty(mTcpBufferSizes)) {
                 mLinkProperties.setTcpBufferSizes(mTcpBufferSizes);
             }
+            mLinkProperties.setTcpDelayedAckSegments(mTcpDelayedAckSegments);
+            mLinkProperties.setTcpUserCfg(mTcpUserCfg);
+
             mNetworkAgent = new WifiNetworkAgent(getHandler().getLooper(), mContext,
                     "WifiNetworkAgent", mNetworkInfo, mNetworkCapabilitiesFilter,
                     mLinkProperties, DEFAULT_SCORE);
