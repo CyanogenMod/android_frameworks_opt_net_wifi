@@ -5145,7 +5145,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                             mNwService.wifiFirmwareReload(mInterfaceName, "STA");
                         } catch (Exception e) {
                             loge("Failed to reload STA firmware " + e);
-                            // Continue
+                            setWifiState(WifiManager.WIFI_STATE_UNKNOWN);
+                            return HANDLED;
                         }
 
                         try {
@@ -5189,9 +5190,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                             transitionTo(mSupplicantStartingState);
                         } else {
                             loge("Failed to start supplicant!");
+                            setWifiState(WifiManager.WIFI_STATE_UNKNOWN);
                         }
                     } else {
                         loge("Failed to load driver");
+                        setWifiState(WifiManager.WIFI_STATE_UNKNOWN);
                     }
                     break;
                 case CMD_START_AP:
