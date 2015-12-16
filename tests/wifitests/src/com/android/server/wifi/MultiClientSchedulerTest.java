@@ -50,10 +50,10 @@ import java.util.Set;
 @SmallTest
 public class MultiClientSchedulerTest {
 
-    private static final int DEFAULT_MAX_BUCKETS = 8;
-    private static final int DEFAULT_MAX_CHANNELS = 8;
-    private static final int DEFAULT_MAX_BATCH = 10;
-    private static final int DEFAULT_MAX_AP_PER_SCAN = 11;
+    private static final int DEFAULT_MAX_BUCKETS = 9;
+    private static final int DEFAULT_MAX_CHANNELS = 23;
+    private static final int DEFAULT_MAX_BATCH = 11;
+    private static final int DEFAULT_MAX_AP_PER_SCAN = 33;
 
     private WifiNative mWifiNative;
     private MultiClientScheduler mScheduler;
@@ -216,6 +216,50 @@ public class MultiClientSchedulerTest {
     }
 
     @Test
+    public void defaultMaxBatch() {
+        Collection<ScanSettings> requests = new ArrayList<>();
+        requests.add(createRequest(channelsToSpec(5175), 30000, 0, 20,
+                WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL));
+
+        mScheduler.setMaxBatch(6);
+        mScheduler.updateSchedule(requests);
+        WifiNative.ScanSettings schedule = mScheduler.getSchedule();
+
+        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertBuckets(schedule, 1);
+        for (ScanSettings request : requests) {
+            assertSettingsSatisfied(schedule, request, false, true);
+        }
+        assertEquals("maxScansToCache", 6, schedule.report_threshold_num_scans);
+    }
+
+    @Test
+    public void exceedMaxAps() {
+        Collection<ScanSettings> requests = new ArrayList<>();
+        requests.add(createRequest(channelsToSpec(5175), 30000, 10, 20,
+                WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
+
+        mScheduler.setMaxApPerScan(5);
+        mScheduler.updateSchedule(requests);
+        WifiNative.ScanSettings schedule = mScheduler.getSchedule();
+
+        assertEquals("maxScansToCache", 5, schedule.max_ap_per_scan);
+    }
+
+    @Test
+    public void defaultMaxAps() {
+        Collection<ScanSettings> requests = new ArrayList<>();
+        requests.add(createRequest(channelsToSpec(5175), 30000, 10, 0,
+                WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
+
+        mScheduler.setMaxApPerScan(8);
+        mScheduler.updateSchedule(requests);
+        WifiNative.ScanSettings schedule = mScheduler.getSchedule();
+
+        assertEquals("maxApsPerScan", 8, schedule.max_ap_per_scan);
+    }
+
+    @Test
     public void optimalScheduleExceedsNumberOfAvailableBuckets() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
         requests.add(createRequest(channelsToSpec(2400), 30000, 0, 20,
@@ -295,7 +339,7 @@ public class MultiClientSchedulerTest {
     }
 
     @Test
-    public void optimalScheduleExceedsMaxChennelsOnSingleBand() {
+    public void optimalScheduleExceedsMaxChannelsOnSingleBand() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
         requests.add(createRequest(channelsToSpec(2400, 2450), 30000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
@@ -313,9 +357,29 @@ public class MultiClientSchedulerTest {
     }
 
     @Test
-    public void optimalScheduleExceedsMaxChennelsOnMultipleBands() {
+    public void optimalScheduleExceedsMaxChannelsOnMultipleBands() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
         requests.add(createRequest(channelsToSpec(2400, 2450, 5150), 30000, 0, 20,
+                WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
+
+        mScheduler.setMaxBuckets(2);
+        mScheduler.setMaxChannels(2);
+        mScheduler.updateSchedule(requests);
+        WifiNative.ScanSettings schedule = mScheduler.getSchedule();
+
+        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertBuckets(schedule, 1);
+        for (ScanSettings request : requests) {
+            assertSettingsSatisfied(schedule, request, true, true);
+        }
+    }
+
+    @Test
+    public void optimalScheduleExceedsMaxChannelsOnMultipleBandsFromMultipleRequests() {
+        ArrayList<ScanSettings> requests = new ArrayList<>();
+        requests.add(createRequest(channelsToSpec(2400, 2450), 30000, 0, 20,
+                WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
+        requests.add(createRequest(WifiScanner.WIFI_BAND_5_GHZ, 30000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
         mScheduler.setMaxBuckets(2);
@@ -341,6 +405,8 @@ public class MultiClientSchedulerTest {
         scheduleAndTestExactRequest(createRequest(WifiScanner.WIFI_BAND_BOTH, 25000, 0,
                 10, WifiScanner.REPORT_EVENT_NO_BATCH));
         scheduleAndTestExactRequest(createRequest(WifiScanner.WIFI_BAND_BOTH, 25000, 3,
+                0, WifiScanner.REPORT_EVENT_NO_BATCH));
+        scheduleAndTestExactRequest(createRequest(channelsToSpec(2400, 5175, 5650) , 25000, 3,
                 0, WifiScanner.REPORT_EVENT_NO_BATCH));
     }
 
@@ -370,15 +436,24 @@ public class MultiClientSchedulerTest {
         assertEquals("reportEvents", settings.reportEvents, schedule.buckets[0].report_events);
         assertEquals("period", computeExpectedPeriod(settings.periodInMs),
                 schedule.buckets[0].period_ms);
-        Set<Integer> expectedChannels = new HashSet<>();
-        for (ChannelSpec channel : getAllChannels(settings)) {
-            expectedChannels.add(channel.frequency);
+        if (settings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+            assertEquals("band", settings.band, schedule.buckets[0].band);
+            Set<Integer> expectedChannels = new HashSet<>();
+            for (ChannelSpec channel : getAllChannels(settings)) {
+                expectedChannels.add(channel.frequency);
+            }
+            Set<Integer> actualChannels = new HashSet<>();
+            for (ChannelSpec channel : getAllChannels(schedule.buckets[0])) {
+                actualChannels.add(channel.frequency);
+            }
+            assertEquals("channels", expectedChannels, actualChannels);
         }
-        Set<Integer> actualChannels = new HashSet<>();
-        for (ChannelSpec channel : getAllChannels(schedule.buckets[0])) {
-            actualChannels.add(channel.frequency);
+        else {
+            assertEquals("band", settings.band, schedule.buckets[0].band);
+            assertEquals("num_channels", 0, schedule.buckets[0].num_channels);
+            assertTrue("channels", schedule.buckets[0].channels == null
+                    || schedule.buckets[0].channels.length == 0);
         }
-        assertEquals("channels", expectedChannels, actualChannels);
     }
 
     private void assertBuckets(WifiNative.ScanSettings schedule, int numBuckets) {
