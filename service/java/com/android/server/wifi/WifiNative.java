@@ -16,21 +16,21 @@
 
 package com.android.server.wifi;
 
-import android.content.Context;
-import android.content.Intent;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
-import android.content.IntentFilter;
 import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.wifi.RttManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiLinkLayerStats;
-import android.net.wifi.WifiWakeReasonAndCounts;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
+import android.net.wifi.WifiWakeReasonAndCounts;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
@@ -1738,27 +1738,24 @@ public class WifiNative {
         void onScanRestarted();
     }
 
-    // Callback from native
-    private static void onScanResultsAvailable(int id) {
-        ScanEventHandler handler = sScanEventHandler;
-        if (handler != null) {
-            handler.onScanResultsAvailable();
-        }
-    }
-
     /* scan status, keep these values in sync with gscan.h */
-    private static int WIFI_SCAN_BUFFER_FULL = 0;
-    private static int WIFI_SCAN_COMPLETE = 1;
+    private static final int WIFI_SCAN_RESULTS_AVAILABLE = 0;
+    private static final int WIFI_SCAN_THRESHOLD_NUM_SCANS = 1;
+    private static final int WIFI_SCAN_THRESHOLD_PERCENT = 2;
+    private static final int WIFI_SCAN_DISABLED = 3;
 
     // Callback from native
-    private static void onScanStatus(int status) {
+    private static void onScanStatus(int id, int event) {
         ScanEventHandler handler = sScanEventHandler;
-        if (status == WIFI_SCAN_BUFFER_FULL) {
-            /* we have a separate event to take care of this */
-        } else if (status == WIFI_SCAN_COMPLETE) {
+        if (event == WIFI_SCAN_RESULTS_AVAILABLE || event == WIFI_SCAN_THRESHOLD_NUM_SCANS
+                || event == WIFI_SCAN_THRESHOLD_PERCENT) {
             if (handler != null) {
+                // TODO pass event back to framework
                 handler.onScanStatus();
             }
+        }
+        else if (event == WIFI_SCAN_DISABLED) {
+            // TODO signal that scan has been disabled
         }
     }
 
@@ -1852,7 +1849,8 @@ public class WifiNative {
     }
 
     // Callback from native
-    private static void onFullScanResult(int id, ScanResult result, byte bytes[]) {
+    private static void onFullScanResult(int id, ScanResult result, byte bytes[],
+            int bucketsScanned) {
         if (DBG) Log.i(TAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
                 "num = " + bytes.length);
 
@@ -2532,7 +2530,7 @@ public class WifiNative {
 
     public static class WifiPnoNetwork {
         String SSID;
-        int rssi_threshold;
+        int rssi_threshold; // TODO remove
         int flags;
         int auth;
         String configKey; // kept for reference
@@ -2627,6 +2625,7 @@ public class WifiNative {
         }
     }
 
+    // TODO remove
     public static class WifiLazyRoamParams {
         int A_band_boost_threshold;
         int A_band_penalty_threshold;
@@ -2653,18 +2652,9 @@ public class WifiNative {
         }
     }
 
-    private native static boolean setLazyRoamNative(int iface, int id,
-                                              boolean enabled, WifiLazyRoamParams param);
-
+    // TODO remove
     public boolean setLazyRoam(boolean enabled, WifiLazyRoamParams params) {
-        synchronized (sLock) {
-            if (isHalStarted()) {
-                sPnoCmdId = getNewCmdIdLocked();
-                return setLazyRoamNative(sWlan0Index, sPnoCmdId, enabled, params);
-            } else {
-                return false;
-            }
-        }
+        return false;
     }
 
     private native static boolean setBssidBlacklistNative(int iface, int id,
@@ -2687,24 +2677,9 @@ public class WifiNative {
         }
     }
 
-    private native static boolean setSsidWhitelistNative(int iface, int id, String list[]);
-
+    // TODO remove
     public boolean setSsidWhitelist(String list[]) {
-        int size = 0;
-        if (list != null) {
-            size = list.length;
-        }
-        Log.e(TAG, "setSsidWhitelist cmd " + sPnoCmdId + " size " + size);
-
-        synchronized (sLock) {
-            if (isHalStarted()) {
-                sPnoCmdId = getNewCmdIdLocked();
-
-                return setSsidWhitelistNative(sWlan0Index, sPnoCmdId, list);
-            } else {
-                return false;
-            }
-        }
+        return false;
     }
 
     private native static int startSendingOffloadedPacketNative(int iface, int idx,

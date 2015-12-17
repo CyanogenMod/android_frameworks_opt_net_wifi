@@ -94,10 +94,6 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
     hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
     hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
-    hal_fn->wifi_set_ssid_white_list = wifi_set_ssid_white_list_stub;
-    hal_fn->wifi_set_gscan_roam_params = wifi_set_gscan_roam_params_stub;
-    hal_fn->wifi_set_bssid_preference = wifi_set_bssid_preference_stub;
-    hal_fn->wifi_enable_lazy_roam = wifi_enable_lazy_roam_stub;
     hal_fn->wifi_set_bssid_blacklist = wifi_set_bssid_blacklist_stub;
     hal_fn->wifi_start_sending_offloaded_packet = wifi_start_sending_offloaded_packet_stub;
     hal_fn->wifi_stop_sending_offloaded_packet = wifi_stop_sending_offloaded_packet_stub;
@@ -481,25 +477,17 @@ static jstring android_net_wifi_getInterfaceName(JNIEnv *env, jclass cls, jint i
 }
 
 
-static void onScanResultsAvailable(wifi_request_id id, unsigned num_results) {
-
-    JNIHelper helper(mVM);
-
-    // ALOGD("onScanResultsAvailable called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
-
-    helper.reportEvent(mCls, "onScanResultsAvailable", "(I)V", id);
-}
-
-static void onScanEvent(wifi_scan_event event, unsigned status) {
+static void onScanEvent(wifi_request_id id, wifi_scan_event event) {
 
     JNIHelper helper(mVM);
 
     // ALOGD("onScanStatus called, vm = %p, obj = %p, env = %p", mVM, mCls, env);
 
-    helper.reportEvent(mCls, "onScanStatus", "(I)V", event);
+    helper.reportEvent(mCls, "onScanStatus", "(II)V", id, event);
 }
 
-static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
+    static void onFullScanResult(wifi_request_id id, wifi_scan_result *result,
+            unsigned buckets_scanned) {
 
     JNIHelper helper(mVM);
 
@@ -522,8 +510,8 @@ static void onFullScanResult(wifi_request_id id, wifi_scan_result *result) {
 
     // ALOGD("Returning result");
 
-    helper.reportEvent(mCls, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[B)V", id,
-            scanResult.get(), elements.get());
+    helper.reportEvent(mCls, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[BI)V", id,
+            scanResult.get(), elements.get(), buckets_scanned);
 }
 
 static jboolean android_net_wifi_startScan(
@@ -597,7 +585,6 @@ static jboolean android_net_wifi_startScan(
 
     wifi_scan_result_handler handler;
     memset(&handler, 0, sizeof(handler));
-    handler.on_scan_results_available = &onScanResultsAvailable;
     handler.on_full_scan_result = &onFullScanResult;
     handler.on_scan_event = &onScanEvent;
 
@@ -1904,16 +1891,16 @@ static jboolean android_net_wifi_setPnoListNative(
 
     if (list == NULL) {
         // stop pno
-        int result = hal_fn.wifi_set_epno_list(id, handle, 0, NULL, handler);
+        int result = hal_fn.wifi_reset_epno_list(id, handle);
         ALOGD(" setPnoListNative: STOP result = %d", result);
         return result >= 0;
     }
 
-    wifi_epno_network net_list[MAX_PNO_SSID];
-    memset(&net_list, 0, sizeof(net_list));
+    wifi_epno_params params;
+    memset(&params, 0, sizeof(params));
 
     size_t len = helper.getArrayLength((jobjectArray)list);
-    if (len > (size_t)MAX_PNO_SSID) {
+    if (len > (size_t)MAX_EPNO_NETWORKS) {
         return false;
     }
 
@@ -1953,54 +1940,22 @@ static jboolean android_net_wifi_setPnoListNative(
             ALOGE("Error setPnoListNative: zero length ssid, skip it");
             continue;
         }
-        memcpy(net_list[i].ssid, ssid, ssid_len);
+        memcpy(params.networks[i].ssid, ssid, ssid_len);
 
-        int rssit = helper.getIntField(pno_net, "rssi_threshold");
-        net_list[i].rssi_threshold = (byte)rssit;
         int a = helper.getIntField(pno_net, "auth");
-        net_list[i].auth_bit_field = a;
+        params.networks[i].auth_bit_field = a;
         int f = helper.getIntField(pno_net, "flags");
-        net_list[i].flags = f;
-        ALOGD(" setPnoListNative: idx %u rssi %d/%d auth %x/%x flags %x/%x [%s]", i,
-                (signed)net_list[i].rssi_threshold, net_list[i].rssi_threshold,
-                net_list[i].auth_bit_field, a, net_list[i].flags, f, net_list[i].ssid);
+        params.networks[i].flags = f;
+        ALOGD(" setPnoListNative: idx %u auth %x/%x flags %x/%x [%s]", i,
+                params.networks[i].auth_bit_field, a, params.networks[i].flags, f,
+                params.networks[i].ssid);
     }
+    params.num_networks = len;
 
-    int result = hal_fn.wifi_set_epno_list(id, handle, len, net_list, handler);
+    int result = hal_fn.wifi_set_epno_list(id, handle, &params, handler);
     ALOGD(" setPnoListNative: result %d", result);
 
     return result >= 0;
-}
-
-static jboolean android_net_wifi_setLazyRoam(
-        JNIEnv *env, jclass cls, jint iface, jint id, jboolean enabled, jobject roam_param)  {
-
-    JNIHelper helper(env);
-    wifi_error status = WIFI_SUCCESS;
-    wifi_roam_params params;
-    memset(&params, 0, sizeof(params));
-
-    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
-    ALOGD("configure lazy roam request [%d] = %p", id, handle);
-
-    if (roam_param != NULL) {
-        params.A_band_boost_threshold  = helper.getIntField(roam_param, "A_band_boost_threshold");
-        params.A_band_penalty_threshold  = helper.getIntField(roam_param, "A_band_penalty_threshold");
-        params.A_band_boost_factor = helper.getIntField(roam_param, "A_band_boost_factor");
-        params.A_band_penalty_factor  = helper.getIntField(roam_param, "A_band_penalty_factor");
-        params.A_band_max_boost  = helper.getIntField(roam_param, "A_band_max_boost");
-        params.lazy_roam_hysteresis = helper.getIntField(roam_param, "lazy_roam_hysteresis");
-        params.alert_roam_rssi_trigger = helper.getIntField(roam_param, "alert_roam_rssi_trigger");
-        status = hal_fn.wifi_set_gscan_roam_params(id, handle, &params);
-    }
-    ALOGD("android_net_wifi_setLazyRoam configured params status=%d\n", status);
-
-    if (status >= 0) {
-        int doEnable = enabled ? 1 : 0;
-        status = hal_fn.wifi_enable_lazy_roam(id, handle, doEnable);
-        ALOGD("android_net_wifi_setLazyRoam enabled roam status=%d\n", status);
-    }
-    return status >= 0;
 }
 
 static jboolean android_net_wifi_setBssidBlacklist(
@@ -2051,55 +2006,6 @@ static jboolean android_net_wifi_setBssidBlacklist(
     return hal_fn.wifi_set_bssid_blacklist(id, handle, params) == WIFI_SUCCESS;
 }
 
-static jboolean android_net_wifi_setSsidWhitelist(
-        JNIEnv *env, jclass cls, jint iface, jint id, jobject list)  {
-
-    JNIHelper helper(env);
-    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
-    ALOGD("configure SSID white list request [%d] = %p", id, handle);
-    wifi_ssid *ssids = NULL;
-    int num_ssids = 0;
-    if (list != NULL) {
-        size_t len = helper.getArrayLength((jobjectArray)list);
-        if (len > 0) {
-            ssids = (wifi_ssid *)malloc(len * sizeof (wifi_ssid));
-            if (!ssids) return false;
-            memset(ssids, 0, len * sizeof (wifi_ssid));
-            for (unsigned int i = 0; i < len; i++) {
-
-                JNIObject<jobject> jssid = helper.getObjectArrayElement(list, i);
-                if (jssid == NULL) {
-                    ALOGE("configure SSID whitelist: could not get element %d", i);
-                    free(ssids);
-                   return false;
-                }
-
-                ScopedUtfChars chars(env, (jstring)jssid.get());
-                const char *utf = chars.c_str();
-                if (utf == NULL) {
-                    ALOGE("Error getting sssid");
-                    free(ssids);
-                    return false;
-                }
-
-                int slen = strnlen(utf, 33);
-                if (slen <= 0 || slen > 32) {
-                    ALOGE("Error wrong ssid length %d", slen);
-                    free(ssids);
-                    return false;
-                }
-
-                memcpy(ssids[i].ssid, utf, slen);
-                num_ssids++;
-                ALOGD("SSID white list: added ssid %s", utf);
-            }
-        }
-    }
-
-    ALOGD("android_net_wifi_setSsidWhitelist Added %d sssids", num_ssids);
-    return hal_fn.wifi_set_ssid_white_list(id, handle, num_ssids, ssids) == WIFI_SUCCESS;
-}
-
 static jint android_net_wifi_start_sending_offloaded_packet(JNIEnv *env, jclass cls, jint iface,
                     jint idx, jbyteArray srcMac, jbyteArray dstMac, jbyteArray pkt, jint period)  {
     JNIHelper helper(env);
@@ -2107,7 +2013,7 @@ static jint android_net_wifi_start_sending_offloaded_packet(JNIEnv *env, jclass 
     ALOGD("Start packet offload [%d] = %p", idx, handle);
     wifi_error ret;
     wifi_request_id id = idx;
-    
+
     ScopedBytesRO pktBytes(env, pkt), srcMacBytes(env, srcMac), dstMacBytes(env, dstMac);
 
     byte * pkt_data = (byte*) pktBytes.get();
@@ -2342,12 +2248,8 @@ static JNINativeMethod gWifiMethods[] = {
     {"getRingBufferDataNative", "(ILjava/lang/String;)Z",
             (void*) android_net_wifi_get_ring_buffer_data},
     {"getFwMemoryDumpNative","(I)Z", (void*) android_net_wifi_get_fw_memory_dump},
-    { "setLazyRoamNative", "(IIZLcom/android/server/wifi/WifiNative$WifiLazyRoamParams;)Z",
-            (void*) android_net_wifi_setLazyRoam},
     { "setBssidBlacklistNative", "(II[Ljava/lang/String;)Z",
             (void*)android_net_wifi_setBssidBlacklist},
-    { "setSsidWhitelistNative", "(II[Ljava/lang/String;)Z",
-            (void*)android_net_wifi_setSsidWhitelist},
     {"setLoggingEventHandlerNative", "(II)Z", (void *) android_net_wifi_set_log_handler},
     {"resetLogHandlerNative", "(II)Z", (void *) android_net_wifi_reset_log_handler},
     { "startSendingOffloadedPacketNative", "(II[B[B[BI)I",
