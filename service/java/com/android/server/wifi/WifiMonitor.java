@@ -34,6 +34,7 @@ import android.util.LocalLog;
 import android.util.Log;
 import android.util.SparseArray;
 
+import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl.P2pStatus;
 
@@ -1250,55 +1251,19 @@ public class WifiMonitor {
         }
     }
 
-    private final Map<String, String[]> mIconFragmentMap =
-            new LinkedHashMap<String, String[]>() {
-        @Override
-        protected boolean removeEldestEntry(Entry eldest) {
-            return size() > 3;
-        }
-    };
-
     private void handleIconResult(String eventStr, String iface) {
-        // RX-HS20-ICON c0:c5:20:27:d1:e8 9 10 OMJjkpWlDpC+UC...
+        // RX-HS20-ICON c0:c5:20:27:d1:e8 <file> <size>
         String[] segments = eventStr.split(" ");
-        if (segments.length != 5) {
+        if (segments.length != 4) {
             throw new IllegalArgumentException("Incorrect number of segments");
         }
+
         try {
             String bssid = segments[1];
-            int fragmentIndex = Integer.parseInt(segments[2]);
-            int fragmentEnd = Integer.parseInt(segments[3]);
-
-            String[] fragments = mIconFragmentMap.get(bssid);
-            if (fragments == null) {
-                fragments = new String[fragmentEnd+1];
-                mIconFragmentMap.put(bssid, fragments);
-            }
-            if (fragmentEnd >= fragments.length) {
-                fragments = new String[fragmentEnd+1];
-                mIconFragmentMap.put(bssid, fragments);
-                Log.w(TAG, String.format("Icon fragment %d out of %d exceeds %d",
-                        fragmentIndex, fragmentEnd, fragments.length));
-            }
-            fragments[fragmentIndex] = segments[4];
-
-            boolean incomplete = false;
-            for (String fragment : fragments) {
-                if (fragment == null) {
-                    incomplete = true;
-                    break;
-                }
-            }
-            if (!incomplete) {
-                StringBuilder b64 = new StringBuilder();
-                for (String fragment : fragments) {
-                    b64.append(fragment);
-                }
-                mIconFragmentMap.remove(bssid);
-                long mac = Utils.parseMac(bssid);
-                byte[] octets = Base64.decode(b64.toString(), Base64.DEFAULT);
-                sendMessage(iface, RX_HS20_ANQP_ICON_EVENT, (int)(mac >>> 32), (int)mac, octets);
-            }
+            String fileName = segments[2];
+            int size = Integer.parseInt(segments[3]);
+            sendMessage(iface, RX_HS20_ANQP_ICON_EVENT,
+                    new IconEvent(Utils.parseMac(bssid), fileName, size));
         }
         catch (NumberFormatException nfe) {
             throw new IllegalArgumentException("Bad numeral");

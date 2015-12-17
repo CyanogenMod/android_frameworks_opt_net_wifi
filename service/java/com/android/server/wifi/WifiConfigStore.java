@@ -65,6 +65,7 @@ import com.android.server.wifi.anqp.ANQPFactory;
 import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.hotspot2.ANQPData;
 import com.android.server.wifi.hotspot2.AnqpCache;
+import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
@@ -687,7 +688,9 @@ public class WifiConfigStore extends IpConfigStore {
 
         mSIMAccessor = new SIMAccessor(mContext);
 
-        //mOSUManager.addMockOSUEnvironment(mOSUManager);     // !!! Uncomment to enable HS2.0r2
+        if (OSUManager.R2_TEST) {
+            mOSUManager.addMockOSUEnvironment(mOSUManager);
+        }
     }
 
     public void trimANQPCache(boolean all) {
@@ -3367,8 +3370,12 @@ public class WifiConfigStore extends IpConfigStore {
         mSupplicantBridge.notifyANQPDone(bssid, success);
     }
 
-    public void notifyIconReceived(long bssid, byte[] iconData) {
-        mOSUManager.notifyIconReceived(bssid, iconData);
+    public void notifyIconReceived(IconEvent iconEvent) {
+        mOSUManager.notifyIconReceived(iconEvent);
+    }
+
+    public void notifyIconFailed(long bssid) {
+        mOSUManager.notifyIconFailed(bssid);
     }
 
     public void wnmFrameReceived(String event) {

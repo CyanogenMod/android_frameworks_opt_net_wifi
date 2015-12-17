@@ -5,9 +5,11 @@ import android.util.Log;
 import com.android.server.wifi.anqp.ANQPFactory;
 import com.android.server.wifi.anqp.HSIconFileElement;
 import com.android.server.wifi.anqp.IconInfo;
+import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
 
+import java.io.IOException;
 import java.net.ProtocolException;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
@@ -19,16 +21,16 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import static com.android.server.wifi.anqp.Constants.ANQPElementType.*;
+import static com.android.server.wifi.anqp.Constants.ANQPElementType.HSIconFile;
 
-public class IconCache {
+public class IconCache extends Thread {
     private static final int CacheSize = 64;
 
     private final OSUManager mOSUManager;
     private final Map<Long, LinkedList<IconQuery>> mPendingQueries = new HashMap<>();
     private final Map<IconKey, HSIconFileElement> mCache = new LinkedHashMap<IconKey, HSIconFileElement>() {
         @Override
-        protected boolean removeEldestEntry(Entry eldest) {
+        protected boolean removeEldestEntry(Map.Entry eldest) {
             return size() > CacheSize;
         }
     };
@@ -123,19 +125,19 @@ public class IconCache {
         }
     }
 
-    public void notifyIconReceived(long bssid, byte[] iconData) {
-        Log.d(Utils.hs2LogTag(getClass()),
-                String.format("Icon data for %012x: %d",
-                        bssid, iconData != null ? iconData.length : 0));
-
-        if (iconData == null) {
-            doIconQuery(bssid, null);
+    public void notifyIconReceived(IconEvent iconEvent) {
+        byte[] iconData;
+        try {
+            iconData = mOSUManager.getSupplicantBridge().retrieveIcon(iconEvent);
+        }
+        catch (IOException ioe) {
+            Log.w(Utils.hs2LogTag(getClass()), "Icon retrieval failed: " + ioe, ioe);
             return;
         }
 
         IconQuery current;
         synchronized (mCache) {
-            current = dropCurrentQuery(bssid);
+            current = dropCurrentQuery(iconEvent.getBSSID());
             if (current == null) {
                 Log.w(Utils.hs2LogTag(getClass()), "Spurious icon data");
                 return;
@@ -147,10 +149,11 @@ public class IconCache {
                                 ByteBuffer.wrap(iconData).order(ByteOrder.LITTLE_ENDIAN));
 
                 String fileName = current.getIconInfo().getFileName();
-                Log.d(Utils.hs2LogTag(getClass()), "Icon file " + fileName + ": " + iconFileElement);
+                Log.d(Utils.hs2LogTag(getClass()), "Icon file " + fileName + ": " +
+                        iconFileElement);
                 current.getOSUInfo().setIconFileElement(iconFileElement, fileName);
 
-                mCache.put(new IconKey(bssid, fileName), iconFileElement);
+                mCache.put(new IconKey(iconEvent.getBSSID(), fileName), iconFileElement);
             }
             catch (ProtocolException | BufferUnderflowException e) {
                 Log.e(Utils.hs2LogTag(SupplicantBridge.class),
@@ -163,12 +166,16 @@ public class IconCache {
 
         IconQuery next;
         synchronized (mCache) {
-            next = getNextQuery(bssid);
+            next = getNextQuery(iconEvent.getBSSID());
         }
 
         if (next != null) {
-            doIconQuery(bssid, next);
+            doIconQuery(iconEvent.getBSSID(), next);
         }
+    }
+
+    public void notifyIconFailed(long bssid) {
+        doIconQuery(bssid, null);
     }
 
     private static final long RequeryTimeLow = 6000L;
