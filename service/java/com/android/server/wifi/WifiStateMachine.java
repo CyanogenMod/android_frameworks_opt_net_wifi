@@ -8027,7 +8027,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             }
                         });
             } catch (IllegalArgumentException e) {
-                Log.wtf("Failed to create IpReachabilityMonitor", e);
+                Log.wtf(TAG, "Failed to create IpReachabilityMonitor", e);
             }
         }
 
