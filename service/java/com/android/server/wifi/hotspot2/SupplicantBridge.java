@@ -1,5 +1,6 @@
 package com.android.server.wifi.hotspot2;
 
+import android.util.Base64;
 import android.util.Log;
 
 import com.android.server.wifi.ScanDetail;
@@ -11,6 +12,7 @@ import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.eap.AuthParam;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
+import com.android.server.wifi.hotspot2.osu.OSUManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 
 import java.io.BufferedReader;
@@ -32,6 +34,7 @@ public class SupplicantBridge {
     private final WifiConfigStore mConfigStore;
     private final Map<Long, ScanDetail> mRequestMap = new HashMap<>();
 
+    private static final int IconChunkSize = 1400;  // 2K*3/4 - overhead
     private static final Map<String, Constants.ANQPElementType> sWpsNames = new HashMap<>();
 
     static {
@@ -100,9 +103,61 @@ public class SupplicantBridge {
     }
 
     public boolean doIconQuery(long bssid, String fileName) {
-        String result = mSupplicantHook.doCustomSupplicantCommand("HS20_ICON_REQUEST " +
+        String result = mSupplicantHook.doCustomSupplicantCommand("REQ_HS20_ICON " +
                 Utils.macToString(bssid) + " " + fileName);
         return result != null && result.startsWith("OK");
+    }
+
+    public byte[] retrieveIcon(IconEvent iconEvent) throws IOException {
+        byte[] iconData = new byte[iconEvent.getSize()];
+        try {
+            int offset = 0;
+            while (offset < iconEvent.getSize()) {
+                int size = Math.min(iconEvent.getSize() - offset, IconChunkSize);
+
+                String command = String.format("GET_HS20_ICON %s %s %d %d",
+                        Utils.macToString(iconEvent.getBSSID()), iconEvent.getFileName(), offset, size);
+                Log.d(OSUManager.TAG, "Issuing '" + command + "'");
+                String response = mSupplicantHook.doCustomSupplicantCommand(command);
+                if (response == null) {
+                    throw new IOException("No icon data returned");
+                }
+
+                try {
+                    String[] chunks = response.split(" ");
+                    if (chunks.length != 5 ||
+                            !chunks[0].equals("HS20-ICON-DATA") ||
+                            Utils.parseMac(chunks[1]) != iconEvent.getBSSID() ||
+                            !chunks[2].equals(iconEvent.getFileName()) ||
+                            Integer.parseInt(chunks[3]) != offset) {
+                        throw new IOException("Bad response to '" + command + "': " + response);
+                    }
+
+                    byte[] fragment = Base64.decode(chunks[4], Base64.DEFAULT);
+                    if (fragment.length == 0) {
+                        throw new IOException("Null data for '" + command + "': " + response);
+                    }
+                    if (fragment.length + offset > iconData.length) {
+                        throw new IOException("Icon chunk exceeds image size");
+                    }
+                    System.arraycopy(fragment, 0, iconData, offset, fragment.length);
+                    offset += fragment.length;
+                } catch (IllegalArgumentException iae) {
+                    throw new IOException("Failed to parse response to '" + command + "': " + response);
+                }
+            }
+            if (offset != iconEvent.getSize()) {
+                Log.w(OSUManager.TAG, "Partial icon data: " + offset +
+                        ", expected " + iconEvent.getSize());
+            }
+        }
+        finally {
+            Log.d(OSUManager.TAG, "Deleting icon for " + iconEvent);
+            String result = mSupplicantHook.doCustomSupplicantCommand("DEL_HS20_ICON " +
+                    Utils.macToString(iconEvent.getBSSID()) + " " + iconEvent.getFileName());
+        }
+
+        return iconData;
     }
 
     public void notifyANQPDone(Long bssid, boolean success) {
@@ -113,7 +168,7 @@ public class SupplicantBridge {
 
         if (scanDetail == null) {
             if (!success) {
-                mConfigStore.notifyIconReceived(bssid, null);
+                mConfigStore.notifyIconFailed(bssid);
             }
             return;
         }

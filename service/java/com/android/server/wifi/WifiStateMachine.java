@@ -112,6 +112,7 @@ import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.net.NetlinkTracker;
+import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
@@ -6287,8 +6288,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 }
                 case WifiMonitor.RX_HS20_ANQP_ICON_EVENT:
-                    mWifiConfigStore.notifyIconReceived(
-                            (long)message.arg1 << 32 | (long)message.arg2, (byte[])message.obj);
+                    mWifiConfigStore.notifyIconReceived((IconEvent)message.obj);
                     break;
                 case WifiMonitor.HS20_REMEDIATION_EVENT:
                     mWifiConfigStore.wnmFrameReceived((String)message.obj);
