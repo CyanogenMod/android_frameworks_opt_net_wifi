@@ -2991,6 +2991,56 @@ public class WifiConfigStore extends IpConfigStore {
                             // No need to save realm or PLMN in supplicant
                             continue;
                         }
+                        if (key.equals(WifiEnterpriseConfig.IDENTITY_KEY)) {
+                             if ((config.enterpriseConfig.getEapMethod() ==  WifiEnterpriseConfig.Eap.SIM)||
+                                 (config.enterpriseConfig.getEapMethod() ==  WifiEnterpriseConfig.Eap.AKA)||
+                                 (config.enterpriseConfig.getEapMethod() ==  WifiEnterpriseConfig.Eap.AKA_PRIME)) {
+                                  if ( (!newNetwork) && (value != null) && !mWifiNative.setNetworkVariable(
+                                             netId,
+                                             key,
+                                             "NULL")) {
+                                        loge(config.SSID + ": failed to set " + key +
+                                                ": " + value);
+                                        break setVariables;
+                                  }
+                             } else {
+                                  if (!mWifiNative.setNetworkVariable(
+                                           netId,
+                                           key,
+                                           value)) {
+                                      removeKeys(enterpriseConfig);
+                                      loge(config.SSID + ": failed to set " + key +
+                                              ": " + value);
+                                      break setVariables;
+                                 }
+                            }
+                            continue;
+                        }
+                        if (key.equals(WifiEnterpriseConfig.ANON_IDENTITY_KEY)) {
+                             if ((config.enterpriseConfig.getEapMethod() ==  WifiEnterpriseConfig.Eap.SIM)||
+                                 (config.enterpriseConfig.getEapMethod() ==  WifiEnterpriseConfig.Eap.AKA)||
+                                 (config.enterpriseConfig.getEapMethod() ==  WifiEnterpriseConfig.Eap.AKA_PRIME)) {
+                                  if ( (!newNetwork) && (value != null) && !mWifiNative.setNetworkVariable(
+                                             netId,
+                                             key,
+                                             "NULL")) {
+                                        loge(config.SSID + ": failed to set " + key +
+                                                ": " + value);
+                                        break setVariables;
+                                  }
+                             } else {
+                                  if (!mWifiNative.setNetworkVariable(
+                                           netId,
+                                           key,
+                                           value)) {
+                                      removeKeys(enterpriseConfig);
+                                      loge(config.SSID + ": failed to set " + key +
+                                              ": " + value);
+                                      break setVariables;
+                                  }
+                             }
+                             continue;
+                        }
                         if (!((newNetwork == false) && (savedValue != null) &&
                               (value != null) && value.equals(savedValue)) &&
                                !mWifiNative.setNetworkVariable(
