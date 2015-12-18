@@ -27,6 +27,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiLinkLayerStats;
+import android.net.wifi.WifiWakeReasonAndCounts;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
@@ -2803,4 +2804,6 @@ public class WifiNative {
             }
         }
     }
+
+    private static native WifiWakeReasonAndCounts getWlanWakeReasonCountNative(int iface);
 }
