@@ -66,7 +66,7 @@ import static com.android.server.wifi.anqp.Constants.ANQPElementType.HSOSUProvid
 
 public class OSUManager {
     public static final String TAG = "OSUMGR";
-    public static final boolean R2_TEST = true;
+    public static final boolean R2_TEST = false;
 
     private static final int MAX_SCAN_MISSES = 15;
     private static final long REMEDIATION_TIMEOUT = 120000L;
