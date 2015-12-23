@@ -6016,6 +6016,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         public void enter() {
             WifiNative.stopHal();
             mWifiNative.unloadDriver();
+            lastConnectAttemptTimestamp = 0;
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
                 mWifiP2pChannel.connect(mContext, getHandler(),
