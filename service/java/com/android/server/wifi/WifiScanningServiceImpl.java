@@ -445,6 +445,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         break;
                     case CMD_SCAN_RESULTS_AVAILABLE: {
                             ScanData[] results = WifiNative.getScanResults(/* flush = */ true);
+                            if (results == null) {
+                                loge("Wifi HAL SCAN results NULL");
+                                break;
+                            }
                             Collection<ClientInfo> clients = mClients.values();
                             for (ClientInfo ci2 : clients) {
                                 ci2.reportScanResults(results);
