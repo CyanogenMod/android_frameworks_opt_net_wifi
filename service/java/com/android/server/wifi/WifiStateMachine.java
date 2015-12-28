@@ -7774,19 +7774,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private void updateCapabilities(WifiConfiguration config) {
         NetworkCapabilities networkCapabilities = new NetworkCapabilities(mDfltNetworkCapabilities);
-        if (config.ephemeral) {
-            networkCapabilities.removeCapability(
-                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
-        } else {
-            networkCapabilities.addCapability(
-                    NetworkCapabilities.NET_CAPABILITY_TRUSTED);
-        }
-        networkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
-                mWifiInfo.getRssi() : NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED);
-        if (mWifiConfigStore.isOSUNetwork(config)) {
-            Log.d(TAG, "Removing internet cap from " + config.SSID);
-            //networkCapabilities.removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-            networkCapabilities.addCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL);
+        if (config != null) {
+            if (config.ephemeral) {
+                networkCapabilities.removeCapability(
+                        NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            } else {
+                networkCapabilities.addCapability(
+                        NetworkCapabilities.NET_CAPABILITY_TRUSTED);
+            }
+            networkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
+                    mWifiInfo.getRssi() : NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED);
+            if (mWifiConfigStore.isOSUNetwork(config)) {
+                Log.d(TAG, "Removing internet cap from " + config.SSID);
+                //networkCapabilities.removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                networkCapabilities.addCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL);
+            }
         }
         mNetworkAgent.sendNetworkCapabilities(networkCapabilities);
     }
