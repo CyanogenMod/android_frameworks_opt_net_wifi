@@ -25,8 +25,8 @@ import android.os.Message;
 import android.os.Messenger;
 import android.util.Log;
 
-import com.android.internal.util.AsyncChannel;
 import com.android.internal.R;
+import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 
@@ -44,7 +44,7 @@ import java.util.UUID;
  * Provides API to the WifiStateMachine for doing read/write access
  * to soft access point configuration
  */
-class WifiApConfigStore extends StateMachine {
+public class WifiApConfigStore extends StateMachine {
 
     private Context mContext;
     private static final String TAG = "WifiApConfigStore";
@@ -71,8 +71,8 @@ class WifiApConfigStore extends StateMachine {
             addState(mActiveState, mDefaultState);
 
         setInitialState(mInactiveState);
-        String ap2GChannelListStr = (mContext.getResources().getString(
-                R.string.config_wifi_framework_sap_2G_channel_list));
+        String ap2GChannelListStr = mContext.getResources().getString(
+                R.string.config_wifi_framework_sap_2G_channel_list);
         Log.d(TAG, "2G band allowed channels are:" + ap2GChannelListStr);
 
         if (ap2GChannelListStr != null) {
@@ -229,7 +229,8 @@ class WifiApConfigStore extends StateMachine {
        will keep the device secure after the update */
     private void setDefaultApConfiguration() {
         WifiConfiguration config = new WifiConfiguration();
-        config.SSID = mContext.getString(R.string.wifi_tether_configure_ssid_default);
+        config.SSID = mContext.getResources().getString(
+                R.string.wifi_tether_configure_ssid_default);
         config.allowedKeyManagement.set(KeyMgmt.WPA2_PSK);
         String randomUUID = UUID.randomUUID().toString();
         //first 12 chars from xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx

@@ -16,12 +16,8 @@
 
 package com.android.server.wifi;
 
-import com.android.internal.app.IBatteryStats;
-import com.android.internal.util.Protocol;
-
 import android.support.v4.util.CircularArray;
 import android.util.Base64;
-import android.util.LocalLog;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
@@ -35,7 +31,7 @@ import java.util.zip.Deflater;
 /**
  * Tracks various logs for framework
  */
-class WifiLogger extends DummyWifiLogger  {
+class WifiLogger extends BaseWifiLogger {
 
     private static final String TAG = "WifiLogger";
     private static final boolean DBG = false;
@@ -89,9 +85,9 @@ class WifiLogger extends DummyWifiLogger  {
     private WifiStateMachine mWifiStateMachine;
     private final WifiNative mWifiNative;
 
-    public WifiLogger(WifiStateMachine wifiStateMachine) {
+    public WifiLogger(WifiStateMachine wifiStateMachine, WifiNative wifiNative) {
         mWifiStateMachine = wifiStateMachine;
-        mWifiNative = WifiNative.getWlanNativeInterface();
+        mWifiNative = wifiNative;
     }
 
     @Override

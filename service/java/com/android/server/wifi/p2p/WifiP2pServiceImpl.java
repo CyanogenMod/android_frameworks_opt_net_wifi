@@ -100,7 +100,7 @@ import java.util.Locale;
  * of Wifi operation
  * @hide
  */
-public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
+public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     private static final String TAG = "WifiP2pService";
     private static final boolean DBG = false;
     private static final String NETWORKTYPE = "WIFI_P2P";

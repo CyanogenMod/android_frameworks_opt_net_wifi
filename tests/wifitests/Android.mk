@@ -17,7 +17,10 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE_TAGS := tests
 
-LOCAL_SRC_FILES := $(call all-subdir-java-files)
+RESOURCE_FILES := $(call all-named-files-under, R.java, $(intermediates.COMMON))
+
+LOCAL_SRC_FILES := $(call all-subdir-java-files) \
+	$RESOURCE_FILES
 
 LOCAL_STATIC_JAVA_LIBRARIES := \
 	mockito-target \

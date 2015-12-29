@@ -25,10 +25,6 @@ import static android.net.wifi.WifiManager.WIFI_STATE_DISABLED;
 import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
 import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
 import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
-/**
- * TODO:
- * Deprecate WIFI_STATE_UNKNOWN
- */
 import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
 
 import android.Manifest;
@@ -45,16 +41,14 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageManager;
 import android.database.ContentObserver;
+import android.net.BaseDhcpStateMachine;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
-import android.net.BaseDhcpStateMachine;
 import android.net.DhcpStateMachine;
-import android.net.Network;
-import android.net.dhcp.DhcpClient;
 import android.net.InterfaceConfiguration;
-import android.net.ip.IpReachabilityMonitor;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
+import android.net.Network;
 import android.net.NetworkAgent;
 import android.net.NetworkCapabilities;
 import android.net.NetworkFactory;
@@ -64,7 +58,7 @@ import android.net.NetworkRequest;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
-import android.net.TrafficStats;
+import android.net.ip.IpReachabilityMonitor;
 import android.net.wifi.RssiPacketCountInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
@@ -93,7 +87,6 @@ import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteException;
-import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
@@ -114,8 +107,6 @@ import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.net.NetlinkTracker;
 import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.NetworkDetail;
-import com.android.server.wifi.hotspot2.SupplicantBridge;
-import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.osu.OSUInfo;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
@@ -141,6 +132,12 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
+
+
+/**
+ * TODO:
+ * Deprecate WIFI_STATE_UNKNOWN
+ */
 
 /**
  * Track the state of Wifi connectivity. All event handling is done here,
@@ -198,7 +195,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private WifiAutoJoinController mWifiAutoJoinController;
     private INetworkManagementService mNwService;
     private ConnectivityManager mCm;
-    private DummyWifiLogger mWifiLogger;
+    private BaseWifiLogger mWifiLogger;
     private WifiApConfigStore mWifiApConfigStore;
     private final boolean mP2pSupported;
     private final AtomicBoolean mP2pConnected = new AtomicBoolean(false);
@@ -1087,31 +1084,36 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     // Used for debug and stats gathering
     private static int sScanAlarmIntentCount = 0;
 
-    final static int frameworkMinScanIntervalSaneValue = 10000;
+    private static final int sFrameworkMinScanIntervalSaneValue = 10000;
 
-    boolean mPnoEnabled;
-    boolean mLazyRoamEnabled;
-    long mGScanStartTimeMilli;
-    long mGScanPeriodMilli;
+    private boolean mPnoEnabled;
+    private boolean mLazyRoamEnabled;
+    private long mGScanStartTimeMilli;
+    private long mGScanPeriodMilli;
 
-    public WifiStateMachine(Context context, WifiTrafficPoller trafficPoller) {
+    private FrameworkFacade mFacade;
+
+    public WifiStateMachine(Context context, WifiTrafficPoller trafficPoller,
+                            FrameworkFacade facade) {
         super("WifiStateMachine");
         mContext = context;
+        mFacade = facade;
         mWifiNative = WifiNative.getWlanNativeInterface();
+
         // TODO refactor WifiNative use of context out into it's own class
         mWifiNative.initContext(mContext);
         mInterfaceName = mWifiNative.getInterfaceName();
         mNetworkInfo = new NetworkInfo(ConnectivityManager.TYPE_WIFI, 0, NETWORKTYPE, "");
-        mBatteryStats = IBatteryStats.Stub.asInterface(ServiceManager.getService(
+        mBatteryStats = IBatteryStats.Stub.asInterface(mFacade.getService(
                 BatteryStats.SERVICE_NAME));
 
-        IBinder b = ServiceManager.getService(Context.NETWORKMANAGEMENT_SERVICE);
+        IBinder b = mFacade.getService(Context.NETWORKMANAGEMENT_SERVICE);
         mNwService = INetworkManagementService.Stub.asInterface(b);
 
         mP2pSupported = mContext.getPackageManager().hasSystemFeature(
                 PackageManager.FEATURE_WIFI_DIRECT);
 
-        mWifiConfigStore = new WifiConfigStore(context,this,  mWifiNative);
+        mWifiConfigStore = new WifiConfigStore(context, this, mWifiNative, facade);
         mWifiAutoJoinController = new WifiAutoJoinController(context, this,
                 mWifiConfigStore, mWifiConnectionStatistics, mWifiNative);
         mWifiMonitor = WifiMonitor.getInstance();
@@ -1120,20 +1122,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 R.bool.config_wifi_enable_wifi_firmware_debugging);
 
         if (enableFirmwareLogs) {
-            mWifiLogger = new WifiLogger(this);
+            mWifiLogger = facade.makeRealLogger(this, mWifiNative);
         } else {
-            mWifiLogger = new DummyWifiLogger();
+            mWifiLogger = facade.makeBaseLogger();
         }
 
         mWifiInfo = new WifiInfo();
-        mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
-                getHandler());
+        mSupplicantStateTracker = facade.makeSupplicantStateTracker(
+                context, this, mWifiConfigStore, getHandler());
         mLinkProperties = new LinkProperties();
 
-        IBinder s1 = ServiceManager.getService(Context.WIFI_P2P_SERVICE);
+        IBinder s1 = mFacade.getService(Context.WIFI_P2P_SERVICE);
         mWifiP2pServiceImpl = (WifiP2pServiceImpl) IWifiP2pManager.Stub.asInterface(s1);
-
-        IBinder s2 = ServiceManager.getService(Context.WIFI_PASSPOINT_SERVICE);
 
         mNetworkInfo.setIsAvailable(false);
         mLastBssid = null;
@@ -1158,8 +1158,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         // Make sure the interval is not configured less than 10 seconds
         int period = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_scan_interval);
-        if (period < frameworkMinScanIntervalSaneValue) {
-            period = frameworkMinScanIntervalSaneValue;
+        if (period < sFrameworkMinScanIntervalSaneValue) {
+            period = sFrameworkMinScanIntervalSaneValue;
         }
         mDefaultFrameworkScanIntervalMs = period;
 
@@ -1193,7 +1193,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     Settings.Global.WIFI_COUNTRY_CODE, mDefaultCountryCode);
         }
 
-        mUserWantsSuspendOpt.set(Settings.Global.getInt(mContext.getContentResolver(),
+        mUserWantsSuspendOpt.set(mFacade.getIntegerSetting(mContext,
                 Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED, 1) == 1);
 
         mNetworkCapabilitiesFilter.addTransportType(NetworkCapabilities.TRANSPORT_WIFI);
@@ -1263,7 +1263,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 new ContentObserver(getHandler()) {
                     @Override
                     public void onChange(boolean selfChange) {
-                        mUserWantsSuspendOpt.set(Settings.Global.getInt(mContext.getContentResolver(),
+                        mUserWantsSuspendOpt.set(mFacade.getIntegerSetting(mContext,
                                 Settings.Global.WIFI_SUSPEND_OPTIMIZATIONS_ENABLED, 1) == 1);
                     }
                 });
@@ -1365,12 +1365,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
     }
 
-
     PendingIntent getPrivateBroadcast(String action, int requestCode) {
         Intent intent = new Intent(action, null);
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.setPackage("android");
-        return PendingIntent.getBroadcast(mContext, requestCode, intent, 0);
+        return mFacade.getBroadcast(mContext, requestCode, intent, 0);
     }
 
     private int mVerboseLoggingLevel = 0;
@@ -1616,8 +1615,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private boolean setRandomMacOui() {
-        String oui = mContext.getResources().getString(
-                R.string.config_wifi_random_mac_oui, GOOGLE_OUI);
+        String oui = mContext.getResources().getString(R.string.config_wifi_random_mac_oui);
+        if (TextUtils.isEmpty(oui)) {
+            oui = GOOGLE_OUI;
+        }
         String[] ouiParts = oui.split("-");
         byte[] ouiBytes = new byte[3];
         ouiBytes[0] = (byte) (Integer.parseInt(ouiParts[0], 16) & 0xFF);
@@ -1810,8 +1811,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
         }
         if (stats == null || mWifiLinkLayerStatsSupported <= 0) {
-            long mTxPkts = TrafficStats.getTxPackets(mInterfaceName);
-            long mRxPkts = TrafficStats.getRxPackets(mInterfaceName);
+            long mTxPkts = mFacade.getTxPackets(mInterfaceName);
+            long mRxPkts = mFacade.getRxPackets(mInterfaceName);
             mWifiInfo.updatePacketRates(mTxPkts, mRxPkts);
         } else {
             mWifiInfo.updatePacketRates(stats);
@@ -2476,8 +2477,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * @return countryCode following ISO 3166 format
      */
     public String getCurrentCountryCode() {
-        return Settings.Global.getString(
-                mContext.getContentResolver(), Settings.Global.WIFI_COUNTRY_CODE);
+        return mFacade.getStringSetting(mContext, Settings.Global.WIFI_COUNTRY_CODE);
     }
 
     /**
@@ -2616,9 +2616,20 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 pw.println("       " + mWhiteListedSsids[i]);
             }
         }
-        mNetworkFactory.dump(fd, pw, args);
-        mUntrustedNetworkFactory.dump(fd, pw, args);
+        if (mNetworkFactory != null) {
+            mNetworkFactory.dump(fd, pw, args);
+        } else {
+            pw.println("mNetworkFactory is not initialized");
+        }
+
+        if (mUntrustedNetworkFactory != null) {
+            mUntrustedNetworkFactory.dump(fd, pw, args);
+        } else {
+            pw.println("mUntrustedNetworkFactory is not initialized");
+        }
+
         pw.println();
+
         mWifiConfigStore.dump(fd, pw, args);
         pw.println();
         mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_USER_ACTION);
@@ -3715,7 +3726,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * Set the frequency band from the system setting value, if any.
      */
     private void setFrequencyBand() {
-        int band = Settings.Global.getInt(mContext.getContentResolver(),
+        int band = mFacade.getIntegerSetting(mContext,
                 Settings.Global.WIFI_FREQUENCY_BAND, WifiManager.WIFI_FREQUENCY_BAND_AUTO);
 
         if (mWifiNative.setBand(band)) {
@@ -4642,7 +4653,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         WifiInfo result = new WifiInfo(mWifiInfo);
         result.setMacAddress(WifiInfo.DEFAULT_MAC_ADDRESS);
 
-        IBinder binder = ServiceManager.getService("package");
+        IBinder binder = mFacade.getService("package");
         IPackageManager packageManager = IPackageManager.Stub.asInterface(binder);
 
         try {
@@ -4898,18 +4909,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
 
     private boolean useLegacyDhcpClient() {
-        return Settings.Global.getInt(
-                mContext.getContentResolver(),
-                Settings.Global.LEGACY_DHCP_CLIENT, 0) == 1;
+        return mFacade.getIntegerSetting(mContext, Settings.Global.LEGACY_DHCP_CLIENT, 0) == 1;
     }
 
     private void maybeInitDhcpStateMachine() {
         if (mDhcpStateMachine == null) {
             if (useLegacyDhcpClient()) {
-                mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(
+                mDhcpStateMachine = mFacade.makeDhcpStateMachine(
                         mContext, WifiStateMachine.this, mInterfaceName);
             } else {
-                mDhcpStateMachine = DhcpClient.makeDhcpStateMachine(
+                mDhcpStateMachine = mFacade.makeDhcpStateMachine(
                         mContext, WifiStateMachine.this, mInterfaceName);
             }
         }
@@ -5618,8 +5627,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             if (mWifiApConfigChannel == null) {
                 mWifiApConfigChannel = new AsyncChannel();
-                mWifiApConfigStore = WifiApConfigStore.makeWifiApConfigStore(
-                        mContext, getHandler());
+                mWifiApConfigStore = mFacade.makeApConfigStore(mContext, getHandler());
                 mWifiApConfigStore.loadApConfiguration();
                 mWifiApConfigChannel.connectSync(mContext, getHandler(),
                         mWifiApConfigStore.getMessenger());
@@ -5816,7 +5824,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             int defaultInterval = mContext.getResources().getInteger(
                     R.integer.config_wifi_supplicant_scan_interval);
 
-            mSupplicantScanIntervalMs = Settings.Global.getLong(mContext.getContentResolver(),
+            mSupplicantScanIntervalMs = mFacade.getLongSetting(mContext,
                     Settings.Global.WIFI_SUPPLICANT_SCAN_INTERVAL_MS,
                     defaultInterval);
 
@@ -7210,7 +7218,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     // Inform the backup manager about a data change
                     IBackupManager ibm = IBackupManager.Stub.asInterface(
-                            ServiceManager.getService(Context.BACKUP_SERVICE));
+                            mFacade.getService(Context.BACKUP_SERVICE));
                     if (ibm != null) {
                         try {
                             ibm.dataChanged("com.android.providers.settings");
@@ -8020,7 +8028,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             clearCurrentConfigBSSID("L2ConnectedState");
 
             try {
-                mIpReachabilityMonitor = new IpReachabilityMonitor(
+                mIpReachabilityMonitor = mFacade.makeIpReachabilityMonitor(
                         mContext,
                         mInterfaceName,
                         new IpReachabilityMonitor.Callback() {
@@ -9236,7 +9244,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         // not be processed) and restart the scan
                         int period =  mWifiConfigStore.wifiDisconnectedShortScanIntervalMilli.get();
                         if (mP2pConnected.get()) {
-                           period = (int)Settings.Global.getLong(mContext.getContentResolver(),
+                            period = (int) mFacade.getLongSetting(mContext,
                                     Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
                                     period);
                         }
@@ -9348,7 +9356,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (mP2pConnected.get()) {
                         int defaultInterval = mContext.getResources().getInteger(
                                 R.integer.config_wifi_scan_interval_p2p_connected);
-                        long scanIntervalMs = Settings.Global.getLong(mContext.getContentResolver(),
+                        long scanIntervalMs = mFacade.getLongSetting(mContext,
                                 Settings.Global.WIFI_SCAN_INTERVAL_WHEN_P2P_CONNECTED_MS,
                                 defaultInterval);
                         mWifiNative.setScanInterval((int) scanIntervalMs/1000);
@@ -9956,7 +9964,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     String sres = makeHex(result, 1, sres_len);
                     int kc_offset = 1+sres_len;
                     int kc_len = result[kc_offset];
-                    String kc = makeHex(result, 1+kc_offset, kc_len);
+                    String kc = makeHex(result, 1 + kc_offset, kc_len);
                     sb.append(":" + kc + ":" + sres);
                     logv("kc:" + kc + " sres:" + sres);
                 } else {
