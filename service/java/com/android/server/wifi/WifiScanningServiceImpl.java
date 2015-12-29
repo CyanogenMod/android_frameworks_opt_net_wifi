@@ -933,6 +933,26 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return false;
         }
 
+        // check truncated binary exponential back off scan settings
+        if (settings.maxPeriodInMs != 0 && settings.maxPeriodInMs != settings.periodInMs) {
+            if (settings.maxPeriodInMs < settings.periodInMs) {
+                localLog("Failing scan request because maxPeriodInMs is " + settings.maxPeriodInMs
+                        + " but less than periodInMs " + settings.periodInMs);
+                return false;
+            }
+            if (settings.maxPeriodInMs > WifiScanner.MAX_SCAN_PERIOD_MS) {
+                localLog("Failing scan request because maxSupportedPeriodMs is "
+                    + WifiScanner.MAX_SCAN_PERIOD_MS + " but the request wants "
+                    + settings.maxPeriodInMs);
+                return false;
+            }
+            if (settings.stepCount < 1) {
+                localLog("Failing scan request because stepCount is " + settings.stepCount
+                        + " which is less than 1");
+                return false;
+            }
+        }
+
         logScanRequest("addScanRequest", ci, handler, settings);
         ci.addScanRequest(settings, handler);
 

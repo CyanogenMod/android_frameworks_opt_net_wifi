@@ -1591,6 +1591,7 @@ public class WifiNative {
         }
     }
 
+    // TODO: Change variable names to camel style.
     public static class ScanCapabilities {
         public int  max_scan_cache_size;
         public int  max_scan_buckets;
@@ -1626,6 +1627,8 @@ public class WifiNative {
         int bucket;
         int band;
         int period_ms;
+        int max_period_ms;
+        int step_count;
         int report_events;
         int num_channels;
         ChannelSettings channels[];

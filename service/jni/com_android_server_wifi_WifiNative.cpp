@@ -539,12 +539,23 @@ static jboolean android_net_wifi_startScan(
         params.buckets[i].bucket = helper.getIntField(bucket, "bucket");
         params.buckets[i].band = (wifi_band) helper.getIntField(bucket, "band");
         params.buckets[i].period = helper.getIntField(bucket, "period_ms");
+        params.buckets[i].max_period = helper.getIntField(bucket, "max_period_ms");
+        // Although HAL API allows configurable base value for the truncated
+        // exponential back off scan. Native API and above support only
+        // truncated binary exponential back off scan.
+        // Hard code value of base to 2 here.
+        params.buckets[i].base = 2;
+        params.buckets[i].step_count = helper.getIntField(bucket, "step_count");
 
         int report_events = helper.getIntField(bucket, "report_events");
         params.buckets[i].report_events = report_events;
 
-        ALOGD("bucket[%d] = %d:%d:%d:%d", i, params.buckets[i].bucket,
-                params.buckets[i].band, params.buckets[i].period, report_events);
+        if (DBG) {
+            ALOGD("bucket[%d] = %d:%d:%d:%d:%d:%d:%d", i, params.buckets[i].bucket,
+                    params.buckets[i].band, params.buckets[i].period,
+                    params.buckets[i].max_period, params.buckets[i].base,
+                    params.buckets[i].step_count, report_events);
+        }
 
         params.buckets[i].num_channels = helper.getIntField(bucket, "num_channels");
         // ALOGD("Initialized num_channels to %d", params.buckets[i].num_channels);
