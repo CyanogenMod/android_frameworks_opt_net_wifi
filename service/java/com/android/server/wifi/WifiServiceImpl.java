@@ -155,7 +155,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
     private WifiTrafficPoller mTrafficPoller;
     /* Tracks the persisted states for wi-fi & airplane mode */
     final WifiSettingsStore mSettingsStore;
-
+    /* Logs connection events and some general router and scan stats */
+    private final WifiMetrics mWifiMetrics;
     /**
      * Asynchronous channel to WifiStateMachine
      */
@@ -320,14 +321,14 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
     public WifiServiceImpl(Context context) {
         mContext = context;
-
         FrameworkFacade facade = new FrameworkFacade();
-
         HandlerThread wifiThread = new HandlerThread("WifiService");
         wifiThread.start();
+        mWifiMetrics = new WifiMetrics();
         mTrafficPoller = new WifiTrafficPoller(mContext, wifiThread.getLooper(),
                 WifiNative.getWlanNativeInterface().getInterfaceName());
-        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller, facade);
+        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller, facade, mWifiMetrics);
+        mSettingsStore = new WifiSettingsStore(mContext);
         mWifiStateMachine.enableRssiPolling(true);
         mBatteryStats = BatteryStatsService.getService();
         mPowerManager = context.getSystemService(PowerManager.class);
@@ -335,7 +336,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         mUserManager = UserManager.get(mContext);
 
         mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);
-        mSettingsStore = new WifiSettingsStore(mContext);
+
 
         mClientHandler = new ClientHandler(wifiThread.getLooper());
         mWifiStateMachineHandler = new WifiStateMachineHandler(wifiThread.getLooper());

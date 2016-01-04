@@ -285,6 +285,7 @@ public class WifiStateMachineTest {
 
     @Mock WifiNative mWifiNative;
     @Mock SupplicantStateTracker mSupplicantStateTracker;
+    @Mock WifiMetrics mWifiMetrics;
 
     public WifiStateMachineTest() throws Exception {
     }
@@ -303,7 +304,7 @@ public class WifiStateMachineTest {
 
         installWlanWifiNative(mWifiNative);
         mWifiMonitor = new MockWifiMonitor();
-
+        mWifiMetrics = mock(WifiMetrics.class);
         FrameworkFacade factory = getFrameworkFacade();
         Context context = getContext();
 
@@ -322,7 +323,7 @@ public class WifiStateMachineTest {
                 any(Context.class), any(WifiStateMachine.class), any(WifiConfigStore.class),
                 any(Handler.class))).thenReturn(mSupplicantStateTracker);
 
-        mWsm = new WifiStateMachine(context, null, factory);
+        mWsm = new WifiStateMachine(context, null, factory, mWifiMetrics);
         mWsmThread = getWsmHandlerThread(mWsm);
 
         final Object sync = new Object();
