@@ -2438,6 +2438,8 @@ public class WifiConfigStore extends IpConfigStore {
 
             String bssid = null;
             String ssid = null;
+            String key = null;
+            String value = null;
 
             int freq = 0;
             int status = 0;
@@ -2452,12 +2454,16 @@ public class WifiConfigStore extends IpConfigStore {
                     break;
                 }
                 int colon = line.indexOf(':');
-                if (colon < 0) {
+                char slash = line.charAt(0);
+                if ((colon < 0)&& (slash != '/')) {
                     continue;
                 }
-
-                String key = line.substring(0, colon).trim();
-                String value = line.substring(colon + 1).trim();
+                if (slash == '/') {
+                    key = line.trim();
+                } else {
+                    key = line.substring(0, colon).trim();
+                    value = line.substring(colon + 1).trim();
+                }
 
                 if (key.equals(CONFIG_KEY)) {
 
@@ -2603,8 +2609,15 @@ public class WifiConfigStore extends IpConfigStore {
                             break;
                         case BSSID_KEY:
                             status = 0;
-                            ssid = null;
-                            bssid = null;
+                            /*
+                             * The intention here is to put the scanDetail in to
+                             * the scanDetailCache per config , as done in
+                             * BSSID_KEY_END . Thus store bssid value and
+                             * comment ssid = null to ensure the code in the if
+                             * loop is executed for the case BSSID_KEY_END.
+                             */
+                        //   ssid = null;
+                            bssid = value;
                             freq = 0;
                             seen = 0;
                             rssi = WifiConfiguration.INVALID_RSSI;
