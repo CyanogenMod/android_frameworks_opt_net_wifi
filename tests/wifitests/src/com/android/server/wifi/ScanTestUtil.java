@@ -174,8 +174,8 @@ public class ScanTestUtil {
     }
 
     private static void assertScanDataEquals(String prefix, ScanData expected, ScanData actual) {
-        assertNotNull(expected);
-        assertNotNull(actual);
+        assertNotNull(prefix + "expected ScanData was null", expected);
+        assertNotNull(prefix + "actual ScanData was null", actual);
         assertEquals(prefix + "id", expected.getId(), actual.getId());
         assertEquals(prefix + "flags", expected.getFlags(), actual.getFlags());
         assertEquals(prefix + "results.length",
@@ -201,13 +201,14 @@ public class ScanTestUtil {
                     expectedResult.seen, actualResult.seen);
         }
     }
+
     public static void assertScanDataEquals(ScanData expected, ScanData actual) {
         assertScanDataEquals("", expected, actual);
     }
 
     public static void assertScanDatasEquals(ScanData[] expected, ScanData[] actual) {
-        assertNotNull(expected);
-        assertNotNull(actual);
+        assertNotNull("expected ScanData[] was null", expected);
+        assertNotNull("actaul ScanData[] was null", actual);
         assertEquals("ScanData.length", expected.length, actual.length);
         for (int i = 0; i < expected.length; ++i) {
             assertScanDataEquals("ScanData[" + i + "].", expected[i], actual[i]);

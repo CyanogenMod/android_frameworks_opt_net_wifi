@@ -19,8 +19,6 @@ package com.android.server.wifi;
 import static com.android.server.wifi.ScanTestUtil.NativeScanSettingsBuilder;
 import static com.android.server.wifi.ScanTestUtil.assertScanDatasEquals;
 import static com.android.server.wifi.ScanTestUtil.createFreqSet;
-import static com.android.server.wifi.ScanTestUtil.installWlanWifiNative;
-import static com.android.server.wifi.ScanTestUtil.setupMockChannels;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.any;
@@ -31,7 +29,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-import android.content.Context;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
@@ -40,8 +37,6 @@ import android.test.suitebuilder.annotation.SmallTest;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.InOrder;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
 import java.util.Set;
@@ -50,34 +45,10 @@ import java.util.Set;
  * Unit tests for {@link com.android.server.wifi.SupplicantWifiScannerImpl}.
  */
 @SmallTest
-public class SupplicantWifiScannerTest {
-    @Mock Context mContext;
-    MockAlarmManager mAlarmManager;
-    MockWifiMonitor mWifiMonitor;
-    MockLooper mLooper;
-    @Mock WifiNative mWifiNative;
-
-    SupplicantWifiScannerImpl mScanner;
+public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
 
     @Before
-    public void setUp() throws Exception {
-        MockitoAnnotations.initMocks(this);
-
-        mLooper = new MockLooper();
-        mAlarmManager = new MockAlarmManager();
-        mWifiMonitor = new MockWifiMonitor();
-
-        // Setup WifiNative
-        setupMockChannels(mWifiNative,
-                new int[]{2400, 2450},
-                new int[]{5150, 5175},
-                new int[]{5600, 5650});
-        when(mWifiNative.getInterfaceName()).thenReturn("a_test_interface_name");
-        installWlanWifiNative(mWifiNative);
-
-        when(mContext.getSystemService(Context.ALARM_SERVICE))
-                .thenReturn(mAlarmManager.getAlarmManager());
-
+    public void setup() {
         mScanner = new SupplicantWifiScannerImpl(mContext, WifiNative.getWlanNativeInterface(),
                 mLooper.getLooper());
     }
@@ -428,7 +399,7 @@ public class SupplicantWifiScannerTest {
 
         assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
-        expectSuccessfulScan(order, eventHandler, expectedPeriods[0]);
+        expectSuccessfulBackgroundScan(order, eventHandler, expectedPeriods[0]);
 
         // alarm for next period
         assertEquals(1, mAlarmManager.getPendingCount());
@@ -445,7 +416,7 @@ public class SupplicantWifiScannerTest {
         // onRestarted callback
         order.verify(eventHandler).onScanRestarted();
 
-        expectSuccessfulScan(order, eventHandler, expectedPeriods[1]);
+        expectSuccessfulBackgroundScan(order, eventHandler, expectedPeriods[1]);
 
         verifyNoMoreInteractions(eventHandler);
     }
@@ -511,7 +482,7 @@ public class SupplicantWifiScannerTest {
         // onRestarted callback
         order.verify(eventHandler).onScanRestarted();
 
-        expectSuccessfulScan(order, eventHandler, expectedPeriods[1]);
+        expectSuccessfulBackgroundScan(order, eventHandler, expectedPeriods[1]);
 
         verifyNoMoreInteractions(eventHandler);
     }
@@ -560,7 +531,7 @@ public class SupplicantWifiScannerTest {
 
         assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
-        expectSuccessfulScan(order, eventHandler, expectedPeriods[0]);
+        expectSuccessfulBackgroundScan(order, eventHandler, expectedPeriods[0]);
 
         // alarm for next period
         assertEquals(1, mAlarmManager.getPendingCount());
@@ -575,7 +546,7 @@ public class SupplicantWifiScannerTest {
         // Start new scan
         mScanner.startBatchedScan(settings2, eventHandler);
 
-        expectSuccessfulScan(order, eventHandler, expectedPeriods2[0]);
+        expectSuccessfulBackgroundScan(order, eventHandler, expectedPeriods2[0]);
 
         verifyNoMoreInteractions(eventHandler);
     }
@@ -605,7 +576,7 @@ public class SupplicantWifiScannerTest {
             } else {
                 assertEquals("alarm for next period", 1, mAlarmManager.getPendingCount());
 
-                expectSuccessfulScan(order, eventHandler, expectedPeriods[i]);
+                expectSuccessfulBackgroundScan(order, eventHandler, expectedPeriods[i]);
             }
             if (i < expectedPeriods.length - 1) {
                 dispatchOnlyAlarm();
@@ -619,8 +590,8 @@ public class SupplicantWifiScannerTest {
      * Verify the state after a scan was started either through startBatchedScan or
      * dispatching the period alarm.
      */
-    private void expectSuccessfulScan(InOrder order, WifiNative.ScanEventHandler eventHandler,
-            ScanPeriod period) {
+    private void expectSuccessfulBackgroundScan(InOrder order,
+            WifiNative.ScanEventHandler eventHandler, ScanPeriod period) {
         WifiScanner.ScanData[] scanDatas = null;
         ArrayList<ScanDetail> nativeResults = null;
         ScanResult[] fullResults = null;
@@ -639,7 +610,7 @@ public class SupplicantWifiScannerTest {
                 fullResults = lastPeriodResults.getRawScanResults();
             }
         }
-        expectSuccessfulScan(order, eventHandler, period.getScanFreqs(),
+        expectSuccessfulBackgroundScan(order, eventHandler, period.getScanFreqs(),
                 nativeResults, scanDatas, fullResults);
     }
 
@@ -647,9 +618,10 @@ public class SupplicantWifiScannerTest {
      * Verify the state after a scan was started either through startBatchedScan or
      * dispatching the period alarm.
      */
-    private void expectSuccessfulScan(InOrder order, WifiNative.ScanEventHandler eventHandler,
-            Set<Integer> scanFreqs, ArrayList<ScanDetail> nativeResults,
-            WifiScanner.ScanData[] expectedScanResults, ScanResult[] fullResults) {
+    private void expectSuccessfulBackgroundScan(InOrder order,
+            WifiNative.ScanEventHandler eventHandler, Set<Integer> scanFreqs,
+            ArrayList<ScanDetail> nativeResults, WifiScanner.ScanData[] expectedScanResults,
+            ScanResult[] fullResults) {
         // Verify scan started
         order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
 
