@@ -22,7 +22,9 @@ import static com.android.server.wifi.ScanTestUtil.getAllChannels;
 import static com.android.server.wifi.ScanTestUtil.installWlanWifiNative;
 import static com.android.server.wifi.ScanTestUtil.setupMockChannels;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import android.net.wifi.WifiScanner;
@@ -396,22 +398,22 @@ public class MultiClientSchedulerTest {
                 }
             } else {
                 assertTrue("Invalid band: " + schedule.buckets[i].band,
-                           schedule.buckets[i].band > WifiScanner.WIFI_BAND_UNSPECIFIED &&
-                           schedule.buckets[i].band <= WifiScanner.WIFI_BAND_BOTH_WITH_DFS);
+                        schedule.buckets[i].band > WifiScanner.WIFI_BAND_UNSPECIFIED
+                        && schedule.buckets[i].band <= WifiScanner.WIFI_BAND_BOTH_WITH_DFS);
             }
         }
     }
 
     private static void assertSettingsSatisfied(WifiNative.ScanSettings schedule,
             ScanSettings settings, boolean bucketsLimited, boolean exactPeriod) {
-        assertTrue("bssids per scan: " + schedule.max_ap_per_scan + " /<= " +
-                   settings.numBssidsPerScan,
-                   schedule.max_ap_per_scan <= settings.numBssidsPerScan);
+        assertTrue("bssids per scan: " + schedule.max_ap_per_scan + " /<= "
+                + settings.numBssidsPerScan,
+                schedule.max_ap_per_scan <= settings.numBssidsPerScan);
 
         if (settings.maxScansToCache > 0) {
-            assertTrue("scans to cache: " + schedule.report_threshold_num_scans + " /<= " +
-                       settings.maxScansToCache,
-                       schedule.report_threshold_num_scans <= settings.maxScansToCache);
+            assertTrue("scans to cache: " + schedule.report_threshold_num_scans + " /<= "
+                    + settings.maxScansToCache,
+                    schedule.report_threshold_num_scans <= settings.maxScansToCache);
         }
 
         HashSet<Integer> channelSet = new HashSet<>();
@@ -495,9 +497,9 @@ public class MultiClientSchedulerTest {
             }
         }
 
-        assertTrue("expected that " + scheduleChannelSet + " contained " + channelSet +
-                   ", Channel ignore reasons:" + ignoreString.toString(),
-                   scheduleChannelSet.containsAll(channelSet));
+        assertTrue("expected that " + scheduleChannelSet + " contained " + channelSet
+                + ", Channel ignore reasons:" + ignoreString.toString(),
+                scheduleChannelSet.containsAll(channelSet));
     }
 
     private static int[] getPredefinedBuckets() {
