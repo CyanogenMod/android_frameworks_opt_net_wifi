@@ -16,7 +16,8 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.mockito.Mockito.when;
 
 import android.net.wifi.ScanResult;
@@ -36,7 +37,6 @@ import java.util.Set;
 /**
  * Utilities for testing Wifi Scanning
  */
-
 public class ScanTestUtil {
 
     public static void installWlanWifiNative(WifiNative wifiNative) throws Exception {
@@ -82,41 +82,44 @@ public class ScanTestUtil {
         return request;
     }
 
+    /**
+     * Builder to create WifiNative.ScanSettings objects for testing
+     */
     public static class NativeScanSettingsBuilder {
-        private final WifiNative.ScanSettings settings = new WifiNative.ScanSettings();
+        private final WifiNative.ScanSettings mSettings = new WifiNative.ScanSettings();
         public NativeScanSettingsBuilder() {
-            settings.buckets = new WifiNative.BucketSettings[0];
-            settings.num_buckets = 0;
-            settings.report_threshold_percent = 100;
+            mSettings.buckets = new WifiNative.BucketSettings[0];
+            mSettings.num_buckets = 0;
+            mSettings.report_threshold_percent = 100;
         }
 
         public NativeScanSettingsBuilder withBasePeriod(int basePeriod) {
-            settings.base_period_ms = basePeriod;
+            mSettings.base_period_ms = basePeriod;
             return this;
         }
         public NativeScanSettingsBuilder withMaxApPerScan(int maxAp) {
-            settings.max_ap_per_scan = maxAp;
+            mSettings.max_ap_per_scan = maxAp;
             return this;
         }
         public NativeScanSettingsBuilder withMaxScansToCache(int maxScans) {
-            settings.report_threshold_num_scans = maxScans;
+            mSettings.report_threshold_num_scans = maxScans;
             return this;
         }
 
         public NativeScanSettingsBuilder addBucketWithBand(
-                int period, int report_events, int band) {
+                int period, int reportEvents, int band) {
             WifiNative.BucketSettings bucket = new WifiNative.BucketSettings();
-            bucket.bucket = settings.num_buckets;
+            bucket.bucket = mSettings.num_buckets;
             bucket.band = band;
             bucket.period_ms = period;
-            bucket.report_events = report_events;
+            bucket.report_events = reportEvents;
             return addBucket(bucket);
         }
 
         public NativeScanSettingsBuilder addBucketWithChannels(
-                int period, int report_events, int... channels) {
+                int period, int reportEvents, int... channels) {
             WifiNative.BucketSettings bucket = new WifiNative.BucketSettings();
-            bucket.bucket = settings.num_buckets;
+            bucket.bucket = mSettings.num_buckets;
             bucket.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
             bucket.num_channels = channels.length;
             bucket.channels = new WifiNative.ChannelSettings[channels.length];
@@ -125,19 +128,19 @@ public class ScanTestUtil {
                 bucket.channels[i].frequency = channels[i];
             }
             bucket.period_ms = period;
-            bucket.report_events = report_events;
+            bucket.report_events = reportEvents;
             return addBucket(bucket);
         }
 
         public NativeScanSettingsBuilder addBucket(WifiNative.BucketSettings bucket) {
-            settings.buckets = Arrays.copyOf(settings.buckets, settings.num_buckets + 1);
-            settings.buckets[settings.num_buckets] = bucket;
-            settings.num_buckets = settings.num_buckets + 1;
+            mSettings.buckets = Arrays.copyOf(mSettings.buckets, mSettings.num_buckets + 1);
+            mSettings.buckets[mSettings.num_buckets] = bucket;
+            mSettings.num_buckets = mSettings.num_buckets + 1;
             return this;
         }
 
         public WifiNative.ScanSettings build() {
-            return settings;
+            return mSettings;
         }
     }
 
@@ -170,37 +173,44 @@ public class ScanTestUtil {
         return data;
     }
 
+    private static void assertScanDataEquals(String prefix, ScanData expected, ScanData actual) {
+        assertNotNull(expected);
+        assertNotNull(actual);
+        assertEquals(prefix + "id", expected.getId(), actual.getId());
+        assertEquals(prefix + "flags", expected.getFlags(), actual.getFlags());
+        assertEquals(prefix + "results.length",
+                expected.getResults().length, actual.getResults().length);
+        for (int j = 0; j < expected.getResults().length; ++j) {
+            ScanResult expectedResult = expected.getResults()[j];
+            ScanResult actualResult = actual.getResults()[j];
+            assertEquals(prefix + "results[" + j + "].SSID",
+                    expectedResult.SSID, actualResult.SSID);
+            assertEquals(prefix + "results[" + j + "].wifiSsid",
+                    expectedResult.wifiSsid.toString(), actualResult.wifiSsid.toString());
+            assertEquals(prefix + "results[" + j + "].BSSID",
+                    expectedResult.BSSID, actualResult.BSSID);
+            assertEquals(prefix + "results[" + j + "].capabilities",
+                    expectedResult.capabilities, actualResult.capabilities);
+            assertEquals(prefix + "results[" + j + "].level",
+                    expectedResult.level, actualResult.level);
+            assertEquals(prefix + "results[" + j + "].frequency",
+                    expectedResult.frequency, actualResult.frequency);
+            assertEquals(prefix + "results[" + j + "].timestamp",
+                    expectedResult.timestamp, actualResult.timestamp);
+            assertEquals(prefix + "results[" + j + "].seen",
+                    expectedResult.seen, actualResult.seen);
+        }
+    }
+    public static void assertScanDataEquals(ScanData expected, ScanData actual) {
+        assertScanDataEquals("", expected, actual);
+    }
+
     public static void assertScanDatasEquals(ScanData[] expected, ScanData[] actual) {
         assertNotNull(expected);
         assertNotNull(actual);
         assertEquals("ScanData.length", expected.length, actual.length);
         for (int i = 0; i < expected.length; ++i) {
-            ScanData expectedData = expected[i];
-            ScanData actualData = actual[i];
-            assertEquals("ScanData["+i+"].id", expectedData.getId(), actualData.getId());
-            assertEquals("ScanData["+i+"].flags", expectedData.getFlags(), actualData.getFlags());
-            assertEquals("ScanData["+i+"].results.length",
-                    expectedData.getResults().length, actualData.getResults().length);
-            for (int j = 0; j < expectedData.getResults().length; ++ j) {
-                ScanResult expectedResult = expectedData.getResults()[j];
-                ScanResult actualResult = actualData.getResults()[j];
-                assertEquals("ScanData["+i+"].results["+j+"].SSID",
-                        expectedResult.SSID, actualResult.SSID);
-                assertEquals("ScanData["+i+"].results["+j+"].wifiSsid",
-                        expectedResult.wifiSsid.toString(), actualResult.wifiSsid.toString());
-                assertEquals("ScanData["+i+"].results["+j+"].BSSID",
-                        expectedResult.BSSID, actualResult.BSSID);
-                assertEquals("ScanData["+i+"].results["+j+"].capabilities",
-                        expectedResult.capabilities, actualResult.capabilities);
-                assertEquals("ScanData["+i+"].results["+j+"].level",
-                        expectedResult.level, actualResult.level);
-                assertEquals("ScanData["+i+"].results["+j+"].frequency",
-                        expectedResult.frequency, actualResult.frequency);
-                assertEquals("ScanData["+i+"].results["+j+"].timestamp",
-                        expectedResult.timestamp, actualResult.timestamp);
-                assertEquals("ScanData["+i+"].results["+j+"].frequency",
-                        expectedResult.seen, actualResult.seen);
-            }
+            assertScanDataEquals("ScanData[" + i + "].", expected[i], actual[i]);
         }
     }
 

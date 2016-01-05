@@ -16,14 +16,9 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
-
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner.ScanData;
 import android.net.wifi.WifiSsid;
-
-import com.android.server.wifi.ScanDetail;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -51,25 +46,56 @@ public class ScanResults {
             return r2.level - r1.level;
         }
     };
-    public ScanResults(int id, int... freqs) {
-        mScanResults = new ScanResult[freqs.length];
-        Random r = new Random(id);
+
+    private static ScanDetail[] generateNativeResults(int seed, int... freqs) {
+        ScanDetail[] results = new ScanDetail[freqs.length];
+        Random r = new Random(seed);
         for (int i = 0; i < freqs.length; ++i) {
             int freq = freqs[i];
             String ssid = new BigInteger(128, r).toString(36);
             int rssi = r.nextInt(40) - 99; // -99 to -60
-            ScanDetail detail = new ScanDetail(WifiSsid.createFromAsciiEncoded(ssid),
+            results[i] = new ScanDetail(WifiSsid.createFromAsciiEncoded(ssid),
                     generateBssid(r), "", rssi, freq,
                     Long.MAX_VALUE /* needed so that scan results aren't rejected because
                                       there older than scan start */,
                     r.nextLong());
+        }
+        return results;
+    }
 
-            mScanDetails.add(detail);
-            mScanResults[i] = detail.getScanResult();
+    public static ScanResults create(int id, int... freqs) {
+        return new ScanResults(id, -1, generateNativeResults(id, freqs));
+    }
+
+    public static ScanResults create(int id, ScanDetail... nativeResults) {
+        return new ScanResults(id, -1, nativeResults);
+    }
+
+    /**
+     * Create scan results that contain all results for the native results and
+     * full scan results, but limits the number of onResults results after sorting
+     * by RSSI
+     */
+    public static ScanResults createOverflowing(int id, int maxResults,
+            ScanDetail... nativeResults) {
+        return new ScanResults(id, maxResults, nativeResults);
+    }
+
+    private ScanResults(int id, int maxResults, ScanDetail... nativeResults) {
+        mScanResults = new ScanResult[nativeResults.length];
+        for (int i = 0; i < nativeResults.length; ++i) {
+            mScanDetails.add(nativeResults[i]);
+            mScanResults[i] = nativeResults[i].getScanResult();
         }
         ScanResult[] sortedScanResults = Arrays.copyOf(mScanResults, mScanResults.length);
         Arrays.sort(sortedScanResults, SCAN_RESULT_RSSI_COMPARATOR);
-        mScanData = new ScanData(id, 0, sortedScanResults);
+        if (maxResults == -1) {
+            mScanData = new ScanData(id, 0, sortedScanResults);
+        } else {
+            ScanResult[] reducedScanResults = Arrays.copyOf(sortedScanResults,
+                    Math.min(sortedScanResults.length, maxResults));
+            mScanData = new ScanData(id, 0, reducedScanResults);
+        }
     }
 
     public ArrayList<ScanDetail> getScanDetailArrayList() {

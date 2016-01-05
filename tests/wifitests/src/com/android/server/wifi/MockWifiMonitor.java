@@ -16,14 +16,16 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 import android.os.Handler;
 import android.os.Message;
 import android.util.SparseArray;
-
-import com.android.server.wifi.WifiMonitor;
 
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -46,7 +48,6 @@ public class MockWifiMonitor {
         Field field = WifiMonitor.class.getDeclaredField("sWifiMonitor");
         field.setAccessible(true);
         field.set(null, mWifiMonitor);
-
 
         doAnswer(new RegisterHandlerAnswer())
                 .when(mWifiMonitor).registerHandler(anyString(), anyInt(), any(Handler.class));
@@ -79,7 +80,8 @@ public class MockWifiMonitor {
     public void sendMessage(String iface, Message message) {
         SparseArray<Handler> ifaceHandlers = mHandlerMap.get(iface);
         if (ifaceHandlers != null) {
-            assertTrue(sendMessage(ifaceHandlers, message));
+            assertTrue("No handler for iface=" + iface + ",what=" + message.what,
+                    sendMessage(ifaceHandlers, message));
         } else {
             boolean sent = false;
             for (Map.Entry<String, SparseArray<Handler>> entry : mHandlerMap.entrySet()) {
@@ -87,7 +89,8 @@ public class MockWifiMonitor {
                     sent = true;
                 }
             }
-            assertTrue(sent);
+            assertTrue("No handler for message with nonexistant iface, iface=" + iface
+                    + ",what=" + message.what, sent);
         }
     }
     private boolean sendMessage(SparseArray<Handler> ifaceHandlers, Message message) {

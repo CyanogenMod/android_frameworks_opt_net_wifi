@@ -16,7 +16,7 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertTrue;
 
 import android.os.Looper;
 import android.os.Message;
@@ -35,30 +35,29 @@ import java.lang.reflect.Method;
 public class MockLooper {
     private final Looper mLooper;
 
-    private static final Constructor<Looper> looperConstructor;
-    private static final Field threadLocalLooperField;
-    private static final Method messageQueueNextMethod;
+    private static final Constructor<Looper> LOOPER_CONSTRUCTOR;
+    private static final Field THREAD_LOCAL_LOOPER_FIELD;
+    private static final Method MESSAGE_QUEUE_NEXT_METHOD;
 
     static {
         try {
-            looperConstructor = Looper.class.getDeclaredConstructor(Boolean.TYPE);
-            looperConstructor.setAccessible(true);
-            threadLocalLooperField = Looper.class.getDeclaredField("sThreadLocal");
-            threadLocalLooperField.setAccessible(true);
-            messageQueueNextMethod = MessageQueue.class.getDeclaredMethod("next");
-            messageQueueNextMethod.setAccessible(true);
-        }
-        catch(NoSuchFieldException | NoSuchMethodException e) {
+            LOOPER_CONSTRUCTOR = Looper.class.getDeclaredConstructor(Boolean.TYPE);
+            LOOPER_CONSTRUCTOR.setAccessible(true);
+            THREAD_LOCAL_LOOPER_FIELD = Looper.class.getDeclaredField("sThreadLocal");
+            THREAD_LOCAL_LOOPER_FIELD.setAccessible(true);
+            MESSAGE_QUEUE_NEXT_METHOD = MessageQueue.class.getDeclaredMethod("next");
+            MESSAGE_QUEUE_NEXT_METHOD.setAccessible(true);
+        } catch (NoSuchFieldException | NoSuchMethodException e) {
             throw new RuntimeException("Failed to initialize MockLooper", e);
         }
     }
 
 
     public MockLooper() throws Exception {
-        mLooper = looperConstructor.newInstance(false);
+        mLooper = LOOPER_CONSTRUCTOR.newInstance(false);
 
         ThreadLocal<Looper> threadLocalLooper =
-                (ThreadLocal<Looper>) threadLocalLooperField.get(null);
+                (ThreadLocal<Looper>) THREAD_LOCAL_LOOPER_FIELD.get(null);
         threadLocalLooper.set(mLooper);
     }
 
@@ -68,9 +67,8 @@ public class MockLooper {
 
     private Message messageQueueNext() {
         try {
-            return (Message) messageQueueNextMethod.invoke(mLooper.getQueue());
-        }
-        catch(IllegalAccessException | InvocationTargetException e) {
+            return (Message) MESSAGE_QUEUE_NEXT_METHOD.invoke(mLooper.getQueue());
+        } catch (IllegalAccessException | InvocationTargetException e) {
             throw new RuntimeException("Reflection error when getting next message", e);
         }
     }
@@ -88,8 +86,7 @@ public class MockLooper {
     public Message nextMessage() {
         if (hasMessage()) {
             return messageQueueNext();
-        }
-        else {
+        } else {
             return null;
         }
     }
