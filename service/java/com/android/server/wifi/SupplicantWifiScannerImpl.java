@@ -38,6 +38,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * @see com.android.server.wifi.WifiScannerImpl for more details on each method
+ */
 public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handler.Callback {
     private static final String TAG = "SupplicantWifiScannerImpl";
     private static final boolean DBG = false;
@@ -109,6 +112,17 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         capabilities.max_hotlist_bssids = 0;
         capabilities.max_significant_wifi_change_aps = 0;
         return true;
+    }
+
+    @Override
+    public boolean startSingleScan(WifiNative.ScanSettings settings,
+            WifiNative.ScanEventHandler eventHandler) {
+        return false; // TODO implement
+    }
+
+    @Override
+    public WifiScanner.ScanData getLatestSingleScanResults() {
+        return null; // TODO implement
     }
 
     @Override
@@ -271,6 +285,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     public boolean handleMessage(Message msg) {
         switch(msg.what) {
             case WifiMonitor.SCAN_FAILED_EVENT:
+                // TODO indicate failure to caller
                 Log.w(TAG, "Scan failed");
                 synchronized (mSettingsLock) {
                     mLastScanSettings = null;
