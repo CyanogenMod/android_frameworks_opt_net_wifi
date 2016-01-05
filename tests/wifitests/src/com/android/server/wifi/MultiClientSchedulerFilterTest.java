@@ -256,6 +256,24 @@ public class MultiClientSchedulerFilterTest {
         assertScanDataFreqsEquals(new int[][]{ { 2400, 5150, 2400 }, { 5150 } }, results);
     }
 
+    @Test
+    public void filterScanDataExceedMaxBssidsPerScan() {
+        ScanSettings settings = createRequest(
+                channelsToSpec(2400, 5150), 30000, 0, 3,
+                WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT
+        );
+        Collection<ScanSettings> requests = Collections.singleton(settings);
+        mScheduler.updateSchedule(requests);
+
+        ScanData[] results = mScheduler.filterResultsForSettings(createScanDatas(
+                        new int[][]{ { 2400, 2450, 5150, 5175, 2400, 2400},
+                                     { 5175 },
+                                     { 5175, 5175, 5150, 2400, 2400, 5150 } }), settings);
+
+        assertScanDataFreqsEquals(new int[][]{ { 2400, 5150, 2400 }, { 5150, 2400, 2400 } },
+                results);
+    }
+
 
     public static void assertScanDataFreqsEquals(int[][] expected, ScanData[] results) {
         if (expected == null) {

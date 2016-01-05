@@ -16,14 +16,14 @@
 
 package com.android.server.wifi;
 
-import android.annotation.Nullable;
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiScanner.ChannelSpec;
-import android.net.wifi.WifiScanner.ScanSettings;
 import android.net.wifi.WifiScanner.ScanData;
-import android.util.ArrayMap;
+import android.net.wifi.WifiScanner.ScanSettings;
+import android.util.ArraySet;
 import android.util.Rational;
 import android.util.Slog;
 
@@ -33,10 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 
 /**
  * <p>This class takes a series of scan requests and formulates the best hardware level scanning
@@ -116,11 +113,9 @@ public class MultiClientScheduler extends WifiScanningScheduler {
         /**
          * convert ChannelSpec to native representation
          */
-        private static WifiNative.ChannelSettings createChannelSettings(ChannelSpec channel) {
+        private static WifiNative.ChannelSettings createChannelSettings(int frequency) {
             WifiNative.ChannelSettings channelSettings = new WifiNative.ChannelSettings();
-            channelSettings.frequency = channel.frequency;
-            channelSettings.dwell_time_ms = channel.dwellTimeMS;
-            channelSettings.passive = channel.passive;
+            channelSettings.frequency = frequency;
             return channelSettings;
         }
 
@@ -130,11 +125,13 @@ public class MultiClientScheduler extends WifiScanningScheduler {
         public WifiNative.BucketSettings createBucketSettings(int bucketId,
                 int maxChannels) {
             int reportEvents = WifiScanner.REPORT_EVENT_NO_BATCH;
-            int channelCount = 0;
-            WifiScanner.ChannelSpec[][] channels = new WifiScanner.ChannelSpec[settings.size()][];
+            ArraySet<Integer> channels = new ArraySet<Integer>();
+            int exactBands = 0;
+            int allBands = 0;
 
             for (int i = 0; i < settings.size(); ++i) {
-                int requestedReportEvents = settings.get(i).reportEvents;
+                WifiScanner.ScanSettings setting = settings.get(i);
+                int requestedReportEvents = setting.reportEvents;
                 if ((requestedReportEvents & WifiScanner.REPORT_EVENT_NO_BATCH) == 0) {
                     reportEvents &= ~WifiScanner.REPORT_EVENT_NO_BATCH;
                 }
@@ -145,33 +142,32 @@ public class MultiClientScheduler extends WifiScanningScheduler {
                     reportEvents |= WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT;
                 }
 
-                channels[i] = WifiChannelHelper.getChannelsForScanSettings(settings.get(i));
-                channelCount += channels[i].length;
+                WifiScanner.ChannelSpec[] settingChannels =
+                        WifiChannelHelper.getChannelsForScanSettings(setting);
+                for (int j = 0; j < settingChannels.length; ++j) {
+                    channels.add(settingChannels[j].frequency);
+                    allBands |=
+                            WifiChannelHelper.getBandFromChannel(settingChannels[j].frequency);
+                }
+                if (setting.band != WifiScanner.WIFI_BAND_UNSPECIFIED) {
+                    exactBands |= setting.band;
+                }
             }
 
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             bucketSettings.bucket = bucketId;
             bucketSettings.report_events = reportEvents;
             bucketSettings.period_ms = period;
-            bucketSettings.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
-            if (channelCount > maxChannels) {
-                for (int i = 0; i < channels.length; ++i) {
-                    for (int j = 0; j < channels[i].length; ++j) {
-                        bucketSettings.band |=
-                            WifiChannelHelper.getBandFromChannel(channels[i][j].frequency);
-                    }
-                }
+            if (channels.size() > maxChannels || allBands == exactBands) {
+                bucketSettings.band = allBands;
                 bucketSettings.num_channels = 0;
                 bucketSettings.channels = null;
             } else {
-                bucketSettings.num_channels = channelCount;
-                bucketSettings.channels = new WifiNative.ChannelSettings[channelCount];
-                int channelIndex = 0;
-                for (int i = 0; i < channels.length; ++i) {
-                    for (int j = 0; j < channels[i].length; ++j) {
-                        bucketSettings.channels[channelIndex++] =
-                            createChannelSettings(channels[i][j]);
-                    }
+                bucketSettings.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
+                bucketSettings.num_channels = channels.size();
+                bucketSettings.channels = new WifiNative.ChannelSettings[channels.size()];
+                for (int i = 0; i < channels.size(); ++i) {
+                    bucketSettings.channels[i] = createChannelSettings(channels.valueAt(i));
                 }
             }
 
@@ -281,7 +277,12 @@ public class MultiClientScheduler extends WifiScanningScheduler {
                         break;
                     }
                 }
+                if (settings.numBssidsPerScan > 0
+                        && filteredResults.size() >= settings.numBssidsPerScan) {
+                    break;
+                }
             }
+            // TODO correctly note if scan results may be incomplete
             if (filteredResults.size() == scanData.getResults().length) {
                 filteredScanDatas.add(scanData);
             }
@@ -292,7 +293,6 @@ public class MultiClientScheduler extends WifiScanningScheduler {
                                         new ScanResult[filteredResults.size()])));
             }
         }
-
         if (filteredScanDatas.size() == 0) {
             return null;
         }
@@ -333,7 +333,7 @@ public class MultiClientScheduler extends WifiScanningScheduler {
                 schedule.report_threshold_num_scans = settings.maxScansToCache;
             }
         }
-        if (schedule.max_ap_per_scan == 0) {
+        if (schedule.max_ap_per_scan == 0 || schedule.max_ap_per_scan > getMaxApPerScan()) {
             schedule.max_ap_per_scan = getMaxApPerScan();
         }
 
