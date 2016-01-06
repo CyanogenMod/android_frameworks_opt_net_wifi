@@ -2342,8 +2342,8 @@ public class WifiConfigStore extends IpConfigStore {
                         out.writeUTF(DEFAULT_GW_KEY + SEPARATOR + macAddress + NL);
                     }
 
-                    if (getScanDetailCache(config) != null) {
-                        for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
+                    if (getScanDetailCacheIfExist(config) != null) {
+                        for (ScanDetail scanDetail : getScanDetailCacheIfExist(config).values()) {
                             ScanResult result = scanDetail.getScanResult();
                             out.writeUTF(BSSID_KEY + SEPARATOR +
                                     result.BSSID + NL);
@@ -3338,6 +3338,12 @@ public class WifiConfigStore extends IpConfigStore {
         }
         return cache;
     }
+
+    public ScanDetailCache getScanDetailCacheIfExist(WifiConfiguration config) {
+        if (config == null) return null;
+        return  mScanDetailCaches.get(config.networkId);
+    }
+
 
     /**
      * This function run thru the Saved WifiConfigurations and check if some should be linked.
