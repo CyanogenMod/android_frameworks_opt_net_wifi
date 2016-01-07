@@ -27,8 +27,6 @@ import android.util.ArraySet;
 import android.util.Rational;
 import android.util.Slog;
 
-import com.android.server.wifi.WifiNative;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -58,7 +56,7 @@ public class MultiClientScheduler extends WifiScanningScheduler {
     /**
      * Value that all scan periods must be an integer multiple of
      */
-    private static final int PERIOD_MIN_GCD_MS = 5000;
+    private static final int PERIOD_MIN_GCD_MS = 10000;
     /**
      * Default period to use if no buckets are being scheduled
      */
@@ -87,23 +85,33 @@ public class MultiClientScheduler extends WifiScanningScheduler {
      * 1m, 30s and 10s then the two buckets shceduled with have periods 1m and 30s and the 10s scan
      * will be placed in the 30s bucket.
      *
+     * If there are special scan requests such as exponential back off scan or context hub scan, we
+     * always dedicate a bucket for each type. Regular scan requests will be packed into the
+     * remaining buckets.
      */
     private static final int[] PREDEFINED_BUCKET_PERIODS = {
-        12 * PERIOD_MIN_GCD_MS,   // 1m
-        6 * PERIOD_MIN_GCD_MS,    // 30s
-        60 * PERIOD_MIN_GCD_MS,   // 5m
-        120 * PERIOD_MIN_GCD_MS,  // 10m
-        2 * PERIOD_MIN_GCD_MS,    // 10s
-        360 * PERIOD_MIN_GCD_MS,  // 30m
-        180 * PERIOD_MIN_GCD_MS,  // 15m
-        720 * PERIOD_MIN_GCD_MS,  // 1h
+        6 * PERIOD_MIN_GCD_MS,   // 1m
+        3 * PERIOD_MIN_GCD_MS,   // 30s
+        30 * PERIOD_MIN_GCD_MS,  // 5m
+        60 * PERIOD_MIN_GCD_MS,  // 10m
+        1 * PERIOD_MIN_GCD_MS,   // 10s
+        180 * PERIOD_MIN_GCD_MS, // 30m
+        90 * PERIOD_MIN_GCD_MS,  // 15m
+        360 * PERIOD_MIN_GCD_MS, // 1h
+        -1,                      // place holder for exponential back off scan
     };
+
+    private static final int EXPONENTIAL_BACK_OFF_BUCKET_IDX =
+            (PREDEFINED_BUCKET_PERIODS.length - 1);
+    // TODO: Add support for context hub scan request when it is enabled
+    private static final int NUM_OF_REGULAR_BUCKETS =
+            (PREDEFINED_BUCKET_PERIODS.length - 1);
 
     /**
      * this class is an intermediate representation for scheduling
      */
     private static class Bucket {
-        public final int period;
+        public int period;
         public final List<ScanSettings> settings = new ArrayList<>();
 
         public Bucket(int period) {
@@ -125,6 +133,8 @@ public class MultiClientScheduler extends WifiScanningScheduler {
         public WifiNative.BucketSettings createBucketSettings(int bucketId,
                 int maxChannels) {
             int reportEvents = WifiScanner.REPORT_EVENT_NO_BATCH;
+            int maxPeriodInMs = 0;
+            int stepCount = 0;
             ArraySet<Integer> channels = new ArraySet<Integer>();
             int exactBands = 0;
             int allBands = 0;
@@ -152,12 +162,25 @@ public class MultiClientScheduler extends WifiScanningScheduler {
                 if (setting.band != WifiScanner.WIFI_BAND_UNSPECIFIED) {
                     exactBands |= setting.band;
                 }
+
+                // For the bucket allocated to exponential back off scan, the values of
+                // the exponential back off scan related parameters from the very first
+                // setting in the settings list will be used as the settings for this bucket.
+                if (i == 0 && setting.maxPeriodInMs != 0
+                        && setting.maxPeriodInMs != setting.periodInMs) {
+                    period = setting.periodInMs;
+                    maxPeriodInMs = setting.maxPeriodInMs;
+                    stepCount = setting.stepCount;
+                }
+
             }
 
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             bucketSettings.bucket = bucketId;
             bucketSettings.report_events = reportEvents;
             bucketSettings.period_ms = period;
+            bucketSettings.max_period_ms = maxPeriodInMs;
+            bucketSettings.step_count = stepCount;
             if (channels.size() > maxChannels || allBands == exactBands) {
                 bucketSettings.band = allBands;
                 bucketSettings.num_channels = 0;
@@ -285,8 +308,7 @@ public class MultiClientScheduler extends WifiScanningScheduler {
             // TODO correctly note if scan results may be incomplete
             if (filteredResults.size() == scanData.getResults().length) {
                 filteredScanDatas.add(scanData);
-            }
-            else if (filteredResults.size() > 0) {
+            } else if (filteredResults.size() > 0) {
                 filteredScanDatas.add(new WifiScanner.ScanData(scanData.getId(),
                                 scanData.getFlags(),
                                 filteredResults.toArray(
@@ -295,8 +317,7 @@ public class MultiClientScheduler extends WifiScanningScheduler {
         }
         if (filteredScanDatas.size() == 0) {
             return null;
-        }
-        else {
+        } else {
             return filteredScanDatas.toArray(new ScanData[filteredScanDatas.size()]);
         }
     }
@@ -328,8 +349,8 @@ public class MultiClientScheduler extends WifiScanningScheduler {
             }
 
             // set batching
-            if (settings.maxScansToCache != 0 &&
-                    settings.maxScansToCache < schedule.report_threshold_num_scans) {
+            if (settings.maxScansToCache != 0
+                    && settings.maxScansToCache < schedule.report_threshold_num_scans) {
                 schedule.report_threshold_num_scans = settings.maxScansToCache;
             }
         }
@@ -351,8 +372,7 @@ public class MultiClientScheduler extends WifiScanningScheduler {
             }
 
             schedule.base_period_ms = gcd;
-        }
-        else {
+        } else {
             schedule.base_period_ms = DEFAULT_PERIOD_MS;
         }
 
@@ -360,16 +380,25 @@ public class MultiClientScheduler extends WifiScanningScheduler {
     }
 
     public void addScanToBuckets(ScanSettings settings) {
-        int bucketIndex = findBestBucketIndex(settings.periodInMs,
-                                              PREDEFINED_BUCKET_PERIODS.length);
+        int bucketIndex;
+
+        if (settings.maxPeriodInMs != 0
+                && settings.maxPeriodInMs != settings.periodInMs) {
+            // exponential back off scan has a dedicated bucket
+            bucketIndex = EXPONENTIAL_BACK_OFF_BUCKET_IDX;
+        } else {
+            bucketIndex = findBestRegularBucketIndex(settings.periodInMs,
+                                                     NUM_OF_REGULAR_BUCKETS);
+        }
+
         mBuckets.getOrCreate(bucketIndex).settings.add(settings);
     }
 
     /**
      * find closest bucket period to the requested period in all predefined buckets
      */
-    private static int findBestBucketIndex(int requestedPeriod, int maxNumBuckets) {
-        maxNumBuckets = Math.min(maxNumBuckets, PREDEFINED_BUCKET_PERIODS.length);
+    private static int findBestRegularBucketIndex(int requestedPeriod, int maxNumBuckets) {
+        maxNumBuckets = Math.min(maxNumBuckets, NUM_OF_REGULAR_BUCKETS);
         int index = -1;
         int minDiff = Integer.MAX_VALUE;
         for (int i = 0; i < maxNumBuckets; ++i) {
@@ -380,8 +409,8 @@ public class MultiClientScheduler extends WifiScanningScheduler {
             }
         }
         if (index == -1) {
-            Slog.wtf(TAG, "Could not find best bucket for period " + requestedPeriod + " in " +
-                     maxNumBuckets + " buckets");
+            Slog.wtf(TAG, "Could not find best bucket for period " + requestedPeriod + " in "
+                     + maxNumBuckets + " buckets");
         }
         return index;
     }
@@ -391,13 +420,21 @@ public class MultiClientScheduler extends WifiScanningScheduler {
      * closest period bucket.
      */
     private void compactBuckets(int maxBuckets) {
-        int activeBuckets = 0;
-        int maxActiveIndex = 0;
-        for (int i = mBuckets.size() - 1; i >= 0 && mBuckets.getActiveCount() > maxBuckets;
-             --i) {
+        int maxRegularBuckets = maxBuckets;
+        int activeRegularBucketCount = mBuckets.getActiveCount();
+
+        // reserve one bucket for exponential back off scan if there is
+        // such request(s)
+        if (mBuckets.isActive(EXPONENTIAL_BACK_OFF_BUCKET_IDX)) {
+            maxRegularBuckets--;
+            activeRegularBucketCount--;
+        }
+        // TODO: reserve another bucket for context hub scan request
+        for (int i = NUM_OF_REGULAR_BUCKETS - 1;
+                i >= 0 && activeRegularBucketCount > maxRegularBuckets; --i) {
             if (mBuckets.isActive(i)) {
                 for (ScanSettings scanRequest : mBuckets.get(i).settings) {
-                    int newBucketIndex = findBestBucketIndex(scanRequest.periodInMs, i);
+                    int newBucketIndex = findBestRegularBucketIndex(scanRequest.periodInMs, i);
                     mBuckets.getOrCreate(newBucketIndex).settings.add(scanRequest);
                 }
                 mBuckets.clear(i);
