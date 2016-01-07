@@ -17,10 +17,13 @@
 package com.android.server.wifi;
 
 import android.content.Context;
+import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.os.Looper;
 
 import com.android.server.wifi.WifiNative;
+
+import java.util.Comparator;
 
 /**
  * Defines the interface to the Wifi hardware required for the WifiScanner API
@@ -39,6 +42,17 @@ public abstract class WifiScannerImpl {
             return new SupplicantWifiScannerImpl(context, wifiNative, looper);
         }
     }
+
+    /**
+     * A comparator that implements the sort order that is expected for scan results
+     */
+    protected static final Comparator<ScanResult> SCAN_RESULT_SORT_COMPARATOR =
+            new Comparator<ScanResult>() {
+        public int compare(ScanResult r1, ScanResult r2) {
+            return r2.level - r1.level;
+        }
+    };
+
 
     public abstract boolean getScanCapabilities(WifiNative.ScanCapabilities capabilities);
 

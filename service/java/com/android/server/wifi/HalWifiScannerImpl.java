@@ -25,6 +25,7 @@ import android.util.Log;
 
 import com.android.server.wifi.WifiNative;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -71,15 +72,6 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
                 pollLatestSingleScanData();
-                if (mSingleScanEventHandler != null) {
-                    if (mReportSingleScanFullResults && mLatestSingleScanResult != null) {
-                        for (ScanResult scanResult : mLatestSingleScanResult.getResults()) {
-                            mSingleScanEventHandler.onFullScanResult(scanResult);
-                        }
-                    }
-                    mSingleScanEventHandler.onScanResultsAvailable();
-                    mSingleScanEventHandler = null;
-                }
                 break;
             default:
                 Log.e(TAG, "Received unknown message: type=" + msg.what);
@@ -138,12 +130,27 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
 
 
     private void pollLatestSingleScanData() {
+        // convert ScanDetail from supplicant to ScanResults
         List<ScanDetail> nativeResults = mWifiNative.getScanResults();
         ScanResult[] results = new ScanResult[nativeResults.size()];
         for (int i = 0; i < results.length; ++i) {
             results[i] = nativeResults.get(i).getScanResult();
         }
+
+        // Dispatch full results
+        if (mSingleScanEventHandler != null && mReportSingleScanFullResults) {
+            for (int i = 0; i < results.length; ++i) {
+                mSingleScanEventHandler.onFullScanResult(results[i]);
+            }
+        }
+
+        // Sort final results and dispatch event
+        Arrays.sort(results, SCAN_RESULT_SORT_COMPARATOR);
         mLatestSingleScanResult = new WifiScanner.ScanData(0, 0, results);
+        if (mSingleScanEventHandler != null) {
+            mSingleScanEventHandler.onScanResultsAvailable();
+            mSingleScanEventHandler = null;
+        }
     }
 
     @Override
