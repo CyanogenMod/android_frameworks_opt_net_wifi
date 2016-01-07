@@ -876,6 +876,16 @@ public class WifiNative {
         }
     }
 
+    public boolean simAuthFailedResponse(int id) {
+        // should be used with type GSM-AUTH
+        return doBooleanCommand("CTRL-RSP-SIM-" + id + ":GSM-FAIL");
+    }
+
+    public boolean umtsAuthFailedResponse(int id) {
+        // should be used with type UMTS-AUTH
+        return doBooleanCommand("CTRL-RSP-SIM-" + id + ":UMTS-FAIL");
+    }
+
     public boolean simIdentityResponse(int id, String response) {
         synchronized (mLock) {
             return doBooleanCommand("CTRL-RSP-IDENTITY-" + id + ":" + response);
