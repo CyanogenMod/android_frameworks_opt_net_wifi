@@ -20,7 +20,10 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner.ScanData;
 import android.net.wifi.WifiSsid;
 
+import com.android.server.wifi.hotspot2.NetworkDetail;
+
 import java.math.BigInteger;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -47,18 +50,33 @@ public class ScanResults {
         }
     };
 
+    public static ScanResult.InformationElement generateSsidIe(String ssid) {
+        ScanResult.InformationElement ie = new ScanResult.InformationElement();
+        ie.id = ScanResult.InformationElement.EID_SSID;
+        ie.bytes = ssid.getBytes(Charset.forName("UTF-8"));
+        return ie;
+    }
+
     private static ScanDetail[] generateNativeResults(int seed, int... freqs) {
         ScanDetail[] results = new ScanDetail[freqs.length];
         Random r = new Random(seed);
+
         for (int i = 0; i < freqs.length; ++i) {
             int freq = freqs[i];
             String ssid = new BigInteger(128, r).toString(36);
+            String bssid = generateBssid(r);
             int rssi = r.nextInt(40) - 99; // -99 to -60
-            results[i] = new ScanDetail(WifiSsid.createFromAsciiEncoded(ssid),
-                    generateBssid(r), "", rssi, freq,
-                    Long.MAX_VALUE /* needed so that scan results aren't rejected because
-                                      there older than scan start */,
-                    r.nextLong());
+            ScanResult.InformationElement ie[] = new ScanResult.InformationElement[1];
+            ie[0] = generateSsidIe(ssid);
+            NetworkDetail nd = new NetworkDetail(bssid, ie, new ArrayList<String>(), freq);
+            ScanDetail detail = new ScanDetail(nd, WifiSsid.createFromAsciiEncoded(ssid),
+                    bssid, "", rssi, freq,
+                    Long.MAX_VALUE); /* needed so that scan results aren't rejected because
+                                        there older than scan start */
+            /* TODO: This is not really needed; but some production code
+               is relying on it; and causes tests to fail without it. */
+            r.nextLong();
+            results[i] = detail;
         }
         return results;
     }

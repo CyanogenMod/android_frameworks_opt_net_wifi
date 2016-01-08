@@ -16,6 +16,8 @@
 
 package com.android.server.wifi;
 
+import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
+
 import android.app.AppGlobals;
 import android.app.admin.DeviceAdminInfo;
 import android.app.admin.DevicePolicyManagerInternal;
@@ -27,7 +29,6 @@ import android.content.pm.PackageManager;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
-import android.net.Network;
 import android.net.NetworkInfo.DetailedState;
 import android.net.ProxyInfo;
 import android.net.StaticIpConfiguration;
@@ -56,8 +57,8 @@ import android.util.LocalLog;
 import android.util.Log;
 import android.util.SparseArray;
 
-import com.android.server.LocalServices;
 import com.android.internal.R;
+import com.android.server.LocalServices;
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.net.IpConfigStore;
 import com.android.server.wifi.anqp.ANQPElement;
@@ -110,8 +111,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32;
 import java.util.zip.Checksum;
-
-import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
 
 
 /**
@@ -533,9 +532,11 @@ public class WifiConfigStore extends IpConfigStore {
     private final OSUManager mOSUManager;
 
     private WifiStateMachine mWifiStateMachine;
+    private FrameworkFacade mFacade;
 
-    WifiConfigStore(Context c,  WifiStateMachine w, WifiNative wn) {
+    WifiConfigStore(Context c,  WifiStateMachine w, WifiNative wn, FrameworkFacade f) {
         mContext = c;
+        mFacade = f;
         mWifiNative = wn;
         mWifiStateMachine = w;
 
@@ -684,7 +685,8 @@ public class WifiConfigStore extends IpConfigStore {
         mAnqpCache = new AnqpCache();
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap<>();
-        mOSUManager = new OSUManager(this, mContext, mSupplicantBridge, mMOManager, mWifiStateMachine);
+        mOSUManager = mFacade.makeOsuManager(
+                this, mContext, mSupplicantBridge, mMOManager, mWifiStateMachine);
 
         mSIMAccessor = new SIMAccessor(mContext);
 

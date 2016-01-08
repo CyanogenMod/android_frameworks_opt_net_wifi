@@ -16,6 +16,17 @@
 
 package com.android.server.wifi;
 
+import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
+import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
+import static com.android.server.wifi.WifiController.CMD_EMERGENCY_MODE_CHANGED;
+import static com.android.server.wifi.WifiController.CMD_LOCKS_CHANGED;
+import static com.android.server.wifi.WifiController.CMD_SCAN_ALWAYS_MODE_CHANGED;
+import static com.android.server.wifi.WifiController.CMD_SCREEN_OFF;
+import static com.android.server.wifi.WifiController.CMD_SCREEN_ON;
+import static com.android.server.wifi.WifiController.CMD_SET_AP;
+import static com.android.server.wifi.WifiController.CMD_USER_PRESENT;
+import static com.android.server.wifi.WifiController.CMD_WIFI_TOGGLED;
+
 import android.Manifest;
 import android.app.ActivityManager;
 import android.app.AppOpsManager;
@@ -56,7 +67,6 @@ import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.SystemClock;
-import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.WorkSource;
@@ -100,16 +110,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.android.server.wifi.WifiController.CMD_AIRPLANE_TOGGLED;
-import static com.android.server.wifi.WifiController.CMD_BATTERY_CHANGED;
-import static com.android.server.wifi.WifiController.CMD_EMERGENCY_MODE_CHANGED;
-import static com.android.server.wifi.WifiController.CMD_LOCKS_CHANGED;
-import static com.android.server.wifi.WifiController.CMD_SCAN_ALWAYS_MODE_CHANGED;
-import static com.android.server.wifi.WifiController.CMD_SCREEN_OFF;
-import static com.android.server.wifi.WifiController.CMD_SCREEN_ON;
-import static com.android.server.wifi.WifiController.CMD_SET_AP;
-import static com.android.server.wifi.WifiController.CMD_USER_PRESENT;
-import static com.android.server.wifi.WifiController.CMD_WIFI_TOGGLED;
 /**
  * WifiService handles remote WiFi operation requests by implementing
  * the IWifiManager interface.
@@ -319,9 +319,11 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
     public WifiServiceImpl(Context context) {
         mContext = context;
 
+        FrameworkFacade facade = new FrameworkFacade();
+
         mTrafficPoller = new WifiTrafficPoller(mContext,
                 WifiNative.getWlanNativeInterface().getInterfaceName());
-        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller);
+        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller, facade);
         mWifiStateMachine.enableRssiPolling(true);
         mBatteryStats = BatteryStatsService.getService();
         mPowerManager = context.getSystemService(PowerManager.class);
