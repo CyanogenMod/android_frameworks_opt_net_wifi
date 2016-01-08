@@ -36,7 +36,6 @@ LOCAL_JNI_SHARED_LIBRARIES := \
 	libc++ \
 	libLLVM \
 	libutils \
-	libwpa_client \
 	libunwind \
 	libhardware_legacy \
 	libbase \
@@ -46,6 +45,11 @@ LOCAL_JNI_SHARED_LIBRARIES := \
 	libnetutils \
 	libbacktrace \
 	libnativehelper \
+
+ifdef WPA_SUPPLICANT_VERSION
+LOCAL_JNI_SHARED_LIBRARIES := $(LOCAL_JNI_SHARED_LIBRARIES) \
+	libwpa_client
+endif
 
 LOCAL_PACKAGE_NAME := FrameworksWifiTests
 
