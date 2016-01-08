@@ -1,14 +1,15 @@
 
 package com.android.server.wifi;
 
-import android.util.Log;
-
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 
-class DummyWifiLogger {
+/**
+ *
+ */
+public class BaseWifiLogger {
 
-    public DummyWifiLogger() { }
+    public BaseWifiLogger() { }
 
     public synchronized void startLogging(boolean verboseEnabled) { }
 

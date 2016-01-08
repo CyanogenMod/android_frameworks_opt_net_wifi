@@ -16,24 +16,24 @@
 
 package com.android.server.wifi;
 
-import android.os.BatteryStats;
-import android.os.RemoteException;
-import android.os.ServiceManager;
-import android.util.Slog;
-import com.android.internal.app.IBatteryStats;
-import com.android.internal.util.State;
-import com.android.internal.util.StateMachine;
-
 import android.content.Context;
 import android.content.Intent;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
+import android.os.BatteryStats;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Parcelable;
+import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.util.Log;
+import android.util.Slog;
+
+import com.android.internal.app.IBatteryStats;
+import com.android.internal.util.State;
+import com.android.internal.util.StateMachine;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -44,7 +44,7 @@ import java.io.PrintWriter;
  * - detect a failed WPA handshake that loops indefinitely
  * - authentication failure handling
  */
-class SupplicantStateTracker extends StateMachine {
+public class SupplicantStateTracker extends StateMachine {
 
     private static final String TAG = "SupplicantStateTracker";
     private static boolean DBG = false;
