@@ -2306,16 +2306,10 @@ static JNINativeMethod gWifiMethods[] = {
             (void*)android_net_wifi_is_get_channels_for_band_supported}
 };
 
-int register_android_net_wifi_WifiNative(JNIEnv* env) {
-    return AndroidRuntime::registerNativeMethods(env,
-            "com/android/server/wifi/WifiNative", gWifiMethods, NELEM(gWifiMethods));
-}
-
-
 /* User to register native functions */
 extern "C"
 jint Java_com_android_server_wifi_WifiNative_registerNatives(JNIEnv* env, jclass clazz) {
-    return AndroidRuntime::registerNativeMethods(env,
+    return jniRegisterNativeMethods(env,
             "com/android/server/wifi/WifiNative", gWifiMethods, NELEM(gWifiMethods));
 }
 

@@ -78,7 +78,7 @@ endif
 # ============================================================
 include $(CLEAR_VARS)
 
-LOCAL_REQUIRED_MODULES := libandroid_runtime libhardware_legacy
+LOCAL_REQUIRED_MODULES := libhardware_legacy
 
 LOCAL_CFLAGS += -Wno-unused-parameter
 
@@ -94,9 +94,8 @@ LOCAL_SHARED_LIBRARIES += \
 	libutils \
 	libhardware \
 	libhardware_legacy \
-	libandroid_runtime \
 	libnl \
-    libdl
+	libdl
 
 LOCAL_STATIC_LIBRARIES += libwifi-hal-stub
 LOCAL_STATIC_LIBRARIES += $(LIB_WIFI_HAL)
@@ -121,7 +120,6 @@ LOCAL_SRC_FILES := $(call all-java-files-under, java) \
 	$(call all-Iaidl-files-under, java) \
 	$(call all-logtags-files-under, java)
 
-LOCAL_JNI_SHARED_LIBRARIES := libandroid_runtime
 LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt services
 LOCAL_STATIC_JAVA_LIBRARIES := ksoap2 android-support-v4
 LOCAL_REQUIRED_MODULES := services
