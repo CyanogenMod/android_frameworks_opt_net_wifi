@@ -31,6 +31,22 @@ LOCAL_JAVA_LIBRARIES := android.test.runner \
 	wifi-service \
 	services
 
+LOCAL_JNI_SHARED_LIBRARIES := \
+	libwifi-service \
+	libc++ \
+	libLLVM \
+	libutils \
+	libwpa_client \
+	libunwind \
+	libhardware_legacy \
+	libbase \
+	libhardware \
+	libnl \
+	libcutils \
+	libnetutils \
+	libbacktrace \
+	libnativehelper \
+
 LOCAL_PACKAGE_NAME := FrameworksWifiTests
 
 include $(BUILD_PACKAGE)
