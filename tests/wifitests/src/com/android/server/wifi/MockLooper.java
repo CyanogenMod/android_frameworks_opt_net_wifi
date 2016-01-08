@@ -33,7 +33,7 @@ import java.lang.reflect.Method;
  * Creating a MockLooper will also install it as the looper for the current thread
  */
 public class MockLooper {
-    private final Looper mLooper;
+    protected final Looper mLooper;
 
     private static final Constructor<Looper> LOOPER_CONSTRUCTOR;
     private static final Field THREAD_LOCAL_LOOPER_FIELD;
@@ -53,19 +53,23 @@ public class MockLooper {
     }
 
 
-    public MockLooper() throws Exception {
-        mLooper = LOOPER_CONSTRUCTOR.newInstance(false);
+    public MockLooper() {
+        try {
+            mLooper = LOOPER_CONSTRUCTOR.newInstance(false);
 
-        ThreadLocal<Looper> threadLocalLooper =
-                (ThreadLocal<Looper>) THREAD_LOCAL_LOOPER_FIELD.get(null);
-        threadLocalLooper.set(mLooper);
+            ThreadLocal<Looper> threadLocalLooper = (ThreadLocal<Looper>) THREAD_LOCAL_LOOPER_FIELD
+                    .get(null);
+            threadLocalLooper.set(mLooper);
+        } catch (IllegalAccessException | InstantiationException | InvocationTargetException e) {
+            throw new RuntimeException("Reflection error constructing or accessing looper", e);
+        }
     }
 
     public Looper getLooper() {
         return mLooper;
     }
 
-    private Message messageQueueNext() {
+    protected Message messageQueueNext() {
         try {
             return (Message) MESSAGE_QUEUE_NEXT_METHOD.invoke(mLooper.getQueue());
         } catch (IllegalAccessException | InvocationTargetException e) {
@@ -76,7 +80,7 @@ public class MockLooper {
     /**
      * @return true if there are pending messages in the message queue
      */
-    public boolean hasMessage() {
+    public boolean isIdle() {
         return !mLooper.getQueue().isIdle();
     }
 
@@ -84,7 +88,7 @@ public class MockLooper {
      * @return the next message in the Looper's message queue or null if there is none
      */
     public Message nextMessage() {
-        if (hasMessage()) {
+        if (isIdle()) {
             return messageQueueNext();
         } else {
             return null;
@@ -96,7 +100,7 @@ public class MockLooper {
      * Asserts that there is a message in the queue
      */
     public void dispatchNext() {
-        assertTrue(hasMessage());
+        assertTrue(isIdle());
         Message msg = messageQueueNext();
         if (msg == null) {
             return;
@@ -111,7 +115,7 @@ public class MockLooper {
      */
     public int dispatchAll() {
         int count = 0;
-        while (hasMessage()) {
+        while (isIdle()) {
             dispatchNext();
             ++count;
         }
