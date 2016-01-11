@@ -41,8 +41,8 @@ import org.mockito.MockitoAnnotations;
  */
 
 @SmallTest
-public class MockLooperAbstractTimeTest {
-    private MockLooperAbstractTime mMockLooper;
+public class MockLooperTest {
+    private MockLooper mMockLooper;
     private Handler mHandler;
     private Handler mHandlerSpy;
 
@@ -53,7 +53,7 @@ public class MockLooperAbstractTimeTest {
     public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
 
-        mMockLooper = new MockLooperAbstractTime();
+        mMockLooper = new MockLooper();
         mHandler = new Handler(mMockLooper.getLooper());
         mHandlerSpy = spy(mHandler);
     }
