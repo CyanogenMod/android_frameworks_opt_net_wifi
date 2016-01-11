@@ -63,19 +63,11 @@ class WifiController extends StateMachine {
     private long mIdleMillis;
     private int mSleepPolicy;
     private boolean mFirstUserSignOnSeen = false;
+    private int mDefaultWifiIdleMs;
 
     private AlarmManager mAlarmManager;
     private PendingIntent mIdleIntent;
     private static final int IDLE_REQUEST = 0;
-
-    /**
-     * See {@link Settings.Global#WIFI_IDLE_MS}. This is the default value if a
-     * Settings.Global value is not present. This timeout value is chosen as
-     * the approximate point at which the battery drain caused by Wi-Fi
-     * being enabled but not active exceeds the battery drain caused by
-     * re-establishing a connection to the mobile data network.
-     */
-    private static final long DEFAULT_IDLE_MS = 15 * 60 * 1000; /* 15 minutes */
 
     /**
      * See {@link Settings.Global#WIFI_REENABLE_DELAY_MS}.  This is the default value if a
@@ -141,6 +133,8 @@ class WifiController extends StateMachine {
         mWifiStateMachine = service.mWifiStateMachine;
         mSettingsStore = service.mSettingsStore;
         mLocks = service.mLocks;
+        mDefaultWifiIdleMs = context.getResources().getInteger(com.android.internal.
+            R.integer.def_wifi_idle_ms);
 
         mAlarmManager = (AlarmManager)mContext.getSystemService(Context.ALARM_SERVICE);
         Intent idleIntent = new Intent(ACTION_DEVICE_IDLE, null);
@@ -216,7 +210,7 @@ class WifiController extends StateMachine {
 
     private void readWifiIdleTime() {
         mIdleMillis = Settings.Global.getLong(mContext.getContentResolver(),
-                Settings.Global.WIFI_IDLE_MS, DEFAULT_IDLE_MS);
+                Settings.Global.WIFI_IDLE_MS, mDefaultWifiIdleMs);
     }
 
     private void readWifiSleepPolicy() {
