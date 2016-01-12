@@ -2843,17 +2843,6 @@ public class WifiConfigStore extends IpConfigStore {
                 WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
                 if (needsKeyStore(enterpriseConfig)) {
-                    /**
-                     * Keyguard settings may eventually be controlled by device policy.
-                     * We check here if keystore is unlocked before installing
-                     * credentials.
-                     * TODO: Do we need a dialog here ?
-                     */
-                    if (mKeyStore.state() != KeyStore.State.UNLOCKED) {
-                        loge(config.SSID + ": key store is locked");
-                        break setVariables;
-                    }
-
                     try {
                         /* config passed may include only fields being updated.
                          * In order to generate the key id, fetch uninitialized
@@ -4383,21 +4372,16 @@ public class WifiConfigStore extends IpConfigStore {
         String caCertName = Credentials.CA_CERTIFICATE + name;
         if (config.getClientCertificate() != null) {
             byte[] privKeyData = config.getClientPrivateKey().getEncoded();
-            if (isHardwareBackedKey(config.getClientPrivateKey())) {
-                // Hardware backed key store is secure enough to store keys un-encrypted, this
-                // removes the need for user to punch a PIN to get access to these keys
-                if (DBG) Log.d(TAG, "importing keys " + name + " in hardware backed store");
-                ret = mKeyStore.importKey(privKeyName, privKeyData, android.os.Process.WIFI_UID,
-                        KeyStore.FLAG_NONE);
-            } else {
-                // Software backed key store is NOT secure enough to store keys un-encrypted.
-                // Save keys encrypted so they are protected with user's PIN. User will
-                // have to unlock phone before being able to use these keys and connect to
-                // networks.
-                if (DBG) Log.d(TAG, "importing keys " + name + " in software backed store");
-                ret = mKeyStore.importKey(privKeyName, privKeyData, Process.WIFI_UID,
-                        KeyStore.FLAG_ENCRYPTED);
+            if (DBG) {
+                if (isHardwareBackedKey(config.getClientPrivateKey())) {
+                    Log.d(TAG, "importing keys " + name + " in hardware backed store");
+                } else {
+                    Log.d(TAG, "importing keys " + name + " in software backed store");
+                }
             }
+            ret = mKeyStore.importKey(privKeyName, privKeyData, Process.WIFI_UID,
+                    KeyStore.FLAG_NONE);
+
             if (ret == false) {
                 return ret;
             }
