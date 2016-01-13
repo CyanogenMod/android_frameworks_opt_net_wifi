@@ -1764,10 +1764,15 @@ public class WifiNative {
 
     synchronized public static WifiScanner.ScanData[] getScanResults(boolean flush) {
         synchronized (mLock) {
+            WifiScanner.ScanData[] sd = null;
             if (isHalStarted()) {
-                return getScanResultsNative(sWlan0Index, flush);
+                sd = getScanResultsNative(sWlan0Index, flush);
+            }
+
+            if (sd != null) {
+                return sd;
             } else {
-                return null;
+                return new WifiScanner.ScanData[0];
             }
         }
     }
