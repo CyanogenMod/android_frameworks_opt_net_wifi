@@ -9967,16 +9967,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     String kc = makeHex(result, 1 + kc_offset, kc_len);
                     sb.append(":" + kc + ":" + sres);
                     logv("kc:" + kc + " sres:" + sres);
+
+                    String response = sb.toString();
+                    logv("Supplicant Response -" + response);
+                    mWifiNative.simAuthResponse(requestData.networkId, "GSM-AUTH", response);
                 } else {
                     loge("bad response - " + tmResponse);
+                    mWifiNative.simAuthFailedResponse(requestData.networkId);
                 }
             }
 
-            String response = sb.toString();
-            logv("Supplicant Response -" + response);
-            mWifiNative.simAuthResponse(requestData.networkId, "GSM-AUTH", response);
         } else {
             loge("could not get telephony manager");
+            mWifiNative.simAuthFailedResponse(requestData.networkId);
         }
     }
 
@@ -10020,6 +10023,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
         }
 
+        boolean good_response = false;
         if (tmResponse != null && tmResponse.length() > 4) {
             byte[] result = android.util.Base64.decode(tmResponse,
                     android.util.Base64.DEFAULT);
@@ -10035,6 +10039,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 String ik = makeHex(result, res_len + ck_len + 4, ik_len);
                 sb.append(":" + ik + ":" + ck + ":" + res);
                 logv("ik:" + ik + "ck:" + ck + " res:" + res);
+                good_response = true;
             } else if (tag == (byte) 0xdc) {
                 loge("synchronisation failure");
                 int auts_len = result[1];
@@ -10042,18 +10047,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 res_type = "UMTS-AUTS";
                 sb.append(":" + auts);
                 logv("auts:" + auts);
+                good_response = true;
             } else {
                 loge("bad response - unknown tag = " + tag);
-                return;
             }
         } else {
             loge("bad response - " + tmResponse);
-            return;
         }
 
-        String response = sb.toString();
-        logv("Supplicant Response -" + response);
-        mWifiNative.simAuthResponse(requestData.networkId, res_type, response);
+        if (good_response) {
+            String response = sb.toString();
+            if (VDBG) logv("Supplicant Response -" + response);
+            mWifiNative.simAuthResponse(requestData.networkId, res_type, response);
+        } else {
+            mWifiNative.umtsAuthFailedResponse(requestData.networkId);
+        }
     }
 
     /**
