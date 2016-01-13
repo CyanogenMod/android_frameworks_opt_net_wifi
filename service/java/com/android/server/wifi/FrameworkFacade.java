@@ -8,7 +8,7 @@ import android.net.BaseDhcpStateMachine;
 import android.net.DhcpStateMachine;
 import android.net.TrafficStats;
 import android.net.dhcp.DhcpClient;
-import android.net.ip.IpReachabilityMonitor;
+import android.net.ip.IpManager;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.ServiceManager;
@@ -86,10 +86,9 @@ public class FrameworkFacade {
         }
     }
 
-    public IpReachabilityMonitor makeIpReachabilityMonitor(
-            Context context, String iface, IpReachabilityMonitor.Callback callback) {
-        return new IpReachabilityMonitor(context, iface, callback);
+    public IpManager makeIpManager(
+            Context context, String iface, IpManager.Callback callback) {
+        return new IpManager(context, iface, callback);
     }
-
 }
 
