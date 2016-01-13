@@ -410,6 +410,41 @@ public class MultiClientSchedulerTest {
                 0, WifiScanner.REPORT_EVENT_NO_BATCH));
     }
 
+    @Test
+    public void singleExponentialBackOffRequest() {
+        Collection<ScanSettings> requests = Collections.singleton(createRequest(
+                WifiScanner.WIFI_BAND_BOTH, 20000, 160000, 2, 0, 20,
+                WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN
+        ));
+
+        mScheduler.updateSchedule(requests);
+        WifiNative.ScanSettings schedule = mScheduler.getSchedule();
+
+        assertEquals(20000, schedule.base_period_ms);
+        assertBuckets(schedule, 1);
+        for (ScanSettings request : requests) {
+            assertSettingsSatisfied(schedule, request, false, true);
+        }
+    }
+
+    @Test
+    public void exponentialBackOffAndRegularRequests() {
+        Collection<ScanSettings> requests = new ArrayList<>();
+        requests.add(createRequest(WifiScanner.WIFI_BAND_BOTH, 20000, 200000, 1,
+                0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
+        requests.add(createRequest(channelsToSpec(5175), 30000, 0, 20,
+                WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL));
+
+        mScheduler.updateSchedule(requests);
+        WifiNative.ScanSettings schedule = mScheduler.getSchedule();
+
+        assertEquals("base_period_ms", 10000, schedule.base_period_ms);
+        assertBuckets(schedule, 2);
+        for (ScanSettings request : requests) {
+            assertSettingsSatisfied(schedule, request, false, true);
+        }
+    }
+
     public void scheduleAndTestExactRequest(ScanSettings settings) {
         Collection<ScanSettings> requests = new ArrayList<>();
         requests.add(settings);
@@ -538,10 +573,16 @@ public class MultiClientSchedulerTest {
                 }
             }
             int expectedPeriod;
-            if (bucketsLimited) {
-                expectedPeriod = computeExpectedPeriod(settings.periodInMs, schedule);
+
+            if (settings.maxPeriodInMs != 0 && settings.periodInMs != settings.maxPeriodInMs) {
+                // exponential back off scan
+                expectedPeriod = settings.periodInMs;
             } else {
-                expectedPeriod = computeExpectedPeriod(settings.periodInMs);
+                if (bucketsLimited) {
+                    expectedPeriod = computeExpectedPeriod(settings.periodInMs, schedule);
+                } else {
+                    expectedPeriod = computeExpectedPeriod(settings.periodInMs);
+                }
             }
 
             if (exactPeriod) {

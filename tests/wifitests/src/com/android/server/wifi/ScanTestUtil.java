@@ -83,6 +83,23 @@ public class ScanTestUtil {
     }
 
     /**
+     * Create an exponential back off scan request if maxPeriod != period && maxPeriod != 0.
+     */
+    public static ScanSettings createRequest(int band, int period, int maxPeriod, int stepCount,
+            int batch, int bssidsPerScan, int reportEvents) {
+        ScanSettings request = new ScanSettings();
+        request.band = band;
+        request.channels = null;
+        request.periodInMs = period;
+        request.maxPeriodInMs = maxPeriod;
+        request.stepCount = stepCount;
+        request.numBssidsPerScan = bssidsPerScan;
+        request.maxScansToCache = batch;
+        request.reportEvents = reportEvents;
+        return request;
+    }
+
+    /**
      * Builder to create WifiNative.ScanSettings objects for testing
      */
     public static class NativeScanSettingsBuilder {
