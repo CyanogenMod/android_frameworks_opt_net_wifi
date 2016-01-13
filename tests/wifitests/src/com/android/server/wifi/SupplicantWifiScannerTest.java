@@ -32,12 +32,14 @@ import static org.mockito.Mockito.when;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
+import android.os.Handler;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.InOrder;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Set;
 
@@ -48,9 +50,18 @@ import java.util.Set;
 public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
 
     @Before
-    public void setup() {
+    public void setup() throws Exception {
         mScanner = new SupplicantWifiScannerImpl(mContext, WifiNative.getWlanNativeInterface(),
                 mLooper.getLooper());
+
+        // TODO remove this once SupplicantWifiScannerImpl wifi monitor registration is enabled
+        Field eventHandlerField = SupplicantWifiScannerImpl.class.getDeclaredField("mEventHandler");
+        eventHandlerField.setAccessible(true);
+        Handler eventHandler = (Handler) eventHandlerField.get(mScanner);
+        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+                WifiMonitor.SCAN_FAILED_EVENT, eventHandler);
+        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+                WifiMonitor.SCAN_RESULTS_EVENT, eventHandler);
     }
 
     @Test
