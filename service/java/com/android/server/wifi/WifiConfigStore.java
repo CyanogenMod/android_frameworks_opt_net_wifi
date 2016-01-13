@@ -93,12 +93,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -239,9 +241,6 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS";
     private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON";
     private static final String FQDN_KEY = "FQDN";
-    private static final String NUM_CONNECTION_FAILURES_KEY = "CONNECT_FAILURES";
-    private static final String NUM_IP_CONFIG_FAILURES_KEY = "IP_CONFIG_FAILURES";
-    private static final String NUM_AUTH_FAILURES_KEY = "AUTH_FAILURES";
     private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE";
     private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH";
     private static final String VALIDATED_INTERNET_ACCESS_KEY = "VALIDATED_INTERNET_ACCESS";
@@ -250,7 +249,6 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String NUM_ASSOCIATION_KEY = "NUM_ASSOCIATION";
     private static final String DELETED_CRC32_KEY = "DELETED_CRC32";
     private static final String DELETED_EPHEMERAL_KEY = "DELETED_EPHEMERAL";
-    private static final String JOIN_ATTEMPT_BOOST_KEY = "JOIN_ATTEMPT_BOOST";
     private static final String CREATOR_NAME_KEY = "CREATOR_NAME";
     private static final String UPDATE_NAME_KEY = "UPDATE_NAME";
     private static final String USER_APPROVED_KEY = "USER_APPROVED";
@@ -260,18 +258,6 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String SEPARATOR = ":  ";
     private static final String NL = "\n";
 
-    private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY
-            = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G";
-    private static final String THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY
-            = "THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G";
-    private static final String THRESHOLD_UNBLACKLIST_HARD_5G_KEY
-            = "THRESHOLD_UNBLACKLIST_HARD_5G";
-    private static final String THRESHOLD_UNBLACKLIST_SOFT_5G_KEY
-            = "THRESHOLD_UNBLACKLIST_SOFT_5G";
-    private static final String THRESHOLD_UNBLACKLIST_HARD_24G_KEY
-            = "THRESHOLD_UNBLACKLIST_HARD_24G";
-    private static final String THRESHOLD_UNBLACKLIST_SOFT_24G_KEY
-            = "THRESHOLD_UNBLACKLIST_SOFT_24G";
     private static final String THRESHOLD_GOOD_RSSI_5_KEY
             = "THRESHOLD_GOOD_RSSI_5";
     private static final String THRESHOLD_LOW_RSSI_5_KEY
@@ -284,7 +270,6 @@ public class WifiConfigStore extends IpConfigStore {
             = "THRESHOLD_LOW_RSSI_24";
     private static final String THRESHOLD_BAD_RSSI_24_KEY
             = "THRESHOLD_BAD_RSSI_24";
-
     private static final String THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY
             = "THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING";
     private static final String THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY
@@ -351,6 +336,39 @@ public class WifiConfigStore extends IpConfigStore {
     // those deleted WifiConfiguration is set to this random unused PSK
     private static final String DELETED_CONFIG_PSK = "Mjkd86jEMGn79KhKll298Uu7-deleted";
 
+    /**
+     * The threshold for each kind of error. If a network continuously encounter the same error more
+     * than the threshold times, this network will be disabled. -1 means unavailable.
+     */
+    private static final int[] NETWORK_SELECTION_DISABLE_THRESHOLD = {
+            -1, //  threshold for NETWORK_SELECTION_ENABLE
+            1,  //  threshold for DISABLED_BAD_LINK
+            5,  //  threshold for DISABLED_ASSOCIATION_REJECTION
+            5,  //  threshold for DISABLED_AUTHENTICATION_FAILURE
+            5,  //  threshold for DISABLED_DHCP_FAILURE
+            5,  //  threshold for DISABLED_DNS_FAILURE
+            6,  //  threshold for DISABLED_TLS_VERSION_MISMATCH
+            1,  //  threshold for DISABLED_AUTHENTICATION_NO_CREDENTIALS
+            1,  //  threshold for DISABLED_NO_INTERNET
+            1   //  threshold for DISABLED_BY_WIFI_MANAGER
+    };
+
+    /**
+     * Timeout for each kind of error. After the timeout minutes, unblock the network again.
+     */
+    private static final int[] NETWORK_SELECTION_DISABLE_TIMEOUT = {
+            Integer.MAX_VALUE,  // threshold for NETWORK_SELECTION_ENABLE
+            15,                 // threshold for DISABLED_BAD_LINK
+            5,                  // threshold for DISABLED_ASSOCIATION_REJECTION
+            5,                  // threshold for DISABLED_AUTHENTICATION_FAILURE
+            5,                  // threshold for DISABLED_DHCP_FAILURE
+            5,                  // threshold for DISABLED_DNS_FAILURE
+            Integer.MAX_VALUE,  // threshold for DISABLED_TLS_VERSION
+            Integer.MAX_VALUE,  // threshold for DISABLED_AUTHENTICATION_NO_CREDENTIALS
+            Integer.MAX_VALUE,  // threshold for DISABLED_NO_INTERNET
+            Integer.MAX_VALUE   // threshold for DISABLED_BY_WIFI_MANAGER
+    };
+
     public int maxTxPacketForFullScans = 8;
     public int maxRxPacketForFullScans = 16;
 
@@ -362,9 +380,6 @@ public class WifiConfigStore extends IpConfigStore {
     // Sane value for roam blacklisting (not switching to a network if already associated)
     // 2 days
     public int networkSwitchingBlackListPeriodMilli = 2 * 24 * 60 * 60 * 1000;
-
-    public int bandPreferenceBoostFactor5 = 5; // Boost by 5 dB per dB above threshold
-    public int bandPreferencePenaltyFactor5 = 2; // Penalize by 2 dB per dB below threshold
 
     public int badLinkSpeed24 = 6;
     public int badLinkSpeed5 = 12;
@@ -391,9 +406,6 @@ public class WifiConfigStore extends IpConfigStore {
     public boolean enable5GHzPreference = true;
     public boolean enableWifiCellularHandoverUserTriggeredAdjustment = true;
 
-    public int currentNetworkBoost = 25;
-    public int scanResultRssiLevelPatchUp = -85;
-
     public static final int maxNumScanCacheEntries = 128;
 
     public final AtomicBoolean enableHalBasedPno = new AtomicBoolean(false);
@@ -402,35 +414,23 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicBoolean enableFullBandScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableChipWakeUpWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableRssiPollWhenAssociated = new AtomicBoolean(true);
-    public final AtomicInteger thresholdInitialAutoJoinAttemptMin5RSSI =
-            new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_5);
-    public final AtomicInteger thresholdInitialAutoJoinAttemptMin24RSSI =
-            new AtomicInteger(WifiConfiguration.INITIAL_AUTO_JOIN_ATTEMPT_MIN_24);
-    public final AtomicInteger thresholdUnblacklistThreshold5Hard
-            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_5_HARD);
-    public final AtomicInteger thresholdUnblacklistThreshold5Soft
-            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_5_SOFT);
-    public final AtomicInteger thresholdUnblacklistThreshold24Hard
-            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_24_HARD);
-    public final AtomicInteger thresholdUnblacklistThreshold24Soft
-            = new AtomicInteger(WifiConfiguration.UNBLACKLIST_THRESHOLD_24_SOFT);
-    public final AtomicInteger thresholdGoodRssi5 =
-            new AtomicInteger(WifiConfiguration.GOOD_RSSI_5);
-    public final AtomicInteger thresholdLowRssi5 = new AtomicInteger(WifiConfiguration.LOW_RSSI_5);
-    public final AtomicInteger thresholdBadRssi5 = new AtomicInteger(WifiConfiguration.BAD_RSSI_5);
-    public final AtomicInteger thresholdGoodRssi24 =
-            new AtomicInteger(WifiConfiguration.GOOD_RSSI_24);
-    public final AtomicInteger thresholdLowRssi24 = new AtomicInteger(WifiConfiguration.LOW_RSSI_24);
-    public final AtomicInteger thresholdBadRssi24 = new AtomicInteger(WifiConfiguration.BAD_RSSI_24);
+    public final AtomicInteger thresholdSaturatedRssi5 = new AtomicInteger(
+            WifiQualifiedNetworkSelector.RSSI_SATURATION_5G_BAND);
+    public final AtomicInteger thresholdQualifiedRssi5 = new AtomicInteger(
+            WifiQualifiedNetworkSelector.QUALIFIED_RSSI_5G_BAND);
+    public final AtomicInteger thresholdMinimumRssi5 = new AtomicInteger(
+            WifiQualifiedNetworkSelector.MINIMUM_5G_ACCEPT_RSSI);
+    public final AtomicInteger thresholdSaturatedRssi24 = new AtomicInteger(
+            WifiQualifiedNetworkSelector.RSSI_SATURATION_2G_BAND);
+    public final AtomicInteger thresholdQualifiedRssi24 = new AtomicInteger(
+            WifiQualifiedNetworkSelector.QUALIFIED_RSSI_24G_BAND);
+    public final AtomicInteger thresholdMinimumRssi24 = new AtomicInteger(
+            WifiQualifiedNetworkSelector.MINIMUM_2G_ACCEPT_RSSI);
     public final AtomicInteger maxTxPacketForNetworkSwitching = new AtomicInteger(40);
     public final AtomicInteger maxRxPacketForNetworkSwitching = new AtomicInteger(80);
     public final AtomicInteger enableVerboseLogging = new AtomicInteger(0);
-    public final AtomicInteger bandPreferenceBoostThreshold5 =
-            new AtomicInteger(WifiConfiguration.A_BAND_PREFERENCE_RSSI_THRESHOLD);
     public final AtomicInteger associatedFullScanBackoff =
             new AtomicInteger(12); // Will be divided by 8 by WifiStateMachine
-    public final AtomicInteger bandPreferencePenaltyThreshold5 =
-            new AtomicInteger(WifiConfiguration.G_BAND_PREFERENCE_RSSI_THRESHOLD);
     public final AtomicInteger alwaysEnableScansWhileAssociated = new AtomicInteger(0);
     public final AtomicInteger maxNumPassiveChannelsForPartialScans = new AtomicInteger(2);
     public final AtomicInteger maxNumActiveChannelsForPartialScans = new AtomicInteger(6);
@@ -438,7 +438,10 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicInteger wifiDisconnectedLongScanIntervalMilli = new AtomicInteger(120000);
     public final AtomicInteger wifiAssociatedShortScanIntervalMilli = new AtomicInteger(20000);
     public final AtomicInteger wifiAssociatedLongScanIntervalMilli = new AtomicInteger(180000);
-
+    public final AtomicInteger currentNetworkBoost = new AtomicInteger(
+            WifiQualifiedNetworkSelector.SAME_NETWORK_AWARD);
+    public final AtomicInteger bandAward5Ghz = new AtomicInteger(
+            WifiQualifiedNetworkSelector.BAND_AWARD_5GHz);
     private static final Map<String, Object> sKeyMap = new HashMap<>();
 
     /**
@@ -507,6 +510,8 @@ public class WifiConfigStore extends IpConfigStore {
      * WiFi state machine is the only object that sets this variable.
      */
     private String lastSelectedConfiguration = null;
+    private long mLastSelectedTimeStamp =
+            WifiConfiguration.NetworkSelectionStatus.INVALID_NETWORK_SELECTION_DISABLE_TIMESTAMP;
 
     /**
      * Cached PNO list, it is updated when WifiConfiguration changes due to user input.
@@ -545,34 +550,30 @@ public class WifiConfigStore extends IpConfigStore {
         sKeyMap.put(ENABLE_FULL_BAND_SCAN_WHEN_ASSOCIATED_KEY, enableFullBandScanWhenAssociated);
         sKeyMap.put(ENABLE_CHIP_WAKE_UP_WHILE_ASSOCIATED_KEY, enableChipWakeUpWhenAssociated);
         sKeyMap.put(ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY, enableRssiPollWhenAssociated);
-        sKeyMap.put(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_5G_KEY, thresholdInitialAutoJoinAttemptMin5RSSI);
-        sKeyMap.put(THRESHOLD_INITIAL_AUTO_JOIN_ATTEMPT_RSSI_MIN_24G_KEY, thresholdInitialAutoJoinAttemptMin24RSSI);
-        sKeyMap.put(THRESHOLD_UNBLACKLIST_HARD_5G_KEY, thresholdUnblacklistThreshold5Hard);
-        sKeyMap.put(THRESHOLD_UNBLACKLIST_SOFT_5G_KEY, thresholdUnblacklistThreshold5Soft);
-        sKeyMap.put(THRESHOLD_UNBLACKLIST_HARD_24G_KEY, thresholdUnblacklistThreshold24Hard);
-        sKeyMap.put(THRESHOLD_UNBLACKLIST_SOFT_24G_KEY, thresholdUnblacklistThreshold24Soft);
-        sKeyMap.put(THRESHOLD_GOOD_RSSI_5_KEY, thresholdGoodRssi5);
-        sKeyMap.put(THRESHOLD_LOW_RSSI_5_KEY, thresholdLowRssi5);
-        sKeyMap.put(THRESHOLD_BAD_RSSI_5_KEY, thresholdBadRssi5);
-        sKeyMap.put(THRESHOLD_GOOD_RSSI_24_KEY, thresholdGoodRssi24);
-        sKeyMap.put(THRESHOLD_LOW_RSSI_24_KEY, thresholdLowRssi24);
-        sKeyMap.put(THRESHOLD_BAD_RSSI_24_KEY, thresholdBadRssi24);
-        sKeyMap.put(THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY, maxTxPacketForNetworkSwitching);
-        sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY, maxRxPacketForNetworkSwitching);
+        sKeyMap.put(THRESHOLD_GOOD_RSSI_5_KEY, thresholdSaturatedRssi5);
+        sKeyMap.put(THRESHOLD_LOW_RSSI_5_KEY, thresholdQualifiedRssi5);
+        sKeyMap.put(THRESHOLD_BAD_RSSI_5_KEY, thresholdMinimumRssi5);
+        sKeyMap.put(THRESHOLD_GOOD_RSSI_24_KEY, thresholdSaturatedRssi24);
+        sKeyMap.put(THRESHOLD_LOW_RSSI_24_KEY, thresholdQualifiedRssi24);
+        sKeyMap.put(THRESHOLD_BAD_RSSI_24_KEY, thresholdMinimumRssi24);
+        sKeyMap.put(THRESHOLD_MAX_TX_PACKETS_FOR_NETWORK_SWITCHING_KEY,
+                maxTxPacketForNetworkSwitching);
+        sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_NETWORK_SWITCHING_KEY,
+                maxRxPacketForNetworkSwitching);
         sKeyMap.put(THRESHOLD_MAX_TX_PACKETS_FOR_FULL_SCANS_KEY, maxTxPacketForNetworkSwitching);
         sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_FULL_SCANS_KEY, maxRxPacketForNetworkSwitching);
         sKeyMap.put(THRESHOLD_MAX_TX_PACKETS_FOR_PARTIAL_SCANS_KEY, maxTxPacketForNetworkSwitching);
         sKeyMap.put(THRESHOLD_MAX_RX_PACKETS_FOR_PARTIAL_SCANS_KEY, maxRxPacketForNetworkSwitching);
         sKeyMap.put(WIFI_VERBOSE_LOGS_KEY, enableVerboseLogging);
-        sKeyMap.put(A_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferenceBoostThreshold5);
         sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, wifiAssociatedShortScanIntervalMilli);
         sKeyMap.put(ASSOCIATED_PARTIAL_SCAN_PERIOD_KEY, wifiAssociatedShortScanIntervalMilli);
 
         sKeyMap.put(ASSOCIATED_FULL_SCAN_BACKOFF_KEY, associatedFullScanBackoff);
-        sKeyMap.put(G_BAND_PREFERENCE_RSSI_THRESHOLD_KEY, bandPreferencePenaltyThreshold5);
         sKeyMap.put(ALWAYS_ENABLE_SCAN_WHILE_ASSOCIATED_KEY, alwaysEnableScansWhileAssociated);
-        sKeyMap.put(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumPassiveChannelsForPartialScans);
-        sKeyMap.put(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY, maxNumActiveChannelsForPartialScans);
+        sKeyMap.put(MAX_NUM_PASSIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY,
+                maxNumPassiveChannelsForPartialScans);
+        sKeyMap.put(MAX_NUM_ACTIVE_CHANNELS_FOR_PARTIAL_SCANS_KEY,
+                maxNumActiveChannelsForPartialScans);
         sKeyMap.put(ENABLE_HAL_BASED_PNO, enableHalBasedPno);
         sKeyMap.put(ENABLE_HAL_BASED_PNO, enableSsidWhitelist);
 
@@ -610,32 +611,25 @@ public class WifiConfigStore extends IpConfigStore {
         enable5GHzPreference = mContext.getResources().getBoolean(
                 R.bool.config_wifi_enable_5GHz_preference);
 
-        bandPreferenceBoostFactor5 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_5GHz_preference_boost_factor);
-        bandPreferencePenaltyFactor5 = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_5GHz_preference_penalty_factor);
-
-        bandPreferencePenaltyThreshold5.set(mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_5GHz_preference_penalty_threshold));
-        bandPreferenceBoostThreshold5.set(mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_5GHz_preference_boost_threshold));
+        bandAward5Ghz.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_5GHz_preference_boost_factor));
 
         associatedHysteresisHigh = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_current_association_hysteresis_high);
         associatedHysteresisLow = mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_current_association_hysteresis_low);
 
-        thresholdBadRssi5.set(mContext.getResources().getInteger(
+        thresholdMinimumRssi5.set(mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_5GHz));
-        thresholdLowRssi5.set(mContext.getResources().getInteger(
+        thresholdQualifiedRssi5.set(mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_5GHz));
-        thresholdGoodRssi5.set(mContext.getResources().getInteger(
+        thresholdSaturatedRssi5.set(mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_5GHz));
-        thresholdBadRssi24.set(mContext.getResources().getInteger(
+        thresholdMinimumRssi24.set(mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_bad_rssi_threshold_24GHz));
-        thresholdLowRssi24.set(mContext.getResources().getInteger(
+        thresholdQualifiedRssi24.set(mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_low_rssi_threshold_24GHz));
-        thresholdGoodRssi24.set(mContext.getResources().getInteger(
+        thresholdSaturatedRssi24.set(mContext.getResources().getInteger(
                 R.integer.config_wifi_framework_wifi_score_good_rssi_threshold_24GHz));
 
         enableWifiCellularHandoverUserTriggeredAdjustment = mContext.getResources().getBoolean(
@@ -660,12 +654,8 @@ public class WifiConfigStore extends IpConfigStore {
         enableAutoJoinWhenAssociated.set(mContext.getResources().getBoolean(
                 R.bool.config_wifi_framework_enable_associated_network_selection));
 
-        currentNetworkBoost = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_current_network_boost);
-
-        scanResultRssiLevelPatchUp = mContext.getResources().getInteger(
-                R.integer.config_wifi_framework_scan_result_rssi_level_patchup_value);
-
+        currentNetworkBoost.set(mContext.getResources().getInteger(
+                R.integer.config_wifi_framework_current_network_boost));
         networkSwitchingBlackListPeriodMilli = mContext.getResources().getInteger(
                 R.integer.config_wifi_network_switching_blacklist_time);
 
@@ -752,7 +742,7 @@ public class WifiConfigStore extends IpConfigStore {
             WifiConfiguration newConfig = new WifiConfiguration(config);
             // When updating this condition, update WifiStateMachine's CONNECT_NETWORK handler to
             // correctly handle updating existing configs that are filtered out here.
-            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || config.ephemeral) {
+            if (config.ephemeral) {
                 // Do not enumerate and return this configuration to any one,
                 // for instance WiFi Picker.
                 // instead treat it as unknown. the configuration can still be retrieved
@@ -836,7 +826,7 @@ public class WifiConfigStore extends IpConfigStore {
         List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
 
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
-            if (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || config.ephemeral) {
+            if (config.ephemeral) {
                 // Do not enumerate and return this configuration to any one,
                 // instead treat it as unknown. the configuration can still be retrieved
                 // directly by the key or networkId
@@ -883,7 +873,7 @@ public class WifiConfigStore extends IpConfigStore {
 
                 // Average the RSSI value
                 result.averageRssi(previousRssi, previousSeen,
-                        WifiAutoJoinController.sScanResultMaximumAge);
+                        WifiQualifiedNetworkSelector.SCAN_RESULT_MAXIMUNM_AGE);
                 if (VDBG) {
                     loge("updateConfiguration freq=" + result.frequency
                         + " BSSID=" + result.BSSID
@@ -912,45 +902,17 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
-     * Enable all networks and save config. This will be a no-op if the list
-     * of configured networks indicates all networks as being enabled
+     * Enable all networks (if disabled time expire) and save config. This will be a no-op if the
+     * list of configured networks indicates all networks as being enabled
      */
     void enableAllNetworks() {
-        long now = System.currentTimeMillis();
         boolean networkEnabledStateChanged = false;
 
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
-
-            if(config != null && config.status == Status.DISABLED && !config.ephemeral
-                    && (config.autoJoinStatus
-                    <= WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)) {
-
-                // Wait for 5 minutes before reenabling config that have known, repeated connection
-                // or DHCP failures
-                if (config.disableReason == WifiConfiguration.DISABLED_DHCP_FAILURE
-                        || config.disableReason == WifiConfiguration.DISABLED_ASSOCIATION_REJECT
-                        || config.disableReason == WifiConfiguration.DISABLED_AUTH_FAILURE) {
-                    if (config.blackListTimestamp != 0
-                           && now > config.blackListTimestamp
-                           && (now - config.blackListTimestamp) < wifiConfigBlacklistMinTimeMilli) {
-                        continue;
-                    }
-                }
-
-                if(mWifiNative.enableNetwork(config.networkId, false)) {
+        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            if (config != null && !config.ephemeral
+                    && !config.getNetworkSelectionStatus().isNetworkEnabled()) {
+                if (tryEnableQualifiedNetwork(config)) {
                     networkEnabledStateChanged = true;
-                    config.status = Status.ENABLED;
-
-                    // Reset the blacklist condition
-                    config.numConnectionFailures = 0;
-                    config.numIpConfigFailures = 0;
-                    config.numAuthFailures = 0;
-
-                    // Reenable the wifi configuration
-                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
-                } else {
-                    loge("Enable network failed on " + config.networkId);
-
                 }
             }
         }
@@ -975,7 +937,6 @@ public class WifiConfigStore extends IpConfigStore {
         if (config != null) {
             if (config.lastConnectUid != uid) {
                 config.lastConnectUid = uid;
-                config.dirty = true;
                 return true;
             }
         }
@@ -1102,11 +1063,12 @@ public class WifiConfigStore extends IpConfigStore {
 
         conf = mConfiguredNetworks.get(netId);
         if (conf != null) {
-            if (conf.autoJoinStatus != WifiConfiguration.AUTO_JOIN_ENABLED) {
+            if (!conf.getNetworkSelectionStatus().isNetworkEnabled()) {
                 if (VDBG) localLog("WifiConfigStore: re-enabling: " + conf.SSID);
 
                 // reenable autojoin, since new information has been provided
-                conf.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+                updateNetworkSelectionStatus(netId,
+                        WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
                 enableNetworkWithoutBroadcast(conf.networkId, false);
             }
             if (VDBG) {
@@ -1133,10 +1095,8 @@ public class WifiConfigStore extends IpConfigStore {
      * @param info
      */
     void driverRoamedFrom(WifiInfo info) {
-        if (info != null
-            && info.getBSSID() != null
-            && ScanResult.is5GHz(info.getFrequency())
-            && info.getRssi() > (bandPreferenceBoostThreshold5.get() + 3)) {
+        if (info != null && info.getBSSID() != null && ScanResult.is5GHz(info.getFrequency())
+                && info.getRssi() > (thresholdSaturatedRssi5.get())) {
             WifiConfiguration config = getWifiConfiguration(info.getNetworkId());
             if (config != null) {
                 if (getScanDetailCache(config) != null) {
@@ -1175,15 +1135,17 @@ public class WifiConfigStore extends IpConfigStore {
         }
 
         // If autojoin specified a BSSID then write it in the network block
-        if (config.autoJoinBSSID != null) {
-            loge("saveWifiConfigBSSID Setting BSSID for " + config.configKey()
-                    + " to " + config.autoJoinBSSID);
+        WifiConfiguration.NetworkSelectionStatus networkStatus = config.getNetworkSelectionStatus();
+        String bssid = networkStatus.getNetworkSelectionBSSID();
+        if (bssid != null) {
+            localLog("saveWifiConfigBSSID Setting BSSID for " + config.configKey()
+                    + " to " + bssid);
             if (!mWifiNative.setNetworkVariable(
                     config.networkId,
                     WifiConfiguration.bssidVarName,
-                    config.autoJoinBSSID)) {
-                loge("failed to set BSSID: " + config.autoJoinBSSID);
-            } else if (config.autoJoinBSSID.equals("any")) {
+                    bssid)) {
+                loge("failed to set BSSID: " + bssid);
+            } else if (bssid.equals("any")) {
                 // Paranoia, we just want to make sure that we restore the config to normal
                 mWifiNative.saveConfig();
             }
@@ -1199,7 +1161,8 @@ public class WifiConfigStore extends IpConfigStore {
                 case CONNECTED:
                     config.status = Status.CURRENT;
                     //we successfully connected, hence remove the blacklist
-                    config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+                    updateNetworkSelectionStatus(netId,
+                            WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
                     break;
                 case DISCONNECTED:
                     //If network is already disabled, keep the status
@@ -1337,7 +1300,7 @@ public class WifiConfigStore extends IpConfigStore {
             // Use the 2.4GHz threshold since most WifiConfigurations are dual bands
             // There is very little penalty with triggering too soon, i.e. if PNO finds a network
             // that has an RSSI too low for us to attempt joining it.
-            int threshold = thresholdInitialAutoJoinAttemptMin24RSSI.get();
+            int threshold = thresholdMinimumRssi24.get();
             Log.e(TAG, "found sortedWifiConfigurations : " + config.configKey());
             WifiNative.WifiPnoNetwork network = new WifiNative.WifiPnoNetwork(config, threshold);
             mCachedPnoList.add(network);
@@ -1366,7 +1329,7 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            if (link.autoJoinStatus != WifiConfiguration.AUTO_JOIN_ENABLED) {
+            if (!link.getNetworkSelectionStatus().isNetworkEnabled()) {
                 continue;
             }
 
@@ -1595,7 +1558,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
     boolean disableNetwork(int netId) {
-        boolean ret = disableNetwork(netId, WifiConfiguration.DISABLED_UNKNOWN_REASON);
+        boolean ret = mWifiNative.disableNetwork(netId);
         if (ret) {
             mWifiStateMachine.registerNetworkDisabled(netId);
         }
@@ -1603,48 +1566,214 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
-     * Disable a network. Note that there is no saveConfig operation.
-     * @param netId network to be disabled
-     * @param reason reason code network was disabled
-     * @return {@code true} if it succeeds, {@code false} otherwise
+     * Update a network according to the update reason and its current state
+     * @param netId The network ID of the network need update
+     * @param reason The reason to update the network
+     * @return false if no change made to the input configure file, can due to error or need not
+     *         true the input config file has been changed
      */
-    boolean disableNetwork(int netId, int reason) {
-        if (VDBG) localLog("disableNetwork", netId);
-        boolean ret = mWifiNative.disableNetwork(netId);
-        WifiConfiguration network = null;
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
-
-        if (VDBG) {
-            if (config != null) {
-                loge("disableNetwork netId=" + Integer.toString(netId)
-                        + " SSID=" + config.SSID
-                        + " disabled=" + (config.status == Status.DISABLED)
-                        + " reason=" + Integer.toString(config.disableReason));
-            }
-        }
-        /* Only change the reason if the network was not previously disabled
-        /* and the reason is not DISABLED_BY_WIFI_MANAGER, that is, if a 3rd party
-         * set its configuration as disabled, then leave it disabled */
-        if (config != null) {
-            if (config.status != Status.DISABLED
-                && config.disableReason != WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
-                config.status = Status.DISABLED;
-                config.disableReason = reason;
-                network = config;
-            }
-            if (reason == WifiConfiguration.DISABLED_BY_WIFI_MANAGER) {
-                // Make sure autojoin wont reenable this configuration without further user
-                // intervention
-                config.status = Status.DISABLED;
-                config.autoJoinStatus = WifiConfiguration.AUTO_JOIN_DISABLED_USER_ACTION;
-            }
-        }
-        if (network != null) {
-            sendConfiguredNetworksChangedBroadcast(network,
-                    WifiManager.CHANGE_REASON_CONFIG_CHANGE);
-        }
-        return ret;
+    boolean updateNetworkSelectionStatus(int netId, int reason) {
+        WifiConfiguration config = getWifiConfiguration(netId);
+        return updateNetworkSelectionStatus(config, reason);
     }
+
+    /**
+     * Update a network according to the update reason and its current state
+     * @param config the network need update
+     * @param reason The reason to update the network
+     * @return false if no change made to the input configure file, can due to error or need not
+     *         true the input config file has been changed
+     */
+    boolean updateNetworkSelectionStatus(WifiConfiguration config, int reason) {
+        if (config == null) {
+            return false;
+        }
+
+        WifiConfiguration.NetworkSelectionStatus networkStatus = config.getNetworkSelectionStatus();
+        if (reason == WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE) {
+            updateNetworkStatus(config, WifiConfiguration.NetworkSelectionStatus
+                    .NETWORK_SELECTION_ENABLE);
+            mLocalLog.log("Enable network:" + config.configKey());
+            return true;
+        }
+
+        networkStatus.incrementDisableReasonCounter(reason);
+        if (DBG) {
+            mLocalLog.log(TAG + "Network:" + config.SSID + "disable counter of "
+                    + WifiConfiguration.NetworkSelectionStatus.getNetworkDisableReasonString(reason)
+                    + " is: " + networkStatus.getDisableReasonCounter(reason) + "and threshold is: "
+                    + NETWORK_SELECTION_DISABLE_THRESHOLD[reason]);
+        }
+
+        if (networkStatus.getDisableReasonCounter(reason)
+                >= NETWORK_SELECTION_DISABLE_THRESHOLD[reason]) {
+            return updateNetworkStatus(config, reason);
+        }
+        return true;
+    }
+
+    /**
+     * Check the config. If it is temporarily disabled, check the disable time is expired or not, If
+     * expired, enabled it again for qualified network selection.
+     * @param networkId the id of the network to be checked for possible unblock (due to timeout)
+     * @return true if network status has been changed
+     *         false network status is not changed
+     */
+    boolean tryEnableQualifiedNetwork(int networkId) {
+        WifiConfiguration config = getWifiConfiguration(networkId);
+        if (config == null) {
+            mLocalLog.log(TAG + ": updateQualifiedNetworkstatus invalid network.");
+            return false;
+        }
+        return tryEnableQualifiedNetwork(config);
+    }
+
+    /**
+     * Check the config. If it is temporarily disabled, check the disable is expired or not, If
+     * expired, enabled it again for qualified network selection.
+     * @param config network to be checked for possible unblock (due to timeout)
+     * @return true if network status has been changed
+     *         false network status is not changed
+     */
+    boolean tryEnableQualifiedNetwork(WifiConfiguration config) {
+        WifiConfiguration.NetworkSelectionStatus networkStatus = config.getNetworkSelectionStatus();
+        if (networkStatus.isNetworkTemporaryDisabled()) {
+            //time difference in minutes
+            long timeDifference = (System.currentTimeMillis()
+                    - networkStatus.getDisableTime()) / 1000 / 60;
+            if (timeDifference < 0 || timeDifference
+                    >= NETWORK_SELECTION_DISABLE_TIMEOUT[
+                    networkStatus.getNetworkSelectionDisableReason()]) {
+                updateNetworkSelectionStatus(config.networkId,
+                        networkStatus.NETWORK_SELECTION_ENABLE);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Update a network's status. Note that there is no saveConfig operation.
+     * @param config network to be updated
+     * @param reason reason code for updated
+     * @return false if no change made to the input configure file, can due to error or need not
+     *         true the input config file has been changed
+     */
+    boolean updateNetworkStatus(WifiConfiguration config, int reason) {
+        mLocalLog.log(TAG + (config == null ? null : config.SSID));
+        if (config == null) {
+            mLocalLog.log(TAG + "invalid network");
+            return false;
+        }
+
+        WifiConfiguration.NetworkSelectionStatus networkStatus = config.getNetworkSelectionStatus();
+        if (reason < 0 || reason >= WifiConfiguration.NetworkSelectionStatus
+                .NETWORK_SELECTION_DISABLED_MAX) {
+            mLocalLog.log(TAG + "Invalid Network disable reason");
+            return false;
+        }
+
+        if (reason == WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE) {
+            if (networkStatus.isNetworkEnabled()) {
+                if (DBG) {
+                    mLocalLog.log(TAG + "Need not change Qualified network Selection status since"
+                            + " already enabled");
+                }
+                return false;
+            }
+            //enable the network
+            if (!mWifiNative.enableNetwork(config.networkId, false)) {
+                Log.e(TAG, "fail to disable network: " + config.SSID + " With reason:"
+                        + WifiConfiguration.NetworkSelectionStatus
+                        .getNetworkDisableReasonString(reason));
+                return false;
+            }
+            networkStatus.setNetworkSelectionStatus(WifiConfiguration.NetworkSelectionStatus
+                    .NETWORK_SELECTION_ENABLED);
+            networkStatus.setNetworkSelectionDisableReason(reason);
+            networkStatus.setDisableTime(
+                    WifiConfiguration.NetworkSelectionStatus
+                    .INVALID_NETWORK_SELECTION_DISABLE_TIMESTAMP);
+            networkStatus.clearDisableReasonCounter();
+            String disableTime = DateFormat.getDateTimeInstance().format(new Date());
+            if (DBG) {
+                mLocalLog.log(TAG + "Re-enable network: " + config.SSID + " at " + disableTime);
+            }
+            sendConfiguredNetworksChangedBroadcast(config, WifiManager.CHANGE_REASON_CONFIG_CHANGE);
+        } else {
+            //disable the network
+            if (networkStatus.isNetworkPermanentlyDisabled()) {
+                //alreay permanent disable
+                if (DBG) {
+                    mLocalLog.log(TAG + "Do nothing. Alreay permanent disabled! "
+                            + WifiConfiguration.NetworkSelectionStatus
+                            .getNetworkDisableReasonString(reason));
+                }
+                return false;
+            } else if (networkStatus.isNetworkTemporaryDisabled()
+                    && reason < WifiConfiguration.NetworkSelectionStatus
+                    .DISABLED_TLS_VERSION_MISMATCH) {
+                //alreay temporarily disable
+                if (DBG) {
+                    mLocalLog.log(TAG + "Do nothing. Already temporarily disabled! "
+                            + WifiConfiguration.NetworkSelectionStatus
+                            .getNetworkDisableReasonString(reason));
+                }
+                return false;
+            }
+
+            if (networkStatus.isNetworkEnabled()) {
+                mWifiNative.disableNetwork(config.networkId);
+                sendConfiguredNetworksChangedBroadcast(config,
+                        WifiManager.CHANGE_REASON_CONFIG_CHANGE);
+                mLocalLog.log(TAG + "Disable network " + config.SSID + " reason:"
+                        + WifiConfiguration.NetworkSelectionStatus
+                        .getNetworkDisableReasonString(reason));
+            }
+            if (reason < WifiConfiguration.NetworkSelectionStatus.DISABLED_TLS_VERSION_MISMATCH) {
+                networkStatus.setNetworkSelectionStatus(WifiConfiguration.NetworkSelectionStatus
+                        .NETWORK_SELECTION_TEMPORARY_DISABLED);
+                networkStatus.setDisableTime(System.currentTimeMillis());
+            } else {
+                networkStatus.setNetworkSelectionStatus(WifiConfiguration.NetworkSelectionStatus
+                        .NETWORK_SELECTION_PERMANENTLY_DISABLED);
+            }
+            networkStatus.setNetworkSelectionDisableReason(reason);
+            if (DBG) {
+                String disableTime = DateFormat.getDateTimeInstance().format(new Date());
+                mLocalLog.log(TAG + "Network:" + config.SSID + "Configure new status:"
+                        + networkStatus.getNetworkStatusString() + " with reason:"
+                        + networkStatus.getNetworkDisableReasonString() + " at: " + disableTime);
+            }
+        }
+        return true;
+    }
+    /**
+     * update the network history after user select a network
+     * - if userTriggered, we mark the configuration as "non selfAdded" since the user has seen it
+     * and took over management
+     * - TODO: if selected network can override the setting ones, need remember the preference
+     *   user has higher preference of this network to all other saved network with good RSSI
+     */
+    public void userSelectNetwork(int netId, boolean connect) {
+        WifiConfiguration selected = getWifiConfiguration(netId);
+        if (selected == null) {
+            Log.e(TAG, "userSelectNetwork: Can not find network with network ID: " + netId);
+            return;
+        }
+
+        if (selected.SSID == null) {
+            Log.e(TAG, "userSelectNetwork: no network SSID");
+            return;
+        }
+
+        updateNetworkStatus(selected,
+                WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
+        selected.selfAdded = false;
+        // Todo: may need remember user preferernce between networks?
+        writeKnownNetworkHistory(false);
+    }
+
 
     /**
      * Save the configured networks in supplicant to disk
@@ -1674,7 +1803,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     /**
-     * Start WPS pin method configuration with pin obtained
+     * Start WPS pin method configuration with obtained
      * from the device
      * @return WpsResult indicating status and pin
      */
@@ -2006,7 +2135,6 @@ public class WifiConfigStore extends IpConfigStore {
             if(config != null && config.networkId != netId) {
                 if (config.status != Status.DISABLED) {
                     config.status = Status.DISABLED;
-                    config.disableReason = WifiConfiguration.DISABLED_UNKNOWN_REASON;
                 }
             }
         }
@@ -2056,8 +2184,7 @@ public class WifiConfigStore extends IpConfigStore {
                 try {
                     if (homeSP != null) {
                         mMOManager.addSP(homeSP, mOSUManager);
-                    }
-                    else {
+                    } else {
                         mMOManager.removeSP(fqdn, mOSUManager);
                     }
                 } catch (IOException e) {
@@ -2074,11 +2201,6 @@ public class WifiConfigStore extends IpConfigStore {
         final List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             networks.add(new WifiConfiguration(config));
-            if (config.dirty == true) {
-                loge(" rewrite network history for " + config.configKey());
-                config.dirty = false;
-                needUpdate = true;
-            }
         }
         if (VDBG) {
             loge(" writeKnownNetworkHistory() num networks:" +
@@ -2106,9 +2228,17 @@ public class WifiConfigStore extends IpConfigStore {
                         if (config.linkedConfigurations != null) {
                             numlink = config.linkedConfigurations.size();
                         }
-                        loge("saving network history: " + config.configKey()  + " gw: " +
-                                config.defaultGwMacAddress + " autojoin-status: " +
-                                config.autoJoinStatus + " ephemeral=" + config.ephemeral
+                        String disableTime;
+                        if (config.getNetworkSelectionStatus().isNetworkEnabled()) {
+                            disableTime = "";
+                        } else {
+                            disableTime = "Disable time: " + DateFormat.getInstance().format(
+                                    config.getNetworkSelectionStatus().getDisableTime());
+                        }
+                        loge("saving network history: " + config.configKey()  + " gw: "
+                                + config.defaultGwMacAddress + " Network Selection-status: "
+                                + config.getNetworkSelectionStatus().getNetworkStatusString()
+                                + disableTime + " ephemeral=" + config.ephemeral
                                 + " choices:" + Integer.toString(num)
                                 + " link:" + Integer.toString(numlink)
                                 + " status:" + Integer.toString(config.status)
@@ -2139,11 +2269,12 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(PRIORITY_KEY + SEPARATOR +
                             Integer.toString(config.priority) + NL);
                     out.writeUTF(STATUS_KEY + SEPARATOR +
-                            Integer.toString(config.autoJoinStatus) + NL);
+                            config.getNetworkSelectionStatus().getNetworkStatusString() + NL);
                     out.writeUTF(SUPPLICANT_STATUS_KEY + SEPARATOR +
                             Integer.toString(config.status) + NL);
                     out.writeUTF(SUPPLICANT_DISABLE_REASON_KEY + SEPARATOR +
-                            Integer.toString(config.disableReason) + NL);
+                            config.getNetworkSelectionStatus().getNetworkDisableReasonString()
+                            + NL);
                     out.writeUTF(NETWORK_ID_KEY + SEPARATOR +
                             Integer.toString(config.networkId) + NL);
                     out.writeUTF(SELF_ADDED_KEY + SEPARATOR +
@@ -2166,22 +2297,12 @@ public class WifiConfigStore extends IpConfigStore {
                         out.writeUTF(PEER_CONFIGURATION_KEY + SEPARATOR +
                                 config.peerWifiConfiguration + NL);
                     }
-                    out.writeUTF(NUM_CONNECTION_FAILURES_KEY + SEPARATOR +
-                            Integer.toString(config.numConnectionFailures) + NL);
-                    out.writeUTF(NUM_AUTH_FAILURES_KEY + SEPARATOR +
-                            Integer.toString(config.numAuthFailures) + NL);
-                    out.writeUTF(NUM_IP_CONFIG_FAILURES_KEY + SEPARATOR +
-                            Integer.toString(config.numIpConfigFailures) + NL);
                     out.writeUTF(SCORER_OVERRIDE_KEY + SEPARATOR +
                             Integer.toString(config.numScorerOverride) + NL);
                     out.writeUTF(SCORER_OVERRIDE_AND_SWITCH_KEY + SEPARATOR +
                             Integer.toString(config.numScorerOverrideAndSwitchedNetwork) + NL);
                     out.writeUTF(NUM_ASSOCIATION_KEY + SEPARATOR +
                             Integer.toString(config.numAssociation) + NL);
-                    out.writeUTF(JOIN_ATTEMPT_BOOST_KEY + SEPARATOR +
-                            Integer.toString(config.autoJoinUseAggressiveJoinAttemptThreshold)+ NL);
-                    //out.writeUTF(BLACKLIST_MILLI_KEY + SEPARATOR +
-                    // Long.toString(config.blackListTimestamp) + NL);
                     out.writeUTF(CREATOR_UID_KEY + SEPARATOR +
                             Integer.toString(config.creatorUid) + NL);
                     out.writeUTF(CONNECT_UID_KEY + SEPARATOR +
@@ -2233,8 +2354,9 @@ public class WifiConfigStore extends IpConfigStore {
                             out.writeUTF(RSSI_KEY + SEPARATOR +
                                     Integer.toString(result.level) + NL);
 
-                            out.writeUTF(BSSID_STATUS_KEY + SEPARATOR +
-                                    Integer.toString(result.autoJoinStatus) + NL);
+                            out.writeUTF(BSSID_STATUS_KEY + SEPARATOR
+                                    + config.getNetworkSelectionStatus().getNetworkStatusString()
+                                    + NL);
 
                             //if (result.seen != 0) {
                             //    out.writeUTF(MILLI_KEY + SEPARATOR + Long.toString(result.seen)
@@ -2275,20 +2397,20 @@ public class WifiConfigStore extends IpConfigStore {
         }
         if (netId == WifiConfiguration.INVALID_NETWORK_ID) {
             lastSelectedConfiguration = null;
+            mLastSelectedTimeStamp = -1;
         } else {
             WifiConfiguration selected = getWifiConfiguration(netId);
             if (selected == null) {
                 lastSelectedConfiguration = null;
+                mLastSelectedTimeStamp = -1;
             } else {
                 lastSelectedConfiguration = selected.configKey();
+                mLastSelectedTimeStamp = System.currentTimeMillis();
                 if (selected.status == Status.DISABLED) {
                     mWifiNative.enableNetwork(netId, false);
                 }
-                selected.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
-                selected.numConnectionFailures = 0;
-                selected.numIpConfigFailures = 0;
-                selected.numAuthFailures = 0;
-                selected.numNoInternetAccessReports = 0;
+                updateNetworkSelectionStatus(netId,
+                        WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
                 if (VDBG) {
                     loge("setLastSelectedConfiguration now: " + lastSelectedConfiguration);
                 }
@@ -2296,8 +2418,19 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    public void setLatestUserSelectedConfiguration(WifiConfiguration network) {
+        if (network != null) {
+            lastSelectedConfiguration = network.configKey();
+            mLastSelectedTimeStamp = System.currentTimeMillis();
+        }
+    }
+
     public String getLastSelectedConfiguration() {
         return lastSelectedConfiguration;
+    }
+
+    public long getLastSelectedTimeStamp() {
+        return mLastSelectedTimeStamp;
     }
 
     public boolean isLastSelectedConfiguration(WifiConfiguration config) {
@@ -2339,9 +2472,7 @@ public class WifiConfigStore extends IpConfigStore {
                 String value = line.substring(colon + 1).trim();
 
                 if (key.equals(CONFIG_KEY)) {
-
                     config = mConfiguredNetworks.getByConfigKey(value);
-                    
                     // skip reading that configuration data
                     // since we don't have a corresponding network ID
                     if (config == null) {
@@ -2362,6 +2493,8 @@ public class WifiConfigStore extends IpConfigStore {
                         }
                     }
                 } else if (config != null) {
+                    WifiConfiguration.NetworkSelectionStatus networkStatus =
+                            config.getNetworkSelectionStatus();
                     switch (key) {
                         case SSID_KEY:
                             if (config.isPasspoint()) {
@@ -2384,10 +2517,10 @@ public class WifiConfigStore extends IpConfigStore {
                             config.defaultGwMacAddress = value;
                             break;
                         case STATUS_KEY:
-                            config.autoJoinStatus = Integer.parseInt(value);
+                            networkStatus.setNetworkSelectionStatus(Integer.parseInt(value));
                             break;
                         case SUPPLICANT_DISABLE_REASON_KEY:
-                            config.disableReason = Integer.parseInt(value);
+                            networkStatus.setNetworkSelectionDisableReason(Integer.parseInt(value));
                             break;
                         case SELF_ADDED_KEY:
                             config.selfAdded = Boolean.parseBoolean(value);
@@ -2414,16 +2547,7 @@ public class WifiConfigStore extends IpConfigStore {
                             config.creatorUid = Integer.parseInt(value);
                             break;
                         case BLACKLIST_MILLI_KEY:
-                            config.blackListTimestamp = Long.parseLong(value);
-                            break;
-                        case NUM_CONNECTION_FAILURES_KEY:
-                            config.numConnectionFailures = Integer.parseInt(value);
-                            break;
-                        case NUM_IP_CONFIG_FAILURES_KEY:
-                            config.numIpConfigFailures = Integer.parseInt(value);
-                            break;
-                        case NUM_AUTH_FAILURES_KEY:
-                            config.numIpConfigFailures = Integer.parseInt(value);
+                            networkStatus.setDisableTime(Long.parseLong(value));
                             break;
                         case SCORER_OVERRIDE_KEY:
                             config.numScorerOverride = Integer.parseInt(value);
@@ -2433,10 +2557,6 @@ public class WifiConfigStore extends IpConfigStore {
                             break;
                         case NUM_ASSOCIATION_KEY:
                             config.numAssociation = Integer.parseInt(value);
-                            break;
-                        case JOIN_ATTEMPT_BOOST_KEY:
-                            config.autoJoinUseAggressiveJoinAttemptThreshold =
-                                    Integer.parseInt(value);
                             break;
                         case CONNECT_UID_KEY:
                             config.lastConnectUid = Integer.parseInt(value);
@@ -2581,7 +2701,7 @@ public class WifiConfigStore extends IpConfigStore {
                 }
             }
         } catch (IOException e) {
-            loge("readAutoJoinStatus: Error parsing configuration" + e);
+            loge("readNetworkSelectionStatus: Error parsing configuration" + e);
         }
     }
 
@@ -2589,7 +2709,7 @@ public class WifiConfigStore extends IpConfigStore {
     private void writeIpAndProxyConfigurations() {
         final SparseArray<IpConfiguration> networks = new SparseArray<IpConfiguration>();
         for(WifiConfiguration config : mConfiguredNetworks.values()) {
-            if (!config.ephemeral && config.autoJoinStatus != WifiConfiguration.AUTO_JOIN_DELETED) {
+            if (!config.ephemeral) {
                 networks.put(configKey(config), config.getIpConfiguration());
             }
         }
@@ -2610,8 +2730,7 @@ public class WifiConfigStore extends IpConfigStore {
             WifiConfiguration config = mConfiguredNetworks.getByConfigKeyID(id);
             // This is the only place the map is looked up through a (dangerous) hash-value!
 
-            if (config == null || config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED ||
-                    config.ephemeral) {
+            if (config == null || config.ephemeral) {
                 loge("configuration found for missing network, nid=" + id
                         +", ignored, networks.size=" + Integer.toString(networks.size()));
             } else {
@@ -2926,8 +3045,6 @@ public class WifiConfigStore extends IpConfigStore {
                 currentConfig.selfAdded = config.selfAdded;
                 currentConfig.didSelfAdd = config.didSelfAdd;
                 currentConfig.ephemeral = config.ephemeral;
-                currentConfig.autoJoinUseAggressiveJoinAttemptThreshold
-                        = config.autoJoinUseAggressiveJoinAttemptThreshold;
                 currentConfig.lastConnectUid = config.lastConnectUid;
                 currentConfig.lastUpdateUid = config.lastUpdateUid;
                 currentConfig.creatorUid = config.creatorUid;
@@ -2994,27 +3111,15 @@ public class WifiConfigStore extends IpConfigStore {
         sb.append(String.format("%tm-%td %tH:%tM:%tS.%tL", c, c, c, c, c, c));
 
         if (newNetwork) {
-            currentConfig.dirty = true;
             currentConfig.creationTime = sb.toString();
         } else {
             currentConfig.updateTime = sb.toString();
         }
 
-        if (currentConfig.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED) {
-            // Make sure the configuration is not deleted anymore since we just
-            // added or modified it.
-            currentConfig.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
-            currentConfig.selfAdded = false;
-            currentConfig.didSelfAdd = false;
-            if (DBG) {
-                log("remove deleted status netId=" + Integer.toString(netId)
-                        + " " + currentConfig.configKey());
-            }
-        }
-
         if (currentConfig.status == WifiConfiguration.Status.ENABLED) {
             // Make sure autojoin remain in sync with user modifying the configuration
-            currentConfig.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_ENABLED);
+            updateNetworkSelectionStatus(currentConfig.networkId,
+                    WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
         }
 
         if (currentConfig.configKey().equals(getLastSelectedConfiguration()) &&
@@ -3096,7 +3201,7 @@ public class WifiConfigStore extends IpConfigStore {
                 continue;
             }
 
-            if (link.autoJoinStatus == WifiConfiguration.AUTO_JOIN_DELETED || link.ephemeral) {
+            if (link.ephemeral) {
                 continue;
             }
 
@@ -3171,11 +3276,9 @@ public class WifiConfigStore extends IpConfigStore {
                 }
                 if (link.linkedConfigurations.get(config.configKey()) == null) {
                     link.linkedConfigurations.put(config.configKey(), Integer.valueOf(1));
-                    link.dirty = true;
                 }
                 if (config.linkedConfigurations.get(link.configKey()) == null) {
                     config.linkedConfigurations.put(link.configKey(), Integer.valueOf(1));
-                    config.dirty = true;
                 }
             } else {
                 if (link.linkedConfigurations != null
@@ -3184,7 +3287,6 @@ public class WifiConfigStore extends IpConfigStore {
                         loge("linkConfiguration: un-link " + config.configKey()
                                 + " from " + link.configKey());
                     }
-                    link.dirty = true;
                     link.linkedConfigurations.remove(config.configKey());
                 }
                 if (config.linkedConfigurations != null
@@ -3193,7 +3295,6 @@ public class WifiConfigStore extends IpConfigStore {
                         loge("linkConfiguration: un-link " + link.configKey()
                                 + " from " + config.configKey());
                     }
-                    config.dirty = true;
                     config.linkedConfigurations.remove(link.configKey());
                 }
             }
@@ -3402,7 +3503,7 @@ public class WifiConfigStore extends IpConfigStore {
         Log.d(Utils.hs2LogTag(getClass()), scanDetail.getSSID() +
                 " pass 2 matches: " + toMatchString(matches));
 
-        cacheScanResultForPasspointConfigs(scanDetail, matches);
+        cacheScanResultForPasspointConfigs(scanDetail, matches, null);
     }
 
     private void updateAnqpCache(ScanDetail scanDetail,
@@ -3431,7 +3532,8 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private void cacheScanResultForPasspointConfigs(ScanDetail scanDetail,
-                                           Map<HomeSP,PasspointMatch> matches) {
+            Map<HomeSP, PasspointMatch> matches,
+            List<WifiConfiguration> associatedWifiConfigurations) {
 
         for (Map.Entry<HomeSP, PasspointMatch> entry : matches.entrySet()) {
             PasspointMatch match = entry.getValue();
@@ -3439,6 +3541,9 @@ public class WifiConfigStore extends IpConfigStore {
                 WifiConfiguration config = getWifiConfigForHomeSP(entry.getKey());
                 if (config != null) {
                     cacheScanResultForConfig(config, scanDetail, entry.getValue());
+                    if (associatedWifiConfigurations != null) {
+                        associatedWifiConfigurations.add(config);
+                    }
                 } else {
 		            Log.w(Utils.hs2LogTag(getClass()), "Failed to find config for '" +
                             entry.getKey().getFQDN() + "'");
@@ -3452,18 +3557,6 @@ public class WifiConfigStore extends IpConfigStore {
             WifiConfiguration config, ScanDetail scanDetail, PasspointMatch passpointMatch) {
 
         ScanResult scanResult = scanDetail.getScanResult();
-
-        if (config.autoJoinStatus >= WifiConfiguration.AUTO_JOIN_DELETED) {
-            if (VVDBG) {
-                loge("updateSavedNetworkHistory(): found a deleted, skip it...  "
-                        + config.configKey());
-            }
-            // The scan result belongs to a deleted config:
-            //   - increment numConfigFound to remember that we found a config
-            //            matching for this scan result
-            //   - dont do anything since the config was deleted, just skip...
-            return;
-        }
 
         ScanDetailCache scanDetailCache = getScanDetailCache(config);
         if (scanDetailCache == null) {
@@ -3522,17 +3615,80 @@ public class WifiConfigStore extends IpConfigStore {
         linkConfiguration(config);
     }
 
+    private boolean isEncryptionWep(String encryption) {
+        return encryption.contains("WEP");
+    }
 
-    // Update the WifiConfiguration database with the new scan result
-    // A scan result can be associated to multiple WifiConfigurations
-    public boolean updateSavedNetworkHistory(ScanDetail scanDetail) {
+    private boolean isEncryptionWep(ScanResult scan) {
+        String scanResultEncrypt = scan.capabilities;
+        return isEncryptionWep(scanResultEncrypt);
+    }
+
+    private boolean isEncryptionWep(WifiConfiguration config) {
+        String configEncrypt = config.configKey();
+        return isEncryptionWep(configEncrypt);
+    }
+
+    private boolean isEncryptionPsk(String encryption) {
+        return encryption.contains("PSK");
+    }
+
+    private boolean isEncryptionPsk(ScanResult scan) {
+        String scanResultEncrypt = scan.capabilities;
+        return isEncryptionPsk(scanResultEncrypt);
+    }
+
+    private boolean isEncryptionPsk(WifiConfiguration config) {
+        String configEncrypt = config.configKey();
+        return isEncryptionPsk(configEncrypt);
+    }
+
+    private boolean isEncryptionEap(String encryption) {
+        return encryption.contains("EAP");
+    }
+
+    private boolean isEncryptionEap(ScanResult scan) {
+        String scanResultEncrypt = scan.capabilities;
+        return isEncryptionEap(scanResultEncrypt);
+    }
+
+    private boolean isEncryptionEap(WifiConfiguration config) {
+        String configEncrypt = config.configKey();
+        return isEncryptionEap(configEncrypt);
+    }
+
+    private boolean isOpenNetwork(String encryption) {
+        if (!isEncryptionWep(encryption) && !isEncryptionPsk(encryption)
+                && !isEncryptionEap(encryption)) {
+            return true;
+        }
+        return false;
+    }
+
+    boolean isOpenNetwork(ScanResult scan) {
+        String scanResultEncrypt = scan.capabilities;
+        return isOpenNetwork(scanResultEncrypt);
+    }
+
+    boolean isOpenNetwork(WifiConfiguration config) {
+        String configEncrypt = config.configKey();
+        return isOpenNetwork(configEncrypt);
+    }
+
+    /**
+     * create a mapping between the scandetail and the Wificonfiguration it associated with
+     * because Passpoint, one BSSID can associated with multiple SSIDs
+     * @param scanDetail input a scanDetail from the scan result
+     * @return List<WifiConfiguration> a list of WifiConfigurations associated to this scanDetail
+     */
+    public List<WifiConfiguration> updateSavedNetworkWithNewScanDetail(ScanDetail scanDetail) {
 
         ScanResult scanResult = scanDetail.getScanResult();
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();
+        List<WifiConfiguration> associatedWifiConfigurations = new ArrayList<WifiConfiguration>();
 
-        int numConfigFound = 0;
         if (scanResult == null)
-            return false;
+            return null;
 
         String SSID = "\"" + scanResult.SSID + "\"";
 
@@ -3540,66 +3696,44 @@ public class WifiConfigStore extends IpConfigStore {
             Map<HomeSP, PasspointMatch> matches = matchPasspointNetworks(scanDetail);
             mOSUManager.addScanResult(scanDetail.getNetworkDetail());
             if (matches != null) {
-                cacheScanResultForPasspointConfigs(scanDetail, matches);
-                return matches.size() != 0;
+                cacheScanResultForPasspointConfigs(scanDetail, matches,
+                        associatedWifiConfigurations);
+                //Do not return here. A BSSID can belong to both passpoint network and non-passpoint
+                //Network
             }
         }
 
         for (WifiConfiguration config : mConfiguredNetworks.values()) {
             boolean found = false;
-
             if (config.SSID == null || !config.SSID.equals(SSID)) {
-                // SSID mismatch
-                if (VVDBG) {
-                    loge("updateSavedNetworkHistory(): SSID mismatch " + config.configKey()
-                            + " SSID=" + config.SSID + " " + SSID);
-                }
                 continue;
             }
-            if (VDBG) {
-                loge("updateSavedNetworkHistory(): try " + config.configKey()
-                        + " SSID=" + config.SSID + " " + scanResult.SSID
-                        + " " + scanResult.capabilities
-                        + " ajst=" + config.autoJoinStatus);
+            if (DBG) {
+                localLog("updateSavedNetworkWithNewScanDetail(): try " + config.configKey()
+                        + " SSID=" + config.SSID + " " + scanResult.SSID + " "
+                        + scanResult.capabilities);
             }
-            if (scanResult.capabilities.contains("WEP")
-                    && config.configKey().contains("WEP")) {
-                found = true;
-            } else if (scanResult.capabilities.contains("PSK")
-                    && config.configKey().contains("PSK")) {
-                found = true;
-            } else if (scanResult.capabilities.contains("EAP")
-                    && config.configKey().contains("EAP")) {
-                found = true;
-            } else if (!scanResult.capabilities.contains("WEP")
-                && !scanResult.capabilities.contains("PSK")
-                && !scanResult.capabilities.contains("EAP")
-                && !config.configKey().contains("WEP")
-                    && !config.configKey().contains("PSK")
-                    && !config.configKey().contains("EAP")) {
+
+            String scanResultEncrypt = scanResult.capabilities;
+            String configEncrypt = config.configKey();
+            if (isEncryptionWep(scanResultEncrypt) && isEncryptionWep(configEncrypt)
+                    || (isEncryptionPsk(scanResultEncrypt) && isEncryptionPsk(configEncrypt))
+                    || (isEncryptionEap(scanResultEncrypt) && isEncryptionEap(configEncrypt))
+                    || (isOpenNetwork(scanResultEncrypt) && isOpenNetwork(configEncrypt))) {
                 found = true;
             }
 
             if (found) {
-                numConfigFound ++;
                 cacheScanResultForConfig(config, scanDetail, null);
-            }
-
-            if (VDBG && found) {
-                String status = "";
-                if (scanResult.autoJoinStatus > 0) {
-                    status = " status=" + Integer.toString(scanResult.autoJoinStatus);
-                }
-                loge("        got known scan result " +
-                        scanResult.BSSID + " key : "
-                        + config.configKey() + " num: " +
-                        Integer.toString(getScanDetailCache(config).size())
-                        + " rssi=" + Integer.toString(scanResult.level)
-                        + " freq=" + Integer.toString(scanResult.frequency)
-                        + status);
+                associatedWifiConfigurations.add(config);
             }
         }
-        return numConfigFound != 0;
+
+        if (associatedWifiConfigurations.size() == 0) {
+            return null;
+        } else {
+            return associatedWifiConfigurations;
+        }
     }
 
     /* Compare current and new configuration and write to file on change */
@@ -3871,9 +4005,8 @@ public class WifiConfigStore extends IpConfigStore {
 
     /* return the allowed key management based on a scan result */
 
-    public WifiConfiguration wifiConfigurationFromScanResult(ScanDetail scanDetail) {
+    public WifiConfiguration wifiConfigurationFromScanResult(ScanResult result) {
 
-        ScanResult result = scanDetail.getScanResult();
         WifiConfiguration config = new WifiConfiguration();
 
         config.SSID = "\"" + result.SSID + "\"";
@@ -3903,6 +4036,10 @@ public class WifiConfigStore extends IpConfigStore {
         return config;
     }
 
+    public WifiConfiguration wifiConfigurationFromScanResult(ScanDetail scanDetail) {
+        ScanResult result = scanDetail.getScanResult();
+        return wifiConfigurationFromScanResult(result);
+    }
 
     /* Returns a unique for a given configuration */
     private static int configKey(WifiConfiguration config) {
@@ -4183,20 +4320,16 @@ public class WifiConfigStore extends IpConfigStore {
         /* TODO verify the bad network is current */
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         if (config != null) {
-            if ((info.getRssi() < WifiConfiguration.UNWANTED_BLACKLIST_SOFT_RSSI_24
-                    && info.is24GHz()) || (info.getRssi() <
-                            WifiConfiguration.UNWANTED_BLACKLIST_SOFT_RSSI_5 && info.is5GHz())) {
-                // We got disconnected and RSSI was bad, so disable light
-                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED
-                        + WifiConfiguration.UNWANTED_BLACKLIST_SOFT_BUMP);
-                loge("handleBadNetworkDisconnectReport (+4) "
-                        + Integer.toString(netId) + " " + info);
+            if ((info.is24GHz() && info.getRssi()
+                    <= WifiQualifiedNetworkSelector.QUALIFIED_RSSI_24G_BAND)
+                    || (info.is5GHz() && info.getRssi()
+                    <= WifiQualifiedNetworkSelector.QUALIFIED_RSSI_5G_BAND)) {
+                // We do not block due to bad RSSI since network selection should not select bad
+                // RSSI candidate
             } else {
                 // We got disabled but RSSI is good, so disable hard
-                config.setAutoJoinStatus(WifiConfiguration.AUTO_JOIN_TEMPORARY_DISABLED
-                        + WifiConfiguration.UNWANTED_BLACKLIST_HARD_BUMP);
-                loge("handleBadNetworkDisconnectReport (+8) "
-                        + Integer.toString(netId) + " " + info);
+                updateNetworkSelectionStatus(config,
+                        WifiConfiguration.NetworkSelectionStatus.DISABLED_BAD_LINK);
             }
         }
         // Record last time Connectivity Service switched us away from WiFi and onto Cell
@@ -4269,113 +4402,12 @@ public class WifiConfigStore extends IpConfigStore {
         mWifiNative.setBssidBlacklist(list);
     }
 
-    void handleSSIDStateChange(int netId, boolean enabled, String message, String BSSID) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null) {
-            if (enabled) {
-                loge("Ignoring SSID re-enabled from supplicant:  " + config.configKey() +
-                        " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
-                        + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
-                //We should not re-enable the BSSID based on Supplicant reanable.
-                // Framework will re-enable it after its own blacklist timer expires
-            } else {
-                loge("SSID temp disabled for  " + config.configKey() +
-                        " had autoJoinStatus=" + Integer.toString(config.autoJoinStatus)
-                        + " self added " + config.selfAdded + " ephemeral " + config.ephemeral);
-                if (message != null) {
-                    loge(" message=" + message);
-                }
-                if (config.selfAdded && config.lastConnected == 0) {
-                    // This is a network we self added, and we never succeeded,
-                    // the user did not create this network and never entered its credentials,
-                    // so we want to be very aggressive in disabling it completely.
-                    removeConfigAndSendBroadcastIfNeeded(config.networkId);
-                } else {
-                    if (message != null) {
-                        if (message.contains("no identity")) {
-                            config.setAutoJoinStatus(
-                                    WifiConfiguration.AUTO_JOIN_DISABLED_NO_CREDENTIALS);
-                            if (DBG) {
-                                loge("no identity blacklisted " + config.configKey() + " to "
-                                        + Integer.toString(config.autoJoinStatus));
-                            }
-                        } else if (message.contains("WRONG_KEY")
-                                || message.contains("AUTH_FAILED")) {
-                            // This configuration has received an auth failure, so disable it
-                            // temporarily because we don't want auto-join to try it out.
-                            // this network may be re-enabled by the "usual"
-                            // enableAllNetwork function
-                            config.numAuthFailures++;
-                            if (config.numAuthFailures > maxAuthErrorsToBlacklist) {
-                                config.setAutoJoinStatus
-                                        (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
-                                disableNetwork(netId,
-                                        WifiConfiguration.DISABLED_AUTH_FAILURE);
-                                loge("Authentication failure, blacklist " + config.configKey() + " "
-                                            + Integer.toString(config.networkId)
-                                            + " num failures " + config.numAuthFailures);
-                            }
-                        } else if (message.contains("DHCP FAILURE")) {
-                            config.numIpConfigFailures++;
-                            config.lastConnectionFailure = System.currentTimeMillis();
-                            int maxRetries = getMaxDhcpRetries();
-                            // maxRetries == 0 means keep trying forever
-                            if (maxRetries > 0 && config.numIpConfigFailures > maxRetries) {
-                                /**
-                                 * If we've exceeded the maximum number of retries for DHCP
-                                 * to a given network, disable the network
-                                 */
-                                config.setAutoJoinStatus
-                                        (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
-                                disableNetwork(netId, WifiConfiguration.DISABLED_DHCP_FAILURE);
-                                loge("DHCP failure, blacklist " + config.configKey() + " "
-                                        + Integer.toString(config.networkId)
-                                        + " num failures " + config.numIpConfigFailures);
-                            }
+    boolean isBssidBlacklisted(String bssid) {
+        return mBssidBlacklist.contains(bssid);
+    }
 
-                            // Also blacklist the BSSId if we find it
-                            ScanResult result = null;
-                            String bssidDbg = "";
-                            if (getScanDetailCache(config) != null && BSSID != null) {
-                                result = getScanDetailCache(config).get(BSSID);
-                            }
-                            if (result != null) {
-                                result.numIpConfigFailures ++;
-                                bssidDbg = BSSID + " ipfail=" + result.numIpConfigFailures;
-                                if (result.numIpConfigFailures > 3) {
-                                    // Tell supplicant to stop trying this BSSID
-                                    mWifiNative.addToBlacklist(BSSID);
-                                    result.setAutoJoinStatus(ScanResult.AUTO_JOIN_DISABLED);
-                                }
-                            }
-
-                            if (DBG) {
-                                loge("blacklisted " + config.configKey() + " to "
-                                        + config.autoJoinStatus
-                                        + " due to IP config failures, count="
-                                        + config.numIpConfigFailures
-                                        + " disableReason=" + config.disableReason
-                                        + " " + bssidDbg);
-                            }
-                        } else if (message.contains("CONN_FAILED")) {
-                            config.numConnectionFailures++;
-                            if (config.numConnectionFailures > maxConnectionErrorsToBlacklist) {
-                                config.setAutoJoinStatus
-                                        (WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE);
-                                disableNetwork(netId,
-                                        WifiConfiguration.DISABLED_ASSOCIATION_REJECT);
-                                loge("Connection failure, blacklist " + config.configKey() + " "
-                                        + config.networkId
-                                        + " num failures " + config.numConnectionFailures);
-                            }
-                        }
-                        message.replace("\n", "");
-                        message.replace("\r", "");
-                        config.lastFailure = message;
-                    }
-                }
-            }
-        }
+    public boolean getEnableNewNetworkSelectionWhenAssociated() {
+        return enableAutoJoinWhenAssociated.get();
     }
 
     boolean installKeys(WifiEnterpriseConfig config, String name) {
