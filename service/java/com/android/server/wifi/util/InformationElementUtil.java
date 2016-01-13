@@ -33,6 +33,9 @@ import static com.android.server.wifi.anqp.Constants.getInteger;
 public class InformationElementUtil {
 
     public static InformationElement[] parseInformationElements(byte[] bytes) {
+        if (bytes == null) {
+            return new InformationElement[0];
+        }
         ByteBuffer data = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
 
         ArrayList<InformationElement> infoElements = new ArrayList<>();
@@ -43,6 +46,9 @@ public class InformationElementUtil {
 
             if (elementLength > data.remaining() || (eid == InformationElement.EID_SSID &&
                     found_ssid)) {
+                // APs often pad the data with bytes that happen to match that of the EID_SSID
+                // marker.  This is not due to a known issue for APs to incorrectly send the SSID
+                // name multiple times.
                 break;
             }
             if(eid == InformationElement.EID_SSID) {
