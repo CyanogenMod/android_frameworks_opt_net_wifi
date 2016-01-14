@@ -223,13 +223,17 @@ public class ScanTestUtil {
         assertScanDataEquals("", expected, actual);
     }
 
-    public static void assertScanDatasEquals(ScanData[] expected, ScanData[] actual) {
-        assertNotNull("expected ScanData[] was null", expected);
-        assertNotNull("actaul ScanData[] was null", actual);
-        assertEquals("ScanData.length", expected.length, actual.length);
+    public static void assertScanDatasEquals(String prefix, ScanData[] expected, ScanData[] actual) {
+        assertNotNull("expected " + prefix + "ScanData[] was null", expected);
+        assertNotNull("actaul " + prefix + "ScanData[] was null", actual);
+        assertEquals(prefix + "ScanData.length", expected.length, actual.length);
         for (int i = 0; i < expected.length; ++i) {
-            assertScanDataEquals("ScanData[" + i + "].", expected[i], actual[i]);
+            assertScanDataEquals(prefix + "ScanData[" + i + "].", expected[i], actual[i]);
         }
+    }
+
+    public static void assertScanDatasEquals(ScanData[] expected, ScanData[] actual) {
+        assertScanDatasEquals("", expected, actual);
     }
 
     public static WifiScanner.ChannelSpec[] channelsToSpec(int... channels) {

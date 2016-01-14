@@ -30,7 +30,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -396,12 +395,6 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         return true;
     }
 
-    private static final Comparator<ScanResult> SCAN_RESULT_RSSI_COMPARATOR =
-            new Comparator<ScanResult>() {
-        public int compare(ScanResult r1, ScanResult r2) {
-            return r2.level - r1.level;
-        }
-    };
     private void pollLatestScanData() {
         synchronized (mSettingsLock) {
             if (mLastScanSettings == null) {
@@ -439,7 +432,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                     }
                 }
 
-                Collections.sort(backgroundScanResults, SCAN_RESULT_RSSI_COMPARATOR);
+                Collections.sort(backgroundScanResults, SCAN_RESULT_SORT_COMPARATOR);
                 ScanResult[] scanResultsArray = new ScanResult[Math.min(mLastScanSettings.maxAps,
                             backgroundScanResults.size())];
                 for (int i = 0; i < scanResultsArray.length; ++i) {
@@ -488,7 +481,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                         mLastScanSettings.singleScanEventHandler.onFullScanResult(scanResult);
                     }
                 }
-                Collections.sort(singleScanResults, SCAN_RESULT_RSSI_COMPARATOR);
+                Collections.sort(singleScanResults, SCAN_RESULT_SORT_COMPARATOR);
                 mLatestSingleScanResult = new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
                         singleScanResults.toArray(new ScanResult[singleScanResults.size()]));
                 mLastScanSettings.singleScanEventHandler.onScanResultsAvailable();

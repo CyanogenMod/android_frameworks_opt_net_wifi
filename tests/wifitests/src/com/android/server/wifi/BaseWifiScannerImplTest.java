@@ -90,7 +90,7 @@ public abstract class BaseWifiScannerImplTest {
                 .build();
 
         doSuccessfulSingleScanTest(settings, createFreqSet(2400, 2450),
-                ScanResults.create(0, 2400, 2450, 2450), false);
+                ScanResults.create(0, 2400, 2450, 2450, 2400, 2450, 2450, 2400, 2450, 2450), false);
     }
 
     @Test
@@ -98,12 +98,11 @@ public abstract class BaseWifiScannerImplTest {
         WifiNative.ScanSettings settings = new NativeScanSettingsBuilder()
                 .withBasePeriod(10000)
                 .withMaxApPerScan(10)
-                .addBucketWithChannels(20000, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN,
-                        5650)
+                .addBucketWithChannels(20000, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN, 5650)
                 .build();
 
         doSuccessfulSingleScanTest(settings, createFreqSet(5650),
-                ScanResults.create(0, 5650, 5650), false);
+                ScanResults.create(0, 5650, 5650, 5650, 5650, 5650, 5650, 5650, 5650), false);
     }
 
     @Test
@@ -118,7 +117,7 @@ public abstract class BaseWifiScannerImplTest {
                 .build();
 
         doSuccessfulSingleScanTest(settings, createFreqSet(2400, 2450),
-                ScanResults.create(0, 2400, 2450, 2450), true);
+                ScanResults.create(0, 2400, 2450, 2450, 2400, 2450, 2450, 2400, 2450, 2450), true);
     }
 
 
