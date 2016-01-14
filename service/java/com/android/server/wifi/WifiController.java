@@ -100,6 +100,8 @@ class WifiController extends StateMachine {
 
     private long mReEnableDelayMillis;
 
+    private FrameworkFacade mFacade;
+
     private static final int BASE = Protocol.BASE_WIFI_CONTROLLER;
 
     static final int CMD_EMERGENCY_MODE_CHANGED       = BASE + 1;
@@ -133,16 +135,18 @@ class WifiController extends StateMachine {
     private NoLockHeldState mNoLockHeldState = new NoLockHeldState();
     private EcmState mEcmState = new EcmState();
 
-    WifiController(Context context, WifiServiceImpl service, Looper looper) {
+    WifiController(Context context, WifiStateMachine wsm,
+                   WifiSettingsStore wss, LockList locks, Looper looper, FrameworkFacade f) {
         super(TAG, looper);
+        mFacade = f;
         mContext = context;
-        mWifiStateMachine = service.mWifiStateMachine;
-        mSettingsStore = service.mSettingsStore;
-        mLocks = service.mLocks;
+        mWifiStateMachine = wsm;
+        mSettingsStore = wss;
+        mLocks = locks;
 
         mAlarmManager = (AlarmManager)mContext.getSystemService(Context.ALARM_SERVICE);
         Intent idleIntent = new Intent(ACTION_DEVICE_IDLE, null);
-        mIdleIntent = PendingIntent.getBroadcast(mContext, IDLE_REQUEST, idleIntent, 0);
+        mIdleIntent = mFacade.getBroadcast(mContext, IDLE_REQUEST, idleIntent, 0);
 
         addState(mDefaultState);
             addState(mApStaDisabledState, mDefaultState);
@@ -216,23 +220,23 @@ class WifiController extends StateMachine {
     }
 
     private void readStayAwakeConditions() {
-        mStayAwakeConditions = Settings.Global.getInt(mContext.getContentResolver(),
+        mStayAwakeConditions = mFacade.getIntegerSetting(mContext,
                 Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0);
     }
 
     private void readWifiIdleTime() {
-        mIdleMillis = Settings.Global.getLong(mContext.getContentResolver(),
+        mIdleMillis = mFacade.getLongSetting(mContext,
                 Settings.Global.WIFI_IDLE_MS, DEFAULT_IDLE_MS);
     }
 
     private void readWifiSleepPolicy() {
-        mSleepPolicy = Settings.Global.getInt(mContext.getContentResolver(),
+        mSleepPolicy = mFacade.getIntegerSetting(mContext,
                 Settings.Global.WIFI_SLEEP_POLICY,
                 Settings.Global.WIFI_SLEEP_POLICY_NEVER);
     }
 
     private void readWifiReEnableDelay() {
-        mReEnableDelayMillis = Settings.Global.getLong(mContext.getContentResolver(),
+        mReEnableDelayMillis = mFacade.getLongSetting(mContext,
                 Settings.Global.WIFI_REENABLE_DELAY_MS, DEFAULT_REENABLE_DELAY_MS);
     }
 
@@ -638,7 +642,7 @@ class WifiController extends StateMachine {
                 case CMD_SET_AP:
                     if (msg.arg1 == 0) {
                         mWifiStateMachine.setHostApRunning(null, false);
-                        int wifiSavedState = Settings.Global.getInt(mContext.getContentResolver(),
+                        int wifiSavedState = mFacade.getIntegerSetting(mContext,
                                 Settings.Global.WIFI_SAVED_STATE, WIFI_DISABLED);
                         if (wifiSavedState == WIFI_ENABLED) {
                             transitionTo(mStaEnabledState);

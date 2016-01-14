@@ -24,7 +24,7 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 
 /* Tracks persisted settings for Wi-Fi and airplane mode interaction */
-final class WifiSettingsStore {
+public class WifiSettingsStore {
     /* Values tracked in Settings.Global.WIFI_ON */
     private static final int WIFI_DISABLED                      = 0;
     private static final int WIFI_ENABLED                       = 1;
@@ -54,7 +54,7 @@ final class WifiSettingsStore {
         mScanAlwaysAvailable = getPersistedScanAlwaysAvailable();
     }
 
-    synchronized boolean isWifiToggleEnabled() {
+    public synchronized boolean isWifiToggleEnabled() {
         if (!mCheckSavedStateAtBoot) {
             mCheckSavedStateAtBoot = true;
             if (testAndClearWifiSavedState()) return true;
@@ -71,15 +71,15 @@ final class WifiSettingsStore {
      * Returns true if airplane mode is currently on.
      * @return {@code true} if airplane mode is on.
      */
-    synchronized boolean isAirplaneModeOn() {
+    public synchronized boolean isAirplaneModeOn() {
        return mAirplaneModeOn;
     }
 
-    synchronized boolean isScanAlwaysAvailable() {
+    public synchronized boolean isScanAlwaysAvailable() {
         return !mAirplaneModeOn && mScanAlwaysAvailable;
     }
 
-    synchronized boolean handleWifiToggled(boolean wifiEnabled) {
+    public synchronized boolean handleWifiToggled(boolean wifiEnabled) {
         // Can Wi-Fi be toggled in airplane mode ?
         if (mAirplaneModeOn && !isAirplaneToggleable()) {
             return false;
