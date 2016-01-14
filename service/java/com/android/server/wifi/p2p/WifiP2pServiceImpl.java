@@ -2047,6 +2047,7 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                      */
                     enableBTCoex();
                     handleGroupRemoved();
+                    mWifiNative.p2pFlush();
                     transitionTo(mInactiveState);
                     break;
                 case WifiMonitor.P2P_DEVICE_LOST_EVENT:
