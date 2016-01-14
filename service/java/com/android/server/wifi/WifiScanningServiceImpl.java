@@ -1533,7 +1533,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     + android.Manifest.permission.DUMP);
             return;
         }
+        pw.println("WifiScanningService - Log Begin ----");
         mLocalLog.dump(fd, pw, args);
+        pw.println("WifiScanningService - Log End ----");
         pw.println();
         pw.println("clients:");
         for (ClientInfo client : mClients.values()) {

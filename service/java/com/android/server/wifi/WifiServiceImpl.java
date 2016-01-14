@@ -532,9 +532,6 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         enforceChangePermission();
         Slog.d(TAG, "setWifiEnabled: " + enable + " pid=" + Binder.getCallingPid()
                     + ", uid=" + Binder.getCallingUid());
-        if (DBG) {
-            Slog.e(TAG, "Invoking mWifiStateMachine.setWifiEnabled\n");
-        }
 
         /*
         * Caller might not have WRITE_SECURE_SETTINGS,

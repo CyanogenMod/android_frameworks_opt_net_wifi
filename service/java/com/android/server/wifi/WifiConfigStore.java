@@ -957,7 +957,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return false if the network id is invalid
      */
     boolean selectNetwork(WifiConfiguration config, boolean updatePriorities, int uid) {
-        if (VDBG) localLog("selectNetwork", config.networkId);
+        if (VDBG) localLogNetwork("selectNetwork", config.networkId);
         if (config.networkId == INVALID_NETWORK_ID) return false;
 
         // Reset the priority of each network at start or if it goes too high.
@@ -1029,7 +1029,7 @@ public class WifiConfigStore extends IpConfigStore {
                 config.SSID == null)) {
             return new NetworkUpdateResult(INVALID_NETWORK_ID);
         }
-        if (VDBG) localLog("WifiConfigStore: saveNetwork netId", config.networkId);
+        if (VDBG) localLogNetwork("WifiConfigStore: saveNetwork netId", config.networkId);
         if (VDBG) {
             loge("WifiConfigStore saveNetwork, size=" + mConfiguredNetworks.size()
                     + " SSID=" + config.SSID
@@ -1049,11 +1049,11 @@ public class WifiConfigStore extends IpConfigStore {
         NetworkUpdateResult result = addOrUpdateNetworkNative(config, uid);
         int netId = result.getNetworkId();
 
-        if (VDBG) localLog("WifiConfigStore: saveNetwork got it back netId=", netId);
+        if (VDBG) localLogNetwork("WifiConfigStore: saveNetwork got it back netId=", netId);
 
         /* enable a new network */
         if (newNetwork && netId != INVALID_NETWORK_ID) {
-            if (VDBG) localLog("WifiConfigStore: will enable netId=", netId);
+            if (VDBG) localLogNetwork("WifiConfigStore: will enable netId=", netId);
 
             mWifiNative.enableNetwork(netId, false);
             conf = mConfiguredNetworks.get(netId);
@@ -1217,7 +1217,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
     boolean forgetNetwork(int netId) {
-        if (showNetworks) localLog("forgetNetwork", netId);
+        if (showNetworks) localLogNetwork("forgetNetwork", netId);
 
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         boolean remove = removeConfigAndSendBroadcastIfNeeded(netId);
@@ -1248,11 +1248,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return network Id
      */
     int addOrUpdateNetwork(WifiConfiguration config, int uid) {
-        if (showNetworks) localLog("addOrUpdateNetwork id=", config.networkId);
-        //adding unconditional message to chase b/15111865
-        Log.e(TAG, " key=" + config.configKey() + " netId=" + Integer.toString(config.networkId)
-                + " uid=" + Integer.toString(config.creatorUid)
-                + "/" + Integer.toString(config.lastUpdateUid));
+        if (showNetworks) localLogNetwork("addOrUpdateNetwork id=", config.networkId);
 
         if (config.isPasspoint()) {
             /* create a temporary SSID with providerFriendlyName */
@@ -1376,7 +1372,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
     boolean removeNetwork(int netId) {
-        if (showNetworks) localLog("removeNetwork", netId);
+        if (showNetworks) localLogNetwork("removeNetwork", netId);
         WifiConfiguration config = mConfiguredNetworks.get(netId);
         boolean ret = mWifiNative.removeNetwork(netId);
         if (ret) {
@@ -1505,12 +1501,12 @@ public class WifiConfigStore extends IpConfigStore {
     boolean enableNetwork(int netId, boolean disableOthers, int uid) {
         boolean ret = enableNetworkWithoutBroadcast(netId, disableOthers);
         if (disableOthers) {
-            if (VDBG) localLog("enableNetwork(disableOthers=true, uid=" + uid + ") ", netId);
+            if (VDBG) localLogNetwork("enableNetwork(disableOthers=true, uid=" + uid + ") ", netId);
             updateLastConnectUid(getWifiConfiguration(netId), uid);
             writeKnownNetworkHistory(false);
             sendConfiguredNetworksChangedBroadcast();
         } else {
-            if (VDBG) localLog("enableNetwork(disableOthers=false) ", netId);
+            if (VDBG) localLogNetwork("enableNetwork(disableOthers=false) ", netId);
             WifiConfiguration enabledNetwork;
             synchronized(mConfiguredNetworks) {                     // !!! Useless synchronization!
                 enabledNetwork = mConfiguredNetworks.get(netId);
@@ -1998,9 +1994,9 @@ public class WifiConfigStore extends IpConfigStore {
                 if (possibleOldConfig != null) {
                     // That SSID is already known, just ignore this duplicate entry
                     if (showNetworks) {
-                        localLog("update duplicate network " + possibleOldConfig.networkId + " with "
-                                + config.networkId);
-                    }                    
+                        localLog("update duplicate network " + possibleOldConfig.networkId
+                                + " with " + config.networkId);
+                    }
                     // This can happen after the user manually connected to an AP and try to use WPS
                     // to connect the AP later.In this way, supplicant will create a new network for
                     // the AP although there is an existing network already.
@@ -2010,10 +2006,14 @@ public class WifiConfigStore extends IpConfigStore {
 
                 } else if(WifiServiceImpl.isValid(config)){
                     mConfiguredNetworks.put(config.networkId, config);
-                    if (showNetworks) localLog("loaded configured network", config.networkId);
+                    if (showNetworks) {
+                        localLogNetwork("loaded configured network", config.networkId);
+                    }
                 } else {
-                    if (showNetworks) log("Ignoring loaded configured for network " + config.networkId
-                        + " because config are not valid");
+                    if (showNetworks) {
+                        log("Ignoring loaded configured for network " + config.networkId
+                                + " because config are not valid");
+                    }
                 }
             }
 
@@ -2029,7 +2029,9 @@ public class WifiConfigStore extends IpConfigStore {
 
         sendConfiguredNetworksChangedBroadcast();
 
-        if (showNetworks) localLog("loadConfiguredNetworks loaded " + mConfiguredNetworks.size() + " networks");
+        if (showNetworks) {
+            localLog("loadConfiguredNetworks loaded " + mConfiguredNetworks.size() + " networks");
+        }
 
         if (mConfiguredNetworks.isEmpty()) {
             // no networks? Lets log if the file contents
@@ -2041,17 +2043,19 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private void logContents(String file) {
-        localLog("--- Begin " + file + " ---", true);
+        localLogAndLogcat("--- Begin " + file + " ---");
         BufferedReader reader = null;
         try {
             reader = new BufferedReader(new FileReader(file));
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
-                localLog(line, true);
+                localLogAndLogcat(line);
             }
         } catch (FileNotFoundException e) {
-            localLog("Could not open " + file + ", " + e, true);
+            localLog("Could not open " + file + ", " + e);
+            Log.w(TAG, "Could not open " + file + ", " + e);
         } catch (IOException e) {
-            localLog("Could not read " + file + ", " + e, true);
+            localLog("Could not read " + file + ", " + e);
+            Log.w(TAG, "Could not read " + file + ", " + e);
         } finally {
             try {
                 if (reader != null) {
@@ -2061,7 +2065,7 @@ public class WifiConfigStore extends IpConfigStore {
                 // Just ignore the fact that we couldn't close
             }
         }
-        localLog("--- End " + file + " Contents ---", true);
+        localLogAndLogcat("--- End " + file + " Contents ---");
     }
 
     private Map<String, String> readNetworkVariablesFromSupplicantFile(String key) {
@@ -4110,12 +4114,12 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
-    private void localLog(String s, boolean force) {
+    private void localLogAndLogcat(String s) {
         localLog(s);
-        if (force) loge(s);
+        Log.d(TAG, s);
     }
 
-    private void localLog(String s, int netId) {
+    private void localLogNetwork(String s, int netId) {
         if (mLocalLog == null) {
             return;
         }
