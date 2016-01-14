@@ -245,6 +245,14 @@ public class MultiClientScheduler extends WifiScanningScheduler {
         public int getActiveCount() {
             return mActiveBucketCount;
         }
+
+        public int getActiveRegularBucketCount() {
+            if (isActive(EXPONENTIAL_BACK_OFF_BUCKET_IDX)) {
+                return mActiveBucketCount - 1;
+            } else {
+                return mActiveBucketCount;
+            }
+        }
     }
 
     private final BucketList mBuckets = new BucketList();
@@ -421,17 +429,15 @@ public class MultiClientScheduler extends WifiScanningScheduler {
      */
     private void compactBuckets(int maxBuckets) {
         int maxRegularBuckets = maxBuckets;
-        int activeRegularBucketCount = mBuckets.getActiveCount();
 
         // reserve one bucket for exponential back off scan if there is
         // such request(s)
         if (mBuckets.isActive(EXPONENTIAL_BACK_OFF_BUCKET_IDX)) {
             maxRegularBuckets--;
-            activeRegularBucketCount--;
         }
         // TODO: reserve another bucket for context hub scan request
         for (int i = NUM_OF_REGULAR_BUCKETS - 1;
-                i >= 0 && activeRegularBucketCount > maxRegularBuckets; --i) {
+                i >= 0 && mBuckets.getActiveRegularBucketCount() > maxRegularBuckets; --i) {
             if (mBuckets.isActive(i)) {
                 for (ScanSettings scanRequest : mBuckets.get(i).settings) {
                     int newBucketIndex = findBestRegularBucketIndex(scanRequest.periodInMs, i);
