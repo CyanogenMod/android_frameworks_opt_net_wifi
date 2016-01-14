@@ -3032,9 +3032,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(" ").append((String) msg.obj);
                 }
                 config = getCurrentWifiConfiguration();
-                WifiConfiguration.NetworkSelectionStatus netWorkSelectionStatus =
-                        lastForgetConfigurationAttempt.getNetworkSelectionStatus();
                 if (config != null) {
+                    WifiConfiguration.NetworkSelectionStatus netWorkSelectionStatus =
+                            config.getNetworkSelectionStatus();
                     sb.append(" cur=").append(config.configKey());
                     sb.append(" ajst=").append(netWorkSelectionStatus.getNetworkStatusString());
                     if (config.selfAdded) {
