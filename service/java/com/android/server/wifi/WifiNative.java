@@ -16,15 +16,21 @@
 
 package com.android.server.wifi;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.wifi.RttManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiEnterpriseConfig;
 import android.net.wifi.WifiLinkLayerStats;
-import android.net.wifi.WifiWakeReasonAndCounts;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
+import android.net.wifi.WifiWakeReasonAndCounts;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pGroup;
@@ -34,12 +40,7 @@ import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
-import android.content.Context;
-import android.content.Intent;
-import android.app.AlarmManager;
-import android.app.PendingIntent;
-import android.content.IntentFilter;
-import android.content.BroadcastReceiver;
+
 import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
