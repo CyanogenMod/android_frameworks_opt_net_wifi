@@ -405,18 +405,6 @@ class WifiQualifiedNetworkSelector {
             }
             qnsLog(sbuf.toString());
         }
-        //clean the configured network list by removing not qualified saved network
-        Iterator<WifiConfiguration> iter = savedNetworks.iterator();
-        while (iter.hasNext()) {
-            WifiConfiguration config = iter.next();
-            //update possible block if the block timeout
-            mWifiConfigStore.tryEnableQualifiedNetwork(config.networkId);
-            if (!config.getNetworkSelectionStatus().isNetworkEnabled()) {
-                qnsLog("skip blocked network:" + config);
-                iter.remove();
-                continue;
-            }
-        }
 
         if (savedNetworks.size() == 0) {
             qnsLog("no unblocked saved network");
@@ -555,8 +543,8 @@ class WifiQualifiedNetworkSelector {
                 }
             }
 
-
             if (highestScore > currentHighestScore || (highestScore == currentHighestScore
+                    && scanResultCandidate != null
                     && scanResult.level > scanResultCandidate.level)) {
                 currentHighestScore = highestScore;
                 scanResultCandidate = scanResult;
@@ -590,13 +578,13 @@ class WifiQualifiedNetworkSelector {
                         WifiConfiguration.UNKNOWN_UID);
 
 
-                qnsLog("new ephemeral candidate" + scanResultCandidate.SSID + ":"
-                        + scanResultCandidate.BSSID + "network ID:"
+                qnsLog("new ephemeral candidate" + untrustedScanResultCandidate.SSID + ":"
+                        + untrustedScanResultCandidate.BSSID + "network ID:"
                         + unTrustedNetworkCandidate.networkId);
 
             } else {
-                qnsLog("choose existing ephemeral candidate" + scanResultCandidate.SSID + ":"
-                        + scanResultCandidate.BSSID + "network ID:"
+                qnsLog("choose existing ephemeral candidate" + untrustedScanResultCandidate.SSID
+                        + ":" + untrustedScanResultCandidate.BSSID + "network ID:"
                         + unTrustedNetworkCandidate.networkId);
             }
             scanResultCandidate = untrustedScanResultCandidate;
