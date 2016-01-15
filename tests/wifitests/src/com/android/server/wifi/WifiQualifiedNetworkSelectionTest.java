@@ -32,6 +32,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
@@ -68,9 +69,6 @@ public class WifiQualifiedNetworkSelectionTest {
 
     private WifiStateMachine getWifiStateMachine() {
         WifiStateMachine wifiStateMachine = mock(WifiStateMachine.class);
-
-        when(wifiStateMachine.isLinkDebouncing()).thenReturn(false);
-        when(wifiStateMachine.isSupplicantTransientState()).thenReturn(false);
 
         return wifiStateMachine;
     }
@@ -137,17 +135,18 @@ public class WifiQualifiedNetworkSelectionTest {
 
     WifiConfigStore getWifiConfigStore() {
         WifiConfigStore wifiConfigStore = mock(WifiConfigStore.class);
-        wifiConfigStore.thresholdSaturatedRssi24.set(
+        wifiConfigStore.thresholdSaturatedRssi24 = new AtomicInteger(
                 WifiQualifiedNetworkSelector.RSSI_SATURATION_2G_BAND);
-        wifiConfigStore.bandAward5Ghz.set(WifiQualifiedNetworkSelector.BAND_AWARD_5GHz);
-        wifiConfigStore.currentNetworkBoost.set(WifiQualifiedNetworkSelector.SAME_NETWORK_AWARD);
-        wifiConfigStore.thresholdQualifiedRssi5.set(
+        wifiConfigStore.bandAward5Ghz = new AtomicInteger(
+                WifiQualifiedNetworkSelector.BAND_AWARD_5GHz);
+        wifiConfigStore.currentNetworkBoost = new AtomicInteger(
+                WifiQualifiedNetworkSelector.SAME_NETWORK_AWARD);
+        wifiConfigStore.thresholdQualifiedRssi5 = new AtomicInteger(
                 WifiQualifiedNetworkSelector.QUALIFIED_RSSI_5G_BAND);
-        wifiConfigStore.thresholdMinimumRssi24.set(
+        wifiConfigStore.thresholdMinimumRssi24 = new AtomicInteger(
                 WifiQualifiedNetworkSelector.MINIMUM_2G_ACCEPT_RSSI);
-        wifiConfigStore.thresholdMinimumRssi5.set(
+        wifiConfigStore.thresholdMinimumRssi5 = new AtomicInteger(
                 WifiQualifiedNetworkSelector.MINIMUM_5G_ACCEPT_RSSI);
-
 
         when(wifiConfigStore.getEnableNewNetworkSelectionWhenAssociated()).thenReturn(true);
         return wifiConfigStore;
@@ -203,6 +202,8 @@ public class WifiQualifiedNetworkSelectionTest {
         when(mWifiConfigStore.updateSavedNetworkWithNewScanDetail(scanDetails.get(1))).thenReturn(
                 associateWithScanResult2);
         ScanResult scanResult = scanDetails.get(1).getScanResult();
+
+        mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
         verify(mWifiStateMachine).sendMessage(WifiStateMachine.CMD_AUTO_ROAM, 1, 1, scanResult);
     }
 }
