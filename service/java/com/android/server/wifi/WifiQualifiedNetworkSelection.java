@@ -105,6 +105,13 @@ class WifiQualifiedNetworkSelector {
     }
 
     /**
+     * @return current target connected network
+     */
+    public WifiConfiguration getConnetionTargetNetwork() {
+        return mCurrentConnectedNetwork;
+    }
+
+    /**
      * set the user selected preferred band
      * @param band
      */
@@ -118,7 +125,6 @@ class WifiQualifiedNetworkSelector {
         mWifiStateMachine = stateMachine;
         mWifiInfo = wifiInfo;
 
-        mScoreManager = (NetworkScoreManager)
                 context.getSystemService(Context.NETWORK_SCORE_SERVICE);
         if (mScoreManager != null) {
             mNetworkScoreCache = new WifiNetworkScoreCache(context);
@@ -405,10 +411,41 @@ class WifiQualifiedNetworkSelector {
             }
             qnsLog(sbuf.toString());
         }
+    }
 
-        if (savedNetworks.size() == 0) {
-            qnsLog("no unblocked saved network");
-        }
+    /**
+     * Roaming to a new AP. This means the new AP belong to the same network with the current
+     * connection
+     * @param scanResultCandidate : new AP to roam to
+     */
+    private void roamToNewAp(ScanResult scanResultCandidate) {
+        String currentAssociationId = (mCurrentConnectedNetwork == null ? "Disconnected" :
+                mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
+        String targetAssociationId = scanResultCandidate.SSID + ":" + scanResultCandidate.BSSID;
+
+        qnsLog("Roaming from " + currentAssociationId + " to " + targetAssociationId);
+        // the third parameter 0 means roam from Network Selection
+        mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
+                    mCurrentConnectedNetwork.networkId, 0, scanResultCandidate);
+        mCurrentBssid = scanResultCandidate.BSSID;
+    }
+
+    /**
+     * Connect to a new AP.This means the new AP belong to a different network with the current
+     * connection
+     */
+    private void connectToNewAp(WifiConfiguration newNetworkCandidate, String newBssid) {
+        // FIXME: 11/12/15 need fix auto_connect wifisatetmachine codes
+        String currentAssociationId = (mCurrentConnectedNetwork == null ? "Disconnected" :
+                mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
+        String targetAssociationId = newNetworkCandidate.SSID + ":" + newBssid;
+
+        qnsLog("reconnect from " + currentAssociationId + " to " + targetAssociationId);
+        // the third parameter 0 means connect request from Network Selection
+        mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
+                newNetworkCandidate.networkId, 0, newBssid);
+        mCurrentBssid = newBssid;
+        mCurrentConnectedNetwork = newNetworkCandidate;
     }
 
     /**
@@ -598,7 +635,6 @@ class WifiQualifiedNetworkSelector {
         }
         String currentAssociationId = (mCurrentConnectedNetwork == null ? "Disconnected" :
                 mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
-        String targetAssociationId = scanResultCandidate.SSID + ":" + scanResultCandidate.BSSID;
 
         //In passpoint, saved configuration has garbage SSID
         if (!TextUtils.isEmpty(networkCandidate.FQDN)) {
@@ -611,20 +647,11 @@ class WifiQualifiedNetworkSelector {
         } else if (mCurrentConnectedNetwork != null
                 && (mCurrentConnectedNetwork.networkId == networkCandidate.networkId
                         || mCurrentConnectedNetwork.isLinked(networkCandidate))) {
-            //Current network is the best, only change BSSID
-            qnsLog("Roaming from " + currentAssociationId + " to " + targetAssociationId);
-            mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
-                    mCurrentConnectedNetwork.networkId, 1, scanResultCandidate);
-            mCurrentBssid = scanResultCandidate.BSSID;
+            roamToNewAp(scanResultCandidate);
         } else {
             //select another network case Fix me
-            // FIXME: 11/12/15 need add BSSID specification
             // FIXME: 11/12/15 need fix auto_connect wifisatetmachine codes
-            qnsLog("reconnect from " + currentAssociationId + " to " + targetAssociationId);
-            mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
-                    networkCandidate.networkId, 3, scanResultCandidate.BSSID);
-            mCurrentBssid = scanResultCandidate.BSSID;
-            mCurrentConnectedNetwork = networkCandidate;
+            connectToNewAp(networkCandidate, scanResultCandidate.BSSID);
         }
         mLastQualifiedNetworkSelectionTimeStamp = System.currentTimeMillis();
         return;
