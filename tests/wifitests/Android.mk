@@ -13,6 +13,49 @@
 # limitations under the License.
 
 LOCAL_PATH:= $(call my-dir)
+
+# Make mock HAL library
+# ============================================================
+
+include $(CLEAR_VARS)
+
+LOCAL_REQUIRED_MODULES :=
+
+LOCAL_CFLAGS += -Wno-unused-parameter
+
+LOCAL_C_INCLUDES += \
+	$(JNI_H_INCLUDE) \
+	$(LOCAL_PATH)/../../service/jni \
+	$(call include-path-for, libhardware)/hardware \
+	$(call include-path-for, libhardware_legacy)/hardware_legacy \
+	packages/apps/Test/connectivity/sl4n/rapidjson/include \
+	libcore/include
+
+LOCAL_SRC_FILES := \
+	jni/wifi_hal_mock.cpp
+
+ifdef INCLUDE_NAN_FEATURE
+LOCAL_SRC_FILES += \
+	jni/wifi_nan_hal_mock.cpp
+endif
+
+LOCAL_MODULE := libwifi-hal-mock
+
+LOCAL_STATIC_LIBRARIES += libwifi-hal
+LOCAL_SHARED_LIBRARIES += \
+	libnativehelper \
+	libcutils \
+	libutils \
+	libhardware \
+	libhardware_legacy \
+	libnl \
+	libdl \
+	libwifi-service
+
+include $(BUILD_SHARED_LIBRARY)
+
+# Make test APK
+# ============================================================
 include $(CLEAR_VARS)
 
 LOCAL_MODULE_TAGS := tests
@@ -21,6 +64,11 @@ RESOURCE_FILES := $(call all-named-files-under, R.java, $(intermediates.COMMON))
 
 LOCAL_SRC_FILES := $(call all-subdir-java-files) \
 	$RESOURCE_FILES
+
+ifndef INCLUDE_NAN_FEATURE
+LOCAL_SRC_FILES := $(filter-out $(call all-java-files-under, \
+          src/com/android/server/wifi/nan),$(LOCAL_SRC_FILES))
+endif
 
 LOCAL_STATIC_JAVA_LIBRARIES := \
 	mockito-target \
@@ -55,5 +103,6 @@ LOCAL_JNI_SHARED_LIBRARIES := $(LOCAL_JNI_SHARED_LIBRARIES) \
 endif
 
 LOCAL_PACKAGE_NAME := FrameworksWifiTests
+LOCAL_JNI_SHARED_LIBRARIES := libwifi-hal-mock
 
 include $(BUILD_PACKAGE)

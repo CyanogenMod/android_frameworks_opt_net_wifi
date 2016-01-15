@@ -104,6 +104,11 @@ LOCAL_SRC_FILES := \
 	jni/com_android_server_wifi_WifiNative.cpp \
 	jni/jni_helper.cpp
 
+ifdef INCLUDE_NAN_FEATURE
+LOCAL_SRC_FILES += \
+	jni/com_android_server_wifi_nan_WifiNanNative.cpp
+endif
+
 LOCAL_MODULE := libwifi-service
 # b/22172328
 LOCAL_CLANG := false
@@ -119,6 +124,11 @@ LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/java
 LOCAL_SRC_FILES := $(call all-java-files-under, java) \
 	$(call all-Iaidl-files-under, java) \
 	$(call all-logtags-files-under, java)
+
+ifndef INCLUDE_NAN_FEATURE
+LOCAL_SRC_FILES := $(filter-out $(call all-java-files-under, \
+          java/com/android/server/wifi/nan),$(LOCAL_SRC_FILES))
+endif
 
 LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt services
 LOCAL_STATIC_JAVA_LIBRARIES := ksoap2 android-support-v4

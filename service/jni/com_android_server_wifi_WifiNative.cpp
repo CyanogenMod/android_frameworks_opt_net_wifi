@@ -21,10 +21,10 @@
 #include <ScopedUtfChars.h>
 #include <ScopedBytes.h>
 #include <utils/misc.h>
-#include <android_runtime/AndroidRuntime.h>
 #include <utils/Log.h>
 #include <utils/String16.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <linux/if.h>
 #include "wifi.h"
@@ -37,10 +37,13 @@
 
 namespace android {
 
+extern "C"
+jint Java_com_android_server_wifi_WifiNative_registerNanNatives(JNIEnv* env, jclass clazz);
+
 static jint DBG = false;
 
 //Please put all HAL function call here and call from the function table instead of directly call
-static wifi_hal_fn hal_fn;
+wifi_hal_fn hal_fn;
 int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     if (hal_fn == NULL) {
         return -1;
@@ -98,6 +101,20 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_start_sending_offloaded_packet = wifi_start_sending_offloaded_packet_stub;
     hal_fn->wifi_stop_sending_offloaded_packet = wifi_stop_sending_offloaded_packet_stub;
     hal_fn->wifi_get_wake_reason_stats = wifi_get_wake_reason_stats_stub;
+    hal_fn->wifi_nan_enable_request = wifi_nan_enable_request_stub;
+    hal_fn->wifi_nan_disable_request = wifi_nan_disable_request_stub;
+    hal_fn->wifi_nan_publish_request = wifi_nan_publish_request_stub;
+    hal_fn->wifi_nan_publish_cancel_request = wifi_nan_publish_cancel_request_stub;
+    hal_fn->wifi_nan_subscribe_request = wifi_nan_subscribe_request_stub;
+    hal_fn->wifi_nan_subscribe_cancel_request = wifi_nan_subscribe_cancel_request_stub;
+    hal_fn->wifi_nan_transmit_followup_request = wifi_nan_transmit_followup_request_stub;
+    hal_fn->wifi_nan_stats_request = wifi_nan_stats_request_stub;
+    hal_fn->wifi_nan_config_request = wifi_nan_config_request_stub;
+    hal_fn->wifi_nan_tca_request = wifi_nan_tca_request_stub;
+    hal_fn->wifi_nan_beacon_sdf_payload_request = wifi_nan_beacon_sdf_payload_request_stub;
+    hal_fn->wifi_nan_register_handler = wifi_nan_register_handler_stub;
+    hal_fn->wifi_nan_get_version = wifi_nan_get_version_stub;
+
     return 0;
 }
 
@@ -223,11 +240,11 @@ static const char *WifiHandleVarName = "sWifiHalHandle";
 static const char *WifiIfaceHandleVarName = "sWifiIfaceHandles";
 static jmethodID OnScanResultsMethodID;
 
-static wifi_handle getWifiHandle(JNIHelper &helper, jclass cls) {
+wifi_handle getWifiHandle(JNIHelper &helper, jclass cls) {
     return (wifi_handle) helper.getStaticLongField(cls, WifiHandleVarName);
 }
 
-static wifi_interface_handle getIfaceHandle(JNIHelper &helper, jclass cls, jint index) {
+wifi_interface_handle getIfaceHandle(JNIHelper &helper, jclass cls, jint index) {
     return (wifi_interface_handle) helper.getStaticLongArrayField(cls, WifiIfaceHandleVarName, index);
 }
 
@@ -2303,7 +2320,8 @@ static JNINativeMethod gWifiMethods[] = {
     { "getWlanWakeReasonCountNative", "(I)Landroid/net/wifi/WifiWakeReasonAndCounts;",
             (void*) android_net_wifi_get_wlan_wake_reason_count},
     {"isGetChannelsForBandSupportedNative", "()Z",
-            (void*)android_net_wifi_is_get_channels_for_band_supported}
+            (void*)android_net_wifi_is_get_channels_for_band_supported},
+
 };
 
 /* User to register native functions */
