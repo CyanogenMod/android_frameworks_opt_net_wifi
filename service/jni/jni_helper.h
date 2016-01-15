@@ -1,3 +1,18 @@
+/*
+ * Copyright 2016, The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 namespace android {
 
@@ -67,6 +82,7 @@ public :
     bool getStringFieldValue(jobject obj, const char *name, char *buf, int size);
     JNIObject<jobject> getObjectField(jobject obj, const char *name, const char *type);
     JNIObject<jobjectArray> getArrayField(jobject obj, const char *name, const char *type);
+    void getByteArrayField(jobject obj, const char *name, byte* buf, int size);
     jlong getLongArrayField(jobject obj, const char *name, int index);
     JNIObject<jobject> getObjectArrayField(
             jobject obj, const char *name, const char *type, int index);
@@ -82,6 +98,7 @@ public :
     JNIObject<jobject> createObject(const char *className);
     JNIObject<jobjectArray> createObjectArray(const char *className, int size);
     void setObjectField(jobject obj, const char *name, const char *type, jobject value);
+    void callMethod(jobject obj, const char *method, const char *signature, ...);
 
     /* helpers to deal with static members */
     jlong getStaticLongField(jobject obj, const char *name);

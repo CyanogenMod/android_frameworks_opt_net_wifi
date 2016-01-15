@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 The Android Open Source Project
+ * Copyright (C) 2016 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,6 +112,43 @@ wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
         wifi_interface_handle iface, u8 *ip_packet, u16 ip_packet_len,
         u8 *src_mac_addr, u8 *dst_mac_addr, u32 period_msec);
 wifi_error wifi_stop_sending_offloaded_packet_stub(wifi_request_id id, wifi_interface_handle iface);
+wifi_error wifi_nan_enable_request_stub(transaction_id id,
+                              wifi_interface_handle iface,
+                              NanEnableRequest* msg);
+wifi_error wifi_nan_disable_request_stub(transaction_id id,
+                               wifi_interface_handle iface);
+wifi_error wifi_nan_publish_request_stub(transaction_id id,
+                               wifi_interface_handle iface,
+                               NanPublishRequest* msg);
+wifi_error wifi_nan_publish_cancel_request_stub(transaction_id id,
+                                      wifi_interface_handle iface,
+                                      NanPublishCancelRequest* msg);
+wifi_error wifi_nan_subscribe_request_stub(transaction_id id,
+                                 wifi_interface_handle iface,
+                                 NanSubscribeRequest* msg);
+wifi_error wifi_nan_subscribe_cancel_request_stub(transaction_id id,
+                                        wifi_interface_handle iface,
+                                        NanSubscribeCancelRequest* msg);
+wifi_error wifi_nan_transmit_followup_request_stub(transaction_id id,
+                                         wifi_interface_handle iface,
+                                         NanTransmitFollowupRequest* msg);
+wifi_error wifi_nan_stats_request_stub(transaction_id id,
+                             wifi_interface_handle iface,
+                             NanStatsRequest* msg);
+wifi_error wifi_nan_config_request_stub(transaction_id id,
+                              wifi_interface_handle iface,
+                              NanConfigRequest* msg);
+wifi_error wifi_nan_tca_request_stub(transaction_id id,
+                           wifi_interface_handle iface,
+                           NanTCARequest* msg);
+wifi_error wifi_nan_beacon_sdf_payload_request_stub(transaction_id id,
+                                         wifi_interface_handle iface,
+                                         NanBeaconSdfPayloadRequest* msg);
+wifi_error wifi_nan_register_handler_stub(wifi_interface_handle iface,
+                                NanCallbackHandler handlers);
+wifi_error wifi_nan_get_version_stub(wifi_handle handle,
+                           NanVersion* version);
+
 #ifdef __cplusplus
 }
 #endif

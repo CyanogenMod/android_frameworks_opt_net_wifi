@@ -1,3 +1,19 @@
+/*
+ * Copyright 2016, The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #include <stdint.h>
 #include "wifi_hal.h"
 #include "wifi_hal_stub.h"
@@ -250,4 +266,79 @@ wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
 
 wifi_error wifi_stop_sending_offloaded_packet_stub(wifi_request_id id, wifi_interface_handle iface) {
     return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_enable_request_stub(transaction_id id,
+                              wifi_interface_handle iface,
+                              NanEnableRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_disable_request_stub(transaction_id id,
+                               wifi_interface_handle iface) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_publish_request_stub(transaction_id id,
+                               wifi_interface_handle iface,
+                               NanPublishRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_publish_cancel_request_stub(transaction_id id,
+                                      wifi_interface_handle iface,
+                                      NanPublishCancelRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_subscribe_request_stub(transaction_id id,
+                                 wifi_interface_handle iface,
+                                 NanSubscribeRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_subscribe_cancel_request_stub(transaction_id id,
+                                        wifi_interface_handle iface,
+                                        NanSubscribeCancelRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_transmit_followup_request_stub(transaction_id id,
+                                         wifi_interface_handle iface,
+                                         NanTransmitFollowupRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_stats_request_stub(transaction_id id,
+                             wifi_interface_handle iface,
+                             NanStatsRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_config_request_stub(transaction_id id,
+                              wifi_interface_handle iface,
+                              NanConfigRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_tca_request_stub(transaction_id id,
+                           wifi_interface_handle iface,
+                           NanTCARequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_beacon_sdf_payload_request_stub(transaction_id id,
+                                         wifi_interface_handle iface,
+                                         NanBeaconSdfPayloadRequest* msg) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_register_handler_stub(wifi_interface_handle iface,
+                                NanCallbackHandler handlers) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_nan_get_version_stub(wifi_handle handle,
+                           NanVersion* version) {
+  return WIFI_ERROR_NOT_SUPPORTED;
 }
