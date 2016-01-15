@@ -324,7 +324,14 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY
             = "ENABLE_RSSI_POLL_WHILE_ASSOCIATED_KEY";
 
-    public static final String idStringVarName = "id_str";
+    // This is the only variable whose contents will not be interpreted by wpa_supplicant. We use it
+    // to store metadata that allows us to correlate a wpa_supplicant.conf entry with additional
+    // information about the same network stored in other files. The metadata is stored as a
+    // serialized JSON dictionary.
+    public static final String ID_STRING_VAR_NAME = "id_str";
+    public static final String ID_STRING_KEY_FQDN = "fqdn";
+    public static final String ID_STRING_KEY_CREATOR_UID = "creatorUid";
+    public static final String ID_STRING_KEY_CONFIG_KEY = "configKey";
 
     // The Wifi verbose log is provided as a way to persist the verbose logging settings
     // for testing purpose.
@@ -1930,6 +1937,8 @@ public class WifiConfigStore extends IpConfigStore {
 
         mConfiguredNetworks.clear();
 
+        final SparseArray<Map<String, String>> networkExtras = new SparseArray<>();
+
         int last_id = -1;
         boolean done = false;
         while (!done) {
@@ -1971,6 +1980,22 @@ public class WifiConfigStore extends IpConfigStore {
                 }
 
                 readNetworkVariables(config);
+
+                // Parse the serialized JSON dictionary in ID_STRING_VAR_NAME once and cache the
+                // result for efficiency.
+                Map<String, String> extras = mWifiNative.getNetworkExtra(config.networkId,
+                        ID_STRING_VAR_NAME);
+                if (extras == null) {
+                    extras = new HashMap<String, String>();
+                    // If ID_STRING_VAR_NAME did not contain a dictionary, assume that it contains
+                    // just a quoted FQDN. This is the legacy format that was used in Marshmallow.
+                    final String fqdn = Utils.unquote(mWifiNative.getNetworkVariable(
+                            config.networkId, ID_STRING_VAR_NAME));
+                    if (fqdn != null) {
+                        extras.put(ID_STRING_KEY_FQDN, fqdn);
+                    }
+                }
+                networkExtras.put(config.networkId, extras);
 
                 Checksum csum = new CRC32();
                 if (config.SSID != null) {
@@ -2019,7 +2044,7 @@ public class WifiConfigStore extends IpConfigStore {
             done = (lines.length == 1);
         }
 
-        readPasspointConfig();
+        readPasspointConfig(networkExtras);
         readIpAndProxyConfigurations();
         readNetworkHistory();
         readAutoJoinConfig();
@@ -2167,7 +2192,7 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
-    void readPasspointConfig() {
+    void readPasspointConfig(SparseArray<Map<String, String>> networkExtras) {
 
         List<HomeSP> homeSPs;
         try {
@@ -2177,7 +2202,42 @@ public class WifiConfigStore extends IpConfigStore {
             return;
         }
 
-        mConfiguredNetworks.populatePasspointData(homeSPs, mWifiNative);
+        int matchedConfigs = 0;
+        for (HomeSP homeSp : homeSPs) {
+            String fqdn = homeSp.getFQDN();
+            Log.d(TAG, "Looking for " + fqdn);
+            for (WifiConfiguration config : mConfiguredNetworks.values()) {
+                Log.d(TAG, "Testing " + config.SSID);
+
+                if (config.enterpriseConfig == null) {
+                    continue;
+                }
+                final String configFqdn =
+                        networkExtras.get(config.networkId).get(ID_STRING_KEY_FQDN);
+                if (configFqdn != null && configFqdn.equals(fqdn)) {
+                    Log.d(TAG, "Matched " + configFqdn + " with " + config.networkId);
+                    ++matchedConfigs;
+                    config.FQDN = fqdn;
+                    config.providerFriendlyName = homeSp.getFriendlyName();
+
+                    HashSet<Long> roamingConsortiumIds = homeSp.getRoamingConsortiums();
+                    config.roamingConsortiumIds = new long[roamingConsortiumIds.size()];
+                    int i = 0;
+                    for (long id : roamingConsortiumIds) {
+                        config.roamingConsortiumIds[i] = id;
+                        i++;
+                    }
+                    IMSIParameter imsiParameter = homeSp.getCredential().getImsi();
+                    config.enterpriseConfig.setPlmn(
+                            imsiParameter != null ? imsiParameter.toString() : null);
+                    config.enterpriseConfig.setRealm(homeSp.getCredential().getRealm());
+                    // Allow mConfiguredNetworks to cache the FQDN.
+                    mConfiguredNetworks.put(config.networkId, config);
+                }
+            }
+        }
+
+        Log.d(TAG, "loaded " + matchedConfigs + " passpoint configs");
     }
 
     public void writePasspointConfigs(final String fqdn, final HomeSP homeSP) {
@@ -2804,14 +2864,15 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
+            final Map<String, String> metadata = new HashMap<String, String>();
             if (config.isPasspoint()) {
-                if (!mWifiNative.setNetworkVariable(
-                            netId,
-                            idStringVarName,
-                            '"' + config.FQDN + '"')) {
-                    loge("failed to set id_str: " + config.FQDN);
-                    break setVariables;
-                }
+                metadata.put(ID_STRING_KEY_FQDN, config.FQDN);
+            }
+            metadata.put(ID_STRING_KEY_CONFIG_KEY, config.configKey());
+            metadata.put(ID_STRING_KEY_CREATOR_UID, Integer.toString(config.creatorUid));
+            if (!mWifiNative.setNetworkExtra(netId, ID_STRING_VAR_NAME, metadata)) {
+                loge("failed to set id_str: " + metadata.toString());
+                break setVariables;
             }
 
             if (config.BSSID != null) {
