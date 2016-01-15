@@ -1,10 +1,15 @@
 package com.android.server.wifi;
 
 import android.net.wifi.WifiConfiguration;
+import android.util.Log;
+
+import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +27,41 @@ public class ConfigurationMap {
             mPerFQDN.put(config.FQDN, netid);
         }
         return current;
+    }
+
+    public void populatePasspointData(Collection<HomeSP> homeSPs, WifiNative wifiNative) {
+        mPerFQDN.clear();
+
+        for (HomeSP homeSp : homeSPs) {
+            String fqdn = homeSp.getFQDN();
+            Log.d(WifiConfigStore.TAG, "Looking for " + fqdn);
+            for (WifiConfiguration config : mPerID.values()) {
+                Log.d(WifiConfigStore.TAG, "Testing " + config.SSID);
+
+                String id_str = Utils.unquote(wifiNative.getNetworkVariable(
+                        config.networkId, WifiConfigStore.idStringVarName));
+                if (id_str != null && id_str.equals(fqdn) && config.enterpriseConfig != null) {
+                    Log.d(WifiConfigStore.TAG, "Matched " + id_str + " with " + config.networkId);
+                    config.FQDN = fqdn;
+                    config.providerFriendlyName = homeSp.getFriendlyName();
+
+                    HashSet<Long> roamingConsortiumIds = homeSp.getRoamingConsortiums();
+                    config.roamingConsortiumIds = new long[roamingConsortiumIds.size()];
+                    int i = 0;
+                    for (long id : roamingConsortiumIds) {
+                        config.roamingConsortiumIds[i] = id;
+                        i++;
+                    }
+                    IMSIParameter imsiParameter = homeSp.getCredential().getImsi();
+                    config.enterpriseConfig.setPlmn(
+                            imsiParameter != null ? imsiParameter.toString() : null);
+                    config.enterpriseConfig.setRealm(homeSp.getCredential().getRealm());
+                    mPerFQDN.put(fqdn, config.networkId);
+                }
+            }
+        }
+
+        Log.d(WifiConfigStore.TAG, "loaded " + mPerFQDN.size() + " passpoint configs");
     }
 
     public WifiConfiguration remove(int netID) {

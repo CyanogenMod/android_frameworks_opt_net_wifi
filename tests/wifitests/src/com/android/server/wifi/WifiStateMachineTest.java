@@ -21,7 +21,6 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.anyObject;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -70,6 +69,7 @@ import com.android.server.wifi.hotspot2.osu.OSUManager;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
@@ -86,7 +86,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Example Unit Test File
@@ -457,23 +456,6 @@ public class WifiStateMachineTest {
                         return true;
                     }
                 });
-        when(mWifiNative.setNetworkExtra(anyInt(), anyString(), (Map<String, String>) anyObject()))
-                .then(new Answer<Boolean>() {
-                        @Override
-                        public Boolean answer(InvocationOnMock invocationOnMock)
-                                throws Throwable {
-                            Object args[] = invocationOnMock.getArguments();
-                            Integer netId = (Integer) args[0];
-                            String name = (String) args[1];
-                            if (netId != 0) {
-                                Log.d(TAG, "Can't set extra " + name + " for " + netId);
-                                return false;
-                            }
-
-                            Log.d(TAG, "Setting extra for " + netId);
-                            return true;
-                        }
-                    });
 
         when(mWifiNative.getNetworkVariable(anyInt(), anyString())).then(
                 new Answer<String>() {
