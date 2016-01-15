@@ -16,6 +16,12 @@
 
 package com.android.server.wifi;
 
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.validateMockitoUsage;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 import android.content.res.Resources;
 import android.net.NetworkScoreManager;
@@ -34,14 +40,9 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.validateMockitoUsage;
+
 /**
- * Example Unit Test File
+ * Unit tests for {@link com.android.server.wifi.WifiQualifiedNetworkSelector}.
  */
 @SmallTest
 public class WifiQualifiedNetworkSelectionTest {

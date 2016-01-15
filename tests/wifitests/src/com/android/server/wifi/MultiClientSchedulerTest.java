@@ -26,6 +26,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.validateMockitoUsage;
 
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiScanner.ChannelSpec;
@@ -34,6 +35,7 @@ import android.test.suitebuilder.annotation.SmallTest;
 
 import com.android.server.wifi.WifiNative.BucketSettings;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -72,6 +74,11 @@ public class MultiClientSchedulerTest {
         mScheduler.setMaxChannels(DEFAULT_MAX_CHANNELS);
         mScheduler.setMaxBatch(DEFAULT_MAX_BATCH);
         mScheduler.setMaxApPerScan(DEFAULT_MAX_AP_PER_SCAN);
+    }
+
+    @After
+    public void cleanup() {
+        validateMockitoUsage();
     }
 
     @Test

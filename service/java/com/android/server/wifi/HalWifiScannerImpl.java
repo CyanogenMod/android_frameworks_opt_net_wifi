@@ -199,4 +199,15 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
     public void resetHotlist() {
         mWifiNative.resetHotlist();
     }
+
+    @Override
+    public boolean trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings,
+            WifiNative.SignificantWifiChangeEventHandler handler) {
+        return mWifiNative.trackSignificantWifiChange(settings, handler);
+    }
+
+    @Override
+    public void untrackSignificantWifiChange() {
+        mWifiNative.untrackSignificantWifiChange();
+    }
 }

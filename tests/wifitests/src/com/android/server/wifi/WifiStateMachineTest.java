@@ -63,6 +63,7 @@ import com.android.internal.app.IBatteryStats;
 import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.IState;
 import com.android.internal.util.StateMachine;
+import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.omadm.MOManager;
@@ -75,8 +76,6 @@ import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
@@ -89,7 +88,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Example Unit Test File
+ * Unit tests for {@link com.android.server.wifi.WifiStateMachine}.
  */
 @SmallTest
 public class WifiStateMachineTest {
@@ -439,14 +438,9 @@ public class WifiStateMachineTest {
         final HashMap<String, String> nameToValue = new HashMap<String, String>();
 
         when(mWifiNative.addNetwork()).thenReturn(0);
-        when(mWifiNative.setNetworkVariable(anyInt(), anyString(), anyString())).then(
-                new Answer<Boolean>() {
-                    @Override
-                    public Boolean answer(InvocationOnMock invocationOnMock) throws Throwable {
-                        Object args[] = invocationOnMock.getArguments();
-                        Integer netId = (Integer) args[0];
-                        String name = (String) args[1];
-                        String value = (String) args[2];
+        when(mWifiNative.setNetworkVariable(anyInt(), anyString(), anyString()))
+                .then(new AnswerWithArguments<Boolean>() {
+                    public boolean answer(int netId, String name, String value) {
                         if (netId != 0) {
                             Log.d(TAG, "Can't set var " + name + " for " + netId);
                             return false;
@@ -457,14 +451,10 @@ public class WifiStateMachineTest {
                         return true;
                     }
                 });
+
         when(mWifiNative.setNetworkExtra(anyInt(), anyString(), (Map<String, String>) anyObject()))
-                .then(new Answer<Boolean>() {
-                        @Override
-                        public Boolean answer(InvocationOnMock invocationOnMock)
-                                throws Throwable {
-                            Object args[] = invocationOnMock.getArguments();
-                            Integer netId = (Integer) args[0];
-                            String name = (String) args[1];
+                .then(new AnswerWithArguments<Boolean>() {
+                        public boolean answer(int netId, String name, Map<String, String> values) {
                             if (netId != 0) {
                                 Log.d(TAG, "Can't set extra " + name + " for " + netId);
                                 return false;
@@ -475,18 +465,14 @@ public class WifiStateMachineTest {
                         }
                     });
 
-        when(mWifiNative.getNetworkVariable(anyInt(), anyString())).then(
-                new Answer<String>() {
-                    @Override
-                    public String answer(InvocationOnMock invocationOnMock) throws Throwable {
-                        Object args[] = invocationOnMock.getArguments();
-                        Integer netId = (Integer) args[0];
-                        String name = (String) args[1];
+        when(mWifiNative.getNetworkVariable(anyInt(), anyString()))
+                .then(new AnswerWithArguments<String>() {
+                    public String answer(int netId, String name) throws Throwable {
                         if (netId != 0) {
                             Log.d(TAG, "Can't find var " + name + " for " + netId);
                             return null;
                         }
-                        String value = nameToValue.get(args[1]);
+                        String value = nameToValue.get(name);
                         if (value != null) {
                             Log.d(TAG, "Returning var " + name + " to " + value + " for " + netId);
                         } else {
@@ -576,43 +562,3 @@ public class WifiStateMachineTest {
         assertEquals("DisconnectedState", getCurrentState().getName());
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

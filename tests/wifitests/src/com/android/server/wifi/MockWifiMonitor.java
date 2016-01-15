@@ -27,8 +27,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.util.SparseArray;
 
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
+import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -55,19 +54,14 @@ public class MockWifiMonitor {
     }
 
     private final Map<String, SparseArray<Handler>> mHandlerMap = new HashMap<>();
-    private class RegisterHandlerAnswer implements Answer<Object> {
-        public Object answer(InvocationOnMock invocation) {
-            String iface = (String) invocation.getArguments()[0];
-            int what = (int) invocation.getArguments()[1];
-            Handler handler = (Handler) invocation.getArguments()[2];
-
+    private class RegisterHandlerAnswer extends AnswerWithArguments<Void> {
+        public void answer(String iface, int what, Handler handler) {
             SparseArray<Handler> ifaceHandlers = mHandlerMap.get(iface);
             if (ifaceHandlers == null) {
                 ifaceHandlers = new SparseArray<>();
                 mHandlerMap.put(iface, ifaceHandlers);
             }
             ifaceHandlers.put(what, handler);
-            return null;
         }
     }
 
