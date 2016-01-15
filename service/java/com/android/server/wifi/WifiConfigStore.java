@@ -414,17 +414,17 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicBoolean enableFullBandScanWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableChipWakeUpWhenAssociated = new AtomicBoolean(true);
     public final AtomicBoolean enableRssiPollWhenAssociated = new AtomicBoolean(true);
-    public final AtomicInteger thresholdSaturatedRssi5 = new AtomicInteger(
+    public AtomicInteger thresholdSaturatedRssi5 = new AtomicInteger(
             WifiQualifiedNetworkSelector.RSSI_SATURATION_5G_BAND);
-    public final AtomicInteger thresholdQualifiedRssi5 = new AtomicInteger(
+    public AtomicInteger thresholdQualifiedRssi5 = new AtomicInteger(
             WifiQualifiedNetworkSelector.QUALIFIED_RSSI_5G_BAND);
-    public final AtomicInteger thresholdMinimumRssi5 = new AtomicInteger(
+    public AtomicInteger thresholdMinimumRssi5 = new AtomicInteger(
             WifiQualifiedNetworkSelector.MINIMUM_5G_ACCEPT_RSSI);
-    public final AtomicInteger thresholdSaturatedRssi24 = new AtomicInteger(
+    public AtomicInteger thresholdSaturatedRssi24 = new AtomicInteger(
             WifiQualifiedNetworkSelector.RSSI_SATURATION_2G_BAND);
-    public final AtomicInteger thresholdQualifiedRssi24 = new AtomicInteger(
+    public AtomicInteger thresholdQualifiedRssi24 = new AtomicInteger(
             WifiQualifiedNetworkSelector.QUALIFIED_RSSI_24G_BAND);
-    public final AtomicInteger thresholdMinimumRssi24 = new AtomicInteger(
+    public AtomicInteger thresholdMinimumRssi24 = new AtomicInteger(
             WifiQualifiedNetworkSelector.MINIMUM_2G_ACCEPT_RSSI);
     public final AtomicInteger maxTxPacketForNetworkSwitching = new AtomicInteger(40);
     public final AtomicInteger maxRxPacketForNetworkSwitching = new AtomicInteger(80);
@@ -438,9 +438,9 @@ public class WifiConfigStore extends IpConfigStore {
     public final AtomicInteger wifiDisconnectedLongScanIntervalMilli = new AtomicInteger(120000);
     public final AtomicInteger wifiAssociatedShortScanIntervalMilli = new AtomicInteger(20000);
     public final AtomicInteger wifiAssociatedLongScanIntervalMilli = new AtomicInteger(180000);
-    public final AtomicInteger currentNetworkBoost = new AtomicInteger(
+    public AtomicInteger currentNetworkBoost = new AtomicInteger(
             WifiQualifiedNetworkSelector.SAME_NETWORK_AWARD);
-    public final AtomicInteger bandAward5Ghz = new AtomicInteger(
+    public AtomicInteger bandAward5Ghz = new AtomicInteger(
             WifiQualifiedNetworkSelector.BAND_AWARD_5GHz);
     private static final Map<String, Object> sKeyMap = new HashMap<>();
 
@@ -889,7 +889,7 @@ public class WifiConfigStore extends IpConfigStore {
      *
      * @return Wificonfiguration
      */
-    WifiConfiguration getWifiConfiguration(int netId) {
+    public WifiConfiguration getWifiConfiguration(int netId) {
         return mConfiguredNetworks.get(netId);
     }
 
@@ -897,7 +897,7 @@ public class WifiConfigStore extends IpConfigStore {
      * Get the Wificonfiguration for this key
      * @return Wificonfiguration
      */
-    WifiConfiguration getWifiConfiguration(String key) {
+    public WifiConfiguration getWifiConfiguration(String key) {
         return mConfiguredNetworks.getByConfigKey(key);
     }
 
@@ -1593,13 +1593,13 @@ public class WifiConfigStore extends IpConfigStore {
         if (reason == WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE) {
             updateNetworkStatus(config, WifiConfiguration.NetworkSelectionStatus
                     .NETWORK_SELECTION_ENABLE);
-            mLocalLog.log("Enable network:" + config.configKey());
+            localLog("Enable network:" + config.configKey());
             return true;
         }
 
         networkStatus.incrementDisableReasonCounter(reason);
         if (DBG) {
-            mLocalLog.log(TAG + "Network:" + config.SSID + "disable counter of "
+            localLog("Network:" + config.SSID + "disable counter of "
                     + WifiConfiguration.NetworkSelectionStatus.getNetworkDisableReasonString(reason)
                     + " is: " + networkStatus.getDisableReasonCounter(reason) + "and threshold is: "
                     + NETWORK_SELECTION_DISABLE_THRESHOLD[reason]);
@@ -1622,7 +1622,7 @@ public class WifiConfigStore extends IpConfigStore {
     boolean tryEnableQualifiedNetwork(int networkId) {
         WifiConfiguration config = getWifiConfiguration(networkId);
         if (config == null) {
-            mLocalLog.log(TAG + ": updateQualifiedNetworkstatus invalid network.");
+            localLog("updateQualifiedNetworkstatus invalid network.");
             return false;
         }
         return tryEnableQualifiedNetwork(config);
@@ -1660,30 +1660,29 @@ public class WifiConfigStore extends IpConfigStore {
      *         true the input config file has been changed
      */
     boolean updateNetworkStatus(WifiConfiguration config, int reason) {
-        mLocalLog.log(TAG + (config == null ? null : config.SSID));
+        localLog("updateNetworkStatus:" + (config == null ? null : config.SSID));
         if (config == null) {
-            mLocalLog.log(TAG + "invalid network");
             return false;
         }
 
         WifiConfiguration.NetworkSelectionStatus networkStatus = config.getNetworkSelectionStatus();
         if (reason < 0 || reason >= WifiConfiguration.NetworkSelectionStatus
                 .NETWORK_SELECTION_DISABLED_MAX) {
-            mLocalLog.log(TAG + "Invalid Network disable reason");
+            localLog("Invalid Network disable reason:" + reason);
             return false;
         }
 
         if (reason == WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE) {
             if (networkStatus.isNetworkEnabled()) {
                 if (DBG) {
-                    mLocalLog.log(TAG + "Need not change Qualified network Selection status since"
+                    localLog("Need not change Qualified network Selection status since"
                             + " already enabled");
                 }
                 return false;
             }
             //enable the network
             if (!mWifiNative.enableNetwork(config.networkId, false)) {
-                Log.e(TAG, "fail to disable network: " + config.SSID + " With reason:"
+                localLog("fail to disable network: " + config.SSID + " With reason:"
                         + WifiConfiguration.NetworkSelectionStatus
                         .getNetworkDisableReasonString(reason));
                 return false;
@@ -1697,7 +1696,7 @@ public class WifiConfigStore extends IpConfigStore {
             networkStatus.clearDisableReasonCounter();
             String disableTime = DateFormat.getDateTimeInstance().format(new Date());
             if (DBG) {
-                mLocalLog.log(TAG + "Re-enable network: " + config.SSID + " at " + disableTime);
+                localLog("Re-enable network: " + config.SSID + " at " + disableTime);
             }
             sendConfiguredNetworksChangedBroadcast(config, WifiManager.CHANGE_REASON_CONFIG_CHANGE);
         } else {
@@ -1705,7 +1704,7 @@ public class WifiConfigStore extends IpConfigStore {
             if (networkStatus.isNetworkPermanentlyDisabled()) {
                 //alreay permanent disable
                 if (DBG) {
-                    mLocalLog.log(TAG + "Do nothing. Alreay permanent disabled! "
+                    localLog("Do nothing. Alreay permanent disabled! "
                             + WifiConfiguration.NetworkSelectionStatus
                             .getNetworkDisableReasonString(reason));
                 }
@@ -1715,7 +1714,7 @@ public class WifiConfigStore extends IpConfigStore {
                     .DISABLED_TLS_VERSION_MISMATCH) {
                 //alreay temporarily disable
                 if (DBG) {
-                    mLocalLog.log(TAG + "Do nothing. Already temporarily disabled! "
+                    localLog("Do nothing. Already temporarily disabled! "
                             + WifiConfiguration.NetworkSelectionStatus
                             .getNetworkDisableReasonString(reason));
                 }
@@ -1726,7 +1725,7 @@ public class WifiConfigStore extends IpConfigStore {
                 mWifiNative.disableNetwork(config.networkId);
                 sendConfiguredNetworksChangedBroadcast(config,
                         WifiManager.CHANGE_REASON_CONFIG_CHANGE);
-                mLocalLog.log(TAG + "Disable network " + config.SSID + " reason:"
+                localLog("Disable network " + config.SSID + " reason:"
                         + WifiConfiguration.NetworkSelectionStatus
                         .getNetworkDisableReasonString(reason));
             }
@@ -1741,7 +1740,7 @@ public class WifiConfigStore extends IpConfigStore {
             networkStatus.setNetworkSelectionDisableReason(reason);
             if (DBG) {
                 String disableTime = DateFormat.getDateTimeInstance().format(new Date());
-                mLocalLog.log(TAG + "Network:" + config.SSID + "Configure new status:"
+                localLog("Network:" + config.SSID + "Configure new status:"
                         + networkStatus.getNetworkStatusString() + " with reason:"
                         + networkStatus.getNetworkDisableReasonString() + " at: " + disableTime);
             }
@@ -3657,7 +3656,7 @@ public class WifiConfigStore extends IpConfigStore {
         return isEncryptionEap(configEncrypt);
     }
 
-    private boolean isOpenNetwork(String encryption) {
+    public boolean isOpenNetwork(String encryption) {
         if (!isEncryptionWep(encryption) && !isEncryptionPsk(encryption)
                 && !isEncryptionEap(encryption)) {
             return true;
@@ -3665,12 +3664,12 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
-    boolean isOpenNetwork(ScanResult scan) {
+    public boolean isOpenNetwork(ScanResult scan) {
         String scanResultEncrypt = scan.capabilities;
         return isOpenNetwork(scanResultEncrypt);
     }
 
-    boolean isOpenNetwork(WifiConfiguration config) {
+    public boolean isOpenNetwork(WifiConfiguration config) {
         String configEncrypt = config.configKey();
         return isOpenNetwork(configEncrypt);
     }
@@ -4402,7 +4401,7 @@ public class WifiConfigStore extends IpConfigStore {
         mWifiNative.setBssidBlacklist(list);
     }
 
-    boolean isBssidBlacklisted(String bssid) {
+    public boolean isBssidBlacklisted(String bssid) {
         return mBssidBlacklist.contains(bssid);
     }
 

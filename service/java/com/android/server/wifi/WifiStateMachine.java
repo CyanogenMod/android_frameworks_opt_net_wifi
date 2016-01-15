@@ -2156,11 +2156,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
     }
 
-    boolean isConnected() {
+    public boolean isConnected() {
         return getCurrentState() == mConnectedState;
     }
 
-    boolean isDisconnected() {
+    public boolean isDisconnected() {
         return getCurrentState() == mDisconnectedState;
     }
 
