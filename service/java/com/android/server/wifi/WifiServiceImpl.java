@@ -118,7 +118,7 @@ import java.util.Map;
  *
  * @hide
  */
-public final class WifiServiceImpl extends IWifiManager.Stub {
+public class WifiServiceImpl extends IWifiManager.Stub {
     private static final String TAG = "WifiService";
     private static final boolean DBG = true;
     private static final boolean VDBG = false;
@@ -339,7 +339,8 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         wifiThread.start();
         mClientHandler = new ClientHandler(wifiThread.getLooper());
         mWifiStateMachineHandler = new WifiStateMachineHandler(wifiThread.getLooper());
-        mWifiController = new WifiController(mContext, this, wifiThread.getLooper());
+        mWifiController = new WifiController(mContext, mWifiStateMachine,
+                mSettingsStore, mLocks, wifiThread.getLooper(), facade);
     }
 
 
@@ -1565,7 +1566,7 @@ public final class WifiServiceImpl extends IWifiManager.Stub {
         }
     }
 
-    class LockList {
+    public class LockList {
         private List<WifiLock> mList;
 
         private LockList() {
