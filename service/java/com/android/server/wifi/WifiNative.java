@@ -16,6 +16,12 @@
 
 package com.android.server.wifi;
 
+import android.content.Context;
+import android.content.Intent;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.IntentFilter;
+import android.content.BroadcastReceiver;
 import android.net.wifi.RttManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
@@ -34,12 +40,7 @@ import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
-import android.content.Context;
-import android.content.Intent;
-import android.app.AlarmManager;
-import android.app.PendingIntent;
-import android.content.IntentFilter;
-import android.content.BroadcastReceiver;
+
 import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
@@ -48,15 +49,25 @@ import com.android.server.wifi.util.InformationElementUtil;
 
 import libcore.util.HexEncoding;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+
 
 /**
  * Native calls for bring up/shut down of the supplicant daemon and for
@@ -370,6 +381,20 @@ public class WifiNative {
         return doIntCommand("ADD_NETWORK");
     }
 
+    public boolean setNetworkExtra(int netId, String name, Map<String, String> values) {
+        final String encoded;
+        try {
+            encoded = URLEncoder.encode(new JSONObject(values).toString(), "UTF-8");
+        } catch (NullPointerException e) {
+            Log.e(TAG, "Unable to serialize networkExtra: " + e.toString());
+            return false;
+        } catch (UnsupportedEncodingException e) {
+            Log.e(TAG, "Unable to serialize networkExtra: " + e.toString());
+            return false;
+        }
+        return setNetworkVariable(netId, name, "\"" + encoded + "\"");
+    }
+
     public boolean setNetworkVariable(int netId, String name, String value) {
         if (TextUtils.isEmpty(name) || TextUtils.isEmpty(value)) return false;
         if (name.equals(WifiConfiguration.pskVarName)
@@ -377,6 +402,39 @@ public class WifiNative {
             return doBooleanCommandWithoutLogging("SET_NETWORK " + netId + " " + name + " " + value);
         } else {
             return doBooleanCommand("SET_NETWORK " + netId + " " + name + " " + value);
+        }
+    }
+
+    public Map<String, String> getNetworkExtra(int netId, String name) {
+        final String wrapped = getNetworkVariable(netId, name);
+        if (wrapped == null || !wrapped.startsWith("\"") || !wrapped.endsWith("\"")) {
+            return null;
+        }
+        try {
+            final String encoded = wrapped.substring(1, wrapped.length() - 1);
+            // This method reads a JSON dictionary that was written by setNetworkExtra(). However,
+            // on devices that upgraded from Marshmallow, it may encounter a legacy value instead -
+            // an FQDN stored as a plain string. If such a value is encountered, the JSONObject
+            // constructor will thrown a JSONException and the method will return null.
+            final JSONObject json = new JSONObject(URLDecoder.decode(encoded, "UTF-8"));
+            final Map<String, String> values = new HashMap<String, String>();
+            final Iterator<?> it = json.keys();
+            while (it.hasNext()) {
+                final String key = (String) it.next();
+                final Object value = json.get(key);
+                if (value instanceof String) {
+                    values.put(key, (String) value);
+                }
+            }
+            return values;
+        } catch (UnsupportedEncodingException e) {
+            Log.e(TAG, "Unable to serialize networkExtra: " + e.toString());
+            return null;
+        } catch (JSONException e) {
+            // This is not necessarily an error. This exception will also occur if we encounter a
+            // legacy FQDN stored as a plain string. We want to return null in this case as no JSON
+            // dictionary of extras was found.
+            return null;
         }
     }
 
