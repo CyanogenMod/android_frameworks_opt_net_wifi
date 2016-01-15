@@ -1174,8 +1174,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mWifiInfo = new WifiInfo();
         mWifiQualifiedNetworkSelector = new WifiQualifiedNetworkSelector(
                 mWifiConfigStore, mContext, this, mWifiInfo);
-        mSupplicantStateTracker = new SupplicantStateTracker(context, this, mWifiConfigStore,
-                getHandler());
+        mSupplicantStateTracker = mFacade.makeSupplicantStateTracker(
+                context, this, mWifiConfigStore, getHandler());
 
         mLinkProperties = new LinkProperties();
 
