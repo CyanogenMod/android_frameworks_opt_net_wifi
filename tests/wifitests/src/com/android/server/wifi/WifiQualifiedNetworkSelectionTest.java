@@ -27,18 +27,19 @@ import android.test.suitebuilder.annotation.SmallTest;
 
 import com.android.internal.R;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-
+import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
+import static org.mockito.Mockito.validateMockitoUsage;
 /**
  * Example Unit Test File
  */
@@ -56,6 +57,11 @@ public class WifiQualifiedNetworkSelectionTest {
         mWifiQualifiedNetworkSelector = new WifiQualifiedNetworkSelector(mWifiConfigStore, mContext,
                 mWifiStateMachine, mWifiInfo);
         mWifiQualifiedNetworkSelector.enableVerboseLogging(1);
+    }
+
+    @After
+    public void cleanup() {
+        validateMockitoUsage();
     }
 
     private WifiStateMachine mWifiStateMachine;
@@ -204,6 +210,7 @@ public class WifiQualifiedNetworkSelectionTest {
         ScanResult scanResult = scanDetails.get(1).getScanResult();
 
         mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
-        verify(mWifiStateMachine).sendMessage(WifiStateMachine.CMD_AUTO_ROAM, 1, 1, scanResult);
+        assertEquals("choose the wrong SSID", scanResult.SSID,
+                mWifiQualifiedNetworkSelector.getConnetionTargetNetwork().SSID);
     }
 }

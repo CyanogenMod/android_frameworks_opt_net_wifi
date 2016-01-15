@@ -3945,6 +3945,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             // there is no need to call the network selection code
             // in WifiAutoJoinController, instead,
             // just try to reconnect to the same SSID by triggering a roam
+            // The third parameter 1 means roam not from network selection but debouncing
             sendMessage(CMD_AUTO_ROAM, mLastNetworkId, 1, null);
         }
     }
