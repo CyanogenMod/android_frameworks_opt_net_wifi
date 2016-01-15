@@ -26,6 +26,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/klog.h>
 #include <linux/if.h>
 #include "wifi.h"
 #include "wifi_hal.h"
@@ -2182,6 +2183,47 @@ static jint android_net_wifi_stop_rssi_monitoring_native(JNIEnv *env, jclass cls
     return ret;
 }
 
+static jbyteArray android_net_wifi_readKernelLog(JNIEnv *env, jclass cls) {
+    JNIHelper helper(env);
+    ALOGV("Reading kernel logs");
+
+    int size = klogctl(/* SYSLOG_ACTION_SIZE_BUFFER */ 10, 0, 0);
+    if (size < 1) {
+        ALOGD("no kernel logs");
+        return helper.newByteArray(0).detach();
+    }
+
+    char *buf = (char *)malloc(size);
+    if (buf == NULL) {
+        ALOGD("can't allocate temporary storage");
+        return helper.newByteArray(0).detach();
+    }
+
+    int read = klogctl(/* SYSLOG_ACTION_READ_ALL */ 3, buf, size);
+    if (read < 0) {
+        ALOGD("can't read logs - %d", read);
+        free(buf);
+        return helper.newByteArray(0).detach();
+    } else {
+        ALOGV("read %d bytes", read);
+    }
+
+    if (read != size) {
+        ALOGV("read %d bytes, expecting %d", read, size);
+    }
+
+    JNIObject<jbyteArray> result = helper.newByteArray(read);
+    if (result.isNull()) {
+        ALOGD("can't allocate array");
+        free(buf);
+        return result.detach();
+    }
+
+    helper.setByteArrayRegion(result, 0, read, (jbyte*)buf);
+    free(buf);
+    return result.detach();
+}
+
 // ----------------------------------------------------------------------------
 
 /*
@@ -2279,7 +2321,7 @@ static JNINativeMethod gWifiMethods[] = {
             (void*)android_net_wifi_stop_rssi_monitoring_native},
     {"isGetChannelsForBandSupportedNative", "()Z",
             (void*)android_net_wifi_is_get_channels_for_band_supported},
-
+    {"readKernelLogNative", "()[B", (void*)android_net_wifi_readKernelLog}
 };
 
 /* User to register native functions */
