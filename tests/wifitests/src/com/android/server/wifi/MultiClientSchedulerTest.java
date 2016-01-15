@@ -81,21 +81,21 @@ public class MultiClientSchedulerTest {
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals(60000, schedule.base_period_ms);
+        assertEquals(40000, schedule.base_period_ms);
         assertBuckets(schedule, 0);
     }
 
     @Test
     public void singleRequest() {
         Collection<ScanSettings> requests = Collections.singleton(createRequest(
-                WifiScanner.WIFI_BAND_BOTH, 30000, 0, 20,
+                WifiScanner.WIFI_BAND_BOTH, 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT
         ));
 
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals(30000, schedule.base_period_ms);
+        assertEquals(20000, schedule.base_period_ms);
         assertBuckets(schedule, 1);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, false, true);
@@ -140,9 +140,9 @@ public class MultiClientSchedulerTest {
     @Test
     public void manyRequests() {
         Collection<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(WifiScanner.WIFI_BAND_BOTH, 30000, 0, 20,
+        requests.add(createRequest(WifiScanner.WIFI_BAND_BOTH, 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT));
-        requests.add(createRequest(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY, 20000, 0, 20,
+        requests.add(createRequest(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY, 15000, 0, 20,
                 WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT));
         requests.add(createRequest(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY, 10000, 0, 20,
                 WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT));
@@ -178,19 +178,19 @@ public class MultiClientSchedulerTest {
     @Test
     public void manyRequestsDifferentReportScans() {
         Collection<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(5175), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5175), 40000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL));
-        requests.add(createRequest(channelsToSpec(2400), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2400), 40000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(2450), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2450), 40000, 0, 20,
                 WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT));
-        requests.add(createRequest(channelsToSpec(5150), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5150), 40000, 0, 20,
                 WifiScanner.REPORT_EVENT_NO_BATCH));
 
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 40000, schedule.base_period_ms);
         assertBuckets(schedule, 1);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, false, true);
@@ -200,14 +200,14 @@ public class MultiClientSchedulerTest {
     @Test
     public void exceedMaxBatch() {
         Collection<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(5175), 30000, 10, 20,
+        requests.add(createRequest(channelsToSpec(5175), 20000, 10, 20,
                 WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL));
 
         mScheduler.setMaxBatch(5);
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 20000, schedule.base_period_ms);
         assertBuckets(schedule, 1);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, false, true);
@@ -218,14 +218,14 @@ public class MultiClientSchedulerTest {
     @Test
     public void defaultMaxBatch() {
         Collection<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(5175), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5175), 40000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL));
 
         mScheduler.setMaxBatch(6);
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 40000, schedule.base_period_ms);
         assertBuckets(schedule, 1);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, false, true);
@@ -262,18 +262,18 @@ public class MultiClientSchedulerTest {
     @Test
     public void optimalScheduleExceedsNumberOfAvailableBuckets() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(2400), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2400), 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
         requests.add(createRequest(channelsToSpec(2450), 10000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(5150), 60000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5150), 40000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
         mScheduler.setMaxBuckets(2);
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 20000, schedule.base_period_ms);
         assertBuckets(schedule, 2);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, true, true);
@@ -283,18 +283,18 @@ public class MultiClientSchedulerTest {
     @Test
     public void optimalScheduleExceedsNumberOfAvailableBuckets2() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(2400), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2400), 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(2450), 60000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2450), 40000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(5150), 3600000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5150), 2560000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
         mScheduler.setMaxBuckets(2);
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 20000, schedule.base_period_ms);
         assertBuckets(schedule, 2);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, true, true);
@@ -303,28 +303,28 @@ public class MultiClientSchedulerTest {
 
     /**
      * Ensure that a channel request is placed in the bucket closest to the original
-     * period and not the bucket it is initially placed in. Here the 21 min period is
-     * initially placed in the 15 min bucket, but that bucket is eliminated because it
-     * would be a 7th bucket. This test ensures that the request is placed in the 30 min
-     * bucket and not the 10 min bucket.
+     * period and not the bucket it is initially placed in. Here the 12 min period is
+     * initially placed in the 640s bucket, but that bucket is eliminated because it
+     * would be a 7th bucket. This test ensures that the request is placed in the 1280s
+     * bucket and not the 320s bucket.
      */
     @Test
     public void optimalScheduleExceedsNumberOfAvailableBucketsClosestToOriginal() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(2400), 60 * 1000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2400), 40 * 1000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(2450), 30 * 1000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2450), 20 * 1000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(5150), 300 * 1000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5150), 160 * 1000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(5175), 600 * 1000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5175), 320 * 1000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
         requests.add(createRequest(channelsToSpec(5600), 10 * 1000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(channelsToSpec(5650), 1800 * 1000, 0, 20,
+        requests.add(createRequest(channelsToSpec(5650), 1280 * 1000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
-        requests.add(createRequest(channelsToSpec(5660), 1260 * 1000, 0, 20, // 21 min
+        requests.add(createRequest(channelsToSpec(5660), 720 * 1000, 0, 20, // 12 min
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
         mScheduler.setMaxBuckets(6);
@@ -341,7 +341,7 @@ public class MultiClientSchedulerTest {
     @Test
     public void optimalScheduleExceedsMaxChannelsOnSingleBand() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(2400, 2450), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2400, 2450), 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
         mScheduler.setMaxBuckets(2);
@@ -349,7 +349,7 @@ public class MultiClientSchedulerTest {
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 20000, schedule.base_period_ms);
         assertBuckets(schedule, 1);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, true, true);
@@ -359,7 +359,7 @@ public class MultiClientSchedulerTest {
     @Test
     public void optimalScheduleExceedsMaxChannelsOnMultipleBands() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(2400, 2450, 5150), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2400, 2450, 5150), 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
         mScheduler.setMaxBuckets(2);
@@ -367,7 +367,7 @@ public class MultiClientSchedulerTest {
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 20000, schedule.base_period_ms);
         assertBuckets(schedule, 1);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, true, true);
@@ -377,9 +377,9 @@ public class MultiClientSchedulerTest {
     @Test
     public void optimalScheduleExceedsMaxChannelsOnMultipleBandsFromMultipleRequests() {
         ArrayList<ScanSettings> requests = new ArrayList<>();
-        requests.add(createRequest(channelsToSpec(2400, 2450), 30000, 0, 20,
+        requests.add(createRequest(channelsToSpec(2400, 2450), 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
-        requests.add(createRequest(WifiScanner.WIFI_BAND_5_GHZ, 30000, 0, 20,
+        requests.add(createRequest(WifiScanner.WIFI_BAND_5_GHZ, 20000, 0, 20,
                 WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
 
         mScheduler.setMaxBuckets(2);
@@ -387,7 +387,7 @@ public class MultiClientSchedulerTest {
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 30000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 20000, schedule.base_period_ms);
         assertBuckets(schedule, 1);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, true, true);
@@ -396,9 +396,9 @@ public class MultiClientSchedulerTest {
 
     @Test
     public void exactRequests() {
-        scheduleAndTestExactRequest(createRequest(WifiScanner.WIFI_BAND_BOTH, 30000, 0,
+        scheduleAndTestExactRequest(createRequest(WifiScanner.WIFI_BAND_BOTH, 20000, 0,
                 20, WifiScanner.REPORT_EVENT_AFTER_BUFFER_FULL));
-        scheduleAndTestExactRequest(createRequest(WifiScanner.WIFI_BAND_5_GHZ, 60000, 3,
+        scheduleAndTestExactRequest(createRequest(WifiScanner.WIFI_BAND_5_GHZ, 40000, 3,
                 13, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN));
         scheduleAndTestExactRequest(createRequest(WifiScanner.WIFI_BAND_5_GHZ_DFS_ONLY, 10000, 2,
                 10, WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT));
@@ -438,7 +438,7 @@ public class MultiClientSchedulerTest {
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        assertEquals("base_period_ms", 10000, schedule.base_period_ms);
+        assertEquals("base_period_ms", 20000, schedule.base_period_ms);
         assertBuckets(schedule, 2);
         for (ScanSettings request : requests) {
             assertSettingsSatisfied(schedule, request, false, true);
