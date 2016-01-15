@@ -2327,6 +2327,9 @@ static JNINativeMethod gWifiMethods[] = {
 /* User to register native functions */
 extern "C"
 jint Java_com_android_server_wifi_WifiNative_registerNatives(JNIEnv* env, jclass clazz) {
+    // initialization needed for unit test APK
+    JniConstants::init(env);
+
     return jniRegisterNativeMethods(env,
             "com/android/server/wifi/WifiNative", gWifiMethods, NELEM(gWifiMethods));
 }
