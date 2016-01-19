@@ -323,7 +323,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
         FrameworkFacade facade = new FrameworkFacade();
 
-        mTrafficPoller = new WifiTrafficPoller(mContext,
+        HandlerThread wifiThread = new HandlerThread("WifiService");
+        wifiThread.start();
+        mTrafficPoller = new WifiTrafficPoller(mContext, wifiThread.getLooper(),
                 WifiNative.getWlanNativeInterface().getInterfaceName());
         mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller, facade);
         mWifiStateMachine.enableRssiPolling(true);
@@ -335,8 +337,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);
         mSettingsStore = new WifiSettingsStore(mContext);
 
-        HandlerThread wifiThread = new HandlerThread("WifiService");
-        wifiThread.start();
         mClientHandler = new ClientHandler(wifiThread.getLooper());
         mWifiStateMachineHandler = new WifiStateMachineHandler(wifiThread.getLooper());
         mWifiController = new WifiController(mContext, mWifiStateMachine,
