@@ -315,8 +315,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
     WifiStateMachineHandler mWifiStateMachineHandler;
 
-    private WifiWatchdogStateMachine mWifiWatchdogStateMachine;
-
     private WifiController mWifiController;
 
     public WifiServiceImpl(Context context) {
@@ -400,9 +398,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         // If we are already disabled (could be due to airplane mode), avoid changing persist
         // state here
         if (wifiEnabled) setWifiEnabled(wifiEnabled);
-
-        mWifiWatchdogStateMachine = WifiWatchdogStateMachine.
-               makeWifiWatchdogStateMachine(mContext, mWifiStateMachine.getMessenger());
     }
 
     /**
@@ -1548,7 +1543,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             pw.println(l);
         }
 
-        mWifiWatchdogStateMachine.dump(fd, pw, args);
         pw.println();
         mWifiStateMachine.dump(fd, pw, args);
         pw.println();

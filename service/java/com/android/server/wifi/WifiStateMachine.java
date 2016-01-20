@@ -1003,8 +1003,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private State mL2ConnectedState = new L2ConnectedState();
     /* fetching IP after connection to access point (assoc+auth complete) */
     private State mObtainingIpState = new ObtainingIpState();
-    /* Waiting for link quality verification to be complete */
-    private State mVerifyingLinkState = new VerifyingLinkState();
     /* Connected with IP addr */
     private State mConnectedState = new ConnectedState();
     /* Roaming */
@@ -1346,7 +1344,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     addState(mConnectModeState, mDriverStartedState);
                         addState(mL2ConnectedState, mConnectModeState);
                             addState(mObtainingIpState, mL2ConnectedState);
-                            addState(mVerifyingLinkState, mL2ConnectedState);
                             addState(mConnectedState, mL2ConnectedState);
                             addState(mRoamingState, mL2ConnectedState);
                         addState(mDisconnectingState, mConnectModeState);
@@ -5510,8 +5507,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_SET_AP_CONFIG_COMPLETED:
                 case CMD_REQUEST_AP_CONFIG:
                 case CMD_RESPONSE_AP_CONFIG:
-                case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
-                case WifiWatchdogStateMachine.GOOD_LINK_DETECTED:
                 case CMD_NO_NETWORKS_PERIODIC_SCAN:
                 case CMD_DISABLE_P2P_RSP:
                 case WifiMonitor.SUP_REQUEST_IDENTITY:
@@ -6813,12 +6808,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case CMD_DISABLE_P2P_REQ:
                 s = "CMD_DISABLE_P2P_REQ";
-                break;
-            case WifiWatchdogStateMachine.GOOD_LINK_DETECTED:
-                s = "GOOD_LINK_DETECTED";
-                break;
-            case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
-                s = "POOR_LINK_DETECTED";
                 break;
             case WifiP2pServiceImpl.GROUP_CREATING_TIMED_OUT:
                 s = "GROUP_CREATING_TIMED_OUT";
@@ -8597,40 +8586,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
       }
     }
 
-    // Note: currently, this state is never used, because WifiWatchdogStateMachine unconditionally
-    // sets mPoorNetworkDetectionEnabled to false.
-    class VerifyingLinkState extends State {
-        @Override
-        public void enter() {
-            log(getName() + " enter");
-            setNetworkDetailedState(DetailedState.VERIFYING_POOR_LINK);
-            mWifiConfigStore.updateStatus(mLastNetworkId, DetailedState.VERIFYING_POOR_LINK);
-            sendNetworkStateChangeBroadcast(mLastBssid);
-            // End roaming
-            mAutoRoaming = false;
-        }
-        @Override
-        public boolean processMessage(Message message) {
-            logStateAndMessage(message, this);
-
-            switch (message.what) {
-                case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
-                    // Stay here
-                    log(getName() + " POOR_LINK_DETECTED: no transition");
-                    break;
-                case WifiWatchdogStateMachine.GOOD_LINK_DETECTED:
-                    log(getName() + " GOOD_LINK_DETECTED: transition to CONNECTED");
-                    sendConnectedState();
-                    transitionTo(mConnectedState);
-                    break;
-                default:
-                    if (DBG) log(getName() + " what=" + message.what + " NOT_HANDLED");
-                    return NOT_HANDLED;
-            }
-            return HANDLED;
-        }
-    }
-
     private void sendConnectedState() {
         // If this network was explicitly selected by the user, evaluate whether to call
         // explicitlySelected() so the system can treat it appropriately.
@@ -8686,9 +8641,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 WifiConfiguration.ROAMING_FAILURE_IP_CONFIG);
                     }
                     return NOT_HANDLED;
-                case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
-                    if (DBG) log("Roaming and Watchdog reports poor link -> ignore");
-                    return HANDLED;
                 case CMD_UNWANTED_NETWORK:
                     if (DBG) log("Roaming and CS doesnt want the network -> ignore");
                     return HANDLED;
@@ -8882,10 +8834,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_UPDATE_ASSOCIATED_SCAN_PERMISSION:
                     updateAssociatedScanPermission();
-                    break;
-                case WifiWatchdogStateMachine.POOR_LINK_DETECTED:
-                    if (DBG) log("Watchdog reports poor link");
-                    transitionTo(mVerifyingLinkState);
                     break;
                 case CMD_UNWANTED_NETWORK:
                     if (message.arg1 == NETWORK_STATUS_UNWANTED_DISCONNECT) {
