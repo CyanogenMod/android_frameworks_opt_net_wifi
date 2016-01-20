@@ -123,7 +123,8 @@ include $(CLEAR_VARS)
 LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/java
 LOCAL_SRC_FILES := $(call all-java-files-under, java) \
 	$(call all-Iaidl-files-under, java) \
-	$(call all-logtags-files-under, java)
+	$(call all-logtags-files-under, java) \
+	$(call all-proto-files-under, proto)
 
 ifndef INCLUDE_NAN_FEATURE
 LOCAL_SRC_FILES := $(filter-out $(call all-java-files-under, \
@@ -134,6 +135,7 @@ LOCAL_JAVA_LIBRARIES := bouncycastle conscrypt services
 LOCAL_REQUIRED_MODULES := services
 LOCAL_MODULE_TAGS :=
 LOCAL_MODULE := wifi-service
+LOCAL_PROTOC_OPTIMIZE_TYPE := nano
 
 include $(BUILD_JAVA_LIBRARY)
 

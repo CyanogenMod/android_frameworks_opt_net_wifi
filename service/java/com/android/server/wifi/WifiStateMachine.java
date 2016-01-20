@@ -16,6 +16,17 @@
 
 package com.android.server.wifi;
 
+import static android.net.wifi.WifiManager.WIFI_AP_STATE_DISABLED;
+import static android.net.wifi.WifiManager.WIFI_AP_STATE_DISABLING;
+import static android.net.wifi.WifiManager.WIFI_AP_STATE_ENABLED;
+import static android.net.wifi.WifiManager.WIFI_AP_STATE_ENABLING;
+import static android.net.wifi.WifiManager.WIFI_AP_STATE_FAILED;
+import static android.net.wifi.WifiManager.WIFI_STATE_DISABLED;
+import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
+import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
+import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
+import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
+
 import android.Manifest;
 import android.app.ActivityManager;
 import android.app.AlarmManager;
@@ -122,17 +133,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
-import static android.net.wifi.WifiManager.WIFI_AP_STATE_DISABLED;
-import static android.net.wifi.WifiManager.WIFI_AP_STATE_DISABLING;
-import static android.net.wifi.WifiManager.WIFI_AP_STATE_ENABLED;
-import static android.net.wifi.WifiManager.WIFI_AP_STATE_ENABLING;
-import static android.net.wifi.WifiManager.WIFI_AP_STATE_FAILED;
-import static android.net.wifi.WifiManager.WIFI_STATE_DISABLED;
-import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
-import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
-import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
-import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
-
 /**
  * TODO:
  * Deprecate WIFI_STATE_UNKNOWN
@@ -188,6 +188,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         Log.d(getName(), s);
     }
 
+    private WifiMetrics mWifiMetrics;
     private WifiMonitor mWifiMonitor;
     private WifiNative mWifiNative;
     private WifiConfigStore mWifiConfigStore;
@@ -230,7 +231,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     // Below booleans are configurations coming from the Developper Settings
     private boolean mEnableAssociatedNetworkSwitchingInDevSettings = true;
     private boolean mHalBasedPnoEnableInDevSettings = false;
-
 
     private int mHalFeatureSet = 0;
     private static int mPnoResultFound = 0;
@@ -1139,8 +1139,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private FrameworkFacade mFacade;
 
     public WifiStateMachine(Context context, WifiTrafficPoller trafficPoller,
-                            FrameworkFacade facade) {
+                            FrameworkFacade facade, WifiMetrics wifiMetrics) {
         super("WifiStateMachine");
+        mWifiMetrics = wifiMetrics;
         mContext = context;
         mFacade = facade;
         mWifiNative = WifiNative.getWlanNativeInterface();
@@ -2714,7 +2715,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         } else {
             pw.println("mUntrustedNetworkFactory is not initialized");
         }
-
+        pw.println();
+        updateWifiMetrics();
+        mWifiMetrics.dump(fd, pw, args);
+        pw.println();
+        mNetworkFactory.dump(fd, pw, args);
+        mUntrustedNetworkFactory.dump(fd, pw, args);
         pw.println();
 
         mWifiConfigStore.dump(fd, pw, args);
@@ -3932,10 +3938,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         synchronized (mScanResultCache) {
             mScanResults = scanResults;
             mNumScanResultsReturned = mScanResults.size();
-
             for (ScanDetail resultDetail : mScanResults) {
                 mScanResultCache.put(resultDetail.getNetworkDetail(), resultDetail);
             }
+        }
+        if (mNumScanResultsReturned > 0) {
+            mWifiMetrics.incrementNonEmptyScanResultCount();
+        } else {
+            mWifiMetrics.incrementEmptyScanResultCount();
         }
 
         mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
@@ -4798,26 +4808,26 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 && stateChangeResult.wifiSsid != null) {
             String SSID = stateChangeResult.wifiSsid.toString();
             String currentSSID = mWifiInfo.getSSID();
-            if (SSID != null
-                    && currentSSID != null
-                    && !SSID.equals(WifiSsid.NONE)) {
-                    // Remove quote before comparing
-                    if (SSID.length() >= 2 && SSID.charAt(0) == '"'
-                            && SSID.charAt(SSID.length() - 1) == '"')
-                    {
-                        SSID = SSID.substring(1, SSID.length() - 1);
-                    }
-                    if (currentSSID.length() >= 2 && currentSSID.charAt(0) == '"'
-                            && currentSSID.charAt(currentSSID.length() - 1) == '"') {
-                        currentSSID = currentSSID.substring(1, currentSSID.length() - 1);
-                    }
-                    if ((!SSID.equals(currentSSID)) && (getCurrentState() == mConnectedState)) {
-                        lastConnectAttemptTimestamp = System.currentTimeMillis();
-                        targetWificonfiguration
-                            = mWifiConfigStore.getWifiConfiguration(mWifiInfo.getNetworkId());
-                        transitionTo(mRoamingState);
-                    }
-             }
+            if (SSID != null && currentSSID != null && !SSID.equals(WifiSsid.NONE)) {
+                // Remove quote before comparing
+                if (SSID.length() >= 2 && SSID.charAt(0) == '"'
+                        && SSID.charAt(SSID.length() - 1) == '"') {
+                    SSID = SSID.substring(1, SSID.length() - 1);
+                }
+                if (currentSSID.length() >= 2 && currentSSID.charAt(0) == '"'
+                        && currentSSID.charAt(currentSSID.length() - 1) == '"') {
+                    currentSSID = currentSSID.substring(1, currentSSID.length() - 1);
+                }
+                if ((!SSID.equals(currentSSID)) && (getCurrentState() == mConnectedState)) {
+                    lastConnectAttemptTimestamp = System.currentTimeMillis();
+                    //Create new connection event for connection attempt.
+                    mWifiMetrics.startConnectionEvent(mWifiInfo,
+                            WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE);
+                    targetWificonfiguration =
+                            mWifiConfigStore.getWifiConfiguration(mWifiInfo.getNetworkId());
+                    transitionTo(mRoamingState);
+                }
+            }
         }
 
         mWifiInfo.setSSID(stateChangeResult.wifiSsid);
@@ -4985,7 +4995,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         setSuspendOptimizationsNative(SUSPEND_DUE_TO_DHCP, true);
         mWifiNative.setPowerSave(true);
 
-        mWifiP2pChannel.sendMessage(WifiP2pServiceImpl.BLOCK_DISCOVERY, WifiP2pServiceImpl.DISABLED);
+        mWifiP2pChannel.sendMessage(WifiP2pServiceImpl.BLOCK_DISCOVERY,
+                WifiP2pServiceImpl.DISABLED);
 
         // Set the coexistence mode back to its default value
         mWifiNative.setBluetoothCoexistenceMode(
@@ -7160,7 +7171,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                                 // Remember time of last connection attempt
                                 lastConnectAttemptTimestamp = System.currentTimeMillis();
-
+                                //Create clearcut connection event of type USER_SELECTED
+                                mWifiMetrics.startConnectionEvent(mWifiInfo,
+                                        WifiMetricsProto.ConnectionEvent.ROAM_USER_SELECTED);
                                 mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
 
                                 // As a courtesy to the caller, trigger a scan now
@@ -7204,6 +7217,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mWifiQualifiedNetworkSelector.enableNetworkByUser(config);
                         // Remember time of last connection attempt
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
+                        mWifiMetrics.startConnectionEvent(mWifiInfo,
+                                WifiMetricsProto.ConnectionEvent.ROAM_USER_SELECTED);
+                        mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
                     }
                     // Cancel auto roam requests
                     mTargetNetworkId = netId;
@@ -7355,6 +7371,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_REASSOCIATE:
                     lastConnectAttemptTimestamp = System.currentTimeMillis();
+                    mWifiMetrics.startConnectionEvent(mWifiInfo);
                     mWifiNative.reassociate();
                     break;
                 case CMD_RELOAD_TLS_AND_RECONNECT:
@@ -7362,6 +7379,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         logd("Reconnecting to give a chance to un-connected TLS networks");
                         mWifiNative.disconnect();
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
+                        mWifiMetrics.startConnectionEvent(mWifiInfo);
                         mWifiNative.reconnect();
                     }
                     break;
@@ -7444,6 +7462,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
                             lastConnectUid) && mWifiNative.reconnect()) {
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
+                        mWifiMetrics.startConnectionEvent(mWifiInfo,
+                                WifiMetricsProto.ConnectionEvent.ROAM_UNRELATED);
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
                         config = mWifiConfigStore.getWifiConfiguration(netId);
                         if (config != null
@@ -7604,6 +7624,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ true,
                             message.sendingUid) && mWifiNative.reconnect()) {
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
+                        mWifiMetrics.startConnectionEvent(mWifiInfo,
+                                WifiMetricsProto.ConnectionEvent.ROAM_USER_SELECTED);
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
                         /* The state tracker handles enabling networks upon completion/failure */
@@ -8128,12 +8150,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             }
                             log("DHCP failure count=" + count);
                         }
+                        mWifiMetrics.endConnectionEvent(0,
+                                WifiMetricsProto.ConnectionEvent.HLF_DHCP);
                         handleIPv4Failure(DhcpStateMachine.DHCP_FAILURE);
                         // As above, we transition to mDisconnectingState via updateLinkProperties.
                     }
                   break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                     handleSuccessfulIpConfiguration();
+                    mWifiMetrics.endConnectionEvent(0, WifiMetricsProto.ConnectionEvent.HLF_NONE);
                     sendConnectedState();
                     transitionTo(mConnectedState);
                     break;
@@ -9036,6 +9061,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     if (ret) {
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
+                        mWifiMetrics.startConnectionEvent(mWifiInfo);
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
                         // replyToMessage(message, WifiManager.CONNECT_NETWORK_SUCCEEDED);
@@ -9257,6 +9283,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                     /* Ignore network disconnect */
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
+                    // Interpret this as an L2 connection failure
+                    // End current connection event and log L2 reason code.
+                    mWifiMetrics.endConnectionEvent(message.arg2,
+                            WifiMetricsProto.ConnectionEvent.HLF_UNKNOWN);
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     StateChangeResult stateChangeResult = (StateChangeResult) message.obj;
@@ -9480,6 +9510,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mSourceMessage.recycle();
                         mSourceMessage = null;
                         transitionTo(mDisconnectedState);
+                        mWifiMetrics.endConnectionEvent(
+                                message.arg1, WifiMetricsProto.ConnectionEvent.HLF_UNKNOWN);
                     } else {
                         if (DBG) log("Ignore unspecified fail event during WPS connection");
                     }
@@ -10118,4 +10150,48 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 || reason == 23         // IEEE_802_1X_AUTH_FAILED
                 || reason == 34;        // DISASSOC_LOW_ACK
     }
+
+    /**
+     * Update WifiMetrics before dumping
+     */
+    void updateWifiMetrics() {
+        int numSavedNetworks = mWifiConfigStore.getConfiguredNetworksSize();
+        int numOpenNetworks = 0;
+        int numPersonalNetworks = 0;
+        int numEnterpriseNetworks = 0;
+        int numNetworksAddedByUser = 0;
+        int numNetworksAddedByApps = 0;
+        for (WifiConfiguration config : mWifiConfigStore.getConfiguredNetworks()) {
+            if (config.allowedAuthAlgorithms.get(WifiConfiguration.AuthAlgorithm.OPEN)) {
+                numOpenNetworks++;
+            } else if (config.isEnterprise()) {
+                numEnterpriseNetworks++;
+            } else {
+                numPersonalNetworks++;
+            }
+            if (config.selfAdded) {
+                numNetworksAddedByUser++;
+            } else {
+                numNetworksAddedByApps++;
+            }
+        }
+        mWifiMetrics.setNumSavedNetworks(numSavedNetworks);
+        mWifiMetrics.setNumOpenNetworks(numOpenNetworks);
+        mWifiMetrics.setNumPersonalNetworks(numPersonalNetworks);
+        mWifiMetrics.setNumEnterpriseNetworks(numEnterpriseNetworks);
+        mWifiMetrics.setNumNetworksAddedByUser(numNetworksAddedByUser);
+        mWifiMetrics.setNumNetworksAddedByApps(numNetworksAddedByApps);
+
+        /* <TODO> decide how to access WifiServiecImpl.isLocationEnabled() or if to do it manually
+        mWifiMetrics.setIsLocationEnabled(Settings.Secure.getInt(
+                mContext.getContentResolver(),
+                Settings.Secure.LOCATION_MODE, Settings.Secure.LOCATION_MODE_OFF)
+                != Settings.Secure.LOCATION_MODE_OFF);
+                */
+
+        /* <TODO> decide how statemachine will access WifiSettingsStore
+        mWifiMetrics.setIsScanningAlwaysEnabled(mSettingsStore.isScanningAlwaysAvailable());
+         */
+    }
 }
+
