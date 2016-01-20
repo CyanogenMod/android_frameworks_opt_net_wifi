@@ -33,7 +33,6 @@ import com.android.internal.R;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -124,8 +123,8 @@ class WifiQualifiedNetworkSelector {
         mWifiConfigStore = configureStore;
         mWifiStateMachine = stateMachine;
         mWifiInfo = wifiInfo;
-
-                context.getSystemService(Context.NETWORK_SCORE_SERVICE);
+        mScoreManager =
+                (NetworkScoreManager) context.getSystemService(Context.NETWORK_SCORE_SERVICE);
         if (mScoreManager != null) {
             mNetworkScoreCache = new WifiNetworkScoreCache(context);
             mScoreManager.registerNetworkScoreCache(NetworkKey.TYPE_WIFI, mNetworkScoreCache);
@@ -544,7 +543,7 @@ class WifiQualifiedNetworkSelector {
             }
 
             if (ephemeral) {
-                if (mAllowUntrustedConnections) {
+                if (mAllowUntrustedConnections && mNetworkScoreCache != null) {
                     int netScore = mNetworkScoreCache.getNetworkScore(scanResult, false);
                     //get network score
                     if (netScore != WifiNetworkScoreCache.INVALID_NETWORK_SCORE) {
