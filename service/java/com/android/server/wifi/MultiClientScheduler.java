@@ -60,7 +60,7 @@ public class MultiClientScheduler extends WifiScanningScheduler {
     /**
      * Default period to use if no buckets are being scheduled
      */
-    private static final int DEFAULT_PERIOD_MS = 60000;
+    private static final int DEFAULT_PERIOD_MS = 40000;
     /**
      * Scan report threshold percentage to assign to the schedule by default
      * @see com.android.server.wifi.WifiNative.ScanSettings#report_threshold_percent
@@ -69,35 +69,34 @@ public class MultiClientScheduler extends WifiScanningScheduler {
 
     /**
      * List of predefined periods (in ms) that buckets can be scheduled at. Ordered by preference
-     * for if there are not enough buckets for all periods. All periods MUST be multiples of
-     * PERIOD_MIN_GCD_MS and SHOULD be an integer multiple of the next shortest period. These
-     * requirements allow scans to be scheduled more efficiently because scan requests with
+     * if there are not enough buckets for all periods. All periods MUST be 2^N * PERIOD_MIN_GCD_MS.
+     * This requirement allows scans to be scheduled more efficiently because scan requests with
      * intersecting channels will result in those channels being scanned exactly once at the smaller
-     * period. If this was not the case and two requests had channel 5 with periods of 15 seconds
-     * and 25 seconds then channel 5 would be scanned 296  (3600/15 + 3600/25 - 3500/75) times an
-     * hour instead of 240 times an hour (3600/15) if the 25s scan is rescheduled at 30s. This is
-     * less important with higher periods as it has significantly less impact. Ranking could be done
-     * by favoring shorter or longer; however, this would result in straying further from the
-     * requested period and possibly power implications if the scan is scheduled at a significantly
-     * lower period.
+     * period and no unnecessary scan being scheduled. If this was not the case and two requests
+     * had channel 5 with periods of 15 seconds and 25 seconds then channel 5 would be scanned
+     * 296  (3600/15 + 3600/25 - 3500/75) times an hour instead of 240 times an hour (3600/15) if
+     * the 25s scan is rescheduled at 30s. This is less important with higher periods as it has
+     * significantly less impact. Ranking could be done by favoring shorter or longer; however,
+     * this would result in straying further from the requested period and possibly power
+     * implications if the scan is scheduled at a significantly lower period.
      *
      * For example if the hardware only supports 2 buckets and scans are requested with periods of
-     * 1m, 30s and 10s then the two buckets shceduled with have periods 1m and 30s and the 10s scan
-     * will be placed in the 30s bucket.
+     * 40s, 20s and 10s then the two buckets shceduled will have periods 40s and 20s and the 10s
+     * scan will be placed in the 20s bucket.
      *
      * If there are special scan requests such as exponential back off scan or context hub scan, we
      * always dedicate a bucket for each type. Regular scan requests will be packed into the
      * remaining buckets.
      */
     private static final int[] PREDEFINED_BUCKET_PERIODS = {
-        6 * PERIOD_MIN_GCD_MS,   // 1m
-        3 * PERIOD_MIN_GCD_MS,   // 30s
-        30 * PERIOD_MIN_GCD_MS,  // 5m
-        60 * PERIOD_MIN_GCD_MS,  // 10m
+        4 * PERIOD_MIN_GCD_MS,   // 40s
+        2 * PERIOD_MIN_GCD_MS,   // 20s
+        16 * PERIOD_MIN_GCD_MS,  // 160s
+        32 * PERIOD_MIN_GCD_MS,  // 320s
         1 * PERIOD_MIN_GCD_MS,   // 10s
-        180 * PERIOD_MIN_GCD_MS, // 30m
-        90 * PERIOD_MIN_GCD_MS,  // 15m
-        360 * PERIOD_MIN_GCD_MS, // 1h
+        128 * PERIOD_MIN_GCD_MS, // 1280s
+        64 * PERIOD_MIN_GCD_MS,  // 640s
+        256 * PERIOD_MIN_GCD_MS, // 2560s
         -1,                      // place holder for exponential back off scan
     };
 
@@ -138,6 +137,7 @@ public class MultiClientScheduler extends WifiScanningScheduler {
             ArraySet<Integer> channels = new ArraySet<Integer>();
             int exactBands = 0;
             int allBands = 0;
+            int bucketIndex = 0;
 
             for (int i = 0; i < settings.size(); ++i) {
                 WifiScanner.ScanSettings setting = settings.get(i);
@@ -165,11 +165,19 @@ public class MultiClientScheduler extends WifiScanningScheduler {
 
                 // For the bucket allocated to exponential back off scan, the values of
                 // the exponential back off scan related parameters from the very first
-                // setting in the settings list will be used as the settings for this bucket.
+                // setting in the settings list will be used to configure this bucket.
+                //
                 if (i == 0 && setting.maxPeriodInMs != 0
                         && setting.maxPeriodInMs != setting.periodInMs) {
-                    period = setting.periodInMs;
-                    maxPeriodInMs = setting.maxPeriodInMs;
+                    // Align the starting period with one of the pre-defined regular
+                    // scan periods. This will optimize the scan schedule when it has
+                    // both exponential back off scan and regular scan(s).
+                    bucketIndex = findBestRegularBucketIndex(setting.periodInMs,
+                                                     NUM_OF_REGULAR_BUCKETS);
+                    period = PREDEFINED_BUCKET_PERIODS[bucketIndex];
+                    maxPeriodInMs = (setting.maxPeriodInMs < period)
+                                    ? period
+                                    : setting.maxPeriodInMs;
                     stepCount = setting.stepCount;
                 }
 
