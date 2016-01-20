@@ -102,6 +102,7 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_start_sending_offloaded_packet = wifi_start_sending_offloaded_packet_stub;
     hal_fn->wifi_stop_sending_offloaded_packet = wifi_stop_sending_offloaded_packet_stub;
     hal_fn->wifi_get_wake_reason_stats = wifi_get_wake_reason_stats_stub;
+    hal_fn->wifi_configure_nd_offload = wifi_configure_nd_offload_stub;
     hal_fn->wifi_nan_enable_request = wifi_nan_enable_request_stub;
     hal_fn->wifi_nan_disable_request = wifi_nan_disable_request_stub;
     hal_fn->wifi_nan_publish_request = wifi_nan_publish_request_stub;

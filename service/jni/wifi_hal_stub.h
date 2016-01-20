@@ -114,6 +114,7 @@ wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
 wifi_error wifi_stop_sending_offloaded_packet_stub(wifi_request_id id, wifi_interface_handle iface);
 wifi_error wifi_get_wake_reason_stats_stub(wifi_interface_handle iface,
                                         WLAN_DRIVER_WAKE_REASON_CNT *wifi_wake_reason_cnt);
+wifi_error wifi_configure_nd_offload_stub(wifi_interface_handle iface, u8 enable);
 
 wifi_error wifi_nan_enable_request_stub(transaction_id id,
                               wifi_interface_handle iface,
