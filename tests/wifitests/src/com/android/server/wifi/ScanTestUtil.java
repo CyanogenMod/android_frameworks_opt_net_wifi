@@ -72,14 +72,7 @@ public class ScanTestUtil {
 
     public static ScanSettings createRequest(int band, int period, int batch, int bssidsPerScan,
             int reportEvents) {
-        ScanSettings request = new ScanSettings();
-        request.band = band;
-        request.channels = null;
-        request.periodInMs = period;
-        request.numBssidsPerScan = bssidsPerScan;
-        request.maxScansToCache = batch;
-        request.reportEvents = reportEvents;
-        return request;
+        return createRequest(band, period, 0, 0, batch, bssidsPerScan, reportEvents);
     }
 
     /**

@@ -16,37 +16,38 @@
 
 package com.android.server.wifi;
 
-
 import android.content.Context;
+import android.os.HandlerThread;
 import android.util.Log;
 
 import com.android.server.SystemService;
+import com.android.server.am.BatteryStatsService;
 
 public class WifiScanningService extends SystemService {
 
     static final String TAG = "WifiScanningService";
-    WifiScanningServiceImpl mImpl;
+    private final WifiScanningServiceImpl mImpl;
+    private final HandlerThread mHandlerThread;
 
     public WifiScanningService(Context context) {
         super(context);
         Log.i(TAG, "Creating " + Context.WIFI_SCANNING_SERVICE);
+        mHandlerThread = new HandlerThread("WifiScanningService");
+        mHandlerThread.start();
+        mImpl = new WifiScanningServiceImpl(getContext(), mHandlerThread.getLooper(),
+                WifiScannerImpl.DEFAULT_FACTORY, BatteryStatsService.getService());
     }
 
     @Override
     public void onStart() {
-        mImpl = new WifiScanningServiceImpl(getContext());
-
-        Log.i(TAG, "Starting " + Context.WIFI_SCANNING_SERVICE);
+        Log.i(TAG, "Publishing " + Context.WIFI_SCANNING_SERVICE);
         publishBinderService(Context.WIFI_SCANNING_SERVICE, mImpl);
     }
 
     @Override
     public void onBootPhase(int phase) {
         if (phase == SystemService.PHASE_SYSTEM_SERVICES_READY) {
-            Log.i(TAG, "Registering " + Context.WIFI_SCANNING_SERVICE);
-            if (mImpl == null) {
-                mImpl = new WifiScanningServiceImpl(getContext());
-            }
+            Log.i(TAG, "Starting " + Context.WIFI_SCANNING_SERVICE);
             mImpl.startService();
         }
     }

@@ -29,19 +29,28 @@ import java.util.Comparator;
  * Defines the interface to the Wifi hardware required for the WifiScanner API
  */
 public abstract class WifiScannerImpl {
+
     /**
-     * Create the implementation that is most appropriate for the system.
-     * This method should only ever be called once.
+     * A factory that create a {@link com.android.server.wifi.WifiScannerImpl}
      */
-    public static WifiScannerImpl create(Context context, Looper looper) {
-        WifiNative wifiNative = WifiNative.getWlanNativeInterface();
-        if (wifiNative.getScanCapabilities(new WifiNative.ScanCapabilities())) {
-            return new HalWifiScannerImpl(wifiNative, looper);
-        }
-        else {
-            return new SupplicantWifiScannerImpl(context, wifiNative, looper);
-        }
+    public static interface WifiScannerImplFactory {
+        WifiScannerImpl create(Context context, Looper looper);
     }
+
+    /**
+     * Factory that create the implementation that is most appropriate for the system.
+     * This factory should only ever be used once.
+     */
+    public static final WifiScannerImplFactory DEFAULT_FACTORY = new WifiScannerImplFactory() {
+            public WifiScannerImpl create(Context context, Looper looper) {
+                WifiNative wifiNative = WifiNative.getWlanNativeInterface();
+                if (wifiNative.getScanCapabilities(new WifiNative.ScanCapabilities())) {
+                    return new HalWifiScannerImpl(wifiNative, looper);
+                } else {
+                    return new SupplicantWifiScannerImpl(context, wifiNative, looper);
+                }
+            }
+        };
 
     /**
      * A comparator that implements the sort order that is expected for scan results
@@ -97,4 +106,8 @@ public abstract class WifiScannerImpl {
     public abstract boolean setHotlist(WifiScanner.HotlistSettings settings,
             WifiNative.HotlistEventHandler eventHandler);
     public abstract void resetHotlist();
+
+    public abstract boolean trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings,
+            WifiNative.SignificantWifiChangeEventHandler handler);
+    public abstract void untrackSignificantWifiChange();
 }
