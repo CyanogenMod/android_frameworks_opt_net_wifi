@@ -1,6 +1,6 @@
 # Wifi Unit Tests
-This package contains unit tests for the android wifi service based on
-[Android Testing Fundamentals](http://developer.android.com/tools/testing/testing_android.html).
+This package contains unit tests for the android wifi service based on the
+[Android Testing Support Library](http://developer.android.com/tools/testing-support-library/index.html).
 The test cases are built using the [JUnit](http://junit.org/) and [Mockito](http://mockito.org/)
 libraries.
 
@@ -30,6 +30,5 @@ adb shell am instrument -w 'com.android.server.wifi.test/android.support.test.ru
 ```
 
 ## Adding Tests
-Tests can be added by adding classes to the src directory. JUnit3 style test cases can be written by
-extending `junit.framework.TestCase` or `android.test.AndroidTestCase`. JUnit4 style test cases can
+Tests can be added by adding classes to the src directory. JUnit4 style test cases can
 be written by simply annotating test methods with `org.junit.Test`.

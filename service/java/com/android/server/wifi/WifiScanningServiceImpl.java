@@ -35,7 +35,6 @@ import android.net.wifi.WifiScanner.ScanSettings;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
@@ -50,7 +49,6 @@ import com.android.internal.util.AsyncChannel;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
-import com.android.server.am.BatteryStatsService;
 import com.android.server.wifi.WifiScannerImpl;
 
 import java.io.FileDescriptor;
@@ -184,26 +182,22 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 return;
             }
 
-            int validCommands[] = {
-                    WifiScanner.CMD_SCAN,
-                    WifiScanner.CMD_START_BACKGROUND_SCAN,
-                    WifiScanner.CMD_STOP_BACKGROUND_SCAN,
-                    WifiScanner.CMD_START_SINGLE_SCAN,
-                    WifiScanner.CMD_STOP_SINGLE_SCAN,
-                    WifiScanner.CMD_SET_HOTLIST,
-                    WifiScanner.CMD_RESET_HOTLIST,
-                    WifiScanner.CMD_CONFIGURE_WIFI_CHANGE,
-                    WifiScanner.CMD_START_TRACKING_CHANGE,
-                    WifiScanner.CMD_STOP_TRACKING_CHANGE };
-
-            for (int cmd : validCommands) {
-                if (cmd == msg.what) {
+            switch (msg.what) {
+                case WifiScanner.CMD_START_BACKGROUND_SCAN:
+                case WifiScanner.CMD_STOP_BACKGROUND_SCAN:
+                case WifiScanner.CMD_SET_HOTLIST:
+                case WifiScanner.CMD_RESET_HOTLIST:
+                case WifiScanner.CMD_CONFIGURE_WIFI_CHANGE:
+                case WifiScanner.CMD_START_TRACKING_CHANGE:
+                case WifiScanner.CMD_STOP_TRACKING_CHANGE:
+                case WifiScanner.CMD_START_SINGLE_SCAN:
+                case WifiScanner.CMD_STOP_SINGLE_SCAN:
                     mStateMachine.sendMessage(Message.obtain(msg));
                     return;
-                }
+                default:
+                    replyFailed(msg, WifiScanner.REASON_INVALID_REQUEST, "Invalid request");
+                    return;
             }
-
-            replyFailed(msg, WifiScanner.REASON_INVALID_REQUEST, "Invalid request");
         }
     }
 
@@ -221,9 +215,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final int CMD_SCAN_RESTARTED                      = BASE + 9;
     private static final int CMD_STOP_SCAN_INTERNAL                  = BASE + 10;
 
-    private final WifiNative mWifiNative;
     private final Context mContext;
-    private HandlerThread mHandlerThread;
+    private final Looper mLooper;
+    private final WifiScannerImpl.WifiScannerImplFactory mScannerImplFactory;
     private final ArrayMap<Messenger, ClientInfo> mClients;
 
     private final WifiScanningScheduler mScheduler;
@@ -233,10 +227,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private ClientHandler mClientHandler;
     private final IBatteryStats mBatteryStats;
 
-    WifiScanningServiceImpl(Context context) {
-        mWifiNative = WifiNative.getWlanNativeInterface();
+    WifiScanningServiceImpl(Context context, Looper looper,
+            WifiScannerImpl.WifiScannerImplFactory scannerImplFactory, IBatteryStats batteryStats) {
         mContext = context;
-        mBatteryStats = BatteryStatsService.getService();
+        mLooper = looper;
+        mScannerImplFactory = scannerImplFactory;
+        mBatteryStats = batteryStats;
         mClients = new ArrayMap<>();
 
         mScheduler = new MultiClientScheduler();
@@ -244,12 +240,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     }
 
     public void startService() {
-        mHandlerThread = new HandlerThread("WifiScanningService");
-        mHandlerThread.start();
-
-        mClientHandler = new ClientHandler(mHandlerThread.getLooper());
-        mStateMachine = new WifiScanningStateMachine(mHandlerThread.getLooper());
-        mWifiChangeStateMachine = new WifiChangeStateMachine(mHandlerThread.getLooper());
+        mClientHandler = new ClientHandler(mLooper);
+        mStateMachine = new WifiScanningStateMachine(mLooper);
+        mWifiChangeStateMachine = new WifiChangeStateMachine(mLooper);
 
         mContext.registerReceiver(
                 new BroadcastReceiver() {
@@ -348,10 +341,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 switch (msg.what) {
                     case CMD_DRIVER_LOADED:
                         if (mScannerImpl == null) {
-                            mScannerImpl =
-                                    WifiScannerImpl.create(mContext, mHandlerThread.getLooper());
+                            mScannerImpl = mScannerImplFactory.create(mContext, mLooper);
                         }
-                        WifiNative.ScanCapabilities capabilities = new WifiNative.ScanCapabilities();
+                        WifiNative.ScanCapabilities capabilities =
+                                new WifiNative.ScanCapabilities();
                         if (!mScannerImpl.getScanCapabilities(capabilities)) {
                             loge("could not get scan capabilities");
                             return HANDLED;
@@ -360,8 +353,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         mScheduler.setMaxBuckets(capabilities.max_scan_buckets);
                         mScheduler.setMaxApPerScan(capabilities.max_ap_cache_per_scan);
 
-                        Log.i(TAG, "wifi driver loaded");
-                        Log.i(TAG, "received scan capabilities: "
+                        Log.i(TAG, "wifi driver loaded with scan capabilities: "
                                 + "max buckets=" + capabilities.max_scan_buckets);
 
                         transitionTo(mStartedState);
@@ -370,7 +362,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         Log.i(TAG, "wifi driver unloaded");
                         transitionTo(mDefaultState);
                         break;
-                    case WifiScanner.CMD_SCAN:
                     case WifiScanner.CMD_START_BACKGROUND_SCAN:
                     case WifiScanner.CMD_STOP_BACKGROUND_SCAN:
                     case WifiScanner.CMD_START_SINGLE_SCAN:
@@ -416,9 +407,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         return NOT_HANDLED;
                     case CMD_DRIVER_UNLOADED:
                         return NOT_HANDLED;
-                    case WifiScanner.CMD_SCAN:
-                        replyFailed(msg, WifiScanner.REASON_UNSPECIFIED, "not implemented");
-                        break;
                     case WifiScanner.CMD_START_BACKGROUND_SCAN:
                         if (addScanRequest(ci, msg.arg2, (ScanSettings) msg.obj)) {
                             replySucceeded(msg);
@@ -701,7 +689,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
         }
 
-        HashMap<Integer, WifiScanner.HotlistSettings> mHotlistSettings =
+        private final HashMap<Integer, WifiScanner.HotlistSettings> mHotlistSettings =
                 new HashMap<Integer, WifiScanner.HotlistSettings>();
 
         void addHostlistSettings(WifiScanner.HotlistSettings settings, int handler) {
@@ -1491,12 +1479,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         void trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings) {
-            mWifiNative.untrackSignificantWifiChange();
-            mWifiNative.trackSignificantWifiChange(settings, this);
+            mScannerImpl.untrackSignificantWifiChange();
+            mScannerImpl.trackSignificantWifiChange(settings, this);
         }
 
         void untrackSignificantWifiChange() {
-            mWifiNative.untrackSignificantWifiChange();
+            mScannerImpl.untrackSignificantWifiChange();
         }
 
     }

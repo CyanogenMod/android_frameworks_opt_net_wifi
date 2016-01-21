@@ -524,6 +524,19 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         }
     }
 
+
+    /*
+     * Significant Wifi Change API is not implemented
+     */
+    @Override
+    public boolean trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings,
+            WifiNative.SignificantWifiChangeEventHandler handler) {
+        return false;
+    }
+    @Override
+    public void untrackSignificantWifiChange() {}
+
+
     private static class LastScanSettings {
         public long startTime;
 

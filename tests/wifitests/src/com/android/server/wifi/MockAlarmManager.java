@@ -26,8 +26,7 @@ import static org.mockito.Mockito.mock;
 import android.app.AlarmManager;
 import android.os.Handler;
 
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
+import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -104,24 +103,16 @@ public class MockAlarmManager {
         }
     }
 
-    private class SetListenerAnswer implements Answer<Object> {
-        public Object answer(InvocationOnMock invocation) {
-            int type = (int) invocation.getArguments()[0];
-            long triggerAtMillis = (long) invocation.getArguments()[1];
-            String tag = (String) invocation.getArguments()[2];
-            AlarmManager.OnAlarmListener listener =
-                    (AlarmManager.OnAlarmListener) invocation.getArguments()[3];
-            Handler handler = (Handler) invocation.getArguments()[4];
+    private class SetListenerAnswer extends AnswerWithArguments<Void> {
+        public void answer(int type, long triggerAtMillis, String tag,
+                AlarmManager.OnAlarmListener listener, Handler handler) {
             mPendingAlarms.add(new PendingAlarm(type, triggerAtMillis, tag,
                             new AlarmListenerRunnable(listener, handler)));
-            return null;
         }
     }
 
-    private class CancelListenerAnswer implements Answer<Object> {
-        public Object answer(InvocationOnMock invocation) {
-            AlarmManager.OnAlarmListener listener =
-                    (AlarmManager.OnAlarmListener) invocation.getArguments()[0];
+    private class CancelListenerAnswer extends AnswerWithArguments<Void> {
+        public void answer(AlarmManager.OnAlarmListener listener) {
             Iterator<PendingAlarm> alarmItr = mPendingAlarms.iterator();
             while (alarmItr.hasNext()) {
                 PendingAlarm alarm = alarmItr.next();
@@ -133,7 +124,6 @@ public class MockAlarmManager {
                     }
                 }
             }
-            return null;
         }
     }
 
