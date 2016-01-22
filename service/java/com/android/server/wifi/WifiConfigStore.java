@@ -215,7 +215,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     /* Network History Keys */
     private static final String SSID_KEY = "SSID";
-    private static final String CONFIG_KEY = "CONFIG";
+    static final String CONFIG_KEY = "CONFIG";
     private static final String CHOICE_KEY = "CHOICE";
     private static final String LINK_KEY = "LINK";
     private static final String BSSID_KEY = "BSSID";
@@ -235,7 +235,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String FAILURE_KEY = "FAILURE";
     private static final String DID_SELF_ADD_KEY = "DID_SELF_ADD";
     private static final String PEER_CONFIGURATION_KEY = "PEER_CONFIGURATION";
-    private static final String CREATOR_UID_KEY = "CREATOR_UID_KEY";
+    static final String CREATOR_UID_KEY = "CREATOR_UID_KEY";
     private static final String CONNECT_UID_KEY = "CONNECT_UID_KEY";
     private static final String UPDATE_UID_KEY = "UPDATE_UID";
     private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS";
@@ -254,6 +254,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String USER_APPROVED_KEY = "USER_APPROVED";
     private static final String CREATION_TIME_KEY = "CREATION_TIME";
     private static final String UPDATE_TIME_KEY = "UPDATE_TIME";
+    static final String SHARED_KEY = "SHARED";
 
     private static final String SEPARATOR = ":  ";
     private static final String NL = "\n";
@@ -739,13 +740,13 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     int getConfiguredNetworksSize() {
-        return mConfiguredNetworks.size();
+        return mConfiguredNetworks.sizeForCurrentUser();
     }
 
     private List<WifiConfiguration>
     getConfiguredNetworks(Map<String, String> pskMap) {
         List<WifiConfiguration> networks = new ArrayList<>();
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             WifiConfiguration newConfig = new WifiConfiguration(config);
             // When updating this condition, update WifiStateMachine's CONNECT_NETWORK handler to
             // correctly handle updating existing configs that are filtered out here.
@@ -773,7 +774,7 @@ public class WifiConfigStore extends IpConfigStore {
     private List<WifiConfiguration>
     getAllConfiguredNetworks() {
         List<WifiConfiguration> networks = new ArrayList<>();
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             WifiConfiguration newConfig = new WifiConfiguration(config);
             networks.add(newConfig);
         }
@@ -832,7 +833,7 @@ public class WifiConfigStore extends IpConfigStore {
     List<WifiConfiguration> getRecentConfiguredNetworks(int milli, boolean copy) {
         List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
 
-        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             if (config.ephemeral) {
                 // Do not enumerate and return this configuration to any one,
                 // instead treat it as unknown. the configuration can still be retrieved
@@ -897,7 +898,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return Wificonfiguration
      */
     public WifiConfiguration getWifiConfiguration(int netId) {
-        return mConfiguredNetworks.get(netId);
+        return mConfiguredNetworks.getForCurrentUser(netId);
     }
 
     /**
@@ -905,7 +906,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return Wificonfiguration
      */
     public WifiConfiguration getWifiConfiguration(String key) {
-        return mConfiguredNetworks.getByConfigKey(key);
+        return mConfiguredNetworks.getByConfigKeyForCurrentUser(key);
     }
 
     /**
@@ -915,7 +916,7 @@ public class WifiConfigStore extends IpConfigStore {
     void enableAllNetworks() {
         boolean networkEnabledStateChanged = false;
 
-        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             if (config != null && !config.ephemeral
                     && !config.getNetworkSelectionStatus().isNetworkEnabled()) {
                 if (tryEnableQualifiedNetwork(config)) {
@@ -966,10 +967,15 @@ public class WifiConfigStore extends IpConfigStore {
     boolean selectNetwork(WifiConfiguration config, boolean updatePriorities, int uid) {
         if (VDBG) localLogNetwork("selectNetwork", config.networkId);
         if (config.networkId == INVALID_NETWORK_ID) return false;
+        if (!config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+            loge("selectNetwork " + Integer.toString(config.networkId) + ": Network config is not "
+                    + "visible to current user.");
+            return false;
+        }
 
         // Reset the priority of each network at start or if it goes too high.
         if (mLastPriority == -1 || mLastPriority > 1000000) {
-            for(WifiConfiguration config2 : mConfiguredNetworks.values()) {
+            for (WifiConfiguration config2 : mConfiguredNetworks.valuesForCurrentUser()) {
                 if (updatePriorities) {
                     if (config2.networkId != INVALID_NETWORK_ID) {
                         config2.priority = 0;
@@ -1036,9 +1042,16 @@ public class WifiConfigStore extends IpConfigStore {
                 config.SSID == null)) {
             return new NetworkUpdateResult(INVALID_NETWORK_ID);
         }
+
+        if (!config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+            return new NetworkUpdateResult(INVALID_NETWORK_ID);
+        }
+
         if (VDBG) localLogNetwork("WifiConfigStore: saveNetwork netId", config.networkId);
         if (VDBG) {
-            loge("WifiConfigStore saveNetwork, size=" + mConfiguredNetworks.size()
+            logd("WifiConfigStore saveNetwork,"
+                    + " size=" + Integer.toString(mConfiguredNetworks.sizeForAllUsers())
+                    + " (for all users)"
                     + " SSID=" + config.SSID
                     + " Uid=" + Integer.toString(config.creatorUid)
                     + "/" + Integer.toString(config.lastUpdateUid));
@@ -1063,12 +1076,12 @@ public class WifiConfigStore extends IpConfigStore {
             if (VDBG) localLogNetwork("WifiConfigStore: will enable netId=", netId);
 
             mWifiNative.enableNetwork(netId, false);
-            conf = mConfiguredNetworks.get(netId);
+            conf = mConfiguredNetworks.getForCurrentUser(netId);
             if (conf != null)
                 conf.status = Status.ENABLED;
         }
 
-        conf = mConfiguredNetworks.get(netId);
+        conf = mConfiguredNetworks.getForCurrentUser(netId);
         if (conf != null) {
             if (!conf.getNetworkSelectionStatus().isNetworkEnabled()) {
                 if (VDBG) localLog("WifiConfigStore: re-enabling: " + conf.SSID);
@@ -1162,7 +1175,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     void updateStatus(int netId, DetailedState state) {
         if (netId != INVALID_NETWORK_ID) {
-            WifiConfiguration config = mConfiguredNetworks.get(netId);
+            WifiConfiguration config = mConfiguredNetworks.getForAllUsers(netId);
             if (config == null) return;
             switch (state) {
                 case CONNECTED:
@@ -1201,7 +1214,7 @@ public class WifiConfigStore extends IpConfigStore {
             return null;
         }
 
-        WifiConfiguration foundConfig = mConfiguredNetworks.getEphemeral(SSID);
+        WifiConfiguration foundConfig = mConfiguredNetworks.getEphemeralForCurrentUser(SSID);
 
         mDeletedEphemeralSSIDs.add(SSID);
         loge("Forget ephemeral SSID " + SSID + " num=" + mDeletedEphemeralSSIDs.size());
@@ -1226,7 +1239,8 @@ public class WifiConfigStore extends IpConfigStore {
     boolean forgetNetwork(int netId) {
         if (showNetworks) localLogNetwork("forgetNetwork", netId);
 
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
+
         boolean remove = removeConfigAndSendBroadcastIfNeeded(netId);
         if (!remove) {
             //success but we dont want to remove the network from supplicant conf file
@@ -1255,8 +1269,11 @@ public class WifiConfigStore extends IpConfigStore {
      * @return network Id
      */
     int addOrUpdateNetwork(WifiConfiguration config, int uid) {
-        if (showNetworks) localLogNetwork("addOrUpdateNetwork id=", config.networkId);
+        if (config == null || !config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+            return WifiConfiguration.INVALID_NETWORK_ID;
+        }
 
+        if (showNetworks) localLogNetwork("addOrUpdateNetwork id=", config.networkId);
         if (config.isPasspoint()) {
             /* create a temporary SSID with providerFriendlyName */
             Long csum = getChecksum(config.FQDN);
@@ -1266,7 +1283,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         NetworkUpdateResult result = addOrUpdateNetworkNative(config, uid);
         if (result.getNetworkId() != WifiConfiguration.INVALID_NETWORK_ID) {
-            WifiConfiguration conf = mConfiguredNetworks.get(result.getNetworkId());
+            WifiConfiguration conf = mConfiguredNetworks.getForCurrentUser(result.getNetworkId());
             if (conf != null) {
                 sendConfiguredNetworksChangedBroadcast(conf,
                     result.isNewNetwork ? WifiManager.CHANGE_REASON_ADDED :
@@ -1380,7 +1397,11 @@ public class WifiConfigStore extends IpConfigStore {
      */
     boolean removeNetwork(int netId) {
         if (showNetworks) localLogNetwork("removeNetwork", netId);
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
+        if (config == null) {
+            return false;
+        }
+
         boolean ret = mWifiNative.removeNetwork(netId);
         if (ret) {
             removeConfigAndSendBroadcastIfNeeded(netId);
@@ -1399,7 +1420,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private boolean removeConfigAndSendBroadcastIfNeeded(int netId) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null) {
             if (VDBG) {
                 loge("removeNetwork " + Integer.toString(netId) + " key=" +
@@ -1459,7 +1480,7 @@ public class WifiConfigStore extends IpConfigStore {
         boolean success = true;
 
         WifiConfiguration [] copiedConfigs =
-                mConfiguredNetworks.values().toArray(new WifiConfiguration[0]);
+                mConfiguredNetworks.valuesForCurrentUser().toArray(new WifiConfiguration[0]);
         for (WifiConfiguration config : copiedConfigs) {
             if (app.uid != config.creatorUid || !app.packageName.equals(config.creatorName)) {
                 continue;
@@ -1481,7 +1502,7 @@ public class WifiConfigStore extends IpConfigStore {
         boolean success = true;
 
         WifiConfiguration[] copiedConfigs =
-                mConfiguredNetworks.values().toArray(new WifiConfiguration[0]);
+                mConfiguredNetworks.valuesForAllUsers().toArray(new WifiConfiguration[0]);
         for (WifiConfiguration config : copiedConfigs) {
             if (userId != UserHandle.getUserId(config.creatorUid)) {
                 continue;
@@ -1506,6 +1527,11 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if it succeeds, {@code false} otherwise
      */
     boolean enableNetwork(int netId, boolean disableOthers, int uid) {
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
+        if (config == null) {
+            return false;
+        }
+
         boolean ret = enableNetworkWithoutBroadcast(netId, disableOthers);
         if (disableOthers) {
             if (VDBG) localLogNetwork("enableNetwork(disableOthers=true, uid=" + uid + ") ", netId);
@@ -1516,7 +1542,7 @@ public class WifiConfigStore extends IpConfigStore {
             if (VDBG) localLogNetwork("enableNetwork(disableOthers=false) ", netId);
             WifiConfiguration enabledNetwork;
             synchronized(mConfiguredNetworks) {                     // !!! Useless synchronization!
-                enabledNetwork = mConfiguredNetworks.get(netId);
+                enabledNetwork = mConfiguredNetworks.getForCurrentUser(netId);
             }
             // check just in case the network was removed by someone else.
             if (enabledNetwork != null) {
@@ -1528,10 +1554,14 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     boolean enableNetworkWithoutBroadcast(int netId, boolean disableOthers) {
+        final WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
+        if (config == null) {
+            return false;
+        }
+
         boolean ret = mWifiNative.enableNetwork(netId, disableOthers);
 
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
-        if (config != null) config.status = Status.ENABLED;
+        config.status = Status.ENABLED;
 
         if (disableOthers) {
             markAllNetworksDisabledExcept(netId);
@@ -1542,7 +1572,7 @@ public class WifiConfigStore extends IpConfigStore {
     void disableAllNetworks() {
         if (VDBG) localLog("disableAllNetworks");
         boolean networkDisabled = false;
-        for (WifiConfiguration enabled : mConfiguredNetworks.getEnabledNetworks()) {
+        for (WifiConfiguration enabled : mConfiguredNetworks.getEnabledNetworksForCurrentUser()) {
             if(mWifiNative.disableNetwork(enabled.networkId)) {
                 networkDisabled = true;
                 enabled.status = Status.DISABLED;
@@ -1845,7 +1875,7 @@ public class WifiConfigStore extends IpConfigStore {
      * Fetch the static IP configuration for a given network id
      */
     StaticIpConfiguration getStaticIpConfiguration(int netId) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null) {
             return config.getStaticIpConfiguration();
         }
@@ -1856,7 +1886,7 @@ public class WifiConfigStore extends IpConfigStore {
      * Set the static IP configuration for a given network id
      */
     void setStaticIpConfiguration(int netId, StaticIpConfiguration staticIpConfiguration) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null) {
             config.setStaticIpConfiguration(staticIpConfiguration);
         }
@@ -1866,7 +1896,7 @@ public class WifiConfigStore extends IpConfigStore {
      * set default GW MAC address
      */
     void setDefaultGwMacAddress(int netId, String macAddress) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null) {
             //update defaultGwMacAddress
             config.defaultGwMacAddress = macAddress;
@@ -1880,7 +1910,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return ProxyInfo for the network id
      */
     ProxyInfo getProxyProperties(int netId) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null) {
             return config.getHttpProxy();
         }
@@ -1893,7 +1923,7 @@ public class WifiConfigStore extends IpConfigStore {
      * @return {@code true} if using static ip for netId
      */
     boolean isUsingStaticIp(int netId) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null && config.getIpAssignment() == IpAssignment.STATIC) {
             return true;
         }
@@ -1901,7 +1931,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     boolean isEphemeral(int netId) {
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         return config != null && config.ephemeral;
     }
 
@@ -1935,7 +1965,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         mLastPriority = 0;
 
-        mConfiguredNetworks.clear();
+        final Map<String, WifiConfiguration> configs = new HashMap<>();
 
         final SparseArray<Map<String, String>> networkExtras = new SparseArray<>();
 
@@ -1993,6 +2023,9 @@ public class WifiConfigStore extends IpConfigStore {
                             config.networkId, ID_STRING_VAR_NAME));
                     if (fqdn != null) {
                         extras.put(ID_STRING_KEY_FQDN, fqdn);
+                        config.FQDN = fqdn;
+                        // Mark the configuration as a Hotspot 2.0 network.
+                        config.providerFriendlyName = "";
                     }
                 }
                 networkExtras.put(config.networkId, extras);
@@ -2013,40 +2046,64 @@ public class WifiConfigStore extends IpConfigStore {
                 config.setIpAssignment(IpAssignment.DHCP);
                 config.setProxySettings(ProxySettings.NONE);
 
-                WifiConfiguration possibleOldConfig =
-                        mConfiguredNetworks.getByConfigKey(config.configKey());
-                if (possibleOldConfig != null) {
-                    // That SSID is already known, just ignore this duplicate entry
+                if (!WifiServiceImpl.isValid(config)) {
                     if (showNetworks) {
-                        localLog("update duplicate network " + possibleOldConfig.networkId
-                                + " with " + config.networkId);
+                        localLog("Ignoring network " + config.networkId + " because configuration "
+                                + "loaded from wpa_supplicant.conf is not valid.");
                     }
-                    // This can happen after the user manually connected to an AP and try to use WPS
-                    // to connect the AP later.In this way, supplicant will create a new network for
-                    // the AP although there is an existing network already.
-                    mWifiNative.removeNetwork(possibleOldConfig.networkId);
-                    mConfiguredNetworks.remove(possibleOldConfig.networkId);
-                    mConfiguredNetworks.put(config.networkId, config);
+                    continue;
+                }
 
-                } else if(WifiServiceImpl.isValid(config)){
-                    mConfiguredNetworks.put(config.networkId, config);
+                // The configKey is explicitly stored in wpa_supplicant.conf, because config does
+                // not contain sufficient information to compute it at this point.
+                String configKey = extras.get(ID_STRING_KEY_CONFIG_KEY);
+                if (configKey == null) {
+                    // Handle the legacy case where the configKey is not stored in
+                    // wpa_supplicant.conf but can be computed straight away.
+                    configKey = config.configKey();
+                }
+
+                final WifiConfiguration duplicateConfig = configs.put(configKey, config);
+                if (duplicateConfig != null) {
+                    // The network is already known. Overwrite the duplicate entry.
                     if (showNetworks) {
-                        localLogNetwork("loaded configured network", config.networkId);
+                        localLog("Replacing duplicate network " + duplicateConfig.networkId
+                                + " with " + config.networkId + ".");
                     }
-                } else {
-                    if (showNetworks) {
-                        log("Ignoring loaded configured for network " + config.networkId
-                                + " because config are not valid");
-                    }
+                    // This can happen after the user manually connected to an AP and tried to use
+                    // WPS to connect the AP later. In this case, the supplicant will create a new
+                    // network for the AP although there is an existing network already.
+                    mWifiNative.removeNetwork(duplicateConfig.networkId);
                 }
             }
 
             done = (lines.length == 1);
         }
 
-        readPasspointConfig(networkExtras);
+        readNetworkHistory(configs);
+        readPasspointConfig(configs, networkExtras);
+
+        // We are only now updating mConfiguredNetworks for two reasons:
+        // 1) The information required to compute configKeys is spread across wpa_supplicant.conf
+        //    and networkHistory.txt. Thus, we had to load both files first.
+        // 2) mConfiguredNetworks caches a Passpoint network's FQDN the moment the network is added.
+        //    Thus, we had to load the FQDNs first.
+        mConfiguredNetworks.clear();
+        for (Map.Entry<String, WifiConfiguration> entry : configs.entrySet()) {
+            final String configKey = entry.getKey();
+            final WifiConfiguration config = entry.getValue();
+            if (!configKey.equals(config.configKey())) {
+                if (showNetworks) {
+                    log("Ignoring network " + config.networkId + " because the configKey loaded "
+                            + "from wpa_supplicant.conf is not valid.");
+                }
+                mWifiNative.removeNetwork(config.networkId);
+                continue;
+            }
+            mConfiguredNetworks.put(config);
+        }
+
         readIpAndProxyConfigurations();
-        readNetworkHistory();
         readAutoJoinConfig();
 
         buildPnoList();
@@ -2054,10 +2111,11 @@ public class WifiConfigStore extends IpConfigStore {
         sendConfiguredNetworksChangedBroadcast();
 
         if (showNetworks) {
-            localLog("loadConfiguredNetworks loaded " + mConfiguredNetworks.size() + " networks");
+            localLog("loadConfiguredNetworks loaded " + mConfiguredNetworks.sizeForAllUsers()
+                    + " networks (for all users)");
         }
 
-        if (mConfiguredNetworks.isEmpty()) {
+        if (mConfiguredNetworks.sizeForAllUsers() == 0) {
             // no networks? Lets log if the file contents
             logKernelTime();
             logContents(SUPPLICANT_CONFIG_FILE);
@@ -2093,6 +2151,12 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     private Map<String, String> readNetworkVariablesFromSupplicantFile(String key) {
+        // TODO(b/26733972): This method assumes that the SSID is a unique identifier for network
+        // configurations. That is wrong. There may be any number of networks with the same SSID.
+        // There may also be any number of network configurations for the same network. The correct
+        // unique identifier is the configKey. This method should be switched from SSID to configKey
+        // (which is either stored in wpa_supplicant.conf directly or can be computed from the
+        // information found in that file).
         Map<String, String> result = new HashMap<>();
         BufferedReader reader = null;
         if (VDBG) loge("readNetworkVariablesFromSupplicantFile key=" + key);
@@ -2159,7 +2223,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     /* Mark all networks except specified netId as disabled */
     private void markAllNetworksDisabledExcept(int netId) {
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             if(config != null && config.networkId != netId) {
                 if (config.status != Status.DISABLED) {
                     config.status = Status.DISABLED;
@@ -2178,7 +2242,7 @@ public class WifiConfigStore extends IpConfigStore {
         // unlocked key store; unless the certificates can be stored with
         // hardware encryption
 
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
 
             if (config.allowedKeyManagement.get(KeyMgmt.WPA_EAP)
                     && config.allowedKeyManagement.get(KeyMgmt.IEEE8021X)) {
@@ -2192,8 +2256,8 @@ public class WifiConfigStore extends IpConfigStore {
         return false;
     }
 
-    void readPasspointConfig(SparseArray<Map<String, String>> networkExtras) {
-
+    void readPasspointConfig(Map<String, WifiConfiguration> configs,
+            SparseArray<Map<String, String>> networkExtras) {
         List<HomeSP> homeSPs;
         try {
             homeSPs = mMOManager.loadAllSPs();
@@ -2206,7 +2270,7 @@ public class WifiConfigStore extends IpConfigStore {
         for (HomeSP homeSp : homeSPs) {
             String fqdn = homeSp.getFQDN();
             Log.d(TAG, "Looking for " + fqdn);
-            for (WifiConfiguration config : mConfiguredNetworks.values()) {
+            for (WifiConfiguration config : configs.values()) {
                 Log.d(TAG, "Testing " + config.SSID);
 
                 if (config.enterpriseConfig == null) {
@@ -2231,8 +2295,6 @@ public class WifiConfigStore extends IpConfigStore {
                     config.enterpriseConfig.setPlmn(
                             imsiParameter != null ? imsiParameter.toString() : null);
                     config.enterpriseConfig.setRealm(homeSp.getCredential().getRealm());
-                    // Allow mConfiguredNetworks to cache the FQDN.
-                    mConfiguredNetworks.put(config.networkId, config);
                 }
             }
         }
@@ -2262,12 +2324,13 @@ public class WifiConfigStore extends IpConfigStore {
 
         /* Make a copy */
         final List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
-        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForAllUsers()) {
             networks.add(new WifiConfiguration(config));
         }
         if (VDBG) {
-            loge(" writeKnownNetworkHistory() num networks:" +
-                    mConfiguredNetworks.size() + " needWrite=" + needUpdate);
+            logd(" writeKnownNetworkHistory() num networks:"
+                    + mConfiguredNetworks.sizeForAllUsers() + " (for all users) needWrite="
+                    + needUpdate);
         }
         if (needUpdate == false) {
             return;
@@ -2378,6 +2441,7 @@ public class WifiConfigStore extends IpConfigStore {
                             config.lastUpdateName + NL);
                     out.writeUTF(USER_APPROVED_KEY + SEPARATOR +
                             Integer.toString(config.userApproved) + NL);
+                    out.writeUTF(SHARED_KEY + SEPARATOR + Boolean.toString(config.shared) + NL);
                     String allowedKeyManagementString =
                             makeString(config.allowedKeyManagement,
                                     WifiConfiguration.KeyMgmt.strings);
@@ -2502,7 +2566,16 @@ public class WifiConfigStore extends IpConfigStore {
                 && lastSelectedConfiguration.equals(config.configKey()));
     }
 
-    private void readNetworkHistory() {
+    /**
+     * Adds information stored in networkHistory.txt to the given configs. The configs are provided
+     * as a mapping from configKey to WifiConfiguration, because the WifiConfigurations themselves
+     * do not contain sufficient information to compute their configKeys until after the information
+     * that is stored in networkHistory.txt has been added to them.
+     *
+     * @param configs mapping from configKey to a WifiConfiguration that contains the information
+     *         information read from wpa_supplicant.conf
+     */
+    private void readNetworkHistory(Map<String, WifiConfiguration> configs) {
         if (showNetworks) {
             localLog("readNetworkHistory() path:" + networkHistoryConfigFile);
         }
@@ -2535,7 +2608,8 @@ public class WifiConfigStore extends IpConfigStore {
                 String value = line.substring(colon + 1).trim();
 
                 if (key.equals(CONFIG_KEY)) {
-                    config = mConfiguredNetworks.getByConfigKey(value);
+                    config = configs.get(value);
+
                     // skip reading that configuration data
                     // since we don't have a corresponding network ID
                     if (config == null) {
@@ -2721,6 +2795,9 @@ public class WifiConfigStore extends IpConfigStore {
                         case USER_APPROVED_KEY:
                             config.userApproved = Integer.parseInt(value);
                             break;
+                        case SHARED_KEY:
+                            config.shared = Boolean.parseBoolean(value);
+                            break;
                     }
                 }
             }
@@ -2771,7 +2848,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     private void writeIpAndProxyConfigurations() {
         final SparseArray<IpConfiguration> networks = new SparseArray<IpConfiguration>();
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForAllUsers()) {
             if (!config.ephemeral) {
                 networks.put(configKey(config), config.getIpConfiguration());
             }
@@ -2790,7 +2867,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         for (int i = 0; i < networks.size(); i++) {
             int id = networks.keyAt(i);
-            WifiConfiguration config = mConfiguredNetworks.getByConfigKeyID(id);
+            WifiConfiguration config = mConfiguredNetworks.getByConfigKeyIDForAllUsers(id);
             // This is the only place the map is looked up through a (dangerous) hash-value!
 
             if (config == null || config.ephemeral) {
@@ -2831,7 +2908,8 @@ public class WifiConfigStore extends IpConfigStore {
         boolean existingMO = false;
         // networkId of INVALID_NETWORK_ID means we want to create a new network
         if (netId == INVALID_NETWORK_ID) {
-            WifiConfiguration savedConfig = mConfiguredNetworks.getByConfigKey(config.configKey());
+            WifiConfiguration savedConfig =
+                    mConfiguredNetworks.getByConfigKeyForCurrentUser(config.configKey());
             if (savedConfig != null) {
                 netId = savedConfig.networkId;
             } else {
@@ -3044,7 +3122,8 @@ public class WifiConfigStore extends IpConfigStore {
                          * In order to generate the key id, fetch uninitialized
                          * fields from the currently tracked configuration
                          */
-                        WifiConfiguration currentConfig = mConfiguredNetworks.get(netId);
+                        WifiConfiguration currentConfig =
+                                mConfiguredNetworks.getForCurrentUser(netId);
                         String keyId = config.getKeyIdForCredentials(currentConfig);
 
                         if (!installKeys(enterpriseConfig, keyId)) {
@@ -3098,7 +3177,7 @@ public class WifiConfigStore extends IpConfigStore {
          * when written. For example, wep key is stored as * irrespective
          * of the value sent to the supplicant
          */
-        WifiConfiguration currentConfig = mConfiguredNetworks.get(netId);
+        WifiConfiguration currentConfig = mConfiguredNetworks.getForCurrentUser(netId);
         if (currentConfig == null) {
             currentConfig = new WifiConfiguration();
             currentConfig.setIpAssignment(IpAssignment.DHCP);
@@ -3122,6 +3201,7 @@ public class WifiConfigStore extends IpConfigStore {
                 currentConfig.numNoInternetAccessReports = config.numNoInternetAccessReports;
                 currentConfig.updateTime = config.updateTime;
                 currentConfig.creationTime = config.creationTime;
+                currentConfig.shared = config.shared;
             }
             if (DBG) {
                 log("created new config netId=" + Integer.toString(netId)
@@ -3206,7 +3286,7 @@ public class WifiConfigStore extends IpConfigStore {
             currentConfig.lastUpdateUid = config.lastUpdateUid;
         }
 
-        mConfiguredNetworks.put(netId, currentConfig);
+        mConfiguredNetworks.put(currentConfig);
 
         NetworkUpdateResult result = writeIpAndProxyConfigurationsOnChange(currentConfig, config);
         result.setIsNewNetwork(newNetwork);
@@ -3215,13 +3295,13 @@ public class WifiConfigStore extends IpConfigStore {
         if (homeSP != null) {
             writePasspointConfigs(null, homeSP);
         }
-        writeKnownNetworkHistory(false);
+        writeKnownNetworkHistory(true);
 
         return result;
     }
 
     public WifiConfiguration getWifiConfigForHomeSP(HomeSP homeSP) {
-        WifiConfiguration config = mConfiguredNetworks.getByFQDN(homeSP.getFQDN());
+        WifiConfiguration config = mConfiguredNetworks.getByFQDNForCurrentUser(homeSP.getFQDN());
         if (config == null) {
             Log.e(TAG, "Could not find network for homeSP " + homeSP.getFQDN());
         }
@@ -3229,7 +3309,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     public HomeSP getHomeSPForConfig(WifiConfiguration config) {
-        WifiConfiguration storedConfig = mConfiguredNetworks.get(config.networkId);
+        WifiConfiguration storedConfig = mConfiguredNetworks.getForCurrentUser(config.networkId);
         return storedConfig != null && storedConfig.isPasspoint() ?
                 mMOManager.getHomeSP(storedConfig.FQDN) : null;
     }
@@ -3249,6 +3329,11 @@ public class WifiConfigStore extends IpConfigStore {
      * @param config
      */
     public void linkConfiguration(WifiConfiguration config) {
+        if (!config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+            loge("linkConfiguration: Attempting to link config " + config.configKey()
+                    + " that is not visible to the current user.");
+            return;
+        }
 
         if (getScanDetailCache(config) != null && getScanDetailCache(config).size() > 6) {
             // Ignore configurations with large number of BSSIDs
@@ -3258,7 +3343,7 @@ public class WifiConfigStore extends IpConfigStore {
             // Only link WPA_PSK config
             return;
         }
-        for (WifiConfiguration link : mConfiguredNetworks.values()) {
+        for (WifiConfiguration link : mConfiguredNetworks.valuesForCurrentUser()) {
             boolean doLink = false;
 
             if (link.configKey().equals(config.configKey())) {
@@ -3767,7 +3852,7 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
-        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             boolean found = false;
             if (config.SSID == null || !config.SSID.equals(SSID)) {
                 continue;
@@ -3798,6 +3883,58 @@ public class WifiConfigStore extends IpConfigStore {
         } else {
             return associatedWifiConfigurations;
         }
+    }
+
+    /**
+     * Handles the switch to a different foreground user:
+     * - Removes all ephemeral networks
+     * - Disables private network configurations belonging to the previous foreground user
+     * - Enables private network configurations belonging to the new foreground user
+     *
+     * TODO(b/25600871): Terminate background users if the new foreground user has one or more
+     * private network configurations.
+     */
+    public void handleUserSwitch() {
+        Set<WifiConfiguration> ephemeralConfigs = new HashSet<>();
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
+            if (config.ephemeral) {
+                ephemeralConfigs.add(config);
+            }
+        }
+        if (!ephemeralConfigs.isEmpty()) {
+            for (WifiConfiguration config : ephemeralConfigs) {
+                if (config.configKey().equals(lastSelectedConfiguration)) {
+                    lastSelectedConfiguration = null;
+                }
+                if (config.enterpriseConfig != null) {
+                    removeKeys(config.enterpriseConfig);
+                }
+                mConfiguredNetworks.remove(config.networkId);
+                mScanDetailCaches.remove(config.networkId);
+                mWifiNative.removeNetwork(config.networkId);
+            }
+            mWifiNative.saveConfig();
+            writeKnownNetworkHistory(true);
+        }
+
+        final List<WifiConfiguration> hiddenConfigurations =
+                mConfiguredNetworks.handleUserSwitch(mWifiStateMachine.getCurrentUserId());
+        for (WifiConfiguration network : hiddenConfigurations) {
+            if (mWifiNative.disableNetwork(network.networkId)) {
+                network.status = Status.DISABLED;
+            }
+        }
+
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
+            enableNetworkWithoutBroadcast(config.networkId, false);
+        }
+        enableAllNetworks();
+
+        // TODO(b/25600871): This broadcast is unnecessary if either of the following is true:
+        // * The user switch did not change the list of visible networks
+        // * The user switch revealed additional networks that were temporarily disabled and got
+        //   re-enabled now (because enableAllNetworks() sent the same broadcast already).
+        sendConfiguredNetworksChangedBroadcast();
     }
 
     /* Compare current and new configuration and write to file on change */
@@ -4141,6 +4278,10 @@ public class WifiConfigStore extends IpConfigStore {
         return ipConfigFile;
     }
 
+    protected void logd(String s) {
+        Log.d(TAG, s);
+    }
+
     protected void loge(String s) {
         loge(s, false);
     }
@@ -4186,7 +4327,7 @@ public class WifiConfigStore extends IpConfigStore {
 
         WifiConfiguration config;
         synchronized(mConfiguredNetworks) {             // !!! Useless synchronization
-            config = mConfiguredNetworks.get(netId);
+            config = mConfiguredNetworks.getForAllUsers(netId);
         }
 
         if (config != null) {
@@ -4287,7 +4428,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     void resetSimNetworks() {
-        for(WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForAllUsers()) {
             if (isSimConfig(config)) {
                 /* This configuration may have cached Pseudonym IDs; lets remove them */
                 mWifiNative.setNetworkVariable(config.networkId, "identity", "NULL");
@@ -4301,28 +4442,29 @@ public class WifiConfigStore extends IpConfigStore {
         // matching the one we are trying to add.
 
         if(config.networkId != INVALID_NETWORK_ID) {
-            return (mConfiguredNetworks.get(config.networkId) != null);
+            return (mConfiguredNetworks.getForCurrentUser(config.networkId) != null);
         }
 
-        return (mConfiguredNetworks.getByConfigKey(config.configKey()) != null);
+        return (mConfiguredNetworks.getByConfigKeyForCurrentUser(config.configKey()) != null);
     }
 
     /**
      * Checks if uid has access to modify the configuration corresponding to networkId.
      *
-     * Factors involved in modifiability of a config are as follows.
-     *    If uid is a Device Owner app then it has full control over the device, including WiFi
-     * configs.
-     *    If the modification is only for administrative annotation (e.g. when connecting) or the
-     * config is not lockdown eligible (currently that means any config not last updated by the DO)
-     * then the creator of config or an app holding OVERRIDE_CONFIG_WIFI can modify the config.
-     *    If the config is lockdown eligible and the modification is substantial (not annotation)
-     * then the requirement to be able to modify the config by the uid is as follows:
-     *    a) the uid has to hold OVERRIDE_CONFIG_WIFI and
-     *    b) the lockdown feature should be disabled.
+     * The conditions checked are, in descending priority order:
+     * - Disallow modification if the the configuration is not visible to the uid.
+     * - Allow modification if the uid represents the Device Owner app.
+     * - Allow modification if both of the following are true:
+     *   - The uid represents the configuration's creator or an app holding OVERRIDE_CONFIG_WIFI.
+     *   - The modification is only for administrative annotation (e.g. when connecting) or the
+     *     configuration is not lockdown eligible (which currently means that it was not last
+     *     updated by the DO).
+     * - Allow modification if configuration lockdown is explicitly disabled and the uid represents
+     *   an app holding OVERRIDE_CONFIG_WIFI.
+     * - In all other cases, disallow modification.
      */
     boolean canModifyNetwork(int uid, int networkId, boolean onlyAnnotate) {
-        WifiConfiguration config = mConfiguredNetworks.get(networkId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(networkId);
 
         if (config == null) {
             loge("canModifyNetwork: cannot find config networkId " + networkId);
@@ -4336,7 +4478,6 @@ public class WifiConfigStore extends IpConfigStore {
                 DeviceAdminInfo.USES_POLICY_DEVICE_OWNER);
 
         if (isUidDeviceOwner) {
-            // Device Owner has full control over the device, including WiFi Configs
             return true;
         }
 
@@ -4381,7 +4522,8 @@ public class WifiConfigStore extends IpConfigStore {
         if (config.networkId != INVALID_NETWORK_ID){
             netid = config.networkId;
         } else {
-            WifiConfiguration test = mConfiguredNetworks.getByConfigKey(config.configKey());
+            WifiConfiguration test =
+                    mConfiguredNetworks.getByConfigKeyForCurrentUser(config.configKey());
             if (test == null) {
                 return false;
             } else {
@@ -4407,7 +4549,7 @@ public class WifiConfigStore extends IpConfigStore {
      */
     void handleBadNetworkDisconnectReport(int netId, WifiInfo info) {
         /* TODO verify the bad network is current */
-        WifiConfiguration config = mConfiguredNetworks.get(netId);
+        WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null) {
             if ((info.is24GHz() && info.getRssi()
                     <= WifiQualifiedNetworkSelector.QUALIFIED_RSSI_24G_BAND)
@@ -4431,7 +4573,7 @@ public class WifiConfigStore extends IpConfigStore {
             return found;
 
         // Look for the BSSID in our config store
-        for (WifiConfiguration config : mConfiguredNetworks.values()) {
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             if (getScanDetailCache(config) != null) {
                 for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
                     if (scanDetail.getBSSIDString().equals(BSSID)) {

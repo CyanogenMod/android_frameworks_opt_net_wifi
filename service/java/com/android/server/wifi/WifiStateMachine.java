@@ -235,6 +235,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private int mHalFeatureSet = 0;
     private static int mPnoResultFound = 0;
 
+    private int mCurrentUserId = UserHandle.USER_SYSTEM;
+
     @Override
     public void onPnoNetworkFound(ScanResult results[]) {
         if (DBG) {
@@ -881,6 +883,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     /* used to indicated RSSI threshold breach in hw */
     static final int CMD_RSSI_THRESHOLD_BREACH                          = BASE + 164;
 
+    /* used to indicate that the foreground user was switched */
+    static final int CMD_USER_SWITCH                                    = BASE + 165;
 
 
     /* Wifi state machine modes of operation */
@@ -2727,6 +2731,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mWifiQualifiedNetworkSelector.dump(fd, pw, args);
     }
 
+    public void handleUserSwitch(int userId) {
+        sendMessage(CMD_USER_SWITCH, userId);
+    }
+
     /**
      * ******************************************************
      * Internal private functions
@@ -3330,6 +3338,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sb.append(Integer.toString(msg.arg1));
                 sb.append(" thresholds=");
                 sb.append(Arrays.toString(mRssiRanges));
+                break;
+            case CMD_USER_SWITCH:
+                sb.append(" userId=");
+                sb.append(Integer.toString(msg.arg1));
                 break;
             default:
                 sb.append(" ");
@@ -6923,6 +6935,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             case CMD_RSSI_THRESHOLD_BREACH:
                 s = "CMD_RSSI_THRESHOLD_BREACH";
                 break;
+            case CMD_USER_SWITCH:
+                s = "CMD_USER_SWITCH";
+                break;
             default:
                 s = "what:" + Integer.toString(what);
                 break;
@@ -7131,6 +7146,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case CMD_ADD_OR_UPDATE_NETWORK:
+                    // Only the current foreground user can modify networks.
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
+                        loge("Only the current foreground user can modify networks "
+                                + " currentUserId=" + mCurrentUserId
+                                + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
+                        replyToMessage(message, message.what, FAILURE);
+                        break;
+                    }
+
                     config = (WifiConfiguration) message.obj;
 
                     if (!recordUidIfAuthorized(config, message.sendingUid,
@@ -7173,7 +7197,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     replyToMessage(message, CMD_ADD_OR_UPDATE_NETWORK, res);
                     break;
                 case CMD_REMOVE_NETWORK:
+                    // Only the current foreground user can modify networks.
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
+                        loge("Only the current foreground user can modify networks "
+                                + " currentUserId=" + mCurrentUserId
+                                + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
+                        replyToMessage(message, message.what, FAILURE);
+                        break;
+                    }
                     netId = message.arg1;
+
                     if (!mWifiConfigStore.canModifyNetwork(message.sendingUid, netId,
                             /* onlyAnnotate */ false)) {
                         logw("Not authorized to remove network "
@@ -7190,6 +7223,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
                     break;
                 case CMD_ENABLE_NETWORK:
+                    // Only the current foreground user can modify networks.
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
+                        loge("Only the current foreground user can modify networks "
+                                + " currentUserId=" + mCurrentUserId
+                                + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
+                        replyToMessage(message, message.what, FAILURE);
+                        break;
+                    }
+
                     boolean disableOthers = message.arg2 == 1;
                     netId = message.arg1;
                     config = mWifiConfigStore.getWifiConfiguration(netId);
@@ -7445,8 +7487,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     // If we're autojoining a network that the user or an app explicitly selected,
                     // keep track of the UID that selected it.
-                    int lastConnectUid = mWifiConfigStore.isLastSelectedConfiguration(config) ?
-                            config.lastConnectUid : WifiConfiguration.UNKNOWN_UID;
+                    // TODO(b/25600871): Keep track of the lastSelectedConfiguration and the
+                    // lastConnectUid on a per-user basis.
+                    int lastConnectUid = WifiConfiguration.UNKNOWN_UID;
+                    if (mWifiConfigStore.isLastSelectedConfiguration(config)
+                            && UserHandle.getUserId(config.lastConnectUid) == mCurrentUserId) {
+                        lastConnectUid = config.lastConnectUid;
+                    }
 
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
                             lastConnectUid) && mWifiNative.reconnect()) {
@@ -7505,6 +7552,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mWifiConfigStore.removeNetworksForUser(message.arg1);
                     break;
                 case WifiManager.CONNECT_NETWORK:
+                    // Only the current foreground user can modify networks.
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
+                        loge("Only the current foreground user can modify networks "
+                                + " currentUserId=" + mCurrentUserId
+                                + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
+                        replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+                                       WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     /**
                      *  The connect message can contain a network id passed as arg1 on message or
                      * or a config passed as obj on message.
@@ -7646,6 +7703,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
                     // Fall thru
                 case WifiStateMachine.CMD_AUTO_SAVE_NETWORK:
+                    // Only the current foreground user can modify networks.
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
+                        loge("Only the current foreground user can modify networks "
+                                + " currentUserId=" + mCurrentUserId
+                                + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
+                        replyToMessage(message, WifiManager.SAVE_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     lastSavedConfigurationAttempt = null; // Used for debug
                     config = (WifiConfiguration) message.obj;
                     if (config == null) {
@@ -7732,6 +7799,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     break;
                 case WifiManager.FORGET_NETWORK:
+                    // Only the current foreground user can modify networks.
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
+                        loge("Only the current foreground user can modify networks "
+                                + " currentUserId=" + mCurrentUserId
+                                + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
+                        replyToMessage(message, WifiManager.FORGET_NETWORK_FAILED,
+                                WifiManager.NOT_AUTHORIZED);
+                        break;
+                    }
+
                     // Debug only, remember last configuration that was forgotten
                     WifiConfiguration toRemove
                             = mWifiConfigStore.getWifiConfiguration(message.arg1);
@@ -8453,6 +8530,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     /* allow parent state to reset data for other networks */
                     return NOT_HANDLED;
+                case CMD_USER_SWITCH:
+                    mCurrentUserId = message.arg1;
+                    mWifiConfigStore.handleUserSwitch();
+                    break;
                 default:
                     return NOT_HANDLED;
             }
@@ -10078,6 +10159,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         } else {
             mWifiNative.umtsAuthFailedResponse(requestData.networkId);
         }
+    }
+
+    public int getCurrentUserId() {
+        return mCurrentUserId;
     }
 
     /**

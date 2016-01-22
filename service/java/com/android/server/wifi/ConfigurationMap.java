@@ -1,6 +1,7 @@
 package com.android.server.wifi;
 
 import android.net.wifi.WifiConfiguration;
+import android.os.UserHandle;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -12,14 +13,21 @@ import java.util.Map;
 public class ConfigurationMap {
     private final Map<Integer, WifiConfiguration> mPerID = new HashMap<>();
     private final Map<Integer, WifiConfiguration> mPerConfigKey = new HashMap<>();
-    private final Map<String, Integer> mPerFQDN = new HashMap<>();
+
+    private final Map<Integer, WifiConfiguration> mPerIDForCurrentUser = new HashMap<>();
+    private final Map<String, WifiConfiguration> mPerFQDNForCurrentUser = new HashMap<>();
+
+    private int mCurrentUserId = UserHandle.USER_SYSTEM;
 
     // RW methods:
-    public WifiConfiguration put(int netid, WifiConfiguration config) {
-        WifiConfiguration current = mPerID.put(netid, config);
+    public WifiConfiguration put(WifiConfiguration config) {
+        final WifiConfiguration current = mPerID.put(config.networkId, config);
         mPerConfigKey.put(config.configKey().hashCode(), config);   // This is ridiculous...
-        if (config.FQDN != null && config.FQDN.length() > 0) {
-            mPerFQDN.put(config.FQDN, netid);
+        if (config.isVisibleToUser(mCurrentUserId)) {
+            mPerIDForCurrentUser.put(config.networkId, config);
+            if (config.FQDN != null && config.FQDN.length() > 0) {
+                mPerFQDNForCurrentUser.put(config.FQDN, config);
+            }
         }
         return current;
     }
@@ -31,9 +39,11 @@ public class ConfigurationMap {
         }
         mPerConfigKey.remove(config.configKey().hashCode());
 
-        Iterator<Map.Entry<String, Integer>> entries = mPerFQDN.entrySet().iterator();
+        mPerIDForCurrentUser.remove(netID);
+        Iterator<Map.Entry<String, WifiConfiguration>> entries =
+                mPerFQDNForCurrentUser.entrySet().iterator();
         while (entries.hasNext()) {
-            if (entries.next().getValue() == netID) {
+            if (entries.next().getValue().networkId == netID) {
                 entries.remove();
                 break;
             }
@@ -44,32 +54,67 @@ public class ConfigurationMap {
     public void clear() {
         mPerID.clear();
         mPerConfigKey.clear();
-        mPerFQDN.clear();
+        mPerIDForCurrentUser.clear();
+        mPerFQDNForCurrentUser.clear();
+    }
+
+    /**
+     * Handles the switch to a different foreground user:
+     * - Hides private network configurations belonging to the previous foreground user
+     * - Reveals private network configurations belonging to the new foreground user
+     *
+     * @param userId the id of the new foreground user
+     * @return a list of {@link WifiConfiguration}s that became hidden because of the user switch
+     */
+    public List<WifiConfiguration> handleUserSwitch(int userId) {
+        mPerIDForCurrentUser.clear();
+        mPerFQDNForCurrentUser.clear();
+
+        final int previousUserId = mCurrentUserId;
+        mCurrentUserId = userId;
+
+        final List<WifiConfiguration> hiddenConfigurations = new ArrayList<>();
+        for (Map.Entry<Integer, WifiConfiguration> entry : mPerID.entrySet()) {
+            final WifiConfiguration config = entry.getValue();
+            if (config.isVisibleToUser(mCurrentUserId)) {
+                mPerIDForCurrentUser.put(entry.getKey(), config);
+                if (config.FQDN != null && config.FQDN.length() > 0) {
+                    mPerFQDNForCurrentUser.put(config.FQDN, config);
+                }
+            } else if (config.isVisibleToUser(previousUserId)) {
+                hiddenConfigurations.add(config);
+            }
+        }
+
+        return hiddenConfigurations;
     }
 
     // RO methods:
-    public WifiConfiguration get(int netid) {
+    public WifiConfiguration getForAllUsers(int netid) {
         return mPerID.get(netid);
     }
 
-    public int size() {
+    public WifiConfiguration getForCurrentUser(int netid) {
+        return mPerIDForCurrentUser.get(netid);
+    }
+
+    public int sizeForAllUsers() {
         return mPerID.size();
     }
 
-    public boolean isEmpty() {
-        return mPerID.size() == 0;
+    public int sizeForCurrentUser() {
+        return mPerIDForCurrentUser.size();
     }
 
-    public WifiConfiguration getByFQDN(String fqdn) {
-        Integer id = mPerFQDN.get(fqdn);
-        return id != null ? mPerID.get(id) : null;
+    public WifiConfiguration getByFQDNForCurrentUser(String fqdn) {
+        return mPerFQDNForCurrentUser.get(fqdn);
     }
 
-    public WifiConfiguration getByConfigKey(String key) {
+    public WifiConfiguration getByConfigKeyForCurrentUser(String key) {
         if (key == null) {
             return null;
         }
-        for (WifiConfiguration config : mPerID.values()) {
+        for (WifiConfiguration config : mPerIDForCurrentUser.values()) {
             if (config.configKey().equals(key)) {
                 return config;
             }
@@ -77,13 +122,13 @@ public class ConfigurationMap {
         return null;
     }
 
-    public WifiConfiguration getByConfigKeyID(int id) {
+    public WifiConfiguration getByConfigKeyIDForAllUsers(int id) {
         return mPerConfigKey.get(id);
     }
 
-    public Collection<WifiConfiguration> getEnabledNetworks() {
+    public Collection<WifiConfiguration> getEnabledNetworksForCurrentUser() {
         List<WifiConfiguration> list = new ArrayList<>();
-        for (WifiConfiguration config : mPerID.values()) {
+        for (WifiConfiguration config : mPerIDForCurrentUser.values()) {
             if (config.status != WifiConfiguration.Status.DISABLED) {
                 list.add(config);
             }
@@ -91,8 +136,8 @@ public class ConfigurationMap {
         return list;
     }
 
-    public WifiConfiguration getEphemeral(String ssid) {
-        for (WifiConfiguration config : mPerID.values()) {
+    public WifiConfiguration getEphemeralForCurrentUser(String ssid) {
+        for (WifiConfiguration config : mPerIDForCurrentUser.values()) {
             if (ssid.equals(config.SSID) && config.ephemeral) {
                 return config;
             }
@@ -100,7 +145,11 @@ public class ConfigurationMap {
         return null;
     }
 
-    public Collection<WifiConfiguration> values() {
+    public Collection<WifiConfiguration> valuesForAllUsers() {
         return mPerID.values();
+    }
+
+    public Collection<WifiConfiguration> valuesForCurrentUser() {
+        return mPerIDForCurrentUser.values();
     }
 }

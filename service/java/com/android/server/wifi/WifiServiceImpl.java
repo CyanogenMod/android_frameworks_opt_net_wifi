@@ -400,6 +400,10 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         if (wifiEnabled) setWifiEnabled(wifiEnabled);
     }
 
+    public void handleUserSwitch(int userId) {
+        mWifiStateMachine.handleUserSwitch(userId);
+    }
+
     /**
      * see {@link android.net.wifi.WifiManager#pingSupplicant()}
      * @return {@code true} if the operation succeeds, {@code false} otherwise
@@ -862,11 +866,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
      */
     public boolean removeNetwork(int netId) {
         enforceChangePermission();
-
-        if (!isOwner(Binder.getCallingUid())) {
-            Slog.e(TAG, "Remove is not authorized for user");
-            return false;
-        }
 
         if (mWifiStateMachineChannel != null) {
             return mWifiStateMachine.syncRemoveNetwork(mWifiStateMachineChannel, netId);
