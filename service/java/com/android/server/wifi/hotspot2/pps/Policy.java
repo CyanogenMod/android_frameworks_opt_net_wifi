@@ -1,30 +1,30 @@
 package com.android.server.wifi.hotspot2.pps;
 
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.omadm.OMAException;
 import com.android.server.wifi.hotspot2.omadm.OMANode;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_Country;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_DLBandwidth;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_FQDN_Match;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_IPProtocol;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_MaximumBSSLoadValue;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_MinBackhaulThreshold;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_NetworkType;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_PolicyUpdate;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_PortNumber;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_PreferredRoamingPartnerList;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_Priority;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_RequiredProtoPortTuple;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_SPExclusionList;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_SSID;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_ULBandwidth;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_Country;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_DLBandwidth;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_FQDN_Match;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_IPProtocol;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_MaximumBSSLoadValue;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_MinBackhaulThreshold;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_NetworkType;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_PolicyUpdate;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_PortNumber;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_PreferredRoamingPartnerList;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_Priority;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_RequiredProtoPortTuple;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_SPExclusionList;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_SSID;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_ULBandwidth;
 
 public class Policy {
     private final List<PreferredRoamingPartner> mPreferredRoamingPartners;
@@ -78,7 +78,8 @@ public class Policy {
                 if (instance.isLeaf()) {
                     throw new OMAException("Not expecting leaf node in " + TAG_SPExclusionList);
                 }
-                mSPExclusionList.add(MOManager.getString(instance, TAG_SSID));
+                mSPExclusionList
+                        .add(PasspointManagementObjectManager.getString(instance, TAG_SSID));
             }
         }
 
@@ -93,8 +94,12 @@ public class Policy {
                     throw new OMAException("Not expecting leaf node in " +
                             TAG_RequiredProtoPortTuple);
                 }
-                int protocol = (int)MOManager.getLong(instance, TAG_IPProtocol, null);
-                String[] portSegments = MOManager.getString(instance, TAG_PortNumber).split(",");
+                int protocol =
+                        (int) PasspointManagementObjectManager
+                                .getLong(instance, TAG_IPProtocol, null);
+                String[] portSegments =
+                        PasspointManagementObjectManager
+                                .getString(instance, TAG_PortNumber).split(",");
                 List<Integer> ports = new ArrayList<>(portSegments.length);
                 for (String portSegment : portSegments) {
                     try {
@@ -108,7 +113,8 @@ public class Policy {
             }
         }
 
-        mMaxBSSLoad = (int)MOManager.getLong(node, TAG_MaximumBSSLoadValue, Long.MAX_VALUE);
+        mMaxBSSLoad = (int) PasspointManagementObjectManager.getLong(node,
+                TAG_MaximumBSSLoadValue, Long.MAX_VALUE);
     }
 
     public List<PreferredRoamingPartner> getPreferredRoamingPartners() {
@@ -144,14 +150,16 @@ public class Policy {
         private PreferredRoamingPartner(OMANode node)
                 throws OMAException {
 
-            String[] segments = MOManager.getString(node, TAG_FQDN_Match).split(",");
+            String[] segments =
+                    PasspointManagementObjectManager.getString(node, TAG_FQDN_Match).split(",");
             if (segments.length != 2) {
                 throw new OMAException("Bad FQDN match string: " + TAG_FQDN_Match);
             }
             mDomain = Utils.splitDomain(segments[0]);
-            mIncludeSubDomains = MOManager.getSelection(TAG_FQDN_Match, segments[1]);
-            mPriority = (int)MOManager.getLong(node, TAG_Priority, null);
-            mCountry = MOManager.getString(node, TAG_Country);
+            mIncludeSubDomains =
+                    PasspointManagementObjectManager.getSelection(TAG_FQDN_Match, segments[1]);
+            mPriority = (int) PasspointManagementObjectManager.getLong(node, TAG_Priority, null);
+            mCountry = PasspointManagementObjectManager.getString(node, TAG_Country);
         }
 
         @Override
@@ -171,9 +179,9 @@ public class Policy {
         private final long mUL;
 
         private MinBackhaul(OMANode node) throws OMAException {
-            mHome = MOManager.getSelection(node, TAG_NetworkType);
-            mDL = MOManager.getLong(node, TAG_DLBandwidth, Long.MAX_VALUE);
-            mUL = MOManager.getLong(node, TAG_ULBandwidth, Long.MAX_VALUE);
+            mHome = PasspointManagementObjectManager.getSelection(node, TAG_NetworkType);
+            mDL = PasspointManagementObjectManager.getLong(node, TAG_DLBandwidth, Long.MAX_VALUE);
+            mUL = PasspointManagementObjectManager.getLong(node, TAG_ULBandwidth, Long.MAX_VALUE);
         }
 
         @Override

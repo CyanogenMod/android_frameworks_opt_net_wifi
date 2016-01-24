@@ -73,7 +73,7 @@ public class OSUCommand {
                  * If there is already a management object at that location, the object is replaced.
                  */
                 mExecCommand = null;
-                mCommandData = new MOData(child);
+                mCommandData = new PasspointManagementObjectData(child);
                 break;
             case UpdateNode:
                 /*
@@ -81,7 +81,7 @@ public class OSUCommand {
                  * specified in the management tree URI attribute.  The content of this element is the MO node XML.
                  */
                 mExecCommand = null;
-                mCommandData = new MOData(child);
+                mCommandData = new PasspointManagementObjectData(child);
                 break;
             case NoMOUpdate:
                 /*

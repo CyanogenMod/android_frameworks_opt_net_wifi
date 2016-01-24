@@ -1,11 +1,13 @@
 package com.android.server.wifi;
 
+import android.net.wifi.AnqpInformationElement;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiSsid;
 
 import com.android.server.wifi.anqp.ANQPElement;
 import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.HSFriendlyNameElement;
+import com.android.server.wifi.anqp.RawByteElement;
 import com.android.server.wifi.anqp.VenueNameElement;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
@@ -26,7 +28,9 @@ public class ScanDetail {
     public ScanDetail(NetworkDetail networkDetail, WifiSsid wifiSsid, String BSSID,
                       String caps, int level, int frequency, long tsf) {
         mNetworkDetail = networkDetail;
-        mScanResult = new ScanResult(wifiSsid, BSSID, caps, level, frequency, tsf );
+        mScanResult = new ScanResult(wifiSsid, BSSID, networkDetail.getHESSID(),
+                networkDetail.getAnqpDomainID(), networkDetail.getOsuProviders(),
+                caps, level, frequency, tsf);
         mSeen = System.currentTimeMillis();
         //mScanResult.seen = mSeen;
         mScanResult.channelWidth = networkDetail.getChannelWidth();
@@ -40,7 +44,7 @@ public class ScanDetail {
     public ScanDetail(WifiSsid wifiSsid, String BSSID, String caps, int level, int frequency,
                       long tsf, long seen) {
         mNetworkDetail = null;
-        mScanResult = new ScanResult(wifiSsid, BSSID, caps, level, frequency, tsf );
+        mScanResult = new ScanResult(wifiSsid, BSSID, 0L, -1, null, caps, level, frequency, tsf);
         mSeen = seen;
         //mScanResult.seen = mSeen;
         mScanResult.channelWidth = 0;
@@ -93,6 +97,14 @@ public class ScanDetail {
             if (vne != null && !vne.getNames().isEmpty()) {
                 mScanResult.venueName = vne.getNames().get(0).getText();
             }
+        }
+        RawByteElement osuProviders = (RawByteElement) anqpElements
+                .get(Constants.ANQPElementType.HSOSUProviders);
+        if (osuProviders != null) {
+            mScanResult.anqpElements = new AnqpInformationElement[1];
+            mScanResult.anqpElements[0] =
+                    new AnqpInformationElement(AnqpInformationElement.HOTSPOT20_VENDOR_ID,
+                            AnqpInformationElement.HS_OSU_PROVIDERS, osuProviders.getPayload());
         }
     }
 

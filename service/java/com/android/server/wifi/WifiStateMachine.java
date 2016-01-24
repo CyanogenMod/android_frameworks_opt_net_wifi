@@ -59,6 +59,7 @@ import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
 import android.net.ip.IpManager;
+import android.net.wifi.PasspointManagementObjectDefinition;
 import android.net.wifi.RssiPacketCountInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
@@ -106,7 +107,7 @@ import com.android.internal.util.StateMachine;
 import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.NetworkDetail;
-import com.android.server.wifi.hotspot2.osu.OSUInfo;
+import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
 import java.io.BufferedReader;
@@ -120,7 +121,6 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -223,6 +223,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private int mLastSignalLevel = -1;
     private String mLastBssid;
     private int mLastNetworkId; // The network Id we successfully joined
+    private ScanDetail mActiveScanDetail;   // ScanDetail associated with active network
     private boolean linkDebouncing = false;
 
     private boolean mHalBasedPnoDriverSupported = false;
@@ -780,6 +781,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* SIM is removed; reset any cached data for it */
     static final int CMD_RESET_SIM_NETWORKS                             = BASE + 101;
+
+    /* OSU APIs */
+    static final int CMD_ADD_PASSPOINT_MO                               = BASE + 102;
+    static final int CMD_MODIFY_PASSPOINT_MO                            = BASE + 103;
+    static final int CMD_QUERY_OSU_ICON                                 = BASE + 104;
+
+    /* try to match a provider with current network */
+    static final int CMD_MATCH_PROVIDER_NETWORK                         = BASE + 105;
 
     /**
      * Make this timer 40 seconds, which is about the normal DHCP timeout.
@@ -1374,7 +1383,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.GAS_QUERY_DONE_EVENT, getHandler());
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.GAS_QUERY_START_EVENT,
                 getHandler());
-        mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.HS20_DEAUTH_EVENT, getHandler());
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.HS20_REMEDIATION_EVENT,
                 getHandler());
         mWifiMonitor.registerHandler(mInterfaceName, WifiMonitor.NETWORK_CONNECTION_EVENT,
@@ -2267,12 +2275,50 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
     }
 
-    public Collection<OSUInfo> getOSUInfos() {
-        return mWifiConfigStore.getOSUInfos();
+    public int syncAddPasspointManagementObject(AsyncChannel channel, String managementObject) {
+        Message resultMsg =
+                channel.sendMessageSynchronously(CMD_ADD_PASSPOINT_MO, managementObject);
+        int result = resultMsg.arg1;
+        resultMsg.recycle();
+        return result;
     }
 
-    public void setOSUSelection(int osuID) {
-        mWifiConfigStore.setOSUSelection(osuID);
+    public int syncModifyPasspointManagementObject(AsyncChannel channel, String fqdn,
+                                                   List<PasspointManagementObjectDefinition>
+                                                           managementObjectDefinitions) {
+        Bundle bundle = new Bundle();
+        bundle.putString("FQDN", fqdn);
+        bundle.putParcelableList("MOS", managementObjectDefinitions);
+        Message resultMsg = channel.sendMessageSynchronously(CMD_MODIFY_PASSPOINT_MO, bundle);
+        int result = resultMsg.arg1;
+        resultMsg.recycle();
+        return result;
+    }
+
+    public boolean syncQueryPasspointIcon(AsyncChannel channel, long bssid, String fileName) {
+        Bundle bundle = new Bundle();
+        bundle.putLong("BSSID", bssid);
+        bundle.putString("FILENAME", fileName);
+        Message resultMsg = channel.sendMessageSynchronously(CMD_QUERY_OSU_ICON, bundle);
+        int result = resultMsg.arg1;
+        resultMsg.recycle();
+        return result == 1;
+    }
+
+    public int matchProviderWithCurrentNetwork(AsyncChannel channel, String fqdn) {
+        Message resultMsg = channel.sendMessageSynchronously(CMD_MATCH_PROVIDER_NETWORK, fqdn);
+        int result = resultMsg.arg1;
+        resultMsg.recycle();
+        return result;
+    }
+
+    /**
+     * Deauthenticate and set the re-authentication hold off time for the current network
+     * @param holdoff hold off time in milliseconds
+     * @param ess set if the hold off pertains to an ESS rather than a BSS
+     */
+    public void deauthenticateNetwork(AsyncChannel channel, long holdoff, boolean ess) {
+        // TODO: This needs an implementation
     }
 
     public void disableEphemeralNetwork(String SSID) {
@@ -3955,12 +4001,31 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         mWifiConfigStore.trimANQPCache(false);
 
+        boolean connected = mLastBssid != null;
+        long activeBssid = 0L;
+        if (connected) {
+            try {
+                activeBssid = Utils.parseMac(mLastBssid);
+            } catch (IllegalArgumentException iae) {
+                connected = false;
+            }
+        }
+
         synchronized (mScanResultCache) {
+            ScanDetail activeScanDetail = null;
             mScanResults = scanResults;
             mNumScanResultsReturned = mScanResults.size();
             for (ScanDetail resultDetail : mScanResults) {
                 mScanResultCache.put(resultDetail.getNetworkDetail(), resultDetail);
+                if (connected && resultDetail.getNetworkDetail().getBSSID() == activeBssid) {
+                    if (activeScanDetail == null
+                            || activeScanDetail.getNetworkDetail().getBSSID() != activeBssid
+                            || activeScanDetail.getNetworkDetail().getANQPElements() == null) {
+                        activeScanDetail = resultDetail;
+                    }
+                }
             }
+            mActiveScanDetail = activeScanDetail;
         }
         if (mNumScanResultsReturned > 0) {
             mWifiMetrics.incrementNonEmptyScanResultCount();
@@ -3993,6 +4058,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (changed) {
             // Trigger a scan so as to reattempt autojoin
             startScanForUntrustedSettingChange();
+        }
+    }
+
+    public ScanDetail getActiveScanDetail() {
+        synchronized (mScanResultCache) {
+            return mActiveScanDetail;
         }
     }
 
@@ -5586,6 +5657,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mCurrentUserId = message.arg1;
                     mWifiConfigStore.handleUserSwitch();
                     break;
+                case CMD_ADD_PASSPOINT_MO:
+                case CMD_MODIFY_PASSPOINT_MO:
+                case CMD_QUERY_OSU_ICON:
+                case CMD_MATCH_PROVIDER_NETWORK:
+                    /* reply with arg1 = 0 - it returns API failure to the calling app
+                     * (message.what is not looked at)
+                     */
+                    replyToMessage(message, message.what);
+                    break;
                 default:
                     loge("Error! unhandled message" + message);
                     break;
@@ -6274,13 +6354,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 }
                 case WifiMonitor.RX_HS20_ANQP_ICON_EVENT:
-                    mWifiConfigStore.notifyIconReceived((IconEvent)message.obj);
+                    mWifiConfigStore.notifyIconReceived((IconEvent) message.obj);
                     break;
                 case WifiMonitor.HS20_REMEDIATION_EVENT:
-                    mWifiConfigStore.wnmFrameReceived((String)message.obj);
-                    break;
-                case WifiMonitor.HS20_DEAUTH_EVENT:
-                    mWifiConfigStore.wnmFrameReceived((String)message.obj);
+                    mWifiConfigStore.wnmFrameReceived((WnmData) message.obj);
                     break;
                 default:
                     return NOT_HANDLED;
@@ -6712,9 +6789,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case WifiMonitor.GAS_QUERY_DONE_EVENT:
                 s = "WifiMonitor.GAS_QUERY_DONE_EVENT";
-                break;
-            case WifiMonitor.HS20_DEAUTH_EVENT:
-                s = "WifiMonitor.HS20_DEAUTH_EVENT";
                 break;
             case WifiMonitor.HS20_REMEDIATION_EVENT:
                 s = "WifiMonitor.HS20_REMEDIATION_EVENT";
@@ -7822,7 +7896,37 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     transitionTo(mDisconnectedState);
                     break;
                 case CMD_PNO_NETWORK_FOUND:
-                    processPnoNetworkFound((ScanResult[])message.obj);
+                    processPnoNetworkFound((ScanResult[]) message.obj);
+                    break;
+                case CMD_ADD_PASSPOINT_MO:
+                    res = mWifiConfigStore.addPasspointManagementObject((String) message.obj);
+                    replyToMessage(message, message.what, res);
+                    break;
+                case CMD_MODIFY_PASSPOINT_MO:
+                    if (message.obj != null) {
+                        Bundle bundle = (Bundle) message.obj;
+                        ArrayList<PasspointManagementObjectDefinition> mos =
+                                bundle.getParcelableArrayList("MOS");
+                        res = mWifiConfigStore.modifyPasspointMo(bundle.getString("FQDN"), mos);
+                    } else {
+                        res = 0;
+                    }
+                    replyToMessage(message, message.what, res);
+
+                    break;
+                case CMD_QUERY_OSU_ICON:
+                    if (mWifiConfigStore.queryPasspointIcon(
+                            ((Bundle) message.obj).getLong("BSSID"),
+                            ((Bundle) message.obj).getString("FILENAME"))) {
+                        res = 1;
+                    } else {
+                        res = 0;
+                    }
+                    replyToMessage(message, message.what, res);
+                    break;
+                case CMD_MATCH_PROVIDER_NETWORK:
+                    res = mWifiConfigStore.matchProviderWithCurrentNetwork((String) message.obj);
+                    replyToMessage(message, message.what, res);
                     break;
                 default:
                     return NOT_HANDLED;
@@ -7843,11 +7947,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
             networkCapabilities.setSignalStrength(mWifiInfo.getRssi() != WifiInfo.INVALID_RSSI ?
                     mWifiInfo.getRssi() : NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED);
-            if (mWifiConfigStore.isOSUNetwork(config)) {
-                Log.d(TAG, "Removing internet cap from " + config.SSID);
-                //networkCapabilities.removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-                networkCapabilities.addCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL);
-            }
         }
         mNetworkAgent.sendNetworkCapabilities(networkCapabilities);
     }

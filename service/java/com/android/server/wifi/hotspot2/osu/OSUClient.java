@@ -15,17 +15,13 @@ import android.net.Network;
 import android.util.Log;
 
 import com.android.server.wifi.hotspot2.OMADMAdapter;
-import com.android.server.wifi.hotspot2.asn1.Asn1Decoder;
-import com.android.server.wifi.hotspot2.asn1.Asn1Object;
-import com.android.server.wifi.hotspot2.asn1.Asn1Octets;
-import com.android.server.wifi.hotspot2.asn1.OidMappings;
 import com.android.server.wifi.hotspot2.est.ESTHandler;
 import com.android.server.wifi.hotspot2.omadm.OMAConstants;
 import com.android.server.wifi.hotspot2.omadm.OMANode;
 import com.android.server.wifi.hotspot2.osu.commands.BrowserURI;
 import com.android.server.wifi.hotspot2.osu.commands.ClientCertInfo;
 import com.android.server.wifi.hotspot2.osu.commands.GetCertData;
-import com.android.server.wifi.hotspot2.osu.commands.MOData;
+import com.android.server.wifi.hotspot2.osu.commands.PasspointManagementObjectData;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 import com.android.server.wifi.hotspot2.pps.UpdateInfo;
@@ -33,7 +29,6 @@ import com.android.server.wifi.hotspot2.pps.UpdateInfo;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
@@ -153,9 +148,9 @@ public class OSUClient {
             Map<OSUCertType, List<X509Certificate>> certs = new HashMap<>();
             PrivateKey clientKey = null;
 
-            MOData moData;
+            PasspointManagementObjectData moData;
             if (estData == null) {
-                moData = (MOData) provResponse.getCommandData();
+                moData = (PasspointManagementObjectData) provResponse.getCommandData();
             }
             else {
                 try (ESTHandler estHandler = new ESTHandler((GetCertData) provResponse.
@@ -181,7 +176,7 @@ public class OSUClient {
                         provComplete.getOSUCommand() != OSUCommandID.AddMO) {
                     throw new IOException("Expected addMO: " + provComplete);
                 }
-                moData = (MOData) provComplete.getCommandData();
+                moData = (PasspointManagementObjectData) provComplete.getCommandData();
             }
 
             // !!! How can an ExchangeComplete be sent w/o knowing the fate of the certs???
@@ -312,10 +307,10 @@ public class OSUClient {
 
             Log.d(TAG, "Remediation response: " + pddResponse);
 
-            List<MOData> mods = new ArrayList<>();
+            List<PasspointManagementObjectData> mods = new ArrayList<>();
             for (OSUCommand command : pddResponse.getCommands()) {
                 if (command.getOSUCommand() == OSUCommandID.UpdateNode) {
-                    mods.add((MOData)command.getCommandData());
+                    mods.add((PasspointManagementObjectData)command.getCommandData());
                 }
                 else if (command.getOSUCommand() != OSUCommandID.NoMOUpdate) {
                     throw new IOException("Unexpected OSU response: " + command);

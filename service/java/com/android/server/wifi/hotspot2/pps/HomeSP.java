@@ -25,6 +25,12 @@ import java.util.Set;
 
 import static com.android.server.wifi.anqp.Constants.ANQPElementType;
 
+/**
+ * This object describes the Home SP sub tree in the "PerProviderSubscription MO" described in
+ * the Hotspot 2.0 specification, section 9.1.
+ * As a convenience, the object also refers to the other sub-parts of the full
+ * PerProviderSubscription tree.
+ */
 public class HomeSP {
     private final Map<String, Long> mSSIDs;        // SSID, HESSID, [0,N]
     private final String mFQDN;
@@ -45,6 +51,7 @@ public class HomeSP {
     private final Map<String, String> mAAATrustRoots;
     private final UpdateInfo mSubscriptionUpdate;
     private final SubscriptionParameters mSubscriptionParameters;
+    private final int mUpdateIdentifier;
 
     @Deprecated
     public HomeSP(Map<String, Long> ssidMap,
@@ -77,6 +84,7 @@ public class HomeSP {
         mAAATrustRoots = null;
         mSubscriptionUpdate = null;
         mSubscriptionParameters = null;
+        mUpdateIdentifier = -1;
     }
 
     public HomeSP(Map<String, Long> ssidMap,
@@ -93,7 +101,8 @@ public class HomeSP {
                   int credentialPriority,
                   Map<String, String> AAATrustRoots,
                   UpdateInfo subscriptionUpdate,
-                  SubscriptionParameters subscriptionParameters) {
+                  SubscriptionParameters subscriptionParameters,
+                  int updateIdentifier) {
 
         mSSIDs = ssidMap;
         List<List<String>> otherPartners = new ArrayList<>(otherHomePartners.size());
@@ -115,6 +124,11 @@ public class HomeSP {
         mAAATrustRoots = AAATrustRoots;
         mSubscriptionUpdate = subscriptionUpdate;
         mSubscriptionParameters = subscriptionParameters;
+        mUpdateIdentifier = updateIdentifier;
+    }
+
+    public int getUpdateIdentifier() {
+        return mUpdateIdentifier;
     }
 
     public UpdateInfo getSubscriptionUpdate() {

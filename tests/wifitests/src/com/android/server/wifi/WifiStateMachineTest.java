@@ -16,18 +16,6 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyBoolean;
-import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.anyObject;
-import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.withSettings;
-
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -67,7 +55,8 @@ import com.android.internal.util.StateMachine;
 import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.Utils;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.osu.OSUManager;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
@@ -87,6 +76,18 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyObject;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 /**
  * Unit tests for {@link com.android.server.wifi.WifiStateMachine}.
@@ -182,7 +183,8 @@ public class WifiStateMachineTest {
         when(facade.getService(BatteryStats.SERVICE_NAME)).thenReturn(batteryStatsBinder);
 
         when(facade.makeOsuManager(any(WifiConfigStore.class), any(Context.class), any(
-                SupplicantBridge.class), any(MOManager.class), any(WifiStateMachine.class)))
+                SupplicantBridge.class),
+                any(PasspointManagementObjectManager.class), any(WifiStateMachine.class)))
                 .thenReturn(mock(OSUManager.class));
 
         when(facade.makeDhcpStateMachine(
@@ -487,16 +489,16 @@ public class WifiStateMachineTest {
 
         when(mWifiNative.setNetworkExtra(anyInt(), anyString(), (Map<String, String>) anyObject()))
                 .then(new AnswerWithArguments<Boolean>() {
-                        public boolean answer(int netId, String name, Map<String, String> values) {
-                            if (netId != 0) {
-                                Log.d(TAG, "Can't set extra " + name + " for " + netId);
-                                return false;
-                            }
-
-                            Log.d(TAG, "Setting extra for " + netId);
-                            return true;
+                    public boolean answer(int netId, String name, Map<String, String> values) {
+                        if (netId != 0) {
+                            Log.d(TAG, "Can't set extra " + name + " for " + netId);
+                            return false;
                         }
-                    });
+
+                        Log.d(TAG, "Setting extra for " + netId);
+                        return true;
+                    }
+                });
 
         when(mWifiNative.getNetworkVariable(anyInt(), anyString()))
                 .then(new AnswerWithArguments<String>() {
@@ -648,5 +650,22 @@ public class WifiStateMachineTest {
         wait(200);
 
         assertEquals(10, mWsm.getCurrentUserId());
+    }
+
+    @Test
+    public void iconQueryTest() throws Exception {
+        /* enable wi-fi */
+        addNetwork();
+
+        long bssid = 0x1234567800FFL;
+        String filename = "iconFileName.png";
+        String command = "REQ_HS20_ICON " + Utils.macToString(bssid) + " " + filename;
+
+        when(mWifiNative.doCustomSupplicantCommand(command)).thenReturn("OK");
+
+        boolean result = mWsm.syncQueryPasspointIcon(mWsmAsyncChannel, bssid, filename);
+
+        verify(mWifiNative).doCustomSupplicantCommand(command);
+        assertEquals(true, result);
     }
 }

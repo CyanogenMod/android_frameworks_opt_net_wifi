@@ -32,6 +32,7 @@ import android.net.IpConfiguration.ProxySettings;
 import android.net.NetworkInfo.DetailedState;
 import android.net.ProxyInfo;
 import android.net.StaticIpConfiguration;
+import android.net.wifi.PasspointManagementObjectDefinition;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
@@ -72,11 +73,11 @@ import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
-import com.android.server.wifi.hotspot2.osu.OSUInfo;
-import com.android.server.wifi.hotspot2.osu.OSUManager;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
+
+import org.xml.sax.SAXException;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -541,9 +542,9 @@ public class WifiConfigStore extends IpConfigStore {
 
     private final AnqpCache mAnqpCache;
     private final SupplicantBridge mSupplicantBridge;
-    private final MOManager mMOManager;
+    private final PasspointManagementObjectManager mMOManager;
+    private final boolean mEnableOsuQueries;
     private final SIMAccessor mSIMAccessor;
-    private final OSUManager mOSUManager;
 
     private WifiStateMachine mWifiStateMachine;
     private FrameworkFacade mFacade;
@@ -680,23 +681,17 @@ public class WifiConfigStore extends IpConfigStore {
         boolean hs2on = mContext.getResources().getBoolean(R.bool.config_wifi_hotspot2_enabled);
         Log.d(Utils.hs2LogTag(getClass()), "Passpoint is " + (hs2on ? "enabled" : "disabled"));
 
-        mMOManager = new MOManager(new File(PPS_FILE), hs2on);
+        mMOManager = new PasspointManagementObjectManager(new File(PPS_FILE), hs2on);
+        mEnableOsuQueries = true;
         mAnqpCache = new AnqpCache();
         mSupplicantBridge = new SupplicantBridge(mWifiNative, this);
         mScanDetailCaches = new HashMap<>();
-        mOSUManager = mFacade.makeOsuManager(
-                this, mContext, mSupplicantBridge, mMOManager, mWifiStateMachine);
 
         mSIMAccessor = new SIMAccessor(mContext);
-
-        if (OSUManager.R2_TEST) {
-            mOSUManager.addMockOSUEnvironment(mOSUManager);
-        }
     }
 
     public void trimANQPCache(boolean all) {
         mAnqpCache.clear(all, DBG);
-        mOSUManager.tickleIconCache(all);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -796,7 +791,16 @@ public class WifiConfigStore extends IpConfigStore {
      */
     List<WifiConfiguration> getPrivilegedConfiguredNetworks() {
         Map<String, String> pskMap = getCredentialsBySsidMap();
-        return getConfiguredNetworks(pskMap);
+        List<WifiConfiguration> configurations = getConfiguredNetworks(pskMap);
+        for (WifiConfiguration configuration : configurations) {
+            try {
+                configuration
+                        .setPasspointManagementObjectTree(mMOManager.getMOTree(configuration.FQDN));
+            } catch (IOException ioe) {
+                Log.w(TAG, "Failed to parse MO from " + configuration.FQDN + ": " + ioe);
+            }
+        }
+        return configurations;
     }
 
     /**
@@ -1288,6 +1292,44 @@ public class WifiConfigStore extends IpConfigStore {
         return result.getNetworkId();
     }
 
+    public int addPasspointManagementObject(String managementObject) {
+        try {
+            mMOManager.addSP(managementObject);
+            return 0;
+        } catch (IOException | SAXException e) {
+            return -1;
+        }
+    }
+
+    public int modifyPasspointMo(String fqdn, List<PasspointManagementObjectDefinition> mos) {
+        try {
+            return mMOManager.modifySP(fqdn, mos);
+        } catch (IOException | SAXException e) {
+            return -1;
+        }
+    }
+
+    public boolean queryPasspointIcon(long bssid, String fileName) {
+        return mSupplicantBridge.doIconQuery(bssid, fileName);
+    }
+
+    public int matchProviderWithCurrentNetwork(String fqdn) {
+        ScanDetail scanDetail = mWifiStateMachine.getActiveScanDetail();
+        if (scanDetail == null) {
+            return PasspointMatch.None.ordinal();
+        }
+        HomeSP homeSP = mMOManager.getHomeSP(fqdn);
+        if (homeSP == null) {
+            return PasspointMatch.None.ordinal();
+        }
+
+        ANQPData anqpData = mAnqpCache.getEntry(scanDetail.getNetworkDetail());
+
+        Map<Constants.ANQPElementType, ANQPElement> anqpElements =
+                anqpData != null ? anqpData.getANQPElements() : null;
+
+        return homeSP.match(scanDetail.getNetworkDetail(), anqpElements, mSIMAccessor).ordinal();
+    }
 
     /**
      * Get the Wifi PNO list
@@ -2299,9 +2341,9 @@ public class WifiConfigStore extends IpConfigStore {
             public void onWriteCalled(DataOutputStream out) throws IOException {
                 try {
                     if (homeSP != null) {
-                        mMOManager.addSP(homeSP, mOSUManager);
+                        mMOManager.addSP(homeSP);
                     } else {
-                        mMOManager.removeSP(fqdn, mOSUManager);
+                        mMOManager.removeSP(fqdn);
                     }
                 } catch (IOException e) {
                     loge("Could not write " + PPS_FILE + " : " + e);
@@ -3059,17 +3101,6 @@ public class WifiConfigStore extends IpConfigStore {
                 WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
                 if (needsKeyStore(enterpriseConfig)) {
-                    /**
-                     * Keyguard settings may eventually be controlled by device policy.
-                     * We check here if keystore is unlocked before installing
-                     * credentials.
-                     * TODO: Do we need a dialog here ?
-                     */
-                    if (mKeyStore.state() != KeyStore.State.UNLOCKED) {
-                        loge(config.SSID + ": key store is locked");
-                        break setVariables;
-                    }
-
                     try {
                         /* config passed may include only fields being updated.
                          * In order to generate the key id, fetch uninitialized
@@ -3482,7 +3513,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     private Map<HomeSP, PasspointMatch> matchPasspointNetworks(ScanDetail scanDetail) {
         if (!mMOManager.isConfigured()) {
-            if (mOSUManager.enableOSUQueries()) {
+            if (mEnableOsuQueries) {
                 NetworkDetail networkDetail = scanDetail.getNetworkDetail();
                 List<Constants.ANQPElementType> querySet =
                         ANQPFactory.buildQueryList(networkDetail, false, true);
@@ -3490,9 +3521,7 @@ public class WifiConfigStore extends IpConfigStore {
                 if (networkDetail.queriable(querySet)) {
                     querySet = mAnqpCache.initiate(networkDetail, querySet);
                     if (querySet != null) {
-                        if (mSupplicantBridge.startANQP(scanDetail, querySet)) {
-                            mOSUManager.anqpInitiated(scanDetail);
-                        }
+                        mSupplicantBridge.startANQP(scanDetail, querySet);
                     }
                     updateAnqpCache(scanDetail, networkDetail.getANQPElements());
                 }
@@ -3532,17 +3561,15 @@ public class WifiConfigStore extends IpConfigStore {
             Log.d(Utils.hs2LogTag(getClass()), " -- " +
                     homeSP.getFQDN() + ": match " + match + ", queried " + queried);
 
-            if ((match == PasspointMatch.Incomplete || mOSUManager.enableOSUQueries()) && !queried) {
+            if ((match == PasspointMatch.Incomplete || mEnableOsuQueries) && !queried) {
                 boolean matchSet = match == PasspointMatch.Incomplete;
-                boolean osu = mOSUManager.enableOSUQueries();
+                boolean osu = mEnableOsuQueries;
                 List<Constants.ANQPElementType> querySet =
                         ANQPFactory.buildQueryList(networkDetail, matchSet, osu);
                 if (networkDetail.queriable(querySet)) {
                     querySet = mAnqpCache.initiate(networkDetail, querySet);
                     if (querySet != null) {
-                        if (mSupplicantBridge.startANQP(scanDetail, querySet)) {
-                            mOSUManager.anqpInitiated(scanDetail);
-                        }
+                        mSupplicantBridge.startANQP(scanDetail, querySet);
                     }
                 }
                 queried = true;
@@ -3561,42 +3588,58 @@ public class WifiConfigStore extends IpConfigStore {
         return mSIMAccessor;
     }
 
-    public void notifyScanComplete() {
-        mOSUManager.scanComplete();
-    }
-
-    public boolean isOSUNetwork(WifiConfiguration config) {
-        return mOSUManager.isOSU(Utils.unquote(config.SSID));
-    }
-
-    public void setOSUSelection(int osuID) {
-        mOSUManager.setOSUSelection(osuID);
-    }
-
     public void notifyANQPDone(Long bssid, boolean success) {
         mSupplicantBridge.notifyANQPDone(bssid, success);
     }
 
     public void notifyIconReceived(IconEvent iconEvent) {
-        mOSUManager.notifyIconReceived(iconEvent);
+        Intent intent = new Intent(WifiManager.PASSPOINT_ICON_RECEIVED_ACTION);
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+        intent.putExtra(WifiManager.EXTRA_PASSPOINT_ICON_BSSID, iconEvent.getBSSID());
+        intent.putExtra(WifiManager.EXTRA_PASSPOINT_ICON_FILE, iconEvent.getFileName());
+        try {
+            intent.putExtra(WifiManager.EXTRA_PASSPOINT_ICON_DATA, mSupplicantBridge.retrieveIcon(iconEvent));
+        } catch (IOException ioe) {
+            /* Simply omit the icon data as a failure indication */
+        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
+
     }
 
     public void notifyIconFailed(long bssid) {
-        mOSUManager.notifyIconFailed(bssid);
+        Intent intent = new Intent(WifiManager.PASSPOINT_ICON_RECEIVED_ACTION);
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+        intent.putExtra(WifiManager.EXTRA_PASSPOINT_ICON_BSSID, bssid);
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
     }
 
-    public void wnmFrameReceived(String event) {
-        mOSUManager.wnmReceived(event);
-    }
+    public void wnmFrameReceived(WnmData event) {
+        // %012x HS20-SUBSCRIPTION-REMEDIATION "%u %s", osu_method, url
+        // %012x HS20-DEAUTH-IMMINENT-NOTICE "%u %u %s", code, reauth_delay, url
 
-    public Collection<OSUInfo> getOSUInfos() {
-        return mOSUManager.getAvailableOSUs();
+        Intent intent = new Intent(WifiManager.PASSPOINT_WNM_FRAME_RECEIVED_ACTION);
+        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+
+        intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_BSSID, event.getBssid());
+        intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_URL, event.getUrl());
+
+        if (event.isDeauthEvent()) {
+            intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_ESS, event.isEss());
+            intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_DELAY, event.getDelay());
+        } else {
+            intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_METHOD, event.getMethod());
+            WifiConfiguration config = mWifiStateMachine.getCurrentWifiConfiguration();
+            if (config != null && config.FQDN != null) {
+                intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_PPOINT_MATCH,
+                        matchProviderWithCurrentNetwork(config.FQDN));
+            }
+        }
+        mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
     }
 
     public void notifyANQPResponse(ScanDetail scanDetail,
                                Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
 
-        mOSUManager.anqpDone(scanDetail, anqpElements);
         updateAnqpCache(scanDetail, anqpElements);
         if (anqpElements == null || anqpElements.isEmpty()) {
             return;
@@ -3798,7 +3841,6 @@ public class WifiConfigStore extends IpConfigStore {
 
         if (networkDetail.hasInterworking()) {
             Map<HomeSP, PasspointMatch> matches = matchPasspointNetworks(scanDetail);
-            mOSUManager.addScanResult(scanDetail.getNetworkDetail());
             if (matches != null) {
                 cacheScanResultForPasspointConfigs(scanDetail, matches,
                         associatedWifiConfigurations);
@@ -4602,21 +4644,16 @@ public class WifiConfigStore extends IpConfigStore {
         String userCertName = Credentials.USER_CERTIFICATE + name;
         if (config.getClientCertificate() != null) {
             byte[] privKeyData = config.getClientPrivateKey().getEncoded();
-            if (isHardwareBackedKey(config.getClientPrivateKey())) {
-                // Hardware backed key store is secure enough to store keys un-encrypted, this
-                // removes the need for user to punch a PIN to get access to these keys
-                if (DBG) Log.d(TAG, "importing keys " + name + " in hardware backed store");
-                ret = mKeyStore.importKey(privKeyName, privKeyData, android.os.Process.WIFI_UID,
-                        KeyStore.FLAG_NONE);
-            } else {
-                // Software backed key store is NOT secure enough to store keys un-encrypted.
-                // Save keys encrypted so they are protected with user's PIN. User will
-                // have to unlock phone before being able to use these keys and connect to
-                // networks.
-                if (DBG) Log.d(TAG, "importing keys " + name + " in software backed store");
-                ret = mKeyStore.importKey(privKeyName, privKeyData, Process.WIFI_UID,
-                        KeyStore.FLAG_ENCRYPTED);
+            if (DBG) {
+                if (isHardwareBackedKey(config.getClientPrivateKey())) {
+                    Log.d(TAG, "importing keys " + name + " in hardware backed store");
+                } else {
+                    Log.d(TAG, "importing keys " + name + " in software backed store");
+                }
             }
+            ret = mKeyStore.importKey(privKeyName, privKeyData, Process.WIFI_UID,
+                    KeyStore.FLAG_NONE);
+
             if (ret == false) {
                 return ret;
             }

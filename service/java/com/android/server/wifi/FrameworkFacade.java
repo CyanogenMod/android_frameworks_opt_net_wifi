@@ -16,7 +16,7 @@ import android.provider.Settings;
 
 import com.android.internal.util.StateMachine;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.osu.OSUManager;
 
 /**
@@ -54,7 +54,7 @@ public class FrameworkFacade {
     }
 
     public OSUManager makeOsuManager(WifiConfigStore wifiConfigStore, Context context,
-             SupplicantBridge supplicantBridge, MOManager moManager,
+             SupplicantBridge supplicantBridge, PasspointManagementObjectManager moManager,
              WifiStateMachine wifiStateMachine) {
         return new OSUManager(wifiConfigStore, context,
                 supplicantBridge, moManager, wifiStateMachine);

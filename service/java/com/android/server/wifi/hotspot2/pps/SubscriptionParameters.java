@@ -1,21 +1,21 @@
 package com.android.server.wifi.hotspot2.pps;
 
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.omadm.OMAException;
 import com.android.server.wifi.hotspot2.omadm.OMANode;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_CreationDate;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_DataLimit;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_ExpirationDate;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_StartDate;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_TimeLimit;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_TypeOfSubscription;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_UsageLimits;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_UsageTimePeriod;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_CreationDate;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_DataLimit;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_ExpirationDate;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_StartDate;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_TimeLimit;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_TypeOfSubscription;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_UsageLimits;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_UsageTimePeriod;
 
 public class SubscriptionParameters {
     private final long mCDate;
@@ -24,9 +24,9 @@ public class SubscriptionParameters {
     private final List<Limit> mLimits;
 
     public SubscriptionParameters(OMANode node) throws OMAException {
-        mCDate = MOManager.getTime(node.getChild(TAG_CreationDate));
-        mXDate = MOManager.getTime(node.getChild(TAG_ExpirationDate));
-        mType = MOManager.getString(node.getChild(TAG_TypeOfSubscription));
+        mCDate = PasspointManagementObjectManager.getTime(node.getChild(TAG_CreationDate));
+        mXDate = PasspointManagementObjectManager.getTime(node.getChild(TAG_ExpirationDate));
+        mType = PasspointManagementObjectManager.getString(node.getChild(TAG_TypeOfSubscription));
 
         OMANode ulNode = node.getChild(TAG_UsageLimits);
         if (ulNode == null) {
@@ -52,11 +52,15 @@ public class SubscriptionParameters {
         private final long mUsageTimePeriod;
 
         private Limit(OMANode node) throws OMAException {
-            mDataLimit = MOManager.getLong(node, TAG_DataLimit, Long.MAX_VALUE);
-            mStartDate = MOManager.getTime(node.getChild(TAG_StartDate));
-            mTimeLimit = MOManager.getLong(node, TAG_TimeLimit, Long.MAX_VALUE) *
-                    MOManager.IntervalFactor;
-            mUsageTimePeriod = MOManager.getLong(node, TAG_UsageTimePeriod, null);
+            mDataLimit = PasspointManagementObjectManager
+                    .getLong(node, TAG_DataLimit, Long.MAX_VALUE);
+            mStartDate = PasspointManagementObjectManager
+                    .getTime(node.getChild(TAG_StartDate));
+            mTimeLimit = PasspointManagementObjectManager
+                    .getLong(node, TAG_TimeLimit, Long.MAX_VALUE)
+                    * PasspointManagementObjectManager.IntervalFactor;
+            mUsageTimePeriod = PasspointManagementObjectManager
+                    .getLong(node, TAG_UsageTimePeriod, null);
         }
 
         @Override
