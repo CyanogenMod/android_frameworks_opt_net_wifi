@@ -69,8 +69,9 @@ wifi_error wifi_get_rtt_capabilities_stub(wifi_interface_handle iface,
 wifi_error wifi_set_nodfs_flag_stub(wifi_interface_handle iface, u32 nodfs);
 wifi_error wifi_start_logging_stub(wifi_interface_handle iface, u32 verbose_level, u32 flags,
          u32 max_interval_sec, u32 min_data_size, char *buffer_name);
-wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_networks,
-         wifi_epno_network *networks, wifi_epno_handler handler);
+wifi_error wifi_set_epno_list_stub(wifi_request_id id, wifi_interface_info *iface,
+        const wifi_epno_params *params, wifi_epno_handler handler);
+wifi_error wifi_reset_epno_list_stub(wifi_request_id id, wifi_interface_info *iface);
 wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
 wifi_error wifi_get_firmware_memory_dump_stub( wifi_interface_handle iface,
         wifi_firmware_memory_dump_handler handler);
@@ -87,8 +88,6 @@ wifi_error wifi_get_ring_buffers_status_stub(wifi_interface_handle iface,
 wifi_error wifi_get_logger_supported_feature_set_stub(wifi_interface_handle iface,
         unsigned int *support);
 wifi_error wifi_get_ring_data_stub(wifi_interface_handle iface, char *ring_name);
-wifi_error wifi_set_epno_list_stub(int id, wifi_interface_info *iface, int num_networks,
-        wifi_epno_network *networks, wifi_epno_handler handler);
 wifi_error wifi_enable_tdls_stub(wifi_interface_handle iface, mac_addr addr,
         wifi_tdls_params *params, wifi_tdls_handler handler);
 wifi_error wifi_disable_tdls_stub(wifi_interface_handle iface, mac_addr addr);
@@ -101,13 +100,6 @@ wifi_error wifi_get_driver_version_stub(wifi_interface_handle iface, char *buffe
  wifi_error wifi_set_country_code_stub(wifi_interface_handle iface, const char *code);
 wifi_error wifi_set_bssid_blacklist_stub(wifi_request_id id, wifi_interface_handle iface,
         wifi_bssid_params params);
-wifi_error wifi_enable_lazy_roam_stub(wifi_request_id id, wifi_interface_handle iface, int enable);
-wifi_error wifi_set_bssid_preference_stub(wifi_request_id id, wifi_interface_handle iface,
-                                    int num_bssid, wifi_bssid_preference *prefs);
-wifi_error wifi_set_gscan_roam_params_stub(wifi_request_id id, wifi_interface_handle iface,
-                                        wifi_roam_params * params);
-wifi_error wifi_set_ssid_white_list_stub(wifi_request_id id, wifi_interface_handle iface,
-                       int num_networks, wifi_ssid *ssids);
 wifi_error wifi_start_sending_offloaded_packet_stub(wifi_request_id id,
         wifi_interface_handle iface, u8 *ip_packet, u16 ip_packet_len,
         u8 *src_mac_addr, u8 *dst_mac_addr, u32 period_msec);
