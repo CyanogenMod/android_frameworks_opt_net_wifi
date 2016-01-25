@@ -2342,8 +2342,9 @@ public class WifiConfigStore extends IpConfigStore {
                         out.writeUTF(DEFAULT_GW_KEY + SEPARATOR + macAddress + NL);
                     }
 
-                    if (getScanDetailCacheIfExist(config) != null) {
-                        for (ScanDetail scanDetail : getScanDetailCacheIfExist(config).values()) {
+                    ScanDetailCache cache = getScanDetailCacheIfExist(config);
+                    if (cache != null) {
+                        for (ScanDetail scanDetail : cache.values()) {
                             ScanResult result = scanDetail.getScanResult();
                             out.writeUTF(BSSID_KEY + SEPARATOR +
                                     result.BSSID + NL);
