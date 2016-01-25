@@ -45,7 +45,6 @@ static jint DBG = false;
 
 //Please put all HAL function call here and call from the function table instead of directly call
 wifi_hal_fn hal_fn;
-
 static bool doCommand(JNIEnv* env, jstring javaCommand,
                       char* reply, size_t reply_len) {
     ScopedUtfChars command(env, javaCommand);
@@ -1076,7 +1075,7 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
         helper.setIntField( rttResult, "status",                   result->status);
         helper.setIntField( rttResult, "measurementType",          result->type);
         helper.setIntField(rttResult, "retryAfterDuration",       result->retry_after_duration);
-        helper.setLongField(rttResult, "ts",                       result->ts);
+        helper.setLongField(rttResult, "ts",                       result->ts / 100);
         helper.setIntField( rttResult, "rssi",                     result->rssi);
         helper.setIntField( rttResult, "rssiSpread",               result->rssi_spread);
         helper.setIntField( rttResult, "txRate",                   result->tx_rate.bitrate);
@@ -1084,8 +1083,8 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
         helper.setLongField(rttResult, "rtt",                      result->rtt);
         helper.setLongField(rttResult, "rttStandardDeviation",     result->rtt_sd);
         helper.setIntField( rttResult, "distance",                 result->distance_mm / 10);
-        helper.setIntField( rttResult, "distanceStandardDeviation", result->distance_sd_mm);
-        helper.setIntField( rttResult, "distanceSpread",           result->distance_spread_mm);
+        helper.setIntField( rttResult, "distanceStandardDeviation", result->distance_sd_mm / 10);
+        helper.setIntField( rttResult, "distanceSpread",           result->distance_spread_mm / 10);
         helper.setIntField( rttResult, "burstDuration",             result->burst_duration);
         helper.setIntField( rttResult, "negotiatedBurstNum",      result->negotiated_burst_num);
 
@@ -1223,6 +1222,63 @@ static jboolean android_net_wifi_cancelRange(
 
     return hal_fn.wifi_rtt_range_cancel(id, handle, len, addrs) == WIFI_SUCCESS;
 }
+
+static jobject android_net_wifi_enableResponder(
+        JNIEnv *env, jclass cls, jint iface, jint id, jint timeout_seconds, jobject channel_hint) {
+    JNIHelper helper(env);
+    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
+    if (DBG) ALOGD("enabling responder request [%d] = %p", id, handle);
+    wifi_channel_info channel;
+    // Get channel information from HAL if it's not provided by caller.
+    if (channel_hint == NULL) {
+        bool status = hal_fn.wifi_rtt_get_available_channnel(handle, &channel);
+        if (status != WIFI_SUCCESS) {
+            ALOGE("could not get available channel for responder");
+            return NULL;
+        }
+    } else {
+        channel.center_freq = helper.getIntField(channel_hint, "mPrimaryFrequency");
+        channel.center_freq0 = helper.getIntField(channel_hint, "mCenterFrequency0");
+        channel.center_freq1 = helper.getIntField(channel_hint, "mCenterFrequency1");
+        channel.width = (wifi_channel_width)helper.getIntField(channel_hint, "mChannelWidth");
+    }
+
+    if (DBG) {
+        ALOGD("wifi_channel_width: %d, center_freq: %d, center_freq0: %d",
+              channel.width, channel.center_freq, channel.center_freq0);
+    }
+    wifi_channel_info channel_used;
+    bool status = hal_fn.wifi_enable_responder(id, handle, channel, timeout_seconds,
+            &channel_used);
+    if (status != WIFI_SUCCESS) {
+        ALOGE("enabling responder mode failed");
+        return NULL;
+    }
+    if (DBG) {
+        ALOGD("wifi_channel_width: %d, center_freq: %d, center_freq0: %d",
+              channel_used.width, channel_used.center_freq, channel_used.center_freq0);
+    }
+    JNIObject<jobject> responderConfig =
+        helper.createObject("android/net/wifi/RttManager$ResponderConfig");
+    if (responderConfig == NULL) return NULL;
+    helper.setIntField(responderConfig, "frequency", channel_used.center_freq);
+    helper.setIntField(responderConfig, "centerFreq0", channel_used.center_freq0);
+    helper.setIntField(responderConfig, "centerFreq1", channel_used.center_freq1);
+    helper.setIntField(responderConfig, "channelWidth", channel_used.width);
+    // TODO: use preamble from chip once it's populated.
+    const int preamble = 0x02;
+    helper.setIntField(responderConfig, "preamble", preamble);
+    return responderConfig.detach();
+}
+
+static jboolean android_net_wifi_disableResponder(
+        JNIEnv *env, jclass cls, jint iface, jint id)  {
+    JNIHelper helper(env);
+    wifi_interface_handle handle = getIfaceHandle(helper, cls, iface);
+    if (DBG) ALOGD("disabling responder request [%d] = %p", id, handle);
+    return hal_fn.wifi_disable_responder(id, handle) == WIFI_SUCCESS;
+}
+
 
 static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
         jint iface, jbyteArray param)  {
@@ -2150,6 +2206,12 @@ static JNINativeMethod gWifiMethods[] = {
             (void*) android_net_wifi_requestRange},
     { "cancelRangeRequestNative", "(II[Landroid/net/wifi/RttManager$RttParams;)Z",
             (void*) android_net_wifi_cancelRange},
+    { "enableRttResponderNative",
+        "(IIILcom/android/server/wifi/WifiNative$WifiChannelInfo;)Landroid/net/wifi/RttManager$ResponderConfig;",
+            (void*) android_net_wifi_enableResponder},
+    { "disableRttResponderNative", "(II)Z",
+            (void*) android_net_wifi_disableResponder},
+
     { "setScanningMacOuiNative", "(I[B)Z",  (void*) android_net_wifi_setScanningMacOui},
     { "getChannelsForBandNative", "(II)[I", (void*) android_net_wifi_getValidChannels},
     { "setDfsFlagNative",         "(IZ)Z",  (void*) android_net_wifi_setDfsFlag},

@@ -16,6 +16,18 @@
 
 package com.android.server.wifi;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyBoolean;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.anyObject;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
+
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -75,26 +87,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyBoolean;
-import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.anyObject;
-import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.withSettings;
-
 /**
  * Unit tests for {@link com.android.server.wifi.WifiStateMachine}.
  */
 @SmallTest
 public class WifiStateMachineTest {
     public static final String TAG = "WifiStateMachineTest";
-
-    private static final String IFNAME = "wlan0";
 
     private static <T> T mockWithInterfaces(Class<T> class1, Class<?>... interfaces) {
         return mock(class1, withSettings().extraInterfaces(interfaces));
@@ -111,14 +109,6 @@ public class WifiStateMachineTest {
 
     private void enableDebugLogs() {
         mWsm.enableVerboseLogging(1);
-    }
-
-    private static void installWlanWifiNative(WifiNative wifiNative) throws Exception {
-        Field field = WifiNative.class.getDeclaredField("wlanNativeInterface");
-        field.setAccessible(true);
-        field.set(null, wifiNative);
-
-        when(wifiNative.getInterfaceName()).thenReturn(IFNAME);
     }
 
     private class TestIpManager extends IpManager {
@@ -320,7 +310,7 @@ public class WifiStateMachineTest {
         /** uncomment this to enable logs from WifiStateMachines */
         // enableDebugLogs();
 
-        installWlanWifiNative(mWifiNative);
+        TestUtil.installWlanWifiNative(mWifiNative);
         mWifiMonitor = new MockWifiMonitor();
         mWifiMetrics = mock(WifiMetrics.class);
         FrameworkFacade factory = getFrameworkFacade();
