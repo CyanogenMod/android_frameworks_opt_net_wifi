@@ -3880,7 +3880,7 @@ public class WifiConfigStore extends IpConfigStore {
      * - Disables private network configurations belonging to the previous foreground user
      * - Enables private network configurations belonging to the new foreground user
      *
-     * TODO(b/25600871): Terminate background users if the new foreground user has one or more
+     * TODO(b/26785736): Terminate background users if the new foreground user has one or more
      * private network configurations.
      */
     public void handleUserSwitch() {
@@ -3919,7 +3919,7 @@ public class WifiConfigStore extends IpConfigStore {
         }
         enableAllNetworks();
 
-        // TODO(b/25600871): This broadcast is unnecessary if either of the following is true:
+        // TODO(b/26785746): This broadcast is unnecessary if either of the following is true:
         // * The user switch did not change the list of visible networks
         // * The user switch revealed additional networks that were temporarily disabled and got
         //   re-enabled now (because enableAllNetworks() sent the same broadcast already).

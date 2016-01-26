@@ -7487,7 +7487,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     // If we're autojoining a network that the user or an app explicitly selected,
                     // keep track of the UID that selected it.
-                    // TODO(b/25600871): Keep track of the lastSelectedConfiguration and the
+                    // TODO(b/26786318): Keep track of the lastSelectedConfiguration and the
                     // lastConnectUid on a per-user basis.
                     int lastConnectUid = WifiConfiguration.UNKNOWN_UID;
                     if (mWifiConfigStore.isLastSelectedConfiguration(config)
