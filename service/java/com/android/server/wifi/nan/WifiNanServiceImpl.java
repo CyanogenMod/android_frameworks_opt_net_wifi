@@ -203,16 +203,20 @@ public class WifiNanServiceImpl extends IWifiNanManager.Stub {
     }
 
     @Override
-    public void sendMessage(int sessionId, int peerId, byte[] message, int messageLength) {
+    public void sendMessage(int sessionId, int peerId, byte[] message, int messageLength,
+            int messageId) {
         enforceAccessPermission();
         enforceChangePermission();
 
         if (VDBG) {
-            Log.v(TAG, "sendMessage: sessionId=" + sessionId + ", uid=" + getCallingUid()
-                    + ", peerId=" + peerId + ", messageLength=" + messageLength);
+            Log.v(TAG,
+                    "sendMessage: sessionId=" + sessionId + ", uid=" + getCallingUid() + ", peerId="
+                            + peerId + ", messageLength=" + messageLength + ", messageId="
+                            + messageId);
         }
 
-        mStateManager.sendMessage(getCallingUid(), sessionId, peerId, message, messageLength);
+        mStateManager.sendMessage(getCallingUid(), sessionId, peerId, message, messageLength,
+                messageId);
     }
 
     @Override

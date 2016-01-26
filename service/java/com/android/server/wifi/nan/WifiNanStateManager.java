@@ -28,7 +28,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
-import android.util.Pair;
 import android.util.SparseArray;
 
 import libcore.util.HexEncoding;
@@ -79,6 +78,7 @@ public class WifiNanStateManager {
     private static final String MESSAGE_BUNDLE_KEY_SUBSCRIBE_SETTINGS = "subscribe_settings";
     private static final String MESSAGE_BUNDLE_KEY_MESSAGE = "message";
     private static final String MESSAGE_BUNDLE_KEY_MESSAGE_PEER_ID = "message_peer_id";
+    private static final String MESSAGE_BUNDLE_KEY_MESSAGE_ID = "message_id";
     private static final String MESSAGE_BUNDLE_KEY_RESPONSE_TYPE = "response_type";
     private static final String MESSAGE_BUNDLE_KEY_SSI_LENGTH = "ssi_length";
     private static final String MESSAGE_BUNDLE_KEY_SSI_DATA = "ssi_data";
@@ -92,7 +92,7 @@ public class WifiNanStateManager {
 
     // no synchronization necessary: only access through Handler
     private final SparseArray<WifiNanClientState> mClients = new SparseArray<>();
-    private final SparseArray<WifiNanSessionState> mPendingResponses = new SparseArray<>();
+    private final SparseArray<TransactionInfo> mPendingResponses = new SparseArray<>();
     private final SparseArray<ConfigRequest> mPendingConfigs = new SparseArray<>();
     private short mNextTransactionId = 1;
 
@@ -188,12 +188,13 @@ public class WifiNanStateManager {
         mHandler.sendMessage(msg);
     }
 
-    public void sendMessage(int uid, int sessionId, int peerId, byte[] message,
-            int messageLength) {
+    public void sendMessage(int uid, int sessionId, int peerId, byte[] message, int messageLength,
+            int messageId) {
         Bundle data = new Bundle();
         data.putInt(MESSAGE_BUNDLE_KEY_SESSION_ID, sessionId);
         data.putInt(MESSAGE_BUNDLE_KEY_MESSAGE_PEER_ID, peerId);
         data.putByteArray(MESSAGE_BUNDLE_KEY_MESSAGE, message);
+        data.putInt(MESSAGE_BUNDLE_KEY_MESSAGE_ID, messageId);
 
         Message msg = mHandler.obtainMessage(MESSAGE_SEND_MESSAGE);
         msg.arg1 = uid;
@@ -396,12 +397,15 @@ public class WifiNanStateManager {
                     int sessionId = msg.getData().getInt(MESSAGE_BUNDLE_KEY_SESSION_ID);
                     int peerId = data.getInt(MESSAGE_BUNDLE_KEY_MESSAGE_PEER_ID);
                     byte[] message = data.getByteArray(MESSAGE_BUNDLE_KEY_MESSAGE);
+                    int messageId = data.getInt(MESSAGE_BUNDLE_KEY_MESSAGE_ID);
 
                     if (VDBG) {
-                        Log.d(TAG, "Send Message: message='" + message + "' to peerId=" + peerId);
+                        Log.d(TAG, "Send Message: message='" + message + "' (ID=" + messageId
+                                + ") to peerId=" + peerId);
                     }
 
-                    sendFollowonMessageLocal(msg.arg1, sessionId, peerId, message, msg.arg2);
+                    sendFollowonMessageLocal(msg.arg1, sessionId, peerId, message, msg.arg2,
+                            messageId);
                     break;
                 }
                 case MESSAGE_STOP_SESSION: {
@@ -510,7 +514,7 @@ public class WifiNanStateManager {
 
         List<Integer> toRemove = new ArrayList<>();
         for (int i = 0; i < mPendingResponses.size(); ++i) {
-            if (mPendingResponses.valueAt(i).getUid() == uid) {
+            if (mPendingResponses.valueAt(i).mSession.getUid() == uid) {
                 toRemove.add(i);
             }
         }
@@ -577,7 +581,7 @@ public class WifiNanStateManager {
 
         List<Integer> toRemove = new ArrayList<>();
         for (int i = 0; i < mPendingResponses.size(); ++i) {
-            WifiNanSessionState session = mPendingResponses.valueAt(i);
+            WifiNanSessionState session = mPendingResponses.valueAt(i).mSession;
             if (session.getUid() == uid && session.getSessionId() == sessionId) {
                 toRemove.add(i);
             }
@@ -595,7 +599,16 @@ public class WifiNanStateManager {
         return mNextTransactionId++;
     }
 
-    private Pair<Short, WifiNanSessionState> getAndRegisterTransactionId(int uid, int sessionId) {
+    private static class TransactionInfo {
+        // always used
+        public short mTransactionId;
+        public WifiNanSessionState mSession;
+
+        // used by some callers
+        public int mMessageId;
+    }
+
+    private TransactionInfo getAndRegisterTransactionId(int uid, int sessionId) {
         WifiNanClientState client = mClients.get(uid);
         if (client == null) {
             throw new IllegalStateException(
@@ -616,13 +629,16 @@ public class WifiNanStateManager {
                     + "already exists for transactionId=" + transactionId);
         }
 
-        mPendingResponses.put(transactionId, session);
+        TransactionInfo bag = new TransactionInfo();
+        bag.mTransactionId = transactionId;
+        bag.mSession = session;
+        mPendingResponses.put(transactionId, bag);
 
         if (DBG) {
             Log.d(TAG, "getAndRegisterTransactionId: transaction ID issued - " + transactionId);
         }
 
-        return Pair.create(transactionId, session);
+        return bag;
     }
 
     private void publishLocal(int uid, int sessionId, PublishData publishData,
@@ -632,18 +648,15 @@ public class WifiNanStateManager {
                     + publishData + ", settings=" + publishSettings);
         }
 
-        short transactionId;
-        WifiNanSessionState session;
+        TransactionInfo transInfo;
         try {
-            Pair<Short, WifiNanSessionState> result = getAndRegisterTransactionId(uid, sessionId);
-            transactionId = result.first;
-            session = result.second;
+            transInfo = getAndRegisterTransactionId(uid, sessionId);
         } catch (IllegalStateException e) {
             Log.e(TAG, e.toString());
             return;
         }
 
-        session.publish(transactionId, publishData, publishSettings);
+        transInfo.mSession.publish(transInfo.mTransactionId, publishData, publishSettings);
     }
 
     private void subscribeLocal(int uid, int sessionId, SubscribeData subscribeData,
@@ -653,56 +666,50 @@ public class WifiNanStateManager {
                     + subscribeData + ", settings=" + subscribeSettings);
         }
 
-        short transactionId;
-        WifiNanSessionState session;
+        TransactionInfo transInfo;
         try {
-            Pair<Short, WifiNanSessionState> result = getAndRegisterTransactionId(uid, sessionId);
-            transactionId = result.first;
-            session = result.second;
+            transInfo = getAndRegisterTransactionId(uid, sessionId);
+
         } catch (IllegalStateException e) {
             Log.e(TAG, e.toString());
             return;
         }
 
-        session.subscribe(transactionId, subscribeData, subscribeSettings);
+        transInfo.mSession.subscribe(transInfo.mTransactionId, subscribeData, subscribeSettings);
     }
 
     private void sendFollowonMessageLocal(int uid, int sessionId, int peerId, byte[] message,
-            int messageLength) {
+            int messageLength, int messageId) {
         if (VDBG) {
             Log.v(TAG, "sendMessage(): uid=" + uid + ", sessionId=" + sessionId + ", peerId="
-                    + peerId + ", messageLength=" + messageLength);
+                    + peerId + ", messageLength=" + messageLength + ", messageId=" + messageId);
         }
 
-        short transactionId;
-        WifiNanSessionState session;
+        TransactionInfo transInfo;
         try {
-            Pair<Short, WifiNanSessionState> result = getAndRegisterTransactionId(uid, sessionId);
-            transactionId = result.first;
-            session = result.second;
+            transInfo = getAndRegisterTransactionId(uid, sessionId);
         } catch (IllegalStateException e) {
             Log.e(TAG, e.toString());
             return;
         }
 
-        session.sendMessage(transactionId, peerId, message, messageLength);
+        transInfo.mMessageId = messageId;
+        transInfo.mSession.sendMessage(transInfo.mTransactionId, peerId, message, messageLength,
+                messageId);
     }
 
     private void stopSessionLocal(int uid, int sessionId) {
         if (VDBG) Log.v(TAG, "stopSession(): uid=" + uid + ", sessionId=" + sessionId);
 
-        short transactionId;
-        WifiNanSessionState session;
+        TransactionInfo transInfo;
         try {
-            Pair<Short, WifiNanSessionState> result = getAndRegisterTransactionId(uid, sessionId);
-            transactionId = result.first;
-            session = result.second;
+            transInfo = getAndRegisterTransactionId(uid, sessionId);
         } catch (IllegalStateException e) {
             Log.e(TAG, e.toString());
             return;
         }
 
-        session.stop(transactionId);
+        transInfo.mSession.stop(transInfo.mTransactionId);
     }
 
     // events for all clients
@@ -780,13 +787,13 @@ public class WifiNanStateManager {
     }
 
     // events targeted to a single client+session
-    private WifiNanSessionState getAndRemovePendingResponseSession(short transactionId) {
-        WifiNanSessionState session = mPendingResponses.get(transactionId);
-        if (session != null) {
+    private TransactionInfo getAndRemovePendingResponseSession(short transactionId) {
+        TransactionInfo transInfo = mPendingResponses.get(transactionId);
+        if (transInfo != null) {
             mPendingResponses.remove(transactionId);
         }
 
-        return session;
+        return transInfo;
     }
 
     private void onPublishSuccessLocal(short transactionId, int publishId) {
@@ -795,14 +802,13 @@ public class WifiNanStateManager {
                     + publishId);
         }
 
-        WifiNanSessionState session = getAndRemovePendingResponseSession(transactionId);
-        if (session == null) {
-            Log.e(TAG,
-                    "onPublishSuccess(): no session registered for transactionId=" + transactionId);
+        TransactionInfo transInfo = getAndRemovePendingResponseSession(transactionId);
+        if (transInfo == null) {
+            Log.e(TAG, "onPublishSuccess(): no info registered for transactionId=" + transactionId);
             return;
         }
 
-        session.onPublishSuccess(publishId);
+        transInfo.mSession.onPublishSuccess(publishId);
     }
 
     private void onPublishFailLocal(short transactionId, int status) {
@@ -810,13 +816,13 @@ public class WifiNanStateManager {
             Log.v(TAG, "onPublishFail: transactionId=" + transactionId + ", status=" + status);
         }
 
-        WifiNanSessionState session = getAndRemovePendingResponseSession(transactionId);
-        if (session == null) {
-            Log.e(TAG, "onPublishFail(): no session registered for transactionId=" + transactionId);
+        TransactionInfo transInfo = getAndRemovePendingResponseSession(transactionId);
+        if (transInfo == null) {
+            Log.e(TAG, "onPublishFail(): no info registered for transactionId=" + transactionId);
             return;
         }
 
-        session.onPublishFail(status);
+        transInfo.mSession.onPublishFail(status);
     }
 
     private void onPublishTerminatedLocal(int publishId, int status) {
@@ -837,14 +843,14 @@ public class WifiNanStateManager {
                     + subscribeId);
         }
 
-        WifiNanSessionState session = getAndRemovePendingResponseSession(transactionId);
-        if (session == null) {
-            Log.e(TAG, "onSubscribeSuccess(): no session registered for transactionId="
-                    + transactionId);
+        TransactionInfo transInfo = getAndRemovePendingResponseSession(transactionId);
+        if (transInfo == null) {
+            Log.e(TAG,
+                    "onSubscribeSuccess(): no info registered for transactionId=" + transactionId);
             return;
         }
 
-        session.onSubscribeSuccess(subscribeId);
+        transInfo.mSession.onSubscribeSuccess(subscribeId);
     }
 
     private void onSubscribeFailLocal(short transactionId, int status) {
@@ -852,14 +858,13 @@ public class WifiNanStateManager {
             Log.v(TAG, "onSubscribeFail: transactionId=" + transactionId + ", status=" + status);
         }
 
-        WifiNanSessionState session = getAndRemovePendingResponseSession(transactionId);
-        if (session == null) {
-            Log.e(TAG,
-                    "onSubscribeFail(): no session registered for transactionId=" + transactionId);
+        TransactionInfo transInfo = getAndRemovePendingResponseSession(transactionId);
+        if (transInfo == null) {
+            Log.e(TAG, "onSubscribeFail(): no info registered for transactionId=" + transactionId);
             return;
         }
 
-        session.onSubscribeFail(status);
+        transInfo.mSession.onSubscribeFail(status);
     }
 
     private void onSubscribeTerminatedLocal(int subscribeId, int status) {
@@ -880,14 +885,14 @@ public class WifiNanStateManager {
     private void onMessageSendSuccessLocal(short transactionId) {
         if (VDBG) Log.v(TAG, "onMessageSendSuccess: transactionId=" + transactionId);
 
-        WifiNanSessionState session = getAndRemovePendingResponseSession(transactionId);
-        if (session == null) {
-            Log.e(TAG, "onMessageSendSuccess(): no session registered for transactionId="
+        TransactionInfo transInfo = getAndRemovePendingResponseSession(transactionId);
+        if (transInfo == null) {
+            Log.e(TAG, "onMessageSendSuccess(): no info registered for transactionId="
                     + transactionId);
             return;
         }
 
-        session.onMessageSendSuccess();
+        transInfo.mSession.onMessageSendSuccess(transInfo.mMessageId);
     }
 
     private void onMessageSendFailLocal(short transactionId, int status) {
@@ -895,23 +900,23 @@ public class WifiNanStateManager {
             Log.v(TAG, "onMessageSendFail: transactionId=" + transactionId + ", status=" + status);
         }
 
-        WifiNanSessionState session = getAndRemovePendingResponseSession(transactionId);
-        if (session == null) {
-            Log.e(TAG, "onMessageSendFail(): no session registered for transactionId="
-                    + transactionId);
+        TransactionInfo transInfo = getAndRemovePendingResponseSession(transactionId);
+        if (transInfo == null) {
+            Log.e(TAG,
+                    "onMessageSendFail(): no info registered for transactionId=" + transactionId);
             return;
         }
 
-        session.onMessageSendFail(status);
+        transInfo.mSession.onMessageSendFail(transInfo.mMessageId, status);
     }
 
     private void onUnknownTransactionLocal(int responseType, short transactionId, int status) {
         Log.e(TAG, "onUnknownTransaction: responseType=" + responseType + ", transactionId="
                 + transactionId + ", status=" + status);
 
-        WifiNanSessionState session = getAndRemovePendingResponseSession(transactionId);
-        if (session == null) {
-            Log.e(TAG, "onUnknownTransaction(): no session registered for transactionId="
+        TransactionInfo transInfo = getAndRemovePendingResponseSession(transactionId);
+        if (transInfo == null) {
+            Log.e(TAG, "onUnknownTransaction(): no info registered for transactionId="
                     + transactionId);
         }
     }
