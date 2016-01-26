@@ -96,6 +96,7 @@ LOCAL_JNI_SHARED_LIBRARIES := \
 	libnetutils \
 	libbacktrace \
 	libnativehelper \
+	liblzma \
 
 ifdef WPA_SUPPLICANT_VERSION
 LOCAL_JNI_SHARED_LIBRARIES := $(LOCAL_JNI_SHARED_LIBRARIES) \
