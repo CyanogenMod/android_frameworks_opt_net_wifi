@@ -157,6 +157,9 @@ public class WifiServiceImpl extends IWifiManager.Stub {
     final WifiSettingsStore mSettingsStore;
     /* Logs connection events and some general router and scan stats */
     private final WifiMetrics mWifiMetrics;
+    /* Manages affiliated certificates for current user */
+    private final WifiCertManager mCertManager;
+
     /**
      * Asynchronous channel to WifiStateMachine
      */
@@ -332,6 +335,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         mPowerManager = context.getSystemService(PowerManager.class);
         mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
         mUserManager = UserManager.get(mContext);
+        mCertManager = new WifiCertManager(mContext);
 
         mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);
 
@@ -2109,6 +2113,14 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             // In case of exception, assume M app (more strict checking)
         }
         return true;
+    }
+
+    public void hideCertFromUnaffiliatedUsers(String alias) {
+        mCertManager.hideCertFromUnaffiliatedUsers(alias);
+    }
+
+    public String[] listClientCertsForCurrentUser() {
+        return mCertManager.listClientCertsForCurrentUser();
     }
 
     /**
