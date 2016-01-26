@@ -31,6 +31,7 @@ import android.net.wifi.nan.WifiNanSessionListener;
 import android.os.Bundle;
 import android.test.suitebuilder.annotation.SmallTest;
 
+import com.android.server.wifi.HalMockUtils;
 import com.android.server.wifi.WifiNative;
 
 import libcore.util.HexEncoding;
@@ -46,8 +47,6 @@ import org.mockito.MockitoAnnotations;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
-
-import wifitests.src.com.android.server.wifi.HalMockUtils;
 
 /**
  * Unit test harness for WifiNanNative + JNI code interfacing to the HAL.
@@ -273,7 +272,8 @@ public class WifiNanHalTest {
         WifiNanHalMock.callNotifyResponse(transactionId,
                 HalMockUtils.convertBundleToJson(args).toString());
 
-        verify(mNanStateManager).onConfigFailed(WifiNanSessionListener.FAIL_REASON_INVALID_ARGS);
+        verify(mNanStateManager).onConfigFailed(transactionId,
+                WifiNanSessionListener.FAIL_REASON_INVALID_ARGS);
     }
 
     @Test
@@ -524,10 +524,9 @@ public class WifiNanHalTest {
 
     private void testEnable(short transactionId, int clusterLow, int clusterHigh, int masterPref,
             boolean enable5g) throws JSONException {
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setClusterLow(clusterLow).setClusterHigh(clusterHigh)
-                .setMasterPreference(masterPref).setSupport5gBand(enable5g);
-        ConfigRequest configRequest = builder.build();
+        ConfigRequest configRequest = new ConfigRequest.Builder().setClusterLow(clusterLow)
+                .setClusterHigh(clusterHigh).setMasterPreference(masterPref)
+                .setSupport5gBand(enable5g).build();
 
         mDut.enableAndConfigure(transactionId, configRequest);
 
@@ -582,15 +581,13 @@ public class WifiNanHalTest {
             String serviceName, String ssi, TlvBufferUtils.TlvConstructor tlvTx,
             TlvBufferUtils.TlvConstructor tlvRx, int publishCount, int publishTtl)
                     throws JSONException {
-        PublishData.Builder builderD = new PublishData.Builder();
-        builderD.setServiceName(serviceName).setServiceSpecificInfo(ssi)
+        PublishData publishData = new PublishData.Builder().setServiceName(serviceName)
+                .setServiceSpecificInfo(ssi)
                 .setTxFilter(tlvTx.getArray(), tlvTx.getActualLength())
-                .setRxFilter(tlvRx.getArray(), tlvRx.getActualLength());
-        PublishData publishData = builderD.build();
+                .setRxFilter(tlvRx.getArray(), tlvRx.getActualLength()).build();
 
-        PublishSettings.Builder builderS = new PublishSettings.Builder();
-        builderS.setPublishType(publishType).setPublishCount(publishCount).setTtlSec(publishTtl);
-        PublishSettings publishSettings = builderS.build();
+        PublishSettings publishSettings = new PublishSettings.Builder().setPublishType(publishType)
+                .setPublishCount(publishCount).setTtlSec(publishTtl).build();
 
         mDut.publish(transactionId, publishId, publishData, publishSettings);
 
@@ -632,16 +629,14 @@ public class WifiNanHalTest {
             String serviceName, String ssi, TlvBufferUtils.TlvConstructor tlvTx,
             TlvBufferUtils.TlvConstructor tlvRx, int subscribeCount, int subscribeTtl)
                     throws JSONException {
-        SubscribeData.Builder builderD = new SubscribeData.Builder();
-        builderD.setServiceName(serviceName).setServiceSpecificInfo(ssi)
+        SubscribeData subscribeData = new SubscribeData.Builder().setServiceName(serviceName)
+                .setServiceSpecificInfo(ssi)
                 .setTxFilter(tlvTx.getArray(), tlvTx.getActualLength())
-                .setRxFilter(tlvRx.getArray(), tlvRx.getActualLength());
-        SubscribeData subscribeData = builderD.build();
+                .setRxFilter(tlvRx.getArray(), tlvRx.getActualLength()).build();
 
-        SubscribeSettings.Builder builderS = new SubscribeSettings.Builder();
-        builderS.setSubscribeType(subscribeType).setSubscribeCount(subscribeCount)
-                .setTtlSec(subscribeTtl);
-        SubscribeSettings subscribeSettings = builderS.build();
+        SubscribeSettings subscribeSettings = new SubscribeSettings.Builder()
+                .setSubscribeType(subscribeType).setSubscribeCount(subscribeCount)
+                .setTtlSec(subscribeTtl).build();
 
         mDut.subscribe(transactionId, subscribeId, subscribeData, subscribeSettings);
 
@@ -691,7 +686,7 @@ public class WifiNanHalTest {
 
     private static void installMockNanStateManager(WifiNanStateManager nanStateManager)
             throws Exception {
-        Field field = WifiNanStateManager.class.getDeclaredField("sNanStatemanagerSingleton");
+        Field field = WifiNanStateManager.class.getDeclaredField("sNanStateManagerSingleton");
         field.setAccessible(true);
         field.set(null, nanStateManager);
     }

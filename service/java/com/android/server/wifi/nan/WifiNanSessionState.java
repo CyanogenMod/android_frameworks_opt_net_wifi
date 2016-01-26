@@ -36,11 +36,8 @@ public class WifiNanSessionState {
     private static final boolean DBG = true;
     private static final boolean VDBG = false; // STOPSHIP if true
 
-    private static final SparseArray<WifiNanSessionState> sSessionsByPubSubId = new SparseArray<>();
+    private final SparseArray<String> mMacByRequestorInstanceId = new SparseArray<>();
 
-    private static final SparseArray<String> sMacByRequestorInstanceId = new SparseArray<>();
-
-    private int mUid;
     private int mSessionId;
     private IWifiNanSessionListener mListener;
     private int mEvents;
@@ -53,34 +50,27 @@ public class WifiNanSessionState {
     private static final int SESSION_TYPE_SUBSCRIBE = 2;
     private int mSessionType = SESSION_TYPE_NOT_INIT;
 
-    public static WifiNanSessionState getNanSessionStateForPubSubId(int pubSubId) {
-        return sSessionsByPubSubId.get(pubSubId);
-    }
-
-    public WifiNanSessionState(int uid, int sessionId, IWifiNanSessionListener listener,
-            int events) {
-        mUid = uid;
+    public WifiNanSessionState(int sessionId, IWifiNanSessionListener listener, int events) {
         mSessionId = sessionId;
         mListener = listener;
         mEvents = events;
     }
 
     public void destroy() {
-        stop(WifiNanStateManager.getInstance().getTransactionId());
+        stop(WifiNanStateManager.getInstance().createNextTransactionId());
         if (mPubSubIdValid) {
-            WifiNanSessionState.sSessionsByPubSubId.delete(mPubSubId);
-            sMacByRequestorInstanceId.clear();
+            mMacByRequestorInstanceId.clear();
             mListener = null;
             mPubSubIdValid = false;
         }
     }
 
-    public int getUid() {
-        return mUid;
-    }
-
     public int getSessionId() {
         return mSessionId;
+    }
+
+    public boolean isPubSubIdSession(int pubSubId) {
+        return mPubSubIdValid && mPubSubId == pubSubId;
     }
 
     public void publish(short transactionId, PublishData data, PublishSettings settings) {
@@ -112,7 +102,7 @@ public class WifiNanSessionState {
             return;
         }
 
-        String peerMacStr = sMacByRequestorInstanceId.get(peerId);
+        String peerMacStr = mMacByRequestorInstanceId.get(peerId);
         if (peerMacStr == null) {
             Log.e(TAG, "sendMessage: attempting to send a message to an address which didn't "
                     + "match/contact us");
@@ -140,13 +130,8 @@ public class WifiNanSessionState {
     }
 
     public void onPublishSuccess(int publishId) {
-        if (mPubSubIdValid) {
-            WifiNanSessionState.sSessionsByPubSubId.delete(mPubSubId);
-        }
-
         mPubSubId = publishId;
         mPubSubIdValid = true;
-        WifiNanSessionState.sSessionsByPubSubId.put(mPubSubId, this);
     }
 
     public void onPublishFail(int status) {
@@ -173,13 +158,8 @@ public class WifiNanSessionState {
     }
 
     public void onSubscribeSuccess(int subscribeId) {
-        if (mPubSubIdValid) {
-            WifiNanSessionState.sSessionsByPubSubId.delete(mPubSubId);
-        }
-
         mPubSubId = subscribeId;
         mPubSubIdValid = true;
-        WifiNanSessionState.sSessionsByPubSubId.put(mPubSubId, this);
     }
 
     public void onSubscribeFail(int status) {
@@ -230,8 +210,8 @@ public class WifiNanSessionState {
 
     public void onMatch(int requestorInstanceId, byte[] peerMac, byte[] serviceSpecificInfo,
             int serviceSpecificInfoLength, byte[] matchFilter, int matchFilterLength) {
-        String prevMac = sMacByRequestorInstanceId.get(requestorInstanceId);
-        sMacByRequestorInstanceId.put(requestorInstanceId, new String(HexEncoding.encode(peerMac)));
+        String prevMac = mMacByRequestorInstanceId.get(requestorInstanceId);
+        mMacByRequestorInstanceId.put(requestorInstanceId, new String(HexEncoding.encode(peerMac)));
 
         if (DBG) Log.d(TAG, "onMatch: previous peer MAC replaced - " + prevMac);
 
@@ -247,8 +227,8 @@ public class WifiNanSessionState {
 
     public void onMessageReceived(int requestorInstanceId, byte[] peerMac, byte[] message,
             int messageLength) {
-        String prevMac = sMacByRequestorInstanceId.get(requestorInstanceId);
-        sMacByRequestorInstanceId.put(requestorInstanceId, new String(HexEncoding.encode(peerMac)));
+        String prevMac = mMacByRequestorInstanceId.get(requestorInstanceId);
+        mMacByRequestorInstanceId.put(requestorInstanceId, new String(HexEncoding.encode(peerMac)));
 
         if (DBG) {
             Log.d(TAG, "onMessageReceived: previous peer MAC replaced - " + prevMac);
@@ -266,16 +246,10 @@ public class WifiNanSessionState {
 
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("NanSessionState:");
-        pw.println("  mUid: " + mUid);
         pw.println("  mSessionId: " + mSessionId);
         pw.println("  mSessionType: " + mSessionType);
         pw.println("  mEvents: " + mEvents);
         pw.println("  mPubSubId: " + (mPubSubIdValid ? Integer.toString(mPubSubId) : "not valid"));
-        pw.println("  sMacByRequestorInstanceId: [" + sMacByRequestorInstanceId + "]");
-    }
-
-    public static void dumpS(FileDescriptor fd, PrintWriter pw, String[] args) {
-        pw.println("NanSessionState Static:");
-        pw.println("  sSessionsByPubSubId: " + WifiNanSessionState.sSessionsByPubSubId);
+        pw.println("  mMacByRequestorInstanceId: [" + mMacByRequestorInstanceId + "]");
     }
 }
