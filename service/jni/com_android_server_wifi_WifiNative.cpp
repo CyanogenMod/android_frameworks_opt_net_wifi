@@ -111,6 +111,8 @@ int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
     hal_fn->wifi_nan_beacon_sdf_payload_request = wifi_nan_beacon_sdf_payload_request_stub;
     hal_fn->wifi_nan_register_handler = wifi_nan_register_handler_stub;
     hal_fn->wifi_nan_get_version = wifi_nan_get_version_stub;
+    hal_fn->wifi_get_packet_filter_capabilities = wifi_get_packet_filter_capabilities_stub;
+    hal_fn->wifi_set_packet_filter = wifi_set_packet_filter_stub;
 
     return 0;
 }

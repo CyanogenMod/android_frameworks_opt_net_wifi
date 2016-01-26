@@ -331,3 +331,13 @@ wifi_error wifi_nan_get_version_stub(wifi_handle handle,
                            NanVersion* version) {
   return WIFI_ERROR_NOT_SUPPORTED;
 }
+
+wifi_error wifi_get_packet_filter_capabilities_stub(wifi_interface_handle handle,
+                                          u32 *version, u32 *max_len) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+wifi_error wifi_set_packet_filter_stub(wifi_interface_handle handle,
+                             const u8 *program, u32 len) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
