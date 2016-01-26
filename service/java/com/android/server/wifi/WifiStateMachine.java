@@ -482,6 +482,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 ret = false; // Nothing to do
             }
         }
+        if (config.BSSID != null) {
+            bssid = config.BSSID;
+            if (DBG) {
+                Log.d(TAG, "force BSSID to " + bssid + "due to config");
+            }
+        }
+
         if (VDBG) {
             logd("autoRoamSetBSSID " + bssid + " key=" + config.configKey());
         }
@@ -502,6 +509,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (config == null) {
             return false;
         }
+
         if (config.BSSID != null) {
             bssid = config.BSSID;
             if (DBG) {
@@ -7180,7 +7188,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 // stick the last user choice without persisting the choice
                                 mWifiConfigStore.setAndEnableLastSelectedConfiguration(res);
                                 mWifiConfigStore.updateLastConnectUid(config, message.sendingUid);
-                                mWifiConfigStore.writeKnownNetworkHistory(false);
+                                boolean persist = mWifiConfigStore
+                                        .checkConfigOverridePermission(message.sendingUid);
+                                mWifiQualifiedNetworkSelector
+                                        .userSelectNetwork(res, persist);
 
                                 // Remember time of last connection attempt
                                 lastConnectAttemptTimestamp = System.currentTimeMillis();
@@ -7253,13 +7264,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
                     }
                     // Cancel auto roam requests
-                    mTargetNetworkId = netId;
                     autoRoamSetBSSID(netId, "any");
 
                     int uid = message.sendingUid;
+                    mWifiQualifiedNetworkSelector.enableNetworkByUser(config);
                     ok = mWifiConfigStore.enableNetwork(netId, disableOthers, uid);
                     if (!ok) {
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
+                    } else if (disableOthers) {
+                        mTargetNetworkId = netId;
                     }
 
                     replyToMessage(message, message.what, ok ? SUCCESS : FAILURE);
@@ -7649,11 +7662,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     settings */
                     boolean persist =
                         mWifiConfigStore.checkConfigOverridePermission(message.sendingUid);
-                    mWifiConfigStore.updateNetworkSelectionStatus(config,
-                            WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
+
 
                     mWifiConfigStore.setAndEnableLastSelectedConfiguration(netId);
-
+                    mWifiQualifiedNetworkSelector.userSelectNetwork(netId, persist);
                     didDisconnect = false;
                     if (mLastNetworkId != WifiConfiguration.INVALID_NETWORK_ID
                             && mLastNetworkId != netId) {
@@ -7784,10 +7796,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                             if (user) {
                                 mWifiConfigStore.updateLastConnectUid(config, message.sendingUid);
-                                mWifiConfigStore.writeKnownNetworkHistory(false);
+                                mWifiConfigStore.writeKnownNetworkHistory();
                             }
                             //Fixme, CMD_AUTO_SAVE_NETWORK can be cleaned
-                            mWifiConfigStore.userSelectNetwork(
+                            mWifiQualifiedNetworkSelector.userSelectNetwork(
                                     result.getNetworkId(), persistConnect);
                             mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
                         }
@@ -8114,10 +8126,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             return;
         if (DBG) {
             logd(dbg + " " + mTargetRoamBSSID + " config " + config.configKey()
-                    + " config.bssid " + config.BSSID);
+                    + " config.NetworkSelectionStatus.mNetworkSelectionBSSID "
+                    + config.getNetworkSelectionStatus().getNetworkSelectionBSSID());
         }
         config.getNetworkSelectionStatus().setNetworkSelectionBSSID("any");
-        config.BSSID = "any";
         if (DBG) {
            logd(dbg + " " + config.SSID
                     + " nid=" + Integer.toString(config.networkId));
@@ -8942,7 +8954,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                         .DISABLED_NO_INTERNET);
                             }
                             config.numNoInternetAccessReports += 1;
-                            mWifiConfigStore.writeKnownNetworkHistory(false);
+                            mWifiConfigStore.writeKnownNetworkHistory();
                         }
                     }
                     return HANDLED;
@@ -8953,7 +8965,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             // re-enable autojoin
                             config.numNoInternetAccessReports = 0;
                             config.validatedInternetAccess = true;
-                            mWifiConfigStore.writeKnownNetworkHistory(false);
+                            mWifiConfigStore.writeKnownNetworkHistory();
                         }
                     }
                     return HANDLED;
