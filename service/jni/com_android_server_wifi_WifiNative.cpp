@@ -1154,9 +1154,9 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
         helper.setIntField( rttResult, "rxRate",                   result->rx_rate.bitrate);
         helper.setLongField(rttResult, "rtt",                      result->rtt);
         helper.setLongField(rttResult, "rttStandardDeviation",     result->rtt_sd);
-        helper.setIntField( rttResult, "distance",                 result->distance);
-        helper.setIntField( rttResult, "distanceStandardDeviation", result->distance_sd);
-        helper.setIntField( rttResult, "distanceSpread",           result->distance_spread);
+        helper.setIntField( rttResult, "distance",                 result->distance_mm / 10);
+        helper.setIntField( rttResult, "distanceStandardDeviation", result->distance_sd_mm);
+        helper.setIntField( rttResult, "distanceSpread",           result->distance_spread_mm);
         helper.setIntField( rttResult, "burstDuration",             result->burst_duration);
         helper.setIntField( rttResult, "negotiatedBurstNum",      result->negotiated_burst_num);
 
