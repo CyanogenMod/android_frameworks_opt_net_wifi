@@ -53,6 +53,7 @@ import android.security.Credentials;
 import android.security.KeyChain;
 import android.security.KeyStore;
 import android.text.TextUtils;
+import android.util.ArraySet;
 import android.util.LocalLog;
 import android.util.Log;
 import android.util.SparseArray;
@@ -93,8 +94,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Calendar;
 import java.util.Collection;
@@ -3115,7 +3118,8 @@ public class WifiConfigStore extends IpConfigStore {
                                 mConfiguredNetworks.getForCurrentUser(netId);
                         String keyId = config.getKeyIdForCredentials(currentConfig);
 
-                        if (!installKeys(enterpriseConfig, keyId)) {
+                        if (!installKeys(currentConfig != null
+                                ? currentConfig.enterpriseConfig : null, enterpriseConfig, keyId)) {
                             loge(config.SSID + ": failed to install keys");
                             break setVariables;
                         }
@@ -4630,11 +4634,10 @@ public class WifiConfigStore extends IpConfigStore {
         return enableAutoJoinWhenAssociated.get();
     }
 
-    boolean installKeys(WifiEnterpriseConfig config, String name) {
+    boolean installKeys(WifiEnterpriseConfig oldConfig, WifiEnterpriseConfig config, String name) {
         boolean ret = true;
         String privKeyName = Credentials.USER_PRIVATE_KEY + name;
         String userCertName = Credentials.USER_CERTIFICATE + name;
-        String caCertName = Credentials.CA_CERTIFICATE + name;
         if (config.getClientCertificate() != null) {
             byte[] privKeyData = config.getClientPrivateKey().getEncoded();
             if (DBG) {
@@ -4659,26 +4662,49 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
-        if (config.getCaCertificate() != null) {
-            ret = putCertInKeyStore(caCertName, config.getCaCertificate());
-            if (ret == false) {
-                if (config.getClientCertificate() != null) {
+        X509Certificate[] caCertificates = config.getCaCertificates();
+        Set<String> oldCaCertificatesToRemove = new ArraySet<String>();
+        if (oldConfig != null && oldConfig.getCaCertificateAliases() != null) {
+            oldCaCertificatesToRemove.addAll(Arrays.asList(oldConfig.getCaCertificateAliases()));
+        }
+        List<String> caCertificateAliases = null;
+        if (caCertificates != null) {
+            caCertificateAliases = new ArrayList<String>();
+            for (int i = 0; i < caCertificates.length; i++) {
+                String alias = caCertificates.length == 1 ? name
+                        : String.format("%s_%d", name, i);
+
+                oldCaCertificatesToRemove.remove(alias);
+                ret = putCertInKeyStore(Credentials.CA_CERTIFICATE + alias, caCertificates[i]);
+                if (!ret) {
                     // Remove client key+cert
-                    mKeyStore.delete(privKeyName, Process.WIFI_UID);
-                    mKeyStore.delete(userCertName, Process.WIFI_UID);
+                    if (config.getClientCertificate() != null) {
+                        mKeyStore.delete(privKeyName, Process.WIFI_UID);
+                        mKeyStore.delete(userCertName, Process.WIFI_UID);
+                    }
+                    // Remove added CA certs.
+                    for (String addedAlias : caCertificateAliases) {
+                        mKeyStore.delete(Credentials.CA_CERTIFICATE + addedAlias, Process.WIFI_UID);
+                    }
+                    return ret;
+                } else {
+                    caCertificateAliases.add(alias);
                 }
-                return ret;
             }
         }
-
+        // Remove old CA certs.
+        for (String oldAlias : oldCaCertificatesToRemove) {
+            mKeyStore.delete(Credentials.CA_CERTIFICATE + oldAlias, Process.WIFI_UID);
+        }
         // Set alias names
         if (config.getClientCertificate() != null) {
             config.setClientCertificateAlias(name);
             config.resetClientKeyEntry();
         }
 
-        if (config.getCaCertificate() != null) {
-            config.setCaCertificateAlias(name);
+        if (caCertificates != null) {
+            config.setCaCertificateAliases(
+                    caCertificateAliases.toArray(new String[caCertificateAliases.size()]));
             config.resetCaCertificate();
         }
 
@@ -4707,11 +4733,15 @@ public class WifiConfigStore extends IpConfigStore {
             mKeyStore.delete(Credentials.USER_CERTIFICATE + client, Process.WIFI_UID);
         }
 
-        String ca = config.getCaCertificateAlias();
+        String[] aliases = config.getCaCertificateAliases();
         // a valid ca certificate is configured
-        if (!TextUtils.isEmpty(ca)) {
-            if (DBG) Log.d(TAG, "removing CA cert");
-            mKeyStore.delete(Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID);
+        if (aliases != null) {
+            for (String ca: aliases) {
+                if (!TextUtils.isEmpty(ca)) {
+                    if (DBG) Log.d(TAG, "removing CA cert: " + ca);
+                    mKeyStore.delete(Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID);
+                }
+            }
         }
     }
 
@@ -4783,12 +4813,15 @@ public class WifiConfigStore extends IpConfigStore {
             }
         }
 
-        String ca = config.getCaCertificateAlias();
+        String[] aliases = config.getCaCertificateAliases();
         // a valid ca certificate is configured
-        if (!TextUtils.isEmpty(ca)) {
-            if (!mKeyStore.contains(Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID)) {
-                mKeyStore.duplicate(Credentials.CA_CERTIFICATE + ca, -1,
-                        Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID);
+        if (aliases != null) {
+            for (String ca : aliases) {
+                if (!TextUtils.isEmpty(ca)
+                        && !mKeyStore.contains(Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID)) {
+                    mKeyStore.duplicate(Credentials.CA_CERTIFICATE + ca, -1,
+                            Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID);
+                }
             }
         }
     }
