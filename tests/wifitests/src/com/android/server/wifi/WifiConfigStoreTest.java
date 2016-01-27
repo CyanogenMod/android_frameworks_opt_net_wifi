@@ -21,18 +21,27 @@ import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyObject;
 import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.intThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
+import android.net.wifi.FakeKeys;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiConfiguration.KeyMgmt;
+import android.net.wifi.WifiEnterpriseConfig;
+import android.net.wifi.WifiEnterpriseConfig.Eap;
+import android.net.wifi.WifiEnterpriseConfig.Phase2;
+import android.os.Process;
 import android.os.UserHandle;
+import android.security.Credentials;
 import android.test.AndroidTestCase;
+import android.text.TextUtils;
 
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
@@ -42,6 +51,8 @@ import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -50,10 +61,14 @@ import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.math.BigInteger;
+import java.security.cert.CertificateEncodingException;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -96,6 +111,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
     private WifiConfigStore mConfigStore;
     private ConfigurationMap mConfiguredNetworks;
     public byte[] mNetworkHistory;
+    private MockKeyStore mMockKeyStore;
 
     @Override
     public void setUp() throws Exception {
@@ -133,6 +149,11 @@ public class WifiConfigStoreTest extends AndroidTestCase {
         final Field moManagerField = WifiConfigStore.class.getDeclaredField("mMOManager");
         moManagerField.setAccessible(true);
         moManagerField.set(mConfigStore, mMOManager);
+
+        mMockKeyStore = new MockKeyStore();
+        final Field mKeyStoreField = WifiConfigStore.class.getDeclaredField("mKeyStore");
+        mKeyStoreField.setAccessible(true);
+        mKeyStoreField.set(mConfigStore, mMockKeyStore.createMock());
     }
 
     private void switchUser(int newUserId) {
@@ -628,5 +649,190 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      */
     public void testHandleUserSwitchWithoutEphemeral() throws Exception {
         verifyHandleUserSwitch(USER_IDS[0], USER_IDS[2], false);
+    }
+
+    public void testSaveLoadEapNetworks() {
+        testSaveLoadSingleEapNetwork("eap network", new EnterpriseConfig(Eap.TTLS)
+                .setPhase2(Phase2.MSCHAPV2)
+                .setIdentity("username", "password")
+                .setCaCerts(new X509Certificate[] {FakeKeys.CA_CERT0}));
+        testSaveLoadSingleEapNetwork("eap network", new EnterpriseConfig(Eap.TTLS)
+                .setPhase2(Phase2.MSCHAPV2)
+                .setIdentity("username", "password")
+                .setCaCerts(new X509Certificate[] {FakeKeys.CA_CERT1, FakeKeys.CA_CERT0}));
+
+    }
+
+    private void testSaveLoadSingleEapNetwork(String ssid, EnterpriseConfig eapConfig) {
+        final HashMap<String, String> networkVariables = new HashMap<String, String>();
+        reset(mWifiNative);
+        when(mWifiNative.addNetwork()).thenReturn(0);
+        when(mWifiNative.setNetworkVariable(anyInt(), anyString(), anyString())).thenAnswer(
+                new Answer<Boolean>() {
+                    @Override
+                    public Boolean answer(InvocationOnMock invocation) throws Throwable {
+                        Object[] args = invocation.getArguments();
+                        // Verify that no wpa_supplicant variables were written for any other
+                        // network configurations.
+                        assertEquals((Integer) args[0], (Integer) 0);
+                        String name = (String) args[1];
+                        String value = (String) args[2];
+                        networkVariables.put(name, value);
+                        return true;
+                    }
+                });
+        when(mWifiNative.getNetworkVariable(anyInt(), anyString())).then(
+                new Answer<String>() {
+                    @Override
+                    public String answer(InvocationOnMock invocationOnMock) throws Throwable {
+                        Object args[] = invocationOnMock.getArguments();
+                        Integer netId = (Integer) args[0];
+                        String name = (String) args[1];
+                        // Verify that no wpa_supplicant variables were read for any other
+                        // network configurations.
+                        assertEquals(netId, (Integer) 0);
+                        return networkVariables.get(name);
+                    }
+                });
+        when(mWifiNative.setNetworkExtra(eq(0), anyString(), (Map<String, String>) anyObject()))
+                .thenReturn(true);
+
+        WifiConfiguration config = new WifiConfiguration();
+        config.SSID = ssid;
+        config.creatorUid = Process.WIFI_UID;
+        config.allowedKeyManagement.set(KeyMgmt.WPA_EAP);
+        config.enterpriseConfig = eapConfig.enterpriseConfig;
+
+        // Store a network configuration.
+        mConfigStore.saveNetwork(config, Process.WIFI_UID);
+
+        // Verify that wpa_supplicant variables were written correctly for the network
+        // configuration.
+        verify(mWifiNative).addNetwork();
+        assertEquals(eapConfig.eap,
+                unquote(networkVariables.get(WifiEnterpriseConfig.EAP_KEY)));
+        assertEquals(eapConfig.phase2,
+                unquote(networkVariables.get(WifiEnterpriseConfig.PHASE2_KEY)));
+        assertEquals(eapConfig.identity,
+                unquote(networkVariables.get(WifiEnterpriseConfig.IDENTITY_KEY)));
+        assertEquals(eapConfig.password,
+                unquote(networkVariables.get(WifiEnterpriseConfig.PASSWORD_KEY)));
+        assertSavedCaCerts(eapConfig,
+                unquote(networkVariables.get(WifiEnterpriseConfig.CA_CERT_KEY)));
+
+        // Prepare the scan result.
+        final String header = "network id / ssid / bssid / flags";
+        String networks = header + "\n" + Integer.toString(0) + "\t" + ssid + "\tany";
+        when(mWifiNative.listNetworks(anyInt())).thenReturn(header);
+        when(mWifiNative.listNetworks(-1)).thenReturn(networks);
+
+        // Load back the configuration.
+        mConfigStore.loadConfiguredNetworks();
+        List<WifiConfiguration> configs = mConfigStore.getConfiguredNetworks();
+        assertEquals(1, configs.size());
+        WifiConfiguration loadedConfig = configs.get(0);
+        assertEquals(ssid, unquote(loadedConfig.SSID));
+        BitSet keyMgmt = new BitSet();
+        keyMgmt.set(KeyMgmt.WPA_EAP);
+        assertEquals(keyMgmt, loadedConfig.allowedKeyManagement);
+        assertEquals(eapConfig.enterpriseConfig.getEapMethod(),
+                loadedConfig.enterpriseConfig.getEapMethod());
+        assertEquals(eapConfig.enterpriseConfig.getPhase2Method(),
+                loadedConfig.enterpriseConfig.getPhase2Method());
+        assertEquals(eapConfig.enterpriseConfig.getIdentity(),
+                loadedConfig.enterpriseConfig.getIdentity());
+        assertEquals(eapConfig.enterpriseConfig.getPassword(),
+                loadedConfig.enterpriseConfig.getPassword());
+        asserCaCertsAliasesMatch(eapConfig.caCerts,
+                loadedConfig.enterpriseConfig.getCaCertificateAliases());
+    }
+
+    private String unquote(String value) {
+        if (value == null) {
+            return null;
+        }
+        int length = value.length();
+        if ((length > 1) && (value.charAt(0) == '"')
+                && (value.charAt(length - 1) == '"')) {
+            return value.substring(1, length - 1);
+        } else {
+            return value;
+        }
+    }
+
+    private void asserCaCertsAliasesMatch(X509Certificate[] certs, String[] aliases) {
+        assertEquals(certs.length, aliases.length);
+        List<String> aliasList = new ArrayList<String>(Arrays.asList(aliases));
+        try {
+            for (int i = 0; i < certs.length; i++) {
+                byte[] certPem = Credentials.convertToPem(certs[i]);
+                boolean found = false;
+                for (int j = 0; j < aliasList.size(); j++) {
+                    byte[] keystoreCert = mMockKeyStore.getKeyBlob(Process.WIFI_UID,
+                            Credentials.CA_CERTIFICATE + aliasList.get(j)).blob;
+                    if (Arrays.equals(keystoreCert, certPem)) {
+                        found = true;
+                        aliasList.remove(j);
+                        break;
+                    }
+                }
+                assertTrue(found);
+            }
+        } catch (CertificateEncodingException | IOException e) {
+            fail("Cannot convert CA certificate to encoded form.");
+        }
+    }
+
+    private void assertSavedCaCerts(EnterpriseConfig eapConfig, String caCertVariable) {
+        ArrayList<String> aliases = new ArrayList<String>();
+        if (TextUtils.isEmpty(caCertVariable)) {
+            // Do nothing.
+        } else if (caCertVariable.startsWith(WifiEnterpriseConfig.CA_CERT_PREFIX)) {
+            aliases.add(caCertVariable.substring(WifiEnterpriseConfig.CA_CERT_PREFIX.length()));
+        } else if (caCertVariable.startsWith(WifiEnterpriseConfig.KEYSTORES_URI)) {
+            String[] encodedAliases = TextUtils.split(
+                    caCertVariable.substring(WifiEnterpriseConfig.KEYSTORES_URI.length()),
+                    WifiEnterpriseConfig.CA_CERT_ALIAS_DELIMITER);
+            for (String encodedAlias : encodedAliases) {
+                String alias = WifiEnterpriseConfig.decodeCaCertificateAlias(encodedAlias);
+                assertTrue(alias.startsWith(Credentials.CA_CERTIFICATE));
+                aliases.add(alias.substring(Credentials.CA_CERTIFICATE.length()));
+            }
+        } else {
+            fail("Unrecognized ca_cert variable: " + caCertVariable);
+        }
+        asserCaCertsAliasesMatch(eapConfig.caCerts, aliases.toArray(new String[aliases.size()]));
+    }
+
+    private static class EnterpriseConfig {
+        public String eap;
+        public String phase2;
+        public String identity;
+        public String password;
+        public X509Certificate[] caCerts;
+        public WifiEnterpriseConfig enterpriseConfig;
+
+        public EnterpriseConfig(int eapMethod) {
+            enterpriseConfig = new WifiEnterpriseConfig();
+            enterpriseConfig.setEapMethod(eapMethod);
+            eap = Eap.strings[eapMethod];
+        }
+        public EnterpriseConfig setPhase2(int phase2Method) {
+            enterpriseConfig.setPhase2Method(phase2Method);
+            phase2 = "auth=" + Phase2.strings[phase2Method];
+            return this;
+        }
+        public EnterpriseConfig setIdentity(String identity, String password) {
+            enterpriseConfig.setIdentity(identity);
+            enterpriseConfig.setPassword(password);
+            this.identity = identity;
+            this.password = password;
+            return this;
+        }
+        public EnterpriseConfig setCaCerts(X509Certificate[] certs) {
+            enterpriseConfig.setCaCertificates(certs);
+            caCerts = certs;
+            return this;
+        }
     }
 }
