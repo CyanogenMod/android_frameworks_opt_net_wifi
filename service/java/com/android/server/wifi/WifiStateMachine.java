@@ -610,7 +610,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     // Used to initiate a connection with WifiP2pService
     private AsyncChannel mWifiP2pChannel;
-    private AsyncChannel mWifiApConfigChannel;
 
     private WifiScanner mWifiScanner;
 
@@ -658,14 +657,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     static final int CMD_START_AP_FAILURE                               = BASE + 23;
     /* Stop the soft access point */
     static final int CMD_STOP_AP                                        = BASE + 24;
-    /* Set the soft access point configuration */
-    static final int CMD_SET_AP_CONFIG                                  = BASE + 25;
-    /* Soft access point configuration set completed */
-    static final int CMD_SET_AP_CONFIG_COMPLETED                        = BASE + 26;
-    /* Request the soft access point configuration */
-    static final int CMD_REQUEST_AP_CONFIG                              = BASE + 27;
-    /* Response to access point configuration request */
-    static final int CMD_RESPONSE_AP_CONFIG                             = BASE + 28;
     /* Invoked when getting a tether state change notification */
     static final int CMD_TETHER_STATE_CHANGE                            = BASE + 29;
     /* A delayed message sent to indicate tether state change failed to arrive */
@@ -2097,14 +2088,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     public void setWifiApConfiguration(WifiConfiguration config) {
-        mWifiApConfigChannel.sendMessage(CMD_SET_AP_CONFIG, config);
+        mWifiApConfigStore.setApConfiguration(config);
     }
 
     public WifiConfiguration syncGetWifiApConfiguration() {
-        Message resultMsg = mWifiApConfigChannel.sendMessageSynchronously(CMD_REQUEST_AP_CONFIG);
-        WifiConfiguration ret = (WifiConfiguration) resultMsg.obj;
-        resultMsg.recycle();
-        return ret;
+        return mWifiApConfigStore.getApConfiguration();
     }
 
     /**
@@ -5134,16 +5122,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         int[] channel;
 
         if (apBand == 0)  {
-            if (mWifiApConfigStore.allowed2GChannel == null ||
-                    mWifiApConfigStore.allowed2GChannel.size() == 0) {
+            ArrayList<Integer> allowed2GChannel =
+                    mWifiApConfigStore.getAllowed2GChannel();
+            if (allowed2GChannel == null || allowed2GChannel.size() == 0) {
                 //most safe channel to use
                 if(DBG) {
                     Log.d(TAG, "No specified 2G allowed channel list");
                 }
                 apChannel = 6;
             } else {
-                int index = mRandom.nextInt(mWifiApConfigStore.allowed2GChannel.size());
-                apChannel = mWifiApConfigStore.allowed2GChannel.get(index).intValue();
+                int index = mRandom.nextInt(allowed2GChannel.size());
+                apChannel = allowed2GChannel.get(index).intValue();
             }
         } else {
             //5G without DFS
@@ -5514,11 +5503,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_ENABLE_ALL_NETWORKS:
                 case DhcpStateMachine.CMD_PRE_DHCP_ACTION:
                 case DhcpStateMachine.CMD_POST_DHCP_ACTION:
-                /* Handled by WifiApConfigStore */
-                case CMD_SET_AP_CONFIG:
-                case CMD_SET_AP_CONFIG_COMPLETED:
-                case CMD_REQUEST_AP_CONFIG:
-                case CMD_RESPONSE_AP_CONFIG:
                 case CMD_NO_NETWORKS_PERIODIC_SCAN:
                 case CMD_DISABLE_P2P_RSP:
                 case WifiMonitor.SUP_REQUEST_IDENTITY:
@@ -5680,12 +5664,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mWifiP2pServiceImpl.getP2pStateMachineMessenger());
             }
 
-            if (mWifiApConfigChannel == null) {
-                mWifiApConfigChannel = new AsyncChannel();
-                mWifiApConfigStore = mFacade.makeApConfigStore(mContext, getHandler());
-                mWifiApConfigStore.loadApConfiguration();
-                mWifiApConfigChannel.connectSync(mContext, getHandler(),
-                        mWifiApConfigStore.getMessenger());
+            if (mWifiApConfigStore == null) {
+                mWifiApConfigStore = mFacade.makeApConfigStore(mContext);
             }
 
             if (mWifiConfigStore.enableHalBasedPno.get()) {
@@ -6601,12 +6581,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case CMD_START_SUPPLICANT:
                 s = "CMD_START_SUPPLICANT";
-                break;
-            case CMD_REQUEST_AP_CONFIG:
-                s = "CMD_REQUEST_AP_CONFIG";
-                break;
-            case CMD_RESPONSE_AP_CONFIG:
-                s = "CMD_RESPONSE_AP_CONFIG";
                 break;
             case CMD_TETHER_STATE_CHANGE:
                 s = "CMD_TETHER_STATE_CHANGE";
@@ -9620,14 +9594,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         public void enter() {
             final Message message = getCurrentMessage();
             if (message.what == CMD_START_AP) {
-                final WifiConfiguration config = (WifiConfiguration) message.obj;
+                WifiConfiguration config = (WifiConfiguration) message.obj;
 
                 if (config == null) {
-                    mWifiApConfigChannel.sendMessage(CMD_REQUEST_AP_CONFIG);
+                    /**
+                     * Configuration not provided in the command, fallback to use the current
+                     * configuration.
+                     */
+                    config = mWifiApConfigStore.getApConfiguration();
                 } else {
-                    mWifiApConfigChannel.sendMessage(CMD_SET_AP_CONFIG, config);
-                    startSoftApWithConfig(config);
+                    /* Update AP configuration. */
+                    mWifiApConfigStore.setApConfiguration(config);
                 }
+                startSoftApWithConfig(config);
             } else {
                 throw new RuntimeException("Illegal transition to SoftApStartingState: " + message);
             }
@@ -9650,15 +9629,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_STOP_PACKET_FILTERING:
                 case CMD_TETHER_STATE_CHANGE:
                     deferMessage(message);
-                    break;
-                case WifiStateMachine.CMD_RESPONSE_AP_CONFIG:
-                    WifiConfiguration config = (WifiConfiguration) message.obj;
-                    if (config != null) {
-                        startSoftApWithConfig(config);
-                    } else {
-                        loge("Softap config is null!");
-                        sendMessage(CMD_START_AP_FAILURE, WifiManager.SAP_START_FAILURE_GENERAL);
-                    }
                     break;
                 case CMD_START_AP_SUCCESS:
                     setWifiApState(WIFI_AP_STATE_ENABLED, 0);
