@@ -97,8 +97,8 @@ static void OnNanEventMatch(NanMatchInd* event) {
                        mfBytes.get(), event->sdf_match_filter_len);
 }
 
-static void OnNanEventUnMatch(NanUnmatchInd* event) {
-    ALOGD("OnNanEventUnMatch");
+static void OnNanEventMatchExpired(NanMatchExpiredInd* event) {
+    ALOGD("OnNanEventMatchExpired");
 }
 
 static void OnNanEventSubscribeTerminated(NanSubscribeTerminatedInd* event) {
@@ -172,7 +172,7 @@ static jint android_net_wifi_nan_register_handler(JNIEnv *env, jclass cls,
     handlers.NotifyResponse = OnNanNotifyResponse;
     handlers.EventPublishTerminated = OnNanEventPublishTerminated;
     handlers.EventMatch = OnNanEventMatch;
-    handlers.EventUnMatch = OnNanEventUnMatch;
+    handlers.EventMatchExpired = OnNanEventMatchExpired;
     handlers.EventSubscribeTerminated = OnNanEventSubscribeTerminated;
     handlers.EventFollowup = OnNanEventFollowup;
     handlers.EventDiscEngEvent = OnNanEventDiscEngEvent;
