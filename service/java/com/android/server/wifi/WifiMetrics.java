@@ -353,6 +353,8 @@ public class WifiMetrics {
         }
     }
 
+
+    public static final String PROTO_DUMP_ARG = "wifiMetricsProto";
     /**
      * Dump all WifiMetrics. Collects some metrics from ConfigStore, Settings and WifiManager
      * at this time
@@ -364,7 +366,7 @@ public class WifiMetrics {
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         synchronized (mLock) {
             pw.println("WifiMetrics:");
-            if (args.length > 0 && "proto".equals(args[0])) {
+            if (args.length > 0 && PROTO_DUMP_ARG.equals(args[0])) {
                 //Dump serialized WifiLog proto
                 consolidateProto(true);
                 for (ConnectionEvent event : mConnectionEventList) {
