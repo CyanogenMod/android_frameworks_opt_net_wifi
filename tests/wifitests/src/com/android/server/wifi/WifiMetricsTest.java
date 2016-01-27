@@ -97,7 +97,7 @@ public class WifiMetricsTest {
         PrintWriter writer = new PrintWriter(stream);
         String[] args = new String[0];
         //Test proto dump, by passing in proto arg option
-        args = new String[]{"proto"};
+        args = new String[]{WifiMetrics.PROTO_DUMP_ARG};
         mWifiMetrics.dump(null, writer, args);
         writer.flush();
         Pattern pattern = Pattern.compile(

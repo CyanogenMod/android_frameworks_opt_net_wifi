@@ -1488,64 +1488,70 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                     + ", uid=" + Binder.getCallingUid());
             return;
         }
-        pw.println("Wi-Fi is " + mWifiStateMachine.syncGetWifiStateByName());
-        pw.println("Stay-awake conditions: " +
-                Settings.Global.getInt(mContext.getContentResolver(),
-                                       Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0));
-        pw.println("mMulticastEnabled " + mMulticastEnabled);
-        pw.println("mMulticastDisabled " + mMulticastDisabled);
-        pw.println("mInIdleMode " + mInIdleMode);
-        pw.println("mScanPending " + mScanPending);
-        mWifiController.dump(fd, pw, args);
-        mSettingsStore.dump(fd, pw, args);
-        mNotificationController.dump(fd, pw, args);
-        mTrafficPoller.dump(fd, pw, args);
+        if (args.length > 0 && WifiMetrics.PROTO_DUMP_ARG.equals(args[0])) {
+            // WifiMetrics proto bytes were requested. Dump only these.
+            mWifiStateMachine.updateWifiMetrics();
+            mWifiMetrics.dump(fd, pw, args);
+        } else {
+            pw.println("Wi-Fi is " + mWifiStateMachine.syncGetWifiStateByName());
+            pw.println("Stay-awake conditions: " +
+                    Settings.Global.getInt(mContext.getContentResolver(),
+                                           Settings.Global.STAY_ON_WHILE_PLUGGED_IN, 0));
+            pw.println("mMulticastEnabled " + mMulticastEnabled);
+            pw.println("mMulticastDisabled " + mMulticastDisabled);
+            pw.println("mInIdleMode " + mInIdleMode);
+            pw.println("mScanPending " + mScanPending);
+            mWifiController.dump(fd, pw, args);
+            mSettingsStore.dump(fd, pw, args);
+            mNotificationController.dump(fd, pw, args);
+            mTrafficPoller.dump(fd, pw, args);
 
-        pw.println("Latest scan results:");
-        List<ScanResult> scanResults = mWifiStateMachine.syncGetScanResultsList();
-        long nowMs = System.currentTimeMillis();
-        if (scanResults != null && scanResults.size() != 0) {
-            pw.println("    BSSID              Frequency  RSSI    Age      SSID " +
-                    "                                Flags");
-            for (ScanResult r : scanResults) {
-                long ageSec = 0;
-                long ageMilli = 0;
-                if (nowMs > r.seen && r.seen > 0) {
-                    ageSec = (nowMs - r.seen) / 1000;
-                    ageMilli = (nowMs - r.seen) % 1000;
+            pw.println("Latest scan results:");
+            List<ScanResult> scanResults = mWifiStateMachine.syncGetScanResultsList();
+            long nowMs = System.currentTimeMillis();
+            if (scanResults != null && scanResults.size() != 0) {
+                pw.println("    BSSID              Frequency  RSSI    Age      SSID " +
+                        "                                Flags");
+                for (ScanResult r : scanResults) {
+                    long ageSec = 0;
+                    long ageMilli = 0;
+                    if (nowMs > r.seen && r.seen > 0) {
+                        ageSec = (nowMs - r.seen) / 1000;
+                        ageMilli = (nowMs - r.seen) % 1000;
+                    }
+                    String candidate = " ";
+                    if (r.isAutoJoinCandidate > 0) candidate = "+";
+                    pw.printf("  %17s  %9d  %5d  %3d.%03d%s   %-32s  %s\n",
+                                             r.BSSID,
+                                             r.frequency,
+                                             r.level,
+                                             ageSec, ageMilli,
+                                             candidate,
+                                             r.SSID == null ? "" : r.SSID,
+                                             r.capabilities);
                 }
-                String candidate = " ";
-                if (r.isAutoJoinCandidate > 0) candidate = "+";
-                pw.printf("  %17s  %9d  %5d  %3d.%03d%s   %-32s  %s\n",
-                                         r.BSSID,
-                                         r.frequency,
-                                         r.level,
-                                         ageSec, ageMilli,
-                                         candidate,
-                                         r.SSID == null ? "" : r.SSID,
-                                         r.capabilities);
             }
-        }
-        pw.println();
-        pw.println("Locks acquired: " + mFullLocksAcquired + " full, " +
-                mFullHighPerfLocksAcquired + " full high perf, " +
-                mScanLocksAcquired + " scan");
-        pw.println("Locks released: " + mFullLocksReleased + " full, " +
-                mFullHighPerfLocksReleased + " full high perf, " +
-                mScanLocksReleased + " scan");
-        pw.println();
-        pw.println("Locks held:");
-        mLocks.dump(pw);
+            pw.println();
+            pw.println("Locks acquired: " + mFullLocksAcquired + " full, " +
+                    mFullHighPerfLocksAcquired + " full high perf, " +
+                    mScanLocksAcquired + " scan");
+            pw.println("Locks released: " + mFullLocksReleased + " full, " +
+                    mFullHighPerfLocksReleased + " full high perf, " +
+                    mScanLocksReleased + " scan");
+            pw.println();
+            pw.println("Locks held:");
+            mLocks.dump(pw);
 
-        pw.println("Multicast Locks held:");
-        for (Multicaster l : mMulticasters) {
-            pw.print("    ");
-            pw.println(l);
-        }
+            pw.println("Multicast Locks held:");
+            for (Multicaster l : mMulticasters) {
+                pw.print("    ");
+                pw.println(l);
+            }
 
-        pw.println();
-        mWifiStateMachine.dump(fd, pw, args);
-        pw.println();
+            pw.println();
+            mWifiStateMachine.dump(fd, pw, args);
+            pw.println();
+        }
     }
 
     private class WifiLock extends DeathRecipient {
