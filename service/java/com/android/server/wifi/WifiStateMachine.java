@@ -4963,19 +4963,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
 
-    private boolean useLegacyDhcpClient() {
-        return mFacade.getIntegerSetting(mContext, Settings.Global.LEGACY_DHCP_CLIENT, 0) == 1;
-    }
-
     private void maybeInitDhcpStateMachine() {
         if (mDhcpStateMachine == null) {
-            if (useLegacyDhcpClient()) {
-                mDhcpStateMachine = mFacade.makeDhcpStateMachine(
-                        mContext, WifiStateMachine.this, mInterfaceName);
-            } else {
-                mDhcpStateMachine = mFacade.makeDhcpStateMachine(
-                        mContext, WifiStateMachine.this, mInterfaceName);
-            }
+            mDhcpStateMachine = mFacade.makeDhcpStateMachine(
+                    mContext, WifiStateMachine.this, mInterfaceName);
         }
     }
 
