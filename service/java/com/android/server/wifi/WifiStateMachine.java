@@ -4488,6 +4488,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 (mLinkProperties.isIPv6Provisioned() && !newLp.isIPv6Provisioned());
         final DetailedState detailedState = getNetworkDetailedState();
 
+        if (lostProvisioning) {
+            log("Lost IP layer provisioning!" +
+                    " was: " + mLinkProperties +
+                    " now: " + newLp);
+        }
+
         if (linkChanged) {
             if (DBG) {
                 log("Link configuration changed for netId: " + mLastNetworkId
@@ -4498,12 +4504,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
             }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
-        }
-
-        if (lostProvisioning) {
-            log("Lost IP layer provisioning!" +
-                    " was: " + mLinkProperties +
-                    " now: " + newLp);
         }
 
         if (DBG) {
