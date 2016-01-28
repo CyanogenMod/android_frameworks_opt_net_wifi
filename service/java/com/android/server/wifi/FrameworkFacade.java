@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.net.BaseDhcpStateMachine;
 import android.net.DhcpStateMachine;
 import android.net.TrafficStats;
+import android.net.dhcp.DhcpClient;
 import android.net.ip.IpReachabilityMonitor;
 import android.os.Handler;
 import android.os.IBinder;
@@ -78,7 +79,11 @@ public class FrameworkFacade {
 
     public BaseDhcpStateMachine makeDhcpStateMachine(
             Context context, StateMachine controller, String intf) {
-        return DhcpStateMachine.makeDhcpStateMachine(context, controller, intf);
+        if (getIntegerSetting(context, Settings.Global.LEGACY_DHCP_CLIENT, 0) == 1) {
+            return DhcpStateMachine.makeDhcpStateMachine(context, controller, intf);
+        } else {
+            return DhcpClient.makeDhcpStateMachine(context, controller, intf);
+        }
     }
 
     public IpReachabilityMonitor makeIpReachabilityMonitor(
