@@ -562,6 +562,40 @@ public class WifiConfigStoreTest extends AndroidTestCase {
     }
 
     /**
+     * Verifies that loadConfiguredNetworks() correctly handles duplicates when reading network
+     * configurations from the wpa_supplicant: The second configuration overwrites the first.
+     */
+    public void testLoadConfiguredNetworksEliminatesDuplicates() throws Exception {
+        final WifiConfiguration config = new WifiConfiguration(CONFIGS.get(0));
+        config.networkId = 1;
+
+        // Set up list of network configurations returned by wpa_supplicant. The two configurations
+        // are identical except for their network IDs.
+        final String header = "network id / ssid / bssid / flags";
+        final String networks =
+                header + "\n0\t" + config.SSID + "\tany\n1\t" + config.SSID + "\tany";
+        when(mWifiNative.listNetworks(anyInt())).thenReturn(header);
+        when(mWifiNative.listNetworks(-1)).thenReturn(networks);
+
+        // Set up variables returned by wpa_supplicant.
+        when(mWifiNative.getNetworkVariable(anyInt(), eq(WifiConfiguration.ssidVarName)))
+            .thenReturn(encodeConfigSSID(config));
+        final Map<String, String> metadata = new HashMap<String, String>();
+        metadata.put(WifiConfigStore.ID_STRING_KEY_CONFIG_KEY, config.configKey());
+        metadata.put(WifiConfigStore.ID_STRING_KEY_CREATOR_UID,
+                Integer.toString(config.creatorUid));
+        when(mWifiNative.getNetworkExtra(anyInt(), eq(WifiConfigStore.ID_STRING_VAR_NAME)))
+            .thenReturn(metadata);
+
+        // Load network configurations.
+        mConfigStore.loadConfiguredNetworks();
+
+        // Verify that the second network configuration (network ID 1) overwrote the first (network
+        // ID 0).
+        verifyNetworkConfigs(Arrays.asList(config), mConfiguredNetworks.valuesForAllUsers());
+    }
+
+    /**
      * Verifies that handleUserSwitch() removes ephemeral network configurations, disables network
      * configurations that should no longer be visible and enables network configurations that
      * should become visible.
