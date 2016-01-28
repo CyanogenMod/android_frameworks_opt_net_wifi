@@ -112,7 +112,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32;
 import java.util.zip.Checksum;
@@ -219,7 +218,9 @@ public class WifiConfigStore extends IpConfigStore {
     /* Network History Keys */
     private static final String SSID_KEY = "SSID";
     static final String CONFIG_KEY = "CONFIG";
+    private static final String CONFIG_BSSID_KEY = "CONFIG_BSSID";
     private static final String CHOICE_KEY = "CHOICE";
+    private static final String CHOICE_TIME_KEY = "CHOICE_TIME";
     private static final String LINK_KEY = "LINK";
     private static final String BSSID_KEY = "BSSID";
     private static final String BSSID_KEY_END = "/BSSID";
@@ -232,7 +233,6 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String PRIORITY_KEY = "PRIORITY";
     private static final String DEFAULT_GW_KEY = "DEFAULT_GW";
     private static final String AUTH_KEY = "AUTH";
-    private static final String STATUS_KEY = "AUTO_JOIN_STATUS";
     private static final String BSSID_STATUS_KEY = "BSSID_STATUS";
     private static final String SELF_ADDED_KEY = "SELF_ADDED";
     private static final String FAILURE_KEY = "FAILURE";
@@ -241,8 +241,6 @@ public class WifiConfigStore extends IpConfigStore {
     static final String CREATOR_UID_KEY = "CREATOR_UID_KEY";
     private static final String CONNECT_UID_KEY = "CONNECT_UID_KEY";
     private static final String UPDATE_UID_KEY = "UPDATE_UID";
-    private static final String SUPPLICANT_STATUS_KEY = "SUP_STATUS";
-    private static final String SUPPLICANT_DISABLE_REASON_KEY = "SUP_DIS_REASON";
     private static final String FQDN_KEY = "FQDN";
     private static final String SCORER_OVERRIDE_KEY = "SCORER_OVERRIDE";
     private static final String SCORER_OVERRIDE_AND_SWITCH_KEY = "SCORER_OVERRIDE_AND_SWITCH";
@@ -1021,7 +1019,7 @@ public class WifiConfigStore extends IpConfigStore {
             mWifiNative.selectNetwork(config.networkId);
 
         updateLastConnectUid(config, uid);
-        writeKnownNetworkHistory(false);
+        writeKnownNetworkHistory();
 
         /* Enable the given network while disabling all other networks */
         enableNetworkWithoutBroadcast(config.networkId, true);
@@ -1152,12 +1150,7 @@ public class WifiConfigStore extends IpConfigStore {
             return;
         }
 
-        // If an app specified a BSSID then dont over-write it
-        if (config.BSSID != null && config.BSSID != "any") {
-            return;
-        }
-
-        // If autojoin specified a BSSID then write it in the network block
+        // If Network Selection specified a BSSID then write it in the network block
         WifiConfiguration.NetworkSelectionStatus networkStatus = config.getNetworkSelectionStatus();
         String bssid = networkStatus.getNetworkSelectionBSSID();
         if (bssid != null) {
@@ -1226,9 +1219,7 @@ public class WifiConfigStore extends IpConfigStore {
             loge("Found ephemeral config in disableEphemeralNetwork: " + foundConfig.networkId);
         }
 
-        // Force a write, because the mDeletedEphemeralSSIDs list has changed even though the
-        // configurations may not have.
-        writeKnownNetworkHistory(true);
+        writeKnownNetworkHistory();
 
         return foundConfig;
     }
@@ -1254,7 +1245,7 @@ public class WifiConfigStore extends IpConfigStore {
                 writePasspointConfigs(config.FQDN, null);
             }
             mWifiNative.saveConfig();
-            writeKnownNetworkHistory(true);
+            writeKnownNetworkHistory();
             return true;
         } else {
             loge("Failed to remove network " + netId);
@@ -1425,13 +1416,13 @@ public class WifiConfigStore extends IpConfigStore {
     private boolean removeConfigAndSendBroadcastIfNeeded(int netId) {
         WifiConfiguration config = mConfiguredNetworks.getForCurrentUser(netId);
         if (config != null) {
+            String key = config.configKey();
             if (VDBG) {
-                loge("removeNetwork " + Integer.toString(netId) + " key=" +
-                        config.configKey() + " config.id=" + Integer.toString(config.networkId));
+                loge("removeNetwork " + netId + " key=" + key + " config.id=" + config.networkId);
             }
 
             // cancel the last user choice
-            if (config.configKey().equals(lastSelectedConfiguration)) {
+            if (key.equals(lastSelectedConfiguration)) {
                 lastSelectedConfiguration = null;
             }
 
@@ -1447,14 +1438,14 @@ public class WifiConfigStore extends IpConfigStore {
                     if (config.SSID != null) {
                         Long csum = getChecksum(config.SSID);
                         mDeletedSSIDs.add(csum);
-                        loge("removeNetwork " + Integer.toString(netId)
-                                + " key=" + config.configKey()
-                                + " config.id=" + Integer.toString(config.networkId)
+                        loge("removeNetwork " + netId
+                                + " key=" + key
+                                + " config.id=" + config.networkId
                                 + "  crc=" + csum);
                     } else {
-                        loge("removeNetwork " + Integer.toString(netId)
-                                + " key=" + config.configKey()
-                                + " config.id=" + Integer.toString(config.networkId));
+                        loge("removeNetwork " + netId
+                                + " key=" + key
+                                + " config.id=" + config.networkId);
                     }
                 }
             }
@@ -1464,9 +1455,32 @@ public class WifiConfigStore extends IpConfigStore {
 
             writeIpAndProxyConfigurations();
             sendConfiguredNetworksChangedBroadcast(config, WifiManager.CHANGE_REASON_REMOVED);
-            writeKnownNetworkHistory(true);
+            if (!config.ephemeral) {
+                removeUserSelectionPreference(key);
+            }
+            writeKnownNetworkHistory();
         }
         return true;
+    }
+
+    private void removeUserSelectionPreference(String configKey) {
+        if (DBG) {
+            Log.d(TAG, "removeUserSelectionPreference: key is " + configKey);
+        }
+        if (configKey == null) {
+            return;
+        }
+        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
+            WifiConfiguration.NetworkSelectionStatus status = config.getNetworkSelectionStatus();
+            String connectChoice = status.getConnectChoice();
+            if (connectChoice != null && connectChoice.equals(configKey)) {
+                Log.d(TAG, "remove connect choice:" + connectChoice + " from " + config.SSID
+                        + " : " + config.networkId);
+                status.setConnectChoice(null);
+                status.setConnectChoiceTimestamp(WifiConfiguration.NetworkSelectionStatus
+                            .INVALID_NETWORK_SELECTION_DISABLE_TIMESTAMP);
+            }
+        }
     }
 
     /*
@@ -1539,7 +1553,7 @@ public class WifiConfigStore extends IpConfigStore {
         if (disableOthers) {
             if (VDBG) localLogNetwork("enableNetwork(disableOthers=true, uid=" + uid + ") ", netId);
             updateLastConnectUid(getWifiConfiguration(netId), uid);
-            writeKnownNetworkHistory(false);
+            writeKnownNetworkHistory();
             sendConfiguredNetworksChangedBroadcast();
         } else {
             if (VDBG) localLogNetwork("enableNetwork(disableOthers=false) ", netId);
@@ -1783,32 +1797,6 @@ public class WifiConfigStore extends IpConfigStore {
         }
         return true;
     }
-    /**
-     * update the network history after user select a network
-     * - if userTriggered, we mark the configuration as "non selfAdded" since the user has seen it
-     * and took over management
-     * - TODO: if selected network can override the setting ones, need remember the preference
-     *   user has higher preference of this network to all other saved network with good RSSI
-     */
-    public void userSelectNetwork(int netId, boolean connect) {
-        WifiConfiguration selected = getWifiConfiguration(netId);
-        if (selected == null) {
-            Log.e(TAG, "userSelectNetwork: Can not find network with network ID: " + netId);
-            return;
-        }
-
-        if (selected.SSID == null) {
-            Log.e(TAG, "userSelectNetwork: no network SSID");
-            return;
-        }
-
-        updateNetworkStatus(selected,
-                WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
-        selected.selfAdded = false;
-        // Todo: may need remember user preferernce between networks?
-        writeKnownNetworkHistory(false);
-    }
-
 
     /**
      * Save the configured networks in supplicant to disk
@@ -2322,8 +2310,7 @@ public class WifiConfigStore extends IpConfigStore {
         }, false);
     }
 
-    public void writeKnownNetworkHistory(boolean force) {
-        boolean needUpdate = force;
+    public void writeKnownNetworkHistory() {
 
         /* Make a copy */
         final List<WifiConfiguration> networks = new ArrayList<WifiConfiguration>();
@@ -2331,13 +2318,10 @@ public class WifiConfigStore extends IpConfigStore {
             networks.add(new WifiConfiguration(config));
         }
         if (VDBG) {
-            logd(" writeKnownNetworkHistory() num networks:"
-                    + mConfiguredNetworks.sizeForAllUsers() + " (for all users) needWrite="
-                    + needUpdate);
+            loge(" writeKnownNetworkHistory() num networks:"
+                    + mConfiguredNetworks.valuesForCurrentUser());
         }
-        if (needUpdate == false) {
-            return;
-        }
+
         mWriter.write(networkHistoryConfigFile, new DelayedDiskWrite.Writer() {
             public void onWriteCalled(DataOutputStream out) throws IOException {
                 for (WifiConfiguration config : networks) {
@@ -2347,13 +2331,10 @@ public class WifiConfigStore extends IpConfigStore {
                     else
                         loge("attempt config w/o lp");
                     */
-
+                    WifiConfiguration.NetworkSelectionStatus status =
+                            config.getNetworkSelectionStatus();
                     if (VDBG) {
-                        int num = 0;
                         int numlink = 0;
-                        if (config.connectChoices != null) {
-                            num = config.connectChoices.size();
-                        }
                         if (config.linkedConfigurations != null) {
                             numlink = config.linkedConfigurations.size();
                         }
@@ -2366,12 +2347,12 @@ public class WifiConfigStore extends IpConfigStore {
                         }
                         loge("saving network history: " + config.configKey()  + " gw: "
                                 + config.defaultGwMacAddress + " Network Selection-status: "
-                                + config.getNetworkSelectionStatus().getNetworkStatusString()
+                                + status.getNetworkStatusString()
                                 + disableTime + " ephemeral=" + config.ephemeral
-                                + " choices:" + Integer.toString(num)
-                                + " link:" + Integer.toString(numlink)
-                                + " status:" + Integer.toString(config.status)
-                                + " nid:" + Integer.toString(config.networkId));
+                                + " choice:" + status.getConnectChoice()
+                                + " link:" + numlink
+                                + " status:" + config.status
+                                + " nid:" + config.networkId);
                     }
 
                     if (!WifiServiceImpl.isValid(config))
@@ -2391,19 +2372,17 @@ public class WifiConfigStore extends IpConfigStore {
                     if (config.SSID != null) {
                         out.writeUTF(SSID_KEY + SEPARATOR + config.SSID + NL);
                     }
+                    if (config.BSSID != null) {
+                        out.writeUTF(CONFIG_BSSID_KEY + SEPARATOR + config.BSSID + NL);
+                    } else {
+                        out.writeUTF(CONFIG_BSSID_KEY + SEPARATOR + "null" + NL);
+                    }
                     if (config.FQDN != null) {
                         out.writeUTF(FQDN_KEY + SEPARATOR + config.FQDN + NL);
                     }
 
                     out.writeUTF(PRIORITY_KEY + SEPARATOR +
                             Integer.toString(config.priority) + NL);
-                    out.writeUTF(STATUS_KEY + SEPARATOR +
-                            config.getNetworkSelectionStatus().getNetworkStatusString() + NL);
-                    out.writeUTF(SUPPLICANT_STATUS_KEY + SEPARATOR +
-                            Integer.toString(config.status) + NL);
-                    out.writeUTF(SUPPLICANT_DISABLE_REASON_KEY + SEPARATOR +
-                            config.getNetworkSelectionStatus().getNetworkDisableReasonString()
-                            + NL);
                     out.writeUTF(NETWORK_ID_KEY + SEPARATOR +
                             Integer.toString(config.networkId) + NL);
                     out.writeUTF(SELF_ADDED_KEY + SEPARATOR +
@@ -2451,13 +2430,13 @@ public class WifiConfigStore extends IpConfigStore {
                     out.writeUTF(AUTH_KEY + SEPARATOR +
                             allowedKeyManagementString + NL);
 
-                    if (config.connectChoices != null) {
-                        for (String key : config.connectChoices.keySet()) {
-                            Integer choice = config.connectChoices.get(key);
-                            out.writeUTF(CHOICE_KEY + SEPARATOR +
-                                    key + "=" + choice.toString() + NL);
-                        }
+
+                    if (status.getConnectChoice() != null) {
+                        out.writeUTF(CHOICE_KEY + SEPARATOR + status.getConnectChoice() + NL);
+                        out.writeUTF(CHOICE_TIME_KEY + SEPARATOR
+                                + status.getConnectChoiceTimestamp() + NL);
                     }
+
                     if (config.linkedConfigurations != null) {
                         log("writeKnownNetworkHistory write linked "
                                 + config.linkedConfigurations.size());
@@ -2484,14 +2463,6 @@ public class WifiConfigStore extends IpConfigStore {
                             out.writeUTF(RSSI_KEY + SEPARATOR +
                                     Integer.toString(result.level) + NL);
 
-                            out.writeUTF(BSSID_STATUS_KEY + SEPARATOR
-                                    + config.getNetworkSelectionStatus().getNetworkStatusString()
-                                    + NL);
-
-                            //if (result.seen != 0) {
-                            //    out.writeUTF(MILLI_KEY + SEPARATOR + Long.toString(result.seen)
-                            //            + NL);
-                            //}
                             out.writeUTF(BSSID_KEY_END + NL);
                         }
                     }
@@ -2649,18 +2620,15 @@ public class WifiConfigStore extends IpConfigStore {
                                 config.SSID = ssid;
                             }
                             break;
+                        case CONFIG_BSSID_KEY:
+                            config.BSSID = value.equals("null") ? null : value;
+                            break;
                         case FQDN_KEY:
                             // Check for literal 'null' to be backwards compatible.
                             config.FQDN = value.equals("null") ? null : value;
                             break;
                         case DEFAULT_GW_KEY:
                             config.defaultGwMacAddress = value;
-                            break;
-                        case STATUS_KEY:
-                            networkStatus.setNetworkSelectionStatus(Integer.parseInt(value));
-                            break;
-                        case SUPPLICANT_DISABLE_REASON_KEY:
-                            networkStatus.setNetworkSelectionDisableReason(Integer.parseInt(value));
                             break;
                         case SELF_ADDED_KEY:
                             config.selfAdded = Boolean.parseBoolean(value);
@@ -2711,26 +2679,10 @@ public class WifiConfigStore extends IpConfigStore {
                             config.peerWifiConfiguration = value;
                             break;
                         case CHOICE_KEY:
-                            String configKey = "";
-                            int choice = 0;
-                            Matcher match = mConnectChoice.matcher(value);
-                            if (!match.find()) {
-                                if (DBG) Log.d(TAG, "WifiConfigStore: connectChoice: " +
-                                        " Couldnt match pattern : " + value);
-                            } else {
-                                configKey = match.group(1);
-                                try {
-                                    choice = Integer.parseInt(match.group(2));
-                                } catch (NumberFormatException e) {
-                                    choice = 0;
-                                }
-                                if (choice > 0) {
-                                    if (config.connectChoices == null) {
-                                        config.connectChoices = new HashMap<>();
-                                    }
-                                    config.connectChoices.put(configKey, choice);
-                                }
-                            }
+                            networkStatus.setConnectChoice(value);
+                            break;
+                        case CHOICE_TIME_KEY:
+                            networkStatus.setConnectChoiceTimestamp(Long.parseLong(value));
                             break;
                         case LINK_KEY:
                             if (config.linkedConfigurations == null) {
@@ -2751,9 +2703,6 @@ public class WifiConfigStore extends IpConfigStore {
                             break;
                         case RSSI_KEY:
                             rssi = Integer.parseInt(value);
-                            break;
-                        case BSSID_STATUS_KEY:
-                            status = Integer.parseInt(value);
                             break;
                         case FREQ_KEY:
                             freq = Integer.parseInt(value);
@@ -2956,13 +2905,14 @@ public class WifiConfigStore extends IpConfigStore {
                 break setVariables;
             }
 
-            if (config.BSSID != null) {
-                log("Setting BSSID for " + config.configKey() + " to " + config.BSSID);
+            //set selected BSSID to supplicant
+            if (config.getNetworkSelectionStatus().getNetworkSelectionBSSID() != null) {
+                String bssid = config.getNetworkSelectionStatus().getNetworkSelectionBSSID();
                 if (!mWifiNative.setNetworkVariable(
                         netId,
                         WifiConfiguration.bssidVarName,
-                        config.BSSID)) {
-                    loge("failed to set BSSID: " + config.BSSID);
+                        bssid)) {
+                    loge("failed to set BSSID: " + bssid);
                     break setVariables;
                 }
             }
@@ -3288,7 +3238,8 @@ public class WifiConfigStore extends IpConfigStore {
         if (homeSP != null) {
             writePasspointConfigs(null, homeSP);
         }
-        writeKnownNetworkHistory(true);
+
+        writeKnownNetworkHistory();
 
         return result;
     }
@@ -3907,7 +3858,7 @@ public class WifiConfigStore extends IpConfigStore {
                 mWifiNative.removeNetwork(config.networkId);
             }
             mWifiNative.saveConfig();
-            writeKnownNetworkHistory(true);
+            writeKnownNetworkHistory();
         }
 
         final List<WifiConfiguration> hiddenConfigurations =
@@ -4063,9 +4014,9 @@ public class WifiConfigStore extends IpConfigStore {
 
         value = mWifiNative.getNetworkVariable(netId, WifiConfiguration.bssidVarName);
         if (!TextUtils.isEmpty(value)) {
-            config.BSSID = value;
+            config.getNetworkSelectionStatus().setNetworkSelectionBSSID(value);
         } else {
-            config.BSSID = null;
+            config.getNetworkSelectionStatus().setNetworkSelectionBSSID(null);
         }
 
         value = mWifiNative.getNetworkVariable(netId, WifiConfiguration.priorityVarName);
