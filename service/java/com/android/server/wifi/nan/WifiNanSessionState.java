@@ -103,12 +103,12 @@ public class WifiNanSessionState {
                 settings);
     }
 
-    public void sendMessage(short transactionId, int peerId, byte[] message,
-            int messageLength) {
+    public void sendMessage(short transactionId, int peerId, byte[] message, int messageLength,
+            int messageId) {
         if (!mPubSubIdValid) {
             Log.e(TAG, "sendMessage: attempting to send a message on a non-live session "
                     + "(no successful publish or subscribe");
-            onMessageSendFail(WifiNanSessionListener.FAIL_REASON_NO_MATCH_SESSION);
+            onMessageSendFail(messageId, WifiNanSessionListener.FAIL_REASON_NO_MATCH_SESSION);
             return;
         }
 
@@ -116,7 +116,7 @@ public class WifiNanSessionState {
         if (peerMacStr == null) {
             Log.e(TAG, "sendMessage: attempting to send a message to an address which didn't "
                     + "match/contact us");
-            onMessageSendFail(WifiNanSessionListener.FAIL_REASON_NO_MATCH_SESSION);
+            onMessageSendFail(messageId, WifiNanSessionListener.FAIL_REASON_NO_MATCH_SESSION);
             return;
         }
         byte[] peerMac = HexEncoding.decode(peerMacStr.toCharArray(), false);
@@ -206,22 +206,22 @@ public class WifiNanSessionState {
         }
     }
 
-    public void onMessageSendSuccess() {
+    public void onMessageSendSuccess(int messageId) {
         try {
             if (mListener != null
                     && (mEvents & WifiNanSessionListener.LISTEN_MESSAGE_SEND_SUCCESS) != 0) {
-                mListener.onMessageSendSuccess();
+                mListener.onMessageSendSuccess(messageId);
             }
         } catch (RemoteException e) {
             Log.w(TAG, "onMessageSendSuccess: RemoteException (FYI): " + e);
         }
     }
 
-    public void onMessageSendFail(int status) {
+    public void onMessageSendFail(int messageId, int status) {
         try {
             if (mListener != null
                     && (mEvents & WifiNanSessionListener.LISTEN_MESSAGE_SEND_FAIL) != 0) {
-                mListener.onMessageSendFail(status);
+                mListener.onMessageSendFail(messageId, status);
             }
         } catch (RemoteException e) {
             Log.w(TAG, "onMessageSendFail: RemoteException (FYI): " + e);

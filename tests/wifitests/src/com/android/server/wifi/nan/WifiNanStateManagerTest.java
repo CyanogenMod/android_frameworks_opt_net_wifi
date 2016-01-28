@@ -421,6 +421,7 @@ public class WifiNanStateManagerTest {
         final String peerSsi = "some peer ssi data";
         final String peerMatchFilter = "filter binary array represented as string";
         final String peerMsg = "some message from peer";
+        final int messageId = 6948;
 
         SubscribeData.Builder dataBuilder = new SubscribeData.Builder();
         dataBuilder.setServiceName(serviceName).setServiceSpecificInfo(ssi);
@@ -464,7 +465,7 @@ public class WifiNanStateManagerTest {
         inOrder.verify(mockListener).onMessageReceived(requestorId, peerMsg.getBytes(),
                 peerMsg.length());
 
-        mDut.sendMessage(uid, sessionId, requestorId, ssi.getBytes(), ssi.length());
+        mDut.sendMessage(uid, sessionId, requestorId, ssi.getBytes(), ssi.length(), messageId);
         mMockLooper.dispatchAll();
 
         inOrder.verify(mMockNative).sendMessage(transactionId.capture(), eq(subscribeId),
@@ -473,9 +474,9 @@ public class WifiNanStateManagerTest {
         mDut.onMessageSendFail(transactionId.getValue(), reasonFail);
         mMockLooper.dispatchAll();
 
-        inOrder.verify(mockListener).onMessageSendFail(reasonFail);
+        inOrder.verify(mockListener).onMessageSendFail(messageId, reasonFail);
 
-        mDut.sendMessage(uid, sessionId, requestorId, ssi.getBytes(), ssi.length());
+        mDut.sendMessage(uid, sessionId, requestorId, ssi.getBytes(), ssi.length(), messageId);
         mMockLooper.dispatchAll();
 
         inOrder.verify(mMockNative).sendMessage(transactionId.capture(), eq(subscribeId),
@@ -484,7 +485,7 @@ public class WifiNanStateManagerTest {
         mDut.onMessageSendSuccess(transactionId.getValue());
         mMockLooper.dispatchAll();
 
-        inOrder.verify(mockListener).onMessageSendSuccess();
+        inOrder.verify(mockListener).onMessageSendSuccess(messageId);
 
         verifyNoMoreInteractions(mockListener, mMockNative);
     }
