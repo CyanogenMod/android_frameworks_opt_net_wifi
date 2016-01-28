@@ -232,13 +232,12 @@ class WifiQualifiedNetworkSelector {
         return true;
     }
 
-    /*
+    /**
      * check whether QualifiedNetworkSelection is needed or not
      * return - true need a Qualified Network Selection procedure
      *        - false do not need a QualifiedNetworkSelection procedure
      */
     private boolean needQualifiedNetworkSelection() {
-        //TODO:This should be called in scan result call back in the future
         mScanDetails = mWifiStateMachine.getScanResultsListNoCopyUnsync();
         if (mScanDetails.size() == 0) {
             qnsLog("empty scan result");
@@ -363,7 +362,7 @@ class WifiQualifiedNetworkSelector {
         }
 
         //security award
-        if (!TextUtils.isEmpty(network.FQDN)) {
+        if (network.isPasspoint()) {
             score += mPasspointSecurityAward;
             sbuf.append(" Passpoint Bonus:" + mPasspointSecurityAward);
         } else if (!mWifiConfigStore.isOpenNetwork(network)) {
@@ -378,10 +377,10 @@ class WifiQualifiedNetworkSelector {
             sbuf.append(" No internet Penalty:-" + mNoIntnetPenalty);
         }
 
-        if (mDbg) {
-            sbuf.append("\n" + TAG + "Score for scanresult: " + scanResult +  " and Network ID: "
-                    + network.networkId + " final score:" + score + "\n");
-        }
+
+        sbuf.append(" Score for scanResult: " + scanResult +  " and Network ID: "
+                + network.networkId + " final score:" + score + "\n\n");
+
         return score;
     }
 
@@ -395,21 +394,35 @@ class WifiQualifiedNetworkSelector {
             return;
         }
 
-        if (mDbg) {
-            StringBuffer sbuf = new StringBuffer("Saved Network List\n");
-            for (WifiConfiguration network : savedNetworks) {
-                WifiConfiguration.NetworkSelectionStatus networkStatus =
-                        network.getNetworkSelectionStatus();
-                sbuf.append("    " + getNetworkString(network) + " "
-                        + networkStatus.getNetworkStatusString() + " Disable account: ");
-                for (int index = networkStatus.NETWORK_SELECTION_ENABLE;
-                        index < networkStatus.NETWORK_SELECTION_DISABLED_MAX; index++) {
-                    sbuf.append(networkStatus.getDisableReasonCounter(index) + " ");
-                }
-                sbuf.append("\n");
+        StringBuffer sbuf = new StringBuffer("Saved Network List\n");
+        for (WifiConfiguration network : savedNetworks) {
+            WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(network.networkId);
+            WifiConfiguration.NetworkSelectionStatus status =
+                    config.getNetworkSelectionStatus();
+
+            //If the configuration is temporarily disabled, try to re-enable it
+            if (status.isNetworkTemporaryDisabled()) {
+                mWifiConfigStore.tryEnableQualifiedNetwork(network.networkId);
             }
-            qnsLog(sbuf.toString());
+
+            //clean the cached candidate, score and seen
+            status.setCandidate(null);
+            status.setCandidateScore(Integer.MIN_VALUE);
+            status.setSeenInLastQualifiedNetworkSelection(false);
+
+            //print the debug messages
+            sbuf.append("    " + getNetworkString(network) + " " + " User Preferred BSSID:"
+                    + network.BSSID + " FQDN:" + network.FQDN + " "
+                    + status.getNetworkStatusString() + " Disable account: ");
+            for (int index = status.NETWORK_SELECTION_ENABLE;
+                    index < status.NETWORK_SELECTION_DISABLED_MAX; index++) {
+                sbuf.append(status.getDisableReasonCounter(index) + " ");
+            }
+            sbuf.append("Connect Choice:" + status.getConnectChoice() + " set time:"
+                    + status.getConnectChoiceTimestamp());
+            sbuf.append("\n");
         }
+        qnsLog(sbuf.toString());
     }
 
     /**
@@ -437,7 +450,8 @@ class WifiQualifiedNetworkSelector {
         // FIXME: 11/12/15 need fix auto_connect wifisatetmachine codes
         String currentAssociationId = (mCurrentConnectedNetwork == null ? "Disconnected" :
                 mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
-        String targetAssociationId = newNetworkCandidate.SSID + ":" + newBssid;
+        String targetAssociationId = getNetworkString(newNetworkCandidate);
+
 
         qnsLog("reconnect from " + currentAssociationId + " to " + targetAssociationId);
         // the third parameter 0 means connect request from Network Selection
@@ -448,6 +462,82 @@ class WifiQualifiedNetworkSelector {
     }
 
     /**
+     * This API is called when user explicitly select a network. Currently, it is used in following
+     * cases:
+     * (1) User explicitly choose to connect to a saved network
+     * (2) User save a network after add a new network
+     * (3) User save a network after modify a saved network
+     * Following actions will be triggered:
+     * 1. if this network is disabled, we need re-enable it again
+     * 2. we considered user prefer this network over all the networks visible in latest network
+     *    selection procedure
+     *
+     * @param netId new network ID for either the network the user choose or add
+     * @param persist whether user has the authority to overwrite current connect choice
+     * @return true -- There is change made to connection choice of any saved network
+     *         false -- There is no change made to connection choice of any saved network
+     */
+    public boolean userSelectNetwork(int netId, boolean persist) {
+        WifiConfiguration selected = mWifiConfigStore.getWifiConfiguration(netId);
+        qnsLog("userSelectNetwork:" + netId + " persist:" + persist);
+        if (selected == null || selected.SSID == null) {
+            qnsLoge("userSelectNetwork: Bad configuration with nid=" + netId);
+            return false;
+        }
+
+
+        if (!selected.getNetworkSelectionStatus().isNetworkEnabled()) {
+            mWifiConfigStore.updateNetworkSelectionStatus(netId,
+                    WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLE);
+        }
+
+        if (!persist) {
+            qnsLog("User has no privilege to overwrite the current priority");
+            return false;
+        }
+
+        boolean change = false;
+        String key = selected.configKey();
+        long currentTime = System.currentTimeMillis();
+        List<WifiConfiguration> savedNetworks = mWifiConfigStore.getConfiguredNetworks();
+
+        for (WifiConfiguration network : savedNetworks) {
+            WifiConfiguration config = mWifiConfigStore.getWifiConfiguration(network.networkId);
+            WifiConfiguration.NetworkSelectionStatus status = config.getNetworkSelectionStatus();
+            if (config.networkId == selected.networkId) {
+                if (status.getConnectChoice() != null) {
+                    qnsLog("Remove user selection preference of " + status.getConnectChoice()
+                            + " Set Time: " + status.getConnectChoiceTimestamp() + " from "
+                            + config.SSID + " : " + config.networkId);
+                    status.setConnectChoice(null);
+                    status.setConnectChoiceTimestamp(WifiConfiguration.NetworkSelectionStatus
+                            .INVALID_NETWORK_SELECTION_DISABLE_TIMESTAMP);
+                    change = true;
+                }
+                continue;
+            }
+
+            if (status.getSeenInLastQualifiedNetworkSelection()
+                    && (status.getConnectChoice() == null
+                    || !status.getConnectChoice().equals(key))) {
+                qnsLog("Add key:" + key + " Set Time: " + currentTime + " to "
+                        + getNetworkString(config));
+                status.setConnectChoice(key);
+                status.setConnectChoiceTimestamp(currentTime);
+                change = true;
+            }
+        }
+        //Write this change to file
+        if (change) {
+            mWifiConfigStore.writeKnownNetworkHistory();
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * ToDo: This should be called in Connectivity Scan Manager get scan result
      * check whether a network slection is needed. If need, check all the new scan results and
      * select a new qualified network/BSSID to connect to
      * @param forceSelectNetwork if this one is true, start a qualified network selection anyway,
@@ -566,7 +656,17 @@ class WifiQualifiedNetworkSelector {
             WifiConfiguration configurationCandidateForThisScan = null;
 
             for (WifiConfiguration network : associatedWifiConfigurations) {
-                if (!network.getNetworkSelectionStatus().isNetworkEnabled()) {
+                WifiConfiguration.NetworkSelectionStatus status =
+                        network.getNetworkSelectionStatus();
+                status.setSeenInLastQualifiedNetworkSelection(true);
+                if (!status.isNetworkEnabled()) {
+                    continue;
+                } else if (network.BSSID != null && !network.BSSID.equals("any")
+                        && !network.BSSID.equals(scanResult.BSSID)) {
+                    //in such scenario, user (APP) has specified the only BSSID to connect for this
+                    // configuration. So only the matched scan result can be candidate
+                    qnsLog("Network: " + getNetworkString(network) + " has specified" + "BSSID:"
+                            + network.BSSID + ". Skip " + scanResult.BSSID);
                     continue;
                 }
                 score = calculateBssidScore(scanResult, network, mCurrentConnectedNetwork,
@@ -576,6 +676,11 @@ class WifiQualifiedNetworkSelector {
                 if (score > highestScore) {
                     highestScore = score;
                     configurationCandidateForThisScan = network;
+                }
+                //update the cached candidate
+                if (score > status.getCandidateScore()) {
+                    status.setCandidate(scanResult);
+                    status.setCandidateScore(score);
                 }
             }
 
@@ -593,6 +698,31 @@ class WifiQualifiedNetworkSelector {
             qnsLog(notSavedScan + " skipped due to not saved\n ");
             qnsLog(noValidSsid + " skipped due to not valid SSID\n");
             qnsLog(scoreHistory.toString());
+        }
+
+        //we need traverse the whole user preference to choose the one user like most now
+        if (scanResultCandidate != null) {
+            WifiConfiguration tempConfig = networkCandidate;
+
+            while (tempConfig.getNetworkSelectionStatus().getConnectChoice() != null) {
+                String key = tempConfig.getNetworkSelectionStatus().getConnectChoice();
+                tempConfig = mWifiConfigStore.getWifiConfiguration(key);
+
+                if (tempConfig != null) {
+                    WifiConfiguration.NetworkSelectionStatus tempStatus =
+                            tempConfig.getNetworkSelectionStatus();
+                    if (tempStatus.getCandidate() != null && tempStatus.isNetworkEnabled()) {
+                        scanResultCandidate = tempStatus.getCandidate();
+                        networkCandidate = tempConfig;
+                    }
+                } else {
+                    //we should not come here in theory
+                    qnsLoge("Connect choice: " + key + " has no corresponding saved config");
+                    break;
+                }
+            }
+            qnsLog("After user choice adjust, the final candidate is:"
+                    + getNetworkString(networkCandidate) + " : " + scanResultCandidate.BSSID);
         }
 
         // if we can not find scanCadidate in saved network
@@ -636,7 +766,7 @@ class WifiQualifiedNetworkSelector {
                 mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
 
         //In passpoint, saved configuration has garbage SSID
-        if (!TextUtils.isEmpty(networkCandidate.FQDN)) {
+        if (networkCandidate.isPasspoint()) {
             // This will updateb the passpoint configuration in WifiConfigStore
             networkCandidate.SSID = "\"" + scanResultCandidate.SSID + "\"";
         }

@@ -23,6 +23,15 @@ import android.net.wifi.WifiEnterpriseConfig;
  * Helper for creating and populating WifiConfigurations in unit tests.
  */
 public class WifiConfigurationUtil {
+    /**
+     * These values are used to describe AP's security setting. One AP can support multiple of them,
+     * only if there is no conflict.
+     */
+    public static final int SECURITY_NONE = 0;
+    public static final int SECURITY_WEP =  1 << 0;
+    public static final int SECURITY_PSK =  1 << 1;
+    public static final int SECURITY_EAP =  1 << 2;
+
     public static WifiConfiguration generateWifiConfig(int networkId, int uid, String ssid,
             boolean shared, boolean enabled, String fqdn, String providerFriendlyName) {
         final WifiConfiguration config = new WifiConfiguration();
@@ -36,6 +45,27 @@ public class WifiConfigurationUtil {
             config.FQDN = fqdn;
             config.providerFriendlyName = providerFriendlyName;
             config.enterpriseConfig.setEapMethod(WifiEnterpriseConfig.Eap.SIM);
+        }
+        return config;
+    }
+
+    public static WifiConfiguration generateWifiConfig(int networkId, int uid, String ssid,
+            boolean shared, boolean enabled, String fqdn, String providerFriendlyName,
+            int security) {
+        WifiConfiguration config = generateWifiConfig(networkId, uid, ssid, shared, enabled, fqdn,
+                providerFriendlyName);
+
+        if (security == SECURITY_NONE) {
+            config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE);
+        } else {
+            if (((security & SECURITY_WEP) != 0) || ((security & SECURITY_PSK) != 0)) {
+                config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_PSK);
+            }
+
+            if ((security & SECURITY_EAP) != 0) {
+                config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA_EAP);
+                config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.IEEE8021X);
+            }
         }
         return config;
     }
