@@ -5660,6 +5660,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 case CMD_STOP_RSSI_MONITORING_OFFLOAD:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
                     break;
+                case CMD_USER_SWITCH:
+                    mCurrentUserId = message.arg1;
+                    mWifiConfigStore.handleUserSwitch();
+                    break;
                 default:
                     loge("Error! unhandled message" + message);
                     break;
@@ -8533,10 +8537,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     }
                     /* allow parent state to reset data for other networks */
                     return NOT_HANDLED;
-                case CMD_USER_SWITCH:
-                    mCurrentUserId = message.arg1;
-                    mWifiConfigStore.handleUserSwitch();
-                    break;
                 default:
                     return NOT_HANDLED;
             }
