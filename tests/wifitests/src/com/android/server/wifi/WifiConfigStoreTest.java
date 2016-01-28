@@ -42,6 +42,7 @@ import android.os.UserHandle;
 import android.security.Credentials;
 import android.test.AndroidTestCase;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
@@ -49,6 +50,7 @@ import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
+import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -64,15 +66,19 @@ import java.lang.reflect.Field;
 import java.math.BigInteger;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * Unit tests for {@link com.android.server.wifi.WifiConfigStore}.
@@ -100,6 +106,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
         }
     }
 
+    public static final String TAG = "WifiConfigStoreTest";
     @Mock private Context mContext;
     @Mock private WifiStateMachine mWifiStateMachine;
     @Mock private WifiNative mWifiNative;
@@ -239,6 +246,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that getConfiguredNetworksSize() returns the network configurations visible to the
      * current user.
      */
+    @Test
     public void testGetConfiguredNetworks() throws Exception {
         addNetworks();
         for (Map.Entry<Integer, List<WifiConfiguration>> entry : VISIBLE_CONFIGS.entrySet()) {
@@ -251,6 +259,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that getPrivilegedConfiguredNetworks() returns the network configurations visible to
      * the current user.
      */
+    @Test
     public void testGetPrivilegedConfiguredNetworks() throws Exception {
         addNetworks();
         for (Map.Entry<Integer, List<WifiConfiguration>> entry : VISIBLE_CONFIGS.entrySet()) {
@@ -263,6 +272,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that getWifiConfiguration(int netId) can be used to access network configurations
      * visible to the current user only.
      */
+    @Test
     public void testGetWifiConfigurationByNetworkId() throws Exception {
         addNetworks();
         for (int userId : USER_IDS) {
@@ -283,6 +293,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that getWifiConfiguration(String key) can be used to access network configurations
      * visible to the current user only.
      */
+    @Test
     public void testGetWifiConfigurationByConfigKey() throws Exception {
         addNetworks();
         for (int userId : USER_IDS) {
@@ -303,6 +314,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that enableAllNetworks() enables all temporarily disabled network configurations
      * visible to the current user.
      */
+    @Test
     public void testEnableAllNetworks() throws Exception {
         addNetworks();
         when(mWifiNative.enableNetwork(anyInt(), anyBoolean())).thenReturn(true);
@@ -332,6 +344,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that selectNetwork() disables all network configurations visible to the current user
      * except the selected one.
      */
+    @Test
     public void testSelectNetwork() throws Exception {
         addNetworks();
 
@@ -464,6 +477,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
     /**
      * Verifies that saveNetwork() correctly stores a regular network configuration.
      */
+    @Test
     public void testSaveNetworkRegular() throws Exception {
         verifySaveNetwork(0);
     }
@@ -471,6 +485,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
     /**
      * Verifies that saveNetwork() correctly stores a HotSpot 2.0 network configuration.
      */
+    @Test
     public void testSaveNetworkHotspot20() throws Exception {
         verifySaveNetwork(1);
     }
@@ -478,6 +493,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
     /**
      * Verifies that saveNetwork() correctly stores a private network configuration.
      */
+    @Test
     public void testSaveNetworkPrivate() throws Exception {
         verifySaveNetwork(2);
     }
@@ -490,6 +506,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * - In the wpa_supplicant: "ssid", "id_str"
      * - In networkHistory.txt: "CONFIG", "CREATOR_UID_KEY", "SHARED"
      */
+    @Test
     public void testLoadConfiguredNetworks() throws Exception {
         // Set up list of network configurations returned by wpa_supplicant.
         final String header = "network id / ssid / bssid / flags";
@@ -565,6 +582,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that loadConfiguredNetworks() correctly handles duplicates when reading network
      * configurations from the wpa_supplicant: The second configuration overwrites the first.
      */
+    @Test
     public void testLoadConfiguredNetworksEliminatesDuplicates() throws Exception {
         final WifiConfiguration config = new WifiConfiguration(CONFIGS.get(0));
         config.networkId = 1;
@@ -673,6 +691,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that handleUserSwitch() behaves correctly when the user switch removes an ephemeral
      * network configuration and reveals a private network configuration.
      */
+    @Test
     public void testHandleUserSwitchWithEphemeral() throws Exception {
         verifyHandleUserSwitch(USER_IDS[2], USER_IDS[0], true);
     }
@@ -681,10 +700,12 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that handleUserSwitch() behaves correctly when the user switch hides a private
      * network configuration.
      */
+    @Test
     public void testHandleUserSwitchWithoutEphemeral() throws Exception {
         verifyHandleUserSwitch(USER_IDS[0], USER_IDS[2], false);
     }
 
+    @Test
     public void testSaveLoadEapNetworks() {
         testSaveLoadSingleEapNetwork("eap network", new EnterpriseConfig(Eap.TTLS)
                 .setPhase2(Phase2.MSCHAPV2)
@@ -859,6 +880,130 @@ public class WifiConfigStoreTest extends AndroidTestCase {
             enterpriseConfig.setCaCertificates(certs);
             caCerts = certs;
             return this;
+        }
+    }
+
+    /**
+     * Generates an array of unique random numbers below the specified maxValue.
+     * Values range from 0 to maxValue-1.
+     */
+    private static ArrayDeque<Integer> getUniqueRandomNumberValues(
+            int seed,
+            int maxValue,
+            int numValues) {
+        assertTrue(numValues <= maxValue);
+        Random rand = new Random(WifiTestUtil.getTestMethod().hashCode() + seed);
+        ArrayDeque<Integer> randomNumberList = new ArrayDeque<>();
+        for (int i = 0; i < numValues; i++) {
+            int num = rand.nextInt(maxValue);
+            while (randomNumberList.contains(num)) {
+                num = rand.nextInt(maxValue);
+            }
+            randomNumberList.push(num);
+        }
+        return randomNumberList;
+    }
+
+    /**
+     * Verifies that the networks in pnoNetworkList is sorted in the same order as the
+     * network in expectedNetworkIDOrder list.
+     */
+    private static void verifyPnoNetworkListOrder(
+            ArrayList<WifiNative.PnoNetworkPriority> pnoNetworkList,
+            ArrayList<Integer> expectedNetworkIdOrder) throws Exception  {
+        int i = 0;
+        for (WifiNative.PnoNetworkPriority pnoNetwork : pnoNetworkList) {
+            Log.i(TAG, "PNO Network List Index: " + i + ", networkID: " + pnoNetwork.networkId);
+            assertTrue(pnoNetwork.networkId == expectedNetworkIdOrder.get(i++));
+        }
+    }
+
+    /**
+     * Verifies the retrievePnoNetworkPriorityList API. The test verifies that the list returned
+     * from the API is sorted as expected.
+     */
+    @Test
+    public void testPnoNetworkPriorityListCreation() throws Exception {
+        addNetworks();
+
+        Random rand = new Random(WifiTestUtil.getTestMethod().hashCode());
+
+        // First assign random |numAssociation| values and verify that the list is sorted
+        // in descending order of |numAssociation| values. Keep NetworkSelectionStatus
+        // values constant.
+        for (int userId : USER_IDS) {
+            switchUser(userId);
+            TreeMap<Integer, Integer> numAssociationToNetworkIdMap =
+                    new TreeMap<>(Collections.reverseOrder());
+            ArrayDeque<Integer> numAssociationValues =
+                    getUniqueRandomNumberValues(
+                            1, 10000, mConfiguredNetworks.valuesForCurrentUser().size());
+            for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
+                config.numAssociation = numAssociationValues.pop();
+                config.priority = rand.nextInt(10000);
+                config.status = WifiConfiguration.Status.ENABLED;
+                config.getNetworkSelectionStatus().setNetworkSelectionStatus(
+                        WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLED);
+                numAssociationToNetworkIdMap.put(config.numAssociation, config.networkId);
+                Log.i(TAG, "networkID: " + config.networkId + ", numAssociation: "
+                        + config.numAssociation);
+            }
+            ArrayList<WifiNative.PnoNetworkPriority> pnoNetworkList =
+                    mConfigStore.retrievePnoNetworkPriorityList(true);
+            verifyPnoNetworkListOrder(pnoNetworkList,
+                    new ArrayList(numAssociationToNetworkIdMap.values()));
+        }
+
+        // Assign random |priority| values and verify that the list is sorted in descending order
+        // of |priority| values. Keep numAssociation/NetworkSelectionStatus values constant.
+        for (int userId : USER_IDS) {
+            switchUser(userId);
+            TreeMap<Integer, Integer> priorityToNetworkIdMap =
+                    new TreeMap<>(Collections.reverseOrder());
+            ArrayDeque<Integer> priorityValues =
+                    getUniqueRandomNumberValues(
+                            2, 10000, mConfiguredNetworks.valuesForCurrentUser().size());
+            for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
+                config.numAssociation = 0;
+                config.priority = priorityValues.pop();
+                config.status = WifiConfiguration.Status.ENABLED;
+                config.getNetworkSelectionStatus().setNetworkSelectionStatus(
+                        WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_ENABLED);
+                priorityToNetworkIdMap.put(config.priority, config.networkId);
+                Log.i(TAG, "networkID: " + config.networkId + ", priority: " + config.priority);
+            }
+            ArrayList<WifiNative.PnoNetworkPriority> pnoNetworkList =
+                    mConfigStore.retrievePnoNetworkPriorityList(true);
+            verifyPnoNetworkListOrder(pnoNetworkList,
+                    new ArrayList(priorityToNetworkIdMap.values()));
+        }
+
+        // Now assign random |NetworkSelectionStatus| values and verify that the list is sorted in
+        // ascending order of |NetworkSelectionStatus| values.
+        for (int userId : USER_IDS) {
+            switchUser(userId);
+            TreeMap<Integer, Integer> networkSelectionStatusToNetworkIdMap = new TreeMap<>();
+            ArrayDeque<Integer> networkSelectionStatusValues =
+                    getUniqueRandomNumberValues(
+                            3,
+                            WifiConfiguration.NetworkSelectionStatus.NETWORK_SELECTION_STATUS_MAX,
+                            mConfiguredNetworks.valuesForCurrentUser().size());
+            for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
+                config.numAssociation = rand.nextInt(10000);
+                config.priority = rand.nextInt(10000);
+                config.status = WifiConfiguration.Status.ENABLED;
+                config.getNetworkSelectionStatus().setNetworkSelectionStatus(
+                        networkSelectionStatusValues.pop());
+                networkSelectionStatusToNetworkIdMap.put(
+                        config.getNetworkSelectionStatus().getNetworkSelectionStatus(),
+                        config.networkId);
+                Log.i(TAG, "networkID: " + config.networkId + ", NetworkSelectionStatus: "
+                        + config.getNetworkSelectionStatus().getNetworkSelectionStatus());
+            }
+            ArrayList<WifiNative.PnoNetworkPriority> pnoNetworkList =
+                    mConfigStore.retrievePnoNetworkPriorityList(true);
+            verifyPnoNetworkListOrder(pnoNetworkList,
+                    new ArrayList(networkSelectionStatusToNetworkIdMap.values()));
         }
     }
 }

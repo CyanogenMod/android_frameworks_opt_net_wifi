@@ -404,7 +404,8 @@ public class WifiStateMachineTest {
         when(mWifiNative.setDeviceType(anyString())).thenReturn(true);
         when(mWifiNative.setSerialNumber(anyString())).thenReturn(true);
         when(mWifiNative.setScanningMacOui(any(byte[].class))).thenReturn(true);
-        when(mWifiNative.enableBackgroundScan(anyBoolean())).thenReturn(true);
+        when(mWifiNative.enableBackgroundScan(anyBoolean(),
+                any(ArrayList.class))).thenReturn(true);
 
         mWsm.sendMessage(WifiMonitor.SUP_CONNECTION_EVENT);
         wait(200);
