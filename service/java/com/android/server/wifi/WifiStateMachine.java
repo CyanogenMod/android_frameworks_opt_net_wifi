@@ -2357,7 +2357,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         if (enable) {
             mWifiConfigStore.enableAllNetworks();
         }
-        boolean ret = mWifiNative.enableBackgroundScan(enable);
+        List<WifiNative.PnoNetworkPriority> pnoList =
+                mWifiConfigStore.retrievePnoNetworkPriorityList(enable);
+        boolean ret = mWifiNative.enableBackgroundScan(enable, pnoList);
         if (ret) {
             mLegacyPnoEnabled = enable;
         } else {
