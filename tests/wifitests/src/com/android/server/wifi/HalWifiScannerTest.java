@@ -16,12 +16,9 @@
 
 package com.android.server.wifi;
 
-import android.os.Handler;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.junit.Before;
-
-import java.lang.reflect.Field;
 
 /**
  * Unit tests for {@link com.android.server.wifi.HalWifiScannerImpl}.
@@ -32,14 +29,5 @@ public class HalWifiScannerTest extends BaseWifiScannerImplTest {
     @Before
     public void setUp() throws Exception {
         mScanner = new HalWifiScannerImpl(WifiNative.getWlanNativeInterface(), mLooper.getLooper());
-
-        // TODO remove this once HalWifiScannerImpl wifi monitor registration is enabled
-        Field eventHandlerField = HalWifiScannerImpl.class.getDeclaredField("mEventHandler");
-        eventHandlerField.setAccessible(true);
-        Handler eventHandler = (Handler) eventHandlerField.get(mScanner);
-        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-                WifiMonitor.SCAN_FAILED_EVENT, eventHandler);
-        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-                WifiMonitor.SCAN_RESULTS_EVENT, eventHandler);
     }
 }

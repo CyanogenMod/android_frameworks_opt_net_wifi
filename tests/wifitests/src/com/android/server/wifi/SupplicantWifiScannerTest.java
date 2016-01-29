@@ -22,7 +22,6 @@ import static com.android.server.wifi.ScanTestUtil.createFreqSet;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -32,14 +31,12 @@ import static org.mockito.Mockito.when;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
-import android.os.Handler;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.InOrder;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Set;
 
@@ -53,15 +50,6 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
     public void setup() throws Exception {
         mScanner = new SupplicantWifiScannerImpl(mContext, WifiNative.getWlanNativeInterface(),
                 mLooper.getLooper());
-
-        // TODO remove this once SupplicantWifiScannerImpl wifi monitor registration is enabled
-        Field eventHandlerField = SupplicantWifiScannerImpl.class.getDeclaredField("mEventHandler");
-        eventHandlerField.setAccessible(true);
-        Handler eventHandler = (Handler) eventHandlerField.get(mScanner);
-        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-                WifiMonitor.SCAN_FAILED_EVENT, eventHandler);
-        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-                WifiMonitor.SCAN_RESULTS_EVENT, eventHandler);
     }
 
     @Test
@@ -332,7 +320,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scans fail
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(false);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(false);
 
         // Start scan
         mScanner.startBatchedScan(settings, eventHandler);
@@ -367,7 +355,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         // Start scan
         mScanner.startBatchedScan(settings, eventHandler);
@@ -412,7 +400,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         // Start scan
         mScanner.startBatchedScan(settings, eventHandler);
@@ -467,7 +455,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         // Start scan
         mScanner.startBatchedScan(settings, eventHandler);
@@ -477,8 +465,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         // alarm for next period
         assertEquals(1, mAlarmManager.getPendingCount());
 
-        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP),
-                eq(expectedPeriods[0].getScanFreqs()));
+        order.verify(mWifiNative).scan(eq(expectedPeriods[0].getScanFreqs()));
 
         mScanner.pauseBatchedScan();
 
@@ -544,7 +531,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scan starts succeed
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         // Start scan
         mScanner.startBatchedScan(settings, eventHandler);
@@ -583,7 +570,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // All scans succeed
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         // Start scan
         mScanner.startBatchedScan(settings, eventHandler);
@@ -643,7 +630,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
             ArrayList<ScanDetail> nativeResults, WifiScanner.ScanData[] expectedScanResults,
             ScanResult[] fullResults, int periodId) {
         // Verify scan started
-        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
+        order.verify(mWifiNative).scan(eq(scanFreqs));
 
         // Setup scan results
         when(mWifiNative.getScanResults()).thenReturn(nativeResults);
@@ -660,7 +647,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
 
         if (expectedScanResults != null) {
             // Verify scan results delivered
-            order.verify(eventHandler).onScanStatus();
+            order.verify(eventHandler).onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
             assertScanDatasEquals("period[" + periodId + "].", expectedScanResults,
                     mScanner.getLatestBatchedScanResults(true));
         }
@@ -669,22 +656,26 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
     private void expectFailedScanStart(InOrder order, WifiNative.ScanEventHandler eventHandler,
             Set<Integer> scanFreqs) {
         // Verify scan started
-        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
+        order.verify(mWifiNative).scan(eq(scanFreqs));
+
+        // TODO verify failure event
     }
 
     private void expectFailedEventScan(InOrder order, WifiNative.ScanEventHandler eventHandler,
             Set<Integer> scanFreqs) {
         // Verify scan started
-        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP), eq(scanFreqs));
+        order.verify(mWifiNative).scan(eq(scanFreqs));
 
         // Notify scan has failed
         mWifiMonitor.sendMessage(mWifiNative.getInterfaceName(), WifiMonitor.SCAN_FAILED_EVENT);
         assertEquals("dispatch message after results event", 1, mLooper.dispatchAll());
+
+        // TODO verify failure event
     }
 
     private void dispatchOnlyAlarm() {
         assertEquals("dispatch only one alarm", 1, mAlarmManager.dispatchAll());
-        assertEquals("dispatch only one message", 1, mLooper.dispatchAll());
+        mLooper.dispatchAll();
     }
 
     private static class ScanPeriod {

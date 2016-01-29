@@ -50,14 +50,10 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
         mWifiNative = wifiNative;
         mEventHandler = new Handler(looper, this);
 
-        // We can't enable these until WifiStateMachine switches to using WifiScanner because
-        //   WifiMonitor only supports sending results to one listener
-        // TODO Enable these
-        // Also need to fix tests again when this is enabled
-        // WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-        //         WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
-        // WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-        //         WifiMonitor.SCAN_RESULTS_EVENT, mEventHandler);
+        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+                WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
+        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+                WifiMonitor.SCAN_RESULTS_EVENT, mEventHandler);
     }
 
     @Override
@@ -66,7 +62,9 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
             case WifiMonitor.SCAN_FAILED_EVENT:
                 Log.w(TAG, "Single scan failed");
                 if (mSingleScanEventHandler != null) {
-                    // TODO indicate failure to caller
+                    if (mSingleScanEventHandler != null) {
+                        mSingleScanEventHandler.onScanStatus(WifiNative.WIFI_SCAN_DISABLED);
+                    }
                     mSingleScanEventHandler = null;
                 }
                 break;
@@ -116,9 +114,17 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
         }
 
         mSingleScanEventHandler = eventHandler;
-        if (!mWifiNative.scan(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs)) {
-            mSingleScanEventHandler = null;
-            // TODO call on failure callback in handler
+        if (!mWifiNative.scan(freqs)) {
+            Log.e(TAG, "Failed to start scan, freqs=" + freqs);
+            // indicate scan failure async
+            mEventHandler.post(new Runnable() {
+                    public void run() {
+                        if (mSingleScanEventHandler != null) {
+                            mSingleScanEventHandler.onScanStatus(WifiNative.WIFI_SCAN_DISABLED);
+                        }
+                        mSingleScanEventHandler = null;
+                    }
+                });
         }
         return true;
     }
@@ -148,7 +154,7 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
         Arrays.sort(results, SCAN_RESULT_SORT_COMPARATOR);
         mLatestSingleScanResult = new WifiScanner.ScanData(0, 0, results);
         if (mSingleScanEventHandler != null) {
-            mSingleScanEventHandler.onScanResultsAvailable();
+            mSingleScanEventHandler.onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
             mSingleScanEventHandler = null;
         }
     }

@@ -324,12 +324,9 @@ public class WifiNative {
     }
 
 
-    public static final int SCAN_WITHOUT_CONNECTION_SETUP          = 1;
-    public static final int SCAN_WITH_CONNECTION_SETUP             = 2;
-
-    public boolean scan(int type, Set<Integer> freqs) {
+    public boolean scan(Set<Integer> freqs) {
         if(freqs == null) {
-            return scan(type, (String)null);
+            return scan((String) null);
         }
         else if (freqs.size() != 0) {
             StringBuilder freqList = new StringBuilder();
@@ -340,22 +337,18 @@ public class WifiNative {
                 freqList.append(freq.toString());
                 first = false;
             }
-            return scan(type, freqList.toString());
+            return scan(freqList.toString());
         }
         else {
             return false;
         }
     }
 
-    private boolean scan(int type, String freqList) {
-        if (type == SCAN_WITHOUT_CONNECTION_SETUP) {
-            if (freqList == null) return doBooleanCommand("SCAN TYPE=ONLY");
-            else return doBooleanCommand("SCAN TYPE=ONLY freq=" + freqList);
-        } else if (type == SCAN_WITH_CONNECTION_SETUP) {
-            if (freqList == null) return doBooleanCommand("SCAN");
-            else return doBooleanCommand("SCAN freq=" + freqList);
+    private boolean scan(String freqList) {
+        if (freqList == null) {
+            return doBooleanCommand("SCAN TYPE=ONLY"); // Scan all channels
         } else {
-            throw new IllegalArgumentException("Invalid scan type");
+            return doBooleanCommand("SCAN TYPE=ONLY freq=" + freqList);
         }
     }
 
@@ -677,6 +670,7 @@ public class WifiNative {
                             ScanDetail scan = new ScanDetail(networkDetail, wifiSsid, bssid, flags,
                                     level, freq, tsf);
                             scan.getScanResult().informationElements = infoElements;
+                            scan.getScanResult().anqpLines = anqpLines;
                             results.add(scan);
                         } catch (IllegalArgumentException iae) {
                             Log.d(TAG, "Failed to parse information elements: " + iae);
@@ -1731,18 +1725,17 @@ public class WifiNative {
     }
 
     public static interface ScanEventHandler {
-        void onScanResultsAvailable();
         void onFullScanResult(ScanResult fullScanResult);
-        void onScanStatus();
+        void onScanStatus(int event);
         void onScanPaused(WifiScanner.ScanData[] data);
         void onScanRestarted();
     }
 
     /* scan status, keep these values in sync with gscan.h */
-    private static final int WIFI_SCAN_RESULTS_AVAILABLE = 0;
-    private static final int WIFI_SCAN_THRESHOLD_NUM_SCANS = 1;
-    private static final int WIFI_SCAN_THRESHOLD_PERCENT = 2;
-    private static final int WIFI_SCAN_DISABLED = 3;
+    public static final int WIFI_SCAN_RESULTS_AVAILABLE = 0;
+    public static final int WIFI_SCAN_THRESHOLD_NUM_SCANS = 1;
+    public static final int WIFI_SCAN_THRESHOLD_PERCENT = 2;
+    public static final int WIFI_SCAN_DISABLED = 3;
 
     // Callback from native
     private static void onScanStatus(int id, int event) {
@@ -1751,7 +1744,7 @@ public class WifiNative {
                 || event == WIFI_SCAN_THRESHOLD_PERCENT) {
             if (handler != null) {
                 // TODO pass event back to framework
-                handler.onScanStatus();
+                handler.onScanStatus(event);
             }
         }
         else if (event == WIFI_SCAN_DISABLED) {

@@ -28,7 +28,9 @@ import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Random;
 
 /**
@@ -38,6 +40,29 @@ public class ScanResults {
     private final ArrayList<ScanDetail> mScanDetails = new ArrayList<>();
     private final ScanData mScanData;
     private final ScanResult[] mScanResults;
+
+    private ScanResults(ArrayList<ScanDetail> scanDetails, ScanData scanData,
+            ScanResult[] scanResults) {
+        mScanDetails.addAll(scanDetails);
+        mScanData = scanData;
+        mScanResults = scanResults;
+    }
+
+    public static ScanResults merge(ScanResults... others) {
+        ArrayList<ScanDetail> scanDetails = new ArrayList<>();
+        ArrayList<ScanResult> scanDataResults = new ArrayList<>();
+        ArrayList<ScanResult> rawScanResults = new ArrayList<>();
+        for (ScanResults other : others) {
+            scanDetails.addAll(other.getScanDetailArrayList());
+            scanDataResults.addAll(Arrays.asList(other.getScanData().getResults()));
+            rawScanResults.addAll(Arrays.asList(other.getRawScanResults()));
+        }
+        Collections.sort(scanDataResults, SCAN_RESULT_RSSI_COMPARATOR);
+        int id = others[0].getScanData().getId();
+        return new ScanResults(scanDetails, new ScanData(id, 0, scanDataResults
+                        .toArray(new ScanResult[scanDataResults.size()])),
+                rawScanResults.toArray(new ScanResult[rawScanResults.size()]));
+    }
 
     private static String generateBssid(Random r) {
         return String.format("%02X:%02X:%02X:%02X:%02X:%02X",
@@ -102,11 +127,14 @@ public class ScanResults {
             int rssi = r.nextInt(40) - 99; // -99 to -60
             ScanResult.InformationElement ie[] = new ScanResult.InformationElement[1];
             ie[0] = generateSsidIe(ssid);
-            NetworkDetail nd = new NetworkDetail(bssid, ie, new ArrayList<String>(), freq);
+            List<String> anqpLines = new ArrayList<>();
+            NetworkDetail nd = new NetworkDetail(bssid, ie, anqpLines, freq);
             ScanDetail detail = new ScanDetail(nd, WifiSsid.createFromAsciiEncoded(ssid),
                     bssid, "", rssi, freq,
                     Long.MAX_VALUE); /* needed so that scan results aren't rejected because
                                         there older than scan start */
+            detail.getScanResult().informationElements = ie;
+            detail.getScanResult().anqpLines = anqpLines;
             results[i] = detail;
         }
         return results;
