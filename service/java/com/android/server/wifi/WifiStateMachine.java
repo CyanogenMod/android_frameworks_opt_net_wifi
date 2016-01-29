@@ -3228,24 +3228,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(" FAIL ");
                 }
                 if (mLinkProperties != null) {
-                    if (mLinkProperties.hasIPv4Address()) {
-                        sb.append(" v4");
-                    }
-                    if (mLinkProperties.hasGlobalIPv6Address()) {
-                        sb.append(" v6");
-                    }
-                    if (mLinkProperties.hasIPv4DefaultRoute()) {
-                        sb.append(" v4r");
-                    }
-                    if (mLinkProperties.hasIPv6DefaultRoute()) {
-                        sb.append(" v6r");
-                    }
-                    if (mLinkProperties.hasIPv4DnsServer()) {
-                        sb.append(" v4dns");
-                    }
-                    if (mLinkProperties.hasIPv6DnsServer()) {
-                        sb.append(" v6dns");
-                    }
+                    sb.append(" ");
+                    sb.append(getLinkPropertiesSummary(mLinkProperties));
                 }
                 break;
             case WifiP2pServiceImpl.P2P_CONNECTION_CHANGED:
@@ -3291,24 +3275,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg2));
                 if (mLinkProperties != null) {
-                    if (mLinkProperties.hasIPv4Address()) {
-                        sb.append(" v4");
-                    }
-                    if (mLinkProperties.hasGlobalIPv6Address()) {
-                        sb.append(" v6");
-                    }
-                    if (mLinkProperties.hasIPv4DefaultRoute()) {
-                        sb.append(" v4r");
-                    }
-                    if (mLinkProperties.hasIPv6DefaultRoute()) {
-                        sb.append(" v6r");
-                    }
-                    if (mLinkProperties.hasIPv4DnsServer()) {
-                        sb.append(" v4dns");
-                    }
-                    if (mLinkProperties.hasIPv6DnsServer()) {
-                        sb.append(" v6dns");
-                    }
+                    sb.append(" ");
+                    sb.append(getLinkPropertiesSummary(mLinkProperties));
                 }
                 break;
             case CMD_IP_REACHABILITY_LOST:
@@ -4513,24 +4481,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             sb.append(" reason: " + smToString(reason));
 
             if (mLinkProperties != null) {
-                if (mLinkProperties.hasIPv4Address()) {
-                    sb.append(" v4");
-                }
-                if (mLinkProperties.hasGlobalIPv6Address()) {
-                    sb.append(" v6");
-                }
-                if (mLinkProperties.hasIPv4DefaultRoute()) {
-                    sb.append(" v4r");
-                }
-                if (mLinkProperties.hasIPv6DefaultRoute()) {
-                    sb.append(" v6r");
-                }
-                if (mLinkProperties.hasIPv4DnsServer()) {
-                    sb.append(" v4dns");
-                }
-                if (mLinkProperties.hasIPv6DnsServer()) {
-                    sb.append(" v6dns");
-                }
+                sb.append(" ");
+                sb.append(getLinkPropertiesSummary(mLinkProperties));
                 if (isProvisioned) {
                     sb.append(" isprov");
                 }
@@ -10228,6 +10180,41 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         /* <TODO> decide how statemachine will access WifiSettingsStore
         mWifiMetrics.setIsScanningAlwaysEnabled(mSettingsStore.isScanningAlwaysAvailable());
          */
+    }
+
+    private static String getLinkPropertiesSummary(LinkProperties lp) {
+        List<String> attributes = new ArrayList(6);
+        if (lp.hasIPv4Address()) {
+            attributes.add("v4");
+        }
+        if (lp.hasIPv4DefaultRoute()) {
+            attributes.add("v4r");
+        }
+        if (lp.hasIPv4DnsServer()) {
+            attributes.add("v4dns");
+        }
+        if (lp.hasGlobalIPv6Address()) {
+            attributes.add("v6");
+        }
+        if (lp.hasIPv6DefaultRoute()) {
+            attributes.add("v6r");
+        }
+        if (lp.hasIPv6DnsServer()) {
+            attributes.add("v6dns");
+        }
+
+        // TODO: Replace with String.join(" ", attributes) once we're fully on JDK 8.
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (String attr : attributes) {
+            if (!first) {
+                sb.append(" ");
+            } else {
+                first = false;
+            }
+            sb.append(attr);
+        }
+        return sb.toString();
     }
 }
 
