@@ -237,6 +237,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     private int mCurrentUserId = UserHandle.USER_SYSTEM;
 
+    private boolean mAllowUntrustedConnections = false;
+
     @Override
     public void onPnoNetworkFound(ScanResult results[]) {
         if (DBG) {
@@ -1183,8 +1185,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         mWifiInfo = new WifiInfo();
-        mWifiQualifiedNetworkSelector = new WifiQualifiedNetworkSelector(
-                mWifiConfigStore, mContext, this, mWifiInfo);
+        mWifiQualifiedNetworkSelector = new WifiQualifiedNetworkSelector(mWifiConfigStore, mContext,
+                mWifiInfo);
         mSupplicantStateTracker = mFacade.makeSupplicantStateTracker(
                 context, this, mWifiConfigStore, getHandler());
 
@@ -2233,10 +2235,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         return false;
-    }
-
-    public boolean isLinkDebouncing() {
-        return linkDebouncing;
     }
 
     /**
@@ -3844,7 +3842,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mFrequencyBand.set(band);
             if (PDBG) {
                 logd("done set frequency band " + band);
-                mWifiQualifiedNetworkSelector.setUserPreferedBand(band);
+                mWifiQualifiedNetworkSelector.setUserPreferredBand(band);
             }
         } else {
             loge("Failed to set frequency band " + band);
@@ -3971,8 +3969,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             mWifiMetrics.incrementEmptyScanResultCount();
         }
 
-        mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
-
         if (linkDebouncing) {
             // If debouncing, we dont re-select a SSID or BSSID hence
             // there is no need to call the network selection code
@@ -3980,6 +3976,24 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             // just try to reconnect to the same SSID by triggering a roam
             // The third parameter 1 means roam not from network selection but debouncing
             sendMessage(CMD_AUTO_ROAM, mLastNetworkId, 1, null);
+        } else {
+            WifiConfiguration candidate =
+                    mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false,
+                    mAllowUntrustedConnections, mScanResults, linkDebouncing, isConnected(),
+                    isDisconnected(), isSupplicantTransientState());
+            tryToConnectToNetwork(candidate);
+        }
+    }
+
+    /**
+     * Set whether connections to untrusted connections are allowed.
+     */
+    void setAllowUntrustedConnections(boolean allow) {
+        boolean changed = (mAllowUntrustedConnections != allow);
+        mAllowUntrustedConnections = allow;
+        if (changed) {
+            // Trigger a scan so as to reattempt autojoin
+            startScanForUntrustedSettingChange();
         }
     }
 
@@ -5349,7 +5363,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (!networkRequest.networkCapabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
                 if (++mUntrustedReqCount == 1) {
-                    mWifiQualifiedNetworkSelector.setAllowUntrustedConnections(true);
+                    setAllowUntrustedConnections(true);
                 }
             }
         }
@@ -5359,7 +5373,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             if (!networkRequest.networkCapabilities.hasCapability(
                     NetworkCapabilities.NET_CAPABILITY_TRUSTED)) {
                 if (--mUntrustedReqCount == 0) {
-                    mWifiQualifiedNetworkSelector.setAllowUntrustedConnections(false);
+                    setAllowUntrustedConnections(false);
                 }
             }
         }
@@ -7390,7 +7404,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mWifiNative.disconnect();
                     break;
                 case CMD_RECONNECT:
-                    mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
+                    WifiConfiguration candidate =
+                            mWifiQualifiedNetworkSelector.selectQualifiedNetwork(true,
+                            mAllowUntrustedConnections, mScanResults, linkDebouncing,
+                            isConnected(), isDisconnected(), isSupplicantTransientState());
+                    tryToConnectToNetwork(candidate);
                     break;
                 case CMD_REASSOCIATE:
                     lastConnectAttemptTimestamp = System.currentTimeMillis();
@@ -7780,7 +7798,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             //Fixme, CMD_AUTO_SAVE_NETWORK can be cleaned
                             mWifiQualifiedNetworkSelector.userSelectNetwork(
                                     result.getNetworkId(), persistConnect);
-                            mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
+                            candidate = mWifiQualifiedNetworkSelector.selectQualifiedNetwork(true,
+                                    mAllowUntrustedConnections, mScanResults, linkDebouncing,
+                                    isConnected(), isDisconnected(), isSupplicantTransientState());
+                            tryToConnectToNetwork(candidate);
                         }
                     } else {
                         loge("Failed to save network");
@@ -10244,6 +10265,59 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             sb.append(attr);
         }
         return sb.toString();
+    }
+
+    /**
+     * Try to connect to the network of candidate. According to the current connected network, this
+     * API determines whether no action, disconnect and connect, or roaming.
+     *
+     * @param candidate the candidate network to connect to
+     */
+    private void tryToConnectToNetwork(WifiConfiguration candidate) {
+        if (candidate == null) {
+            if (DBG) {
+                Log.d(TAG, "Try to connect to null, give up");
+            }
+            return;
+        }
+
+        ScanResult scanResultCandidate = candidate.getNetworkSelectionStatus().getCandidate();
+        if (scanResultCandidate == null) {
+            Log.e(TAG, "tryToConnectToNetwork: bad candidate. Network:"  + candidate
+                    + " scanresult: " + scanResultCandidate);
+            return;
+        }
+
+        String targetBssid = scanResultCandidate.BSSID;
+        String  targetAssociationId = candidate.SSID + " : " + targetBssid;
+        if (targetBssid != null && targetBssid.equals(mWifiInfo.getBSSID())) {
+            if (DBG) {
+                Log.d(TAG, "tryToConnectToNetwork: Already connect to" + targetAssociationId);
+            }
+            return;
+        }
+
+        WifiConfiguration currentConnectedNetwork = mWifiConfigStore
+                .getWifiConfiguration(mWifiInfo.getNetworkId());
+        String currentAssociationId = (currentConnectedNetwork == null) ? "Disconnected" :
+                (mWifiInfo.getSSID() + " : " + mWifiInfo.getBSSID());
+
+        if (currentConnectedNetwork != null
+                && (currentConnectedNetwork.networkId == candidate.networkId
+                || currentConnectedNetwork.isLinked(candidate))) {
+            if (DBG) {
+                Log.d(TAG, "tryToConnectToNetwork: Roaming from " + currentAssociationId + " to "
+                        + targetAssociationId);
+            }
+            sendMessage(CMD_AUTO_ROAM, candidate.networkId, 0, scanResultCandidate);
+        } else {
+            if (DBG) {
+                Log.d(TAG, "tryToConnectToNetwork: Reconnect from " + currentAssociationId + " to "
+                        + targetAssociationId);
+            }
+
+            sendMessage(CMD_AUTO_CONNECT, candidate.networkId, 0, scanResultCandidate.BSSID);
+        }
     }
 }
 
