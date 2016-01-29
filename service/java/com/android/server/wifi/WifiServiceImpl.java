@@ -242,13 +242,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                     break;
                 }
                 case WifiManager.FORGET_NETWORK:
-                    if (isAdminUserOrProfile(msg.sendingUid)) {
-                        mWifiStateMachine.sendMessage(Message.obtain(msg));
-                    } else {
-                        Slog.e(TAG, "Forget is not authorized for user");
-                        replyFailed(msg, WifiManager.FORGET_NETWORK_FAILED,
-                                WifiManager.NOT_AUTHORIZED);
-                    }
+                    mWifiStateMachine.sendMessage(Message.obtain(msg));
                     break;
                 case WifiManager.START_WPS:
                 case WifiManager.CANCEL_WPS:
@@ -1091,30 +1085,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         }
         return false;
     }
-
-    /**
-     * Returns true if uid is an application running under the admin user or a profile of the admin.
-     *
-     * Note: Should not be called if identity is cleared.
-     */
-    private boolean isAdminUserOrProfile(int uid) {
-        long ident = Binder.clearCallingIdentity();
-        int userId = UserHandle.getUserId(uid);
-        try {
-            if (mUserManager.isUserAdmin(userId)) {
-                return true;
-            } else {
-                UserInfo profileParent = mUserManager.getProfileParent(userId);
-                if (profileParent != null && profileParent.isAdmin()) {
-                    return true;
-                }
-            }
-        } finally {
-            Binder.restoreCallingIdentity(ident);
-        }
-        return false;
-    }
-
 
     /**
      * Tell the supplicant to persist the current list of configured networks.
