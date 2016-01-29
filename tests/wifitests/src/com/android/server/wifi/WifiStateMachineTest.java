@@ -54,6 +54,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.PowerManager;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Log;
@@ -561,5 +562,15 @@ public class WifiStateMachineTest {
         wait(200);
 
         assertEquals("DisconnectedState", getCurrentState().getName());
+    }
+
+    @Test
+    public void handleUserSwitch() throws Exception {
+        assertEquals(UserHandle.USER_SYSTEM, mWsm.getCurrentUserId());
+
+        mWsm.handleUserSwitch(10);
+        wait(200);
+
+        assertEquals(10, mWsm.getCurrentUserId());
     }
 }
