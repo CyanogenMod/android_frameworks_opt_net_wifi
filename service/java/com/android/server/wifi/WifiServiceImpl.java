@@ -239,13 +239,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                     break;
                 }
                 case WifiManager.FORGET_NETWORK:
-                    if (isOwner(msg.sendingUid)) {
-                        mWifiStateMachine.sendMessage(Message.obtain(msg));
-                    } else {
-                        Slog.e(TAG, "Forget is not authorized for user");
-                        replyFailed(msg, WifiManager.FORGET_NETWORK_FAILED,
-                                WifiManager.NOT_AUTHORIZED);
-                    }
+                    mWifiStateMachine.sendMessage(Message.obtain(msg));
                     break;
                 case WifiManager.START_WPS:
                 case WifiManager.CANCEL_WPS:
@@ -1087,33 +1081,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         }
         return false;
     }
-
-    /**
-     * Returns true if uid is an application running under the owner or a profile of the owner.
-     *
-     * Note: Should not be called if identity is cleared.
-     */
-    private boolean isOwner(int uid) {
-        long ident = Binder.clearCallingIdentity();
-        int userId = UserHandle.getUserId(uid);
-        try {
-            int ownerUser = UserHandle.USER_OWNER;
-            if (userId == ownerUser) {
-                return true;
-            }
-            List<UserInfo> profiles = mUserManager.getProfiles(ownerUser);
-            for (UserInfo profile : profiles) {
-                if (userId == profile.id) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        finally {
-            Binder.restoreCallingIdentity(ident);
-        }
-    }
-
 
     /**
      * Tell the supplicant to persist the current list of configured networks.
