@@ -46,7 +46,8 @@ public class WifiCertManager {
     private static final String SEP = "\n";
 
     private final Context mContext;
-    private Set<String> mAffiliatedUserOnlyCerts = new HashSet<String>();
+    private final Set<String> mAffiliatedUserOnlyCerts = new HashSet<String>();
+    private final String mConfigFile;
 
     private static final String CONFIG_FILE =
             Environment.getDataDirectory() + "/misc/wifi/affiliatedcerts.txt";
@@ -55,7 +56,12 @@ public class WifiCertManager {
 
 
     WifiCertManager(Context context) {
+        this(context, CONFIG_FILE);
+    }
+
+    WifiCertManager(Context context, String configFile) {
         mContext = context;
+        mConfigFile = configFile;
         final byte[] bytes = readConfigFile();
         if (bytes == null) {
             // Config file does not exist or empty.
@@ -86,7 +92,7 @@ public class WifiCertManager {
 
         String[] keys = listClientCertsForAllUsers();
         if (isAffiliatedUser()) {
-          return keys;
+            return keys;
         }
 
         for (String key : keys) {
@@ -107,7 +113,7 @@ public class WifiCertManager {
     protected byte[] readConfigFile() {
         byte[] bytes = null;
         try {
-            final File file = new File(CONFIG_FILE);
+            final File file = new File(mConfigFile);
             final long fileSize = file.exists() ? file.length() : 0;
             if (fileSize == 0 || fileSize >= Integer.MAX_VALUE) {
                 // Config file is empty/corrupted/non-existing.
@@ -126,7 +132,7 @@ public class WifiCertManager {
 
     protected void writeConfigFile(byte[] payload) {
         final byte[] data = payload;
-        mWriter.write(CONFIG_FILE, new DelayedDiskWrite.Writer() {
+        mWriter.write(mConfigFile, new DelayedDiskWrite.Writer() {
             public void onWriteCalled(DataOutputStream out) throws IOException {
                 out.write(data, 0, data.length);
             }

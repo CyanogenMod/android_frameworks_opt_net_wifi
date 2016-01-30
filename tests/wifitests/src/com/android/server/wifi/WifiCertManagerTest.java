@@ -11,7 +11,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the License
+ * limitations under the License.
  */
 
 package com.android.server.wifi;
@@ -33,7 +33,6 @@ import org.junit.rules.TemporaryFolder;
 import org.mockito.Mock;
 
 import java.io.File;
-import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.HashSet;
 
@@ -44,6 +43,7 @@ import java.util.HashSet;
 public class WifiCertManagerTest {
     private static final String TAG = "WifiCertManagerTest";
     private byte[] mConfig;
+    private String mConfigFile = "";
 
     @Mock private Context mContext;
     @Rule public TemporaryFolder mTempFolder = new TemporaryFolder();
@@ -55,10 +55,8 @@ public class WifiCertManagerTest {
     @Before
     public void setUp() {
         try {
-            Field field = WifiCertManager.class.getDeclaredField("CONFIG_FILE");
-            field.setAccessible(true);
             File configFile = mTempFolder.newFile();
-            field.set(null, configFile.getAbsolutePath());
+            mConfigFile = configFile.getAbsolutePath();
             configFile.delete();
         } catch (Exception e) {
             Log.e(TAG, "Failed to construct test", e);
@@ -72,7 +70,7 @@ public class WifiCertManagerTest {
         private boolean mAffiliatedUser;
 
         public TestWifiCertManager(Context context) {
-            super(context);
+            super(context, mConfigFile);
             mAffiliatedUser = false;
         }
 
@@ -101,7 +99,7 @@ public class WifiCertManagerTest {
 
     @Test
     public void testEmptyConfigFile() {
-        WifiCertManager certManager = new WifiCertManager(mContext);
+        WifiCertManager certManager = new WifiCertManager(mContext, mConfigFile);
         final String[] expected =
                 KeyStore.getInstance().list(
                         Credentials.USER_PRIVATE_KEY, UserHandle.myUserId());
