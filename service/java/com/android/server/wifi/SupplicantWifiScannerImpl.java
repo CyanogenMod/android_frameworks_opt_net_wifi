@@ -95,10 +95,14 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mEventHandler = new Handler(looper, this);
 
-        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-                WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
-        WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
-                WifiMonitor.SCAN_RESULTS_EVENT, mEventHandler);
+        // We can't enable these until WifiStateMachine switches to using WifiScanner because
+        //   WifiMonitor only supports sending results to one listener
+        // TODO Enable these
+        // Also need to fix tests again when this is enabled
+        // WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+        //         WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
+        // WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
+        //         WifiMonitor.SCAN_RESULTS_EVENT, mEventHandler);
     }
 
     @Override
@@ -111,7 +115,6 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         capabilities.max_hotlist_bssids = 0;
         capabilities.max_significant_wifi_change_aps = 0;
         // TODO reenable once scan results handlers are enabled again
-        // NOTE: this only disables background scan requests
         return false;
     }
 
@@ -252,8 +255,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
 
             Set<Integer> freqs = new HashSet<>();
-            final LastScanSettings newScanSettings =
-                    new LastScanSettings(SystemClock.elapsedRealtime());
+            LastScanSettings newScanSettings = new LastScanSettings(SystemClock.elapsedRealtime());
 
             // Update scan settings if there is a pending scan
             if (!mBackgroundScanPaused) {
@@ -356,7 +358,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
 
             if (freqs.size() > 0) {
-                boolean success = mWifiNative.scan(freqs);
+                boolean success = mWifiNative.scan(
+                        WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs);
                 if (success) {
                     // TODO handle scan timeout
                     Log.d(TAG, "Starting wifi scan for " + freqs.size() + " freqs"
@@ -364,18 +367,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                             + ", single=" + newScanSettings.singleScanActive);
                     mLastScanSettings = newScanSettings;
                 } else {
-                    Log.e(TAG, "Failed to start scan, freqs=" + freqs);
-                    // indicate scan failure async
-                    mEventHandler.post(new Runnable() {
-                            public void run() {
-                                newScanSettings.singleScanActive = false;
-                                if (newScanSettings.singleScanEventHandler != null) {
-                                    newScanSettings.singleScanEventHandler
-                                            .onScanStatus(WifiNative.WIFI_SCAN_DISABLED);
-                                }
-                            }
-                        });
-                    // TODO if scans fail enough background scans should be failed as well
+                    Log.w(TAG, "Failed starting wifi scan for " + freqs.size() + " freqs");
+                    // TODO indicate failure for single and background scans
                 }
             }
         }
@@ -464,8 +457,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                                                     / 100)
                                             || mBackgroundScanBuffer.size()
                                             >= mLastScanSettings.reportNumScansThreshold))) {
-                        mBackgroundScanEventHandler
-                                .onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
+                        mBackgroundScanEventHandler.onScanStatus();
                     }
                 }
 
@@ -492,8 +484,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 Collections.sort(singleScanResults, SCAN_RESULT_SORT_COMPARATOR);
                 mLatestSingleScanResult = new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
                         singleScanResults.toArray(new ScanResult[singleScanResults.size()]));
-                mLastScanSettings.singleScanEventHandler
-                        .onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
+                mLastScanSettings.singleScanEventHandler.onScanResultsAvailable();
             }
 
             mLastScanSettings = null;
