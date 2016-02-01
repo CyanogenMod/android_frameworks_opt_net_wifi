@@ -16,8 +16,6 @@
 
 package com.android.server.wifi;
 
-import static com.android.server.wifi.ScanTestUtil.NativeScanSettingsBuilder;
-import static com.android.server.wifi.ScanTestUtil.assertNativeScanSettingsEquals;
 import static com.android.server.wifi.ScanTestUtil.channelsToSpec;
 import static com.android.server.wifi.ScanTestUtil.createRequest;
 import static com.android.server.wifi.ScanTestUtil.getAllChannels;
@@ -46,6 +44,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Unit tests for {@link com.android.server.wifi.MultiClientScheduler}.
@@ -460,23 +459,43 @@ public class MultiClientSchedulerTest {
         mScheduler.updateSchedule(requests);
         WifiNative.ScanSettings schedule = mScheduler.getSchedule();
 
-        int expectedPeriod = computeExpectedPeriod(settings.periodInMs);
-        NativeScanSettingsBuilder expectedBuilder = new NativeScanSettingsBuilder()
-                .withBasePeriod(expectedPeriod)
-                .withMaxApPerScan(settings.numBssidsPerScan == 0
-                        ? DEFAULT_MAX_AP_PER_SCAN
-                        : settings.numBssidsPerScan)
-                .withMaxScansToCache(settings.maxScansToCache == 0
-                        ? DEFAULT_MAX_BATCH
-                        : settings.maxScansToCache);
+        assertEquals("base_period_ms", computeExpectedPeriod(settings.periodInMs),
+                schedule.base_period_ms);
+        assertBuckets(schedule, 1);
 
-        if (settings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
-            expectedBuilder.addBucketWithChannels(expectedPeriod, settings.reportEvents,
-                    getAllChannels(settings));
+        if (settings.numBssidsPerScan == 0) {
+            assertEquals("bssids per scan", DEFAULT_MAX_AP_PER_SCAN, schedule.max_ap_per_scan);
         } else {
-            expectedBuilder.addBucketWithBand(expectedPeriod, settings.reportEvents, settings.band);
+            assertEquals("bssids per scan", settings.numBssidsPerScan, schedule.max_ap_per_scan);
         }
-        assertNativeScanSettingsEquals(expectedBuilder.build(), schedule);
+        if (settings.maxScansToCache == 0) {
+            assertEquals("scans to cache", DEFAULT_MAX_BATCH,
+                    schedule.report_threshold_num_scans);
+        } else {
+            assertEquals("scans to cache", settings.maxScansToCache,
+                    schedule.report_threshold_num_scans);
+        }
+        assertEquals("reportEvents", settings.reportEvents, schedule.buckets[0].report_events);
+        assertEquals("period", computeExpectedPeriod(settings.periodInMs),
+                schedule.buckets[0].period_ms);
+        if (settings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+            assertEquals("band", settings.band, schedule.buckets[0].band);
+            Set<Integer> expectedChannels = new HashSet<>();
+            for (ChannelSpec channel : getAllChannels(settings)) {
+                expectedChannels.add(channel.frequency);
+            }
+            Set<Integer> actualChannels = new HashSet<>();
+            for (ChannelSpec channel : getAllChannels(schedule.buckets[0])) {
+                actualChannels.add(channel.frequency);
+            }
+            assertEquals("channels", expectedChannels, actualChannels);
+        }
+        else {
+            assertEquals("band", settings.band, schedule.buckets[0].band);
+            assertEquals("num_channels", 0, schedule.buckets[0].num_channels);
+            assertTrue("channels", schedule.buckets[0].channels == null
+                    || schedule.buckets[0].channels.length == 0);
+        }
     }
 
     private void assertBuckets(WifiNative.ScanSettings schedule, int numBuckets) {

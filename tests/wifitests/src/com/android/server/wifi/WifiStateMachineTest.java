@@ -41,7 +41,6 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
-import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.os.BatteryStats;
@@ -74,7 +73,6 @@ import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
@@ -85,7 +83,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -195,8 +192,6 @@ public class WifiStateMachineTest {
         when(context.getSystemService(Context.CONNECTIVITY_SERVICE)).thenReturn(
                 mock(ConnectivityManager.class));
 
-        when(context.getSystemService(Context.WIFI_SCANNING_SERVICE)).thenReturn(mWifiScanner);
-
         return context;
     }
 
@@ -261,20 +256,16 @@ public class WifiStateMachineTest {
         ScanDetail detail = new ScanDetail(nd, sWifiSsid, sBSSID, "", rssi, sFreq,
                 Long.MAX_VALUE /* needed so that scan results aren't rejected because
                                   there older than scan start */);
-        detail.getScanResult().informationElements = ie;
-        detail.getScanResult().anqpLines = new ArrayList<String>();
         return detail;
     }
 
-    private ScanResult[] getMockScanResults() {
+    private ArrayList<ScanDetail> getMockScanResults() {
         ScanResults sr = ScanResults.create(0, 2412, 2437, 2462, 5180, 5220, 5745, 5825);
-        // copy generated results and add space on the end for one more
-        ScanResult[] results = Arrays.copyOf(sr.getScanData().getResults(),
-                sr.getScanData().getResults().length + 1);
+        ArrayList<ScanDetail> list = sr.getScanDetailArrayList();
 
         int rssi = -65;
-        results[results.length - 1] = getGoogleGuestScanDetail(rssi).getScanResult();
-        return results;
+        list.add(getGoogleGuestScanDetail(rssi));
+        return list;
     }
 
     static final String   sSSID = "\"GoogleGuest\"";
@@ -292,7 +283,6 @@ public class WifiStateMachineTest {
     MockWifiMonitor mWifiMonitor;
 
     @Mock WifiNative mWifiNative;
-    @Mock WifiScanner mWifiScanner;
     @Mock SupplicantStateTracker mSupplicantStateTracker;
     @Mock WifiMetrics mWifiMetrics;
 
@@ -520,27 +510,14 @@ public class WifiStateMachineTest {
         mWsm.startScan(-1, 0, null, null);
         wait(200);
 
-        ArgumentCaptor<WifiScanner.ScanSettings> scanSettingsCaptor =
-                ArgumentCaptor.forClass(WifiScanner.ScanSettings.class);
-        ArgumentCaptor<WifiScanner.ScanListener> scanListenerCaptor =
-                ArgumentCaptor.forClass(WifiScanner.ScanListener.class);
-        verify(mWifiScanner).startScan(scanSettingsCaptor.capture(), scanListenerCaptor.capture());
-        assertEquals("band", WifiScanner.WIFI_BAND_BOTH_WITH_DFS,
-                scanSettingsCaptor.getValue().band);
-        assertEquals("reportEvents", WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN
-                | WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT,
-                scanSettingsCaptor.getValue().reportEvents);
+        verify(mWifiNative).scan(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, null);
 
-        ScanResult[] results = getMockScanResults();
-        for (ScanResult result : results) {
-            scanListenerCaptor.getValue().onFullResult(result);
-        }
-        scanListenerCaptor.getValue().onResults(
-                new WifiScanner.ScanData[] {new WifiScanner.ScanData(0, 0, results)});
+        when(mWifiNative.getScanResults()).thenReturn(getMockScanResults());
+        mWsm.sendMessage(WifiMonitor.SCAN_RESULTS_EVENT);
 
         wait(200);
-        List<ScanResult> reportedResults = mWsm.syncGetScanResultsList();
-        assertEquals(8, reportedResults.size());
+        List<ScanResult> results = mWsm.syncGetScanResultsList();
+        assertEquals(8, results.size());
     }
 
     @Test
