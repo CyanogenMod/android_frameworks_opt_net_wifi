@@ -138,11 +138,11 @@ public class WifiStateMachineTest {
         public void confirmConfiguration() {}
 
         @Override
-        public void updateWithDhcpResults(DhcpResults dhcpResults, int reason) {
+        public void updateWithDhcpResults(DhcpResults dhcpResults) {
             if (dhcpResults != null) {
-                mCallback.onIPv4ProvisioningSuccess(dhcpResults, reason);
+                mCallback.onIPv4ProvisioningSuccess(dhcpResults);
             } else {
-                mCallback.onIPv4ProvisioningFailure(reason);
+                mCallback.onIPv4ProvisioningFailure();
             }
         }
     }
