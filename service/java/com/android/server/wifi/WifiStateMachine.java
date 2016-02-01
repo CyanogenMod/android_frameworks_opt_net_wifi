@@ -8538,6 +8538,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // TODO: be better about static vs DHCP vs ...
                     mIpManager.startProvisioning();
 
+                    // TODO: delete after b/26238832 is fixed or DhcpClient
+                    // is moved into IpManager, whichever comes first.
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        // Ignored.
+                    }
+
                     startDhcp();
                 }
                 obtainingIpWatchdogCount++;
