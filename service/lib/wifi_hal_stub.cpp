@@ -257,6 +257,10 @@ wifi_error wifi_get_wake_reason_stats_stub(wifi_interface_handle iface,
     return WIFI_ERROR_NOT_SUPPORTED;
 }
 
+wifi_error wifi_configure_nd_offload_stub(wifi_interface_handle iface, u8 enable) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
 wifi_error wifi_nan_enable_request_stub(transaction_id id,
                               wifi_interface_handle iface,
                               NanEnableRequest* msg) {
