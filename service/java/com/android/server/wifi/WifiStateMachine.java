@@ -423,7 +423,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private final NetworkCapabilities mDfltNetworkCapabilities;
     private SupplicantStateTracker mSupplicantStateTracker;
     private BaseDhcpStateMachine mDhcpStateMachine;
-    private boolean mDhcpActive = false;
 
     private int mWifiLinkLayerStatsSupported = 4; // Temporary disable
 
@@ -4863,7 +4862,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     void handlePreDhcpSetup() {
-        mDhcpActive = true;
         if (!mBluetoothConnectionActive) {
             /*
              * There are problems setting the Wi-Fi driver's power
@@ -4944,8 +4942,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         // Set the coexistence mode back to its default value
         mWifiNative.setBluetoothCoexistenceMode(
                 mWifiNative.BLUETOOTH_COEXISTENCE_MODE_SENSE);
-
-        mDhcpActive = false;
     }
 
     void connectScanningService() {
@@ -6113,8 +6109,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             } else {
                 mWifiNative.stopFilteringMulticastV4Packets();
             }
-
-            mDhcpActive = false;
 
             if (mOperationalMode != CONNECT_MODE) {
                 mWifiNative.disconnect();
