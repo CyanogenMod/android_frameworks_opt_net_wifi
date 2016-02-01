@@ -584,6 +584,51 @@ public class WifiStateMachineTest {
     }
 
     @Test
+    public void testDhcpFailure() throws Exception {
+        addNetwork();
+
+        mWsm.setOperationalMode(WifiStateMachine.CONNECT_MODE);
+        mWsm.syncEnableNetwork(mWsmAsyncChannel, 0, true);
+        wait(200);
+
+        verify(mWifiNative).enableNetwork(0, true);
+
+        mWsm.sendMessage(WifiMonitor.NETWORK_CONNECTION_EVENT, 0, 0, sBSSID);
+
+        mWsm.sendMessage(WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT, 0, 0,
+                new StateChangeResult(0, sWifiSsid, sBSSID, SupplicantState.COMPLETED));
+        wait(200);
+
+        assertEquals("ObtainingIpState", getCurrentState().getName());
+
+        mWsm.sendMessage(DhcpStateMachine.CMD_POST_DHCP_ACTION, DhcpStateMachine.DHCP_FAILURE, 0,
+                null);
+        wait(200);
+
+        assertEquals("DisconnectingState", getCurrentState().getName());
+    }
+
+    @Test
+    public void testBadNetworkEvent() throws Exception {
+        addNetwork();
+
+        mWsm.setOperationalMode(WifiStateMachine.CONNECT_MODE);
+        mWsm.syncEnableNetwork(mWsmAsyncChannel, 0, true);
+        wait(200);
+
+        verify(mWifiNative).enableNetwork(0, true);
+
+        mWsm.sendMessage(WifiMonitor.NETWORK_DISCONNECTION_EVENT, 0, 0, sBSSID);
+
+        mWsm.sendMessage(WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT, 0, 0,
+                new StateChangeResult(0, sWifiSsid, sBSSID, SupplicantState.COMPLETED));
+        wait(200);
+
+        assertEquals("DisconnectedState", getCurrentState().getName());
+    }
+
+
+    @Test
     public void disconnect() throws Exception {
         connect();
 

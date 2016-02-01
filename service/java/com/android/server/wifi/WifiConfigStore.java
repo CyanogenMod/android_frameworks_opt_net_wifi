@@ -4539,7 +4539,7 @@ public class WifiConfigStore extends IpConfigStore {
     }
 
     int getMaxDhcpRetries() {
-        return Settings.Global.getInt(mContext.getContentResolver(),
+        return mFacade.getIntegerSetting(mContext,
                 Settings.Global.WIFI_MAX_DHCP_RETRY_COUNT,
                 DEFAULT_MAX_DHCP_RETRIES);
     }
