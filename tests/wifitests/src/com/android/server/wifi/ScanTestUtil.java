@@ -18,7 +18,6 @@ package com.android.server.wifi;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.when;
 
 import android.net.wifi.ScanResult;
@@ -27,6 +26,8 @@ import android.net.wifi.WifiScanner.ChannelSpec;
 import android.net.wifi.WifiScanner.ScanData;
 import android.net.wifi.WifiScanner.ScanSettings;
 import android.net.wifi.WifiSsid;
+
+import com.android.server.wifi.WifiNative.BucketSettings;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
@@ -114,10 +115,6 @@ public class ScanTestUtil {
             mSettings.report_threshold_num_scans = maxScans;
             return this;
         }
-        public NativeScanSettingsBuilder withMaxPercentToCache(int percent) {
-            mSettings.report_threshold_percent = percent;
-            return this;
-        }
 
         public NativeScanSettingsBuilder addBucketWithBand(
                 int period, int reportEvents, int band) {
@@ -131,11 +128,6 @@ public class ScanTestUtil {
 
         public NativeScanSettingsBuilder addBucketWithChannels(
                 int period, int reportEvents, int... channels) {
-            return addBucketWithChannels(period, reportEvents, channelsToSpec(channels));
-        }
-
-        public NativeScanSettingsBuilder addBucketWithChannels(
-                int period, int reportEvents, ChannelSpec... channels) {
             WifiNative.BucketSettings bucket = new WifiNative.BucketSettings();
             bucket.bucket = mSettings.num_buckets;
             bucket.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
@@ -143,7 +135,7 @@ public class ScanTestUtil {
             bucket.channels = new WifiNative.ChannelSettings[channels.length];
             for (int i = 0; i < channels.length; ++i) {
                 bucket.channels[i] = new WifiNative.ChannelSettings();
-                bucket.channels[i].frequency = channels[i].frequency;
+                bucket.channels[i].frequency = channels[i];
             }
             bucket.period_ms = period;
             bucket.report_events = reportEvents;
@@ -160,26 +152,6 @@ public class ScanTestUtil {
         public WifiNative.ScanSettings build() {
             return mSettings;
         }
-    }
-
-    public static WifiNative.ScanSettings computeSingleScanNativeSettings(
-            WifiScanner.ScanSettings requestSettings) {
-        return createSingleScanNativeSettings(requestSettings.reportEvents,
-                getAllChannels(requestSettings));
-    }
-
-    public static WifiNative.ScanSettings createSingleScanNativeSettings(
-            int reportEvents, ChannelSpec... channels) {
-        // TODO requests using bands  should be scheduled using the band, but are currently
-        // converted to channels before scheduling. This should probably change
-        return new NativeScanSettingsBuilder()
-                .withBasePeriod(0)
-                .withMaxApPerScan(0)
-                .withMaxPercentToCache(0)
-                .withMaxScansToCache(0)
-                .addBucketWithChannels(0,
-                        reportEvents | WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN, channels)
-                .build();
     }
 
     public static Set<Integer> createFreqSet(int... elements) {
@@ -265,46 +237,7 @@ public class ScanTestUtil {
         return channelSpecs;
     }
 
-    public static void assertNativeScanSettingsEquals(WifiNative.ScanSettings expected,
-            WifiNative.ScanSettings actual) {
-        assertEquals("bssids per scan", expected.max_ap_per_scan, actual.max_ap_per_scan);
-        assertEquals("scans to cache", expected.report_threshold_num_scans,
-                actual.report_threshold_num_scans);
-        assertEquals("percent to cache", expected.report_threshold_percent,
-                actual.report_threshold_percent);
-        assertEquals("base period", expected.base_period_ms, actual.base_period_ms);
-
-        assertEquals("number of buckets", expected.num_buckets, actual.num_buckets);
-        assertNotNull("buckets was null", actual.buckets);
-        for (int i = 0; i < expected.buckets.length; ++i) {
-            assertNotNull("buckets[" + i + "] was null", actual.buckets[i]);
-            assertEquals("buckets[" + i + "].period",
-                    expected.buckets[i].period_ms, actual.buckets[i].period_ms);
-            assertEquals("buckets[" + i + "].reportEvents",
-                    expected.buckets[i].report_events, actual.buckets[i].report_events);
-
-            assertEquals("buckets[" + i + "].band",
-                    expected.buckets[i].band, actual.buckets[i].band);
-            if (expected.buckets[i].band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
-                Set<Integer> expectedChannels = new HashSet<>();
-                for (ChannelSpec channel : getAllChannels(expected.buckets[i])) {
-                    expectedChannels.add(channel.frequency);
-                }
-                Set<Integer> actualChannels = new HashSet<>();
-                for (ChannelSpec channel : getAllChannels(actual.buckets[i])) {
-                    actualChannels.add(channel.frequency);
-                }
-                assertEquals("channels", expectedChannels, actualChannels);
-            } else {
-                assertEquals("buckets[" + i + "].num_channels", 0, actual.buckets[i].num_channels);
-                assertTrue("buckets[" + i + "].channels",
-                        actual.buckets[i].channels == null
-                        || actual.buckets[i].channels.length == 0);
-            }
-        }
-    }
-
-    public static ChannelSpec[] getAllChannels(WifiNative.BucketSettings bucket) {
+    public static ChannelSpec[] getAllChannels(BucketSettings bucket) {
         if (bucket.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
             ChannelSpec[] channels = new ChannelSpec[bucket.num_channels];
             for (int i = 0; i < bucket.num_channels; i++) {
