@@ -36,7 +36,7 @@ import android.net.BaseDhcpStateMachine;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
 import android.net.DhcpStateMachine;
-import android.net.ip.IpReachabilityMonitor;
+import android.net.ip.IpManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
@@ -98,6 +98,8 @@ import java.util.Map;
 public class WifiStateMachineTest {
     public static final String TAG = "WifiStateMachineTest";
 
+    private static final String IFNAME = "wlan0";
+
     private static <T> T mockWithInterfaces(Class<T> class1, Class<?>... interfaces) {
         return mock(class1, withSettings().extraInterfaces(interfaces));
     }
@@ -120,7 +122,32 @@ public class WifiStateMachineTest {
         field.setAccessible(true);
         field.set(null, wifiNative);
 
-        when(wifiNative.getInterfaceName()).thenReturn("wlan0");
+        when(wifiNative.getInterfaceName()).thenReturn(IFNAME);
+    }
+
+    private class TestIpManager extends IpManager {
+        TestIpManager(Context context, String ifname, IpManager.Callback callback) {
+            // Call test-only superclass constructor.
+            super(ifname, callback);
+        }
+
+        @Override
+        public void startProvisioning() {}
+
+        @Override
+        public void stop() {}
+
+        @Override
+        public void confirmConfiguration() {}
+
+        @Override
+        public void updateWithDhcpResults(DhcpResults dhcpResults, int reason) {
+            if (dhcpResults != null) {
+                mCallback.onIPv4ProvisioningSuccess(dhcpResults, reason);
+            } else {
+                mCallback.onIPv4ProvisioningFailure(reason);
+            }
+        }
     }
 
     private FrameworkFacade getFrameworkFacade() throws InterruptedException {
@@ -165,9 +192,13 @@ public class WifiStateMachineTest {
                 any(Context.class), any(StateMachine.class), any(String.class))).thenReturn(
                 mock(BaseDhcpStateMachine.class));
 
-        when(facade.makeIpReachabilityMonitor(any(Context.class), anyString(),
-                any(IpReachabilityMonitor.Callback.class))).thenReturn(
-                mock(IpReachabilityMonitor.class));
+        when(facade.makeIpManager(any(Context.class), anyString(), any(IpManager.Callback.class)))
+                .then(new AnswerWithArguments<IpManager>() {
+                    public IpManager answer(
+                            Context context, String ifname, IpManager.Callback callback) {
+                        return new TestIpManager(context, ifname, callback);
+                    }
+                });
 
         return facade;
     }

@@ -58,7 +58,7 @@ import android.net.NetworkRequest;
 import android.net.NetworkUtils;
 import android.net.RouteInfo;
 import android.net.StaticIpConfiguration;
-import android.net.ip.IpReachabilityMonitor;
+import android.net.ip.IpManager;
 import android.net.wifi.RssiPacketCountInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
@@ -104,7 +104,6 @@ import com.android.internal.util.Protocol;
 import com.android.internal.util.State;
 import com.android.internal.util.StateMachine;
 import com.android.server.connectivity.KeepalivePacketData;
-import com.android.server.net.NetlinkTracker;
 import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.osu.OSUInfo;
@@ -590,14 +589,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
     }
 
-    /**
-     * Subset of link properties coming from netlink.
-     * Currently includes IPv4 and IPv6 addresses. In the future will also include IPv6 DNS servers
-     * and domains obtained from router advertisements (RFC 6106).
-     */
-    private NetlinkTracker mNetlinkTracker;
-
-    private IpReachabilityMonitor mIpReachabilityMonitor;
+    private final IpManager mIpManager;
 
     private AlarmManager mAlarmManager;
     private PendingIntent mScanIntent;
@@ -893,6 +885,14 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     /* used to indicate that the foreground user was switched */
     static final int CMD_USER_SWITCH                                    = BASE + 165;
+
+    /**
+     * Used temporarily to handle messages bounced between WifiStateMachine and IpManager.
+     *
+     * These will be deleted when DHCPv4 and static IP configuration are moved out.
+     */
+    static final int CMD_IPV4_PROVISIONING_SUCCESS                      = BASE + 200;
+    static final int CMD_IPV4_PROVISIONING_FAILURE                      = BASE + 201;
 
 
     /* Wifi state machine modes of operation */
@@ -1198,16 +1198,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         mLastNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
         mLastSignalLevel = -1;
 
-        mNetlinkTracker = new NetlinkTracker(mInterfaceName, new NetlinkTracker.Callback() {
-            public void update() {
-                sendMessage(CMD_UPDATE_LINKPROPERTIES);
-            }
-        });
-        try {
-            mNwService.registerObserver(mNetlinkTracker);
-        } catch (RemoteException e) {
-            loge("Couldn't register netlink tracker: " + e.toString());
-        }
+        mIpManager = mFacade.makeIpManager(mContext, mInterfaceName, new IpManagerCallback());
 
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
@@ -1418,6 +1409,45 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, WIFI_STATE_DISABLED);
         mContext.sendStickyBroadcastAsUser(intent, UserHandle.ALL);
+    }
+
+    class IpManagerCallback extends IpManager.Callback {
+        @Override
+        public boolean usingIpReachabilityMonitor() {
+            return true;
+        }
+
+        @Override
+        public void onIPv4ProvisioningSuccess(DhcpResults dhcpResults, int reason) {
+            sendMessage(CMD_IPV4_PROVISIONING_SUCCESS, reason, 0, dhcpResults);
+        }
+
+        @Override
+        public void onIPv4ProvisioningFailure(int reason) {
+            sendMessage(CMD_IPV4_PROVISIONING_FAILURE, reason);
+        }
+
+        @Override
+        public void onProvisioningSuccess(LinkProperties newLp) {
+            // For now, updateLinkProperties() does the needful.
+            sendMessage(CMD_UPDATE_LINKPROPERTIES);
+        }
+
+        @Override
+        public void onProvisioningFailure(LinkProperties newLp) {
+            // For now, updateLinkProperties() does the needful.
+            sendMessage(CMD_UPDATE_LINKPROPERTIES);
+        }
+
+        @Override
+        public void onLinkPropertiesChange(LinkProperties newLp) {
+            sendMessage(CMD_UPDATE_LINKPROPERTIES);
+        }
+
+        @Override
+        public void onReachabilityLost(String logMsg) {
+            sendMessage(CMD_IP_REACHABILITY_LOST, logMsg);
+        }
     }
 
     PendingIntent getPrivateBroadcast(String action, int requestCode) {
@@ -3357,6 +3387,26 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 sb.append(" userId=");
                 sb.append(Integer.toString(msg.arg1));
                 break;
+            case CMD_IPV4_PROVISIONING_SUCCESS:
+                sb.append(" ");
+                if (msg.arg1 == DhcpStateMachine.DHCP_SUCCESS) {
+                    sb.append("DHCP_OK");
+                } else if (msg.arg1 == CMD_STATIC_IP_SUCCESS) {
+                    sb.append("STATIC_OK");
+                } else {
+                    sb.append(Integer.toString(msg.arg1));
+                }
+                break;
+            case CMD_IPV4_PROVISIONING_FAILURE:
+                sb.append(" ");
+                if (msg.arg1 == DhcpStateMachine.DHCP_FAILURE) {
+                    sb.append("DHCP_FAIL");
+                } else if (msg.arg1 == CMD_STATIC_IP_FAILURE) {
+                    sb.append("STATIC_FAIL");
+                } else {
+                    sb.append(Integer.toString(msg.arg1));
+                }
+                break;
             default:
                 sb.append(" ");
                 sb.append(Integer.toString(msg.arg1));
@@ -4415,72 +4465,16 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 (mWifiConfigStore.isUsingStaticIp(mLastNetworkId) && lp.hasIPv4Address());
     }
 
-    /**
-     * Creates a new LinkProperties object by merging information from various sources.
-     * <p/>
-     * This is needed because the information in mLinkProperties comes from multiple sources (DHCP,
-     * netlink, static configuration, ...). When one of these sources of information has updated
-     * link properties, we can't just assign them to mLinkProperties or we'd lose track of the
-     * information that came from other sources. Instead, when one of those sources has new
-     * information, we update the object that tracks the information from that source and then
-     * call this method to integrate the change into a new LinkProperties object for subsequent
-     * comparison with mLinkProperties.
-     * <p/>
-     * The information used to build LinkProperties is currently obtained as follows:
-     *     - Interface name: set in the constructor.
-     *     - IPv4 and IPv6 addresses: netlink, passed in by mNetlinkTracker.
-     *     - IPv4 routes, DNS servers, and domains: DHCP.
-     *     - IPv6 routes and DNS servers: netlink, passed in by mNetlinkTracker.
-     *     - HTTP proxy: the wifi config store.
-     */
-    private LinkProperties makeLinkProperties() {
-        LinkProperties newLp = new LinkProperties();
+    private void updateLinkProperties(int reason) {
+        // TODO: Investigate using the LinkProperties object passed in from
+        // the various IpManager callbacks.
+        LinkProperties newLp = mIpManager.getLinkProperties();
 
-        // Interface name, proxy, and TCP buffer sizes are locally configured.
-        newLp.setInterfaceName(mInterfaceName);
+        // HTTP proxy and TCP buffer sizes are locally configured.
         newLp.setHttpProxy(mWifiConfigStore.getProxyProperties(mLastNetworkId));
         if (!TextUtils.isEmpty(mTcpBufferSizes)) {
             newLp.setTcpBufferSizes(mTcpBufferSizes);
         }
-
-        // IPv4/v6 addresses, IPv6 routes and IPv6 DNS servers come from netlink.
-        LinkProperties netlinkLinkProperties = mNetlinkTracker.getLinkProperties();
-        newLp.setLinkAddresses(netlinkLinkProperties.getLinkAddresses());
-        for (RouteInfo route : netlinkLinkProperties.getRoutes()) {
-            newLp.addRoute(route);
-        }
-        for (InetAddress dns : netlinkLinkProperties.getDnsServers()) {
-            // Only add likely reachable DNS servers.
-            // TODO: investigate deleting this.
-            if (newLp.isReachable(dns)) {
-                newLp.addDnsServer(dns);
-            }
-        }
-
-        // IPv4 routes, DNS servers and domains come from mDhcpResults.
-        synchronized (mDhcpResultsLock) {
-            // Even when we're using static configuration, we don't need to look at the config
-            // store, because static IP configuration also populates mDhcpResults.
-            if ((mDhcpResults != null)) {
-                for (RouteInfo route : mDhcpResults.getRoutes(mInterfaceName)) {
-                    newLp.addRoute(route);
-                }
-                for (InetAddress dns : mDhcpResults.dnsServers) {
-                    // Only add likely reachable DNS servers.
-                    // TODO: investigate deleting this.
-                    if (newLp.isReachable(dns)) {
-                        newLp.addDnsServer(dns);
-                    }
-                }
-                newLp.setDomains(mDhcpResults.domains);
-            }
-        }
-
-        return newLp;
-    }
-
-    private void updateLinkProperties(int reason) {
-        LinkProperties newLp = makeLinkProperties();
 
         final boolean linkChanged = !newLp.equals(mLinkProperties);
         final boolean wasProvisioned = isProvisioned(mLinkProperties);
@@ -4506,9 +4500,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         + " old: " + mLinkProperties + " new: " + newLp);
             }
             mLinkProperties = newLp;
-            if (mIpReachabilityMonitor != null) {
-                mIpReachabilityMonitor.updateLinkProperties(mLinkProperties);
-            }
             if (mNetworkAgent != null) mNetworkAgent.sendLinkProperties(mLinkProperties);
         }
 
@@ -4602,15 +4593,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
      * Clears all our link properties.
      */
     private void clearLinkProperties() {
-        // Clear the link properties obtained from DHCP and netlink.
+        // Clear the link properties obtained from DHCP. The only caller of this
+        // function has already called IpManager#stop(), which clears its state.
         synchronized (mDhcpResultsLock) {
             if (mDhcpResults != null) {
                 mDhcpResults.clear();
             }
-        }
-        mNetlinkTracker.clearLinkProperties();
-        if (mIpReachabilityMonitor != null) {
-            mIpReachabilityMonitor.clearLinkProperties();
         }
 
         // Now clear the merged link properties.
@@ -4862,12 +4850,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         stopDhcp();
 
-        try {
-            mNwService.clearInterfaceAddresses(mInterfaceName);
-            mNwService.disableIpv6(mInterfaceName);
-        } catch (Exception e) {
-            loge("Failed to clear addresses or disable ipv6" + e);
-        }
+        mIpManager.stop();
 
         /* Reset data structures */
         mBadLinkspeedcount = 0;
@@ -5004,7 +4987,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     }
 
     private void handleIPv4Success(DhcpResults dhcpResults, int reason) {
-
         if (PDBG) {
             logd("handleIPv4Success <" + dhcpResults.toString() + ">");
             logd("link address " + dhcpResults.ipAddress);
@@ -5085,12 +5067,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     // TODO: De-duplicated this and handleIpConfigurationLost().
     private void handleIpReachabilityLost() {
-        // No need to be told about any additional neighbors that might also
-        // become unreachable--quiet them now while we start disconnecting.
-        if (mIpReachabilityMonitor != null) {
-            mIpReachabilityMonitor.clearLinkProperties();
-        }
-
         mWifiInfo.setInetAddress(null);
         mWifiInfo.setMeteredHint(false);
 
@@ -6865,7 +6841,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 s = "CMD_IP_REACHABILITY_LOST";
                 break;
             case CMD_STATIC_IP_SUCCESS:
-                s = "CMD_STATIC_IP_SUCCESSFUL";
+                s = "CMD_STATIC_IP_SUCCESS";
                 break;
             case CMD_STATIC_IP_FAILURE:
                 s = "CMD_STATIC_IP_FAILURE";
@@ -6929,6 +6905,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 break;
             case CMD_USER_SWITCH:
                 s = "CMD_USER_SWITCH";
+                break;
+            case CMD_IPV4_PROVISIONING_SUCCESS:
+                s = "CMD_IPV4_PROVISIONING_SUCCESS";
+                break;
+            case CMD_IPV4_PROVISIONING_FAILURE:
+                s = "CMD_IPV4_PROVISIONING_FAILURE";
                 break;
             default:
                 s = "what:" + Integer.toString(what);
@@ -7118,9 +7100,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // DNAv4/DNAv6 -style probing for on-link neighbors of
                     // interest (e.g. routers); harmless if none are configured.
                     if (state == SupplicantState.COMPLETED) {
-                        if (mIpReachabilityMonitor != null) {
-                            mIpReachabilityMonitor.probeAll();
-                        }
+                        mIpManager.confirmConfiguration();
                     }
                     break;
                 case WifiP2pServiceImpl.DISCONNECT_WIFI_REQUEST:
@@ -7678,9 +7658,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             updateCapabilities(config);
                         } else {
                             /**
-                             *  Directly go to disconnected state where we
+                             * Directly go to disconnected state where we
                              * process the connection events from supplicant
-                             **/
+                             */
                             transitionTo(mDisconnectedState);
                         }
                     } else {
@@ -8139,28 +8119,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             // from this point on and having the BSSID specified in the network block would
             // cause the roam to faile and the device to disconnect
             clearCurrentConfigBSSID("L2ConnectedState");
-
-            try {
-                mIpReachabilityMonitor = mFacade.makeIpReachabilityMonitor(
-                        mContext,
-                        mInterfaceName,
-                        new IpReachabilityMonitor.Callback() {
-                            @Override
-                            public void notifyLost(InetAddress ip, String logMsg) {
-                                sendMessage(CMD_IP_REACHABILITY_LOST, logMsg);
-                            }
-                        });
-            } catch (IllegalArgumentException e) {
-                Log.wtf(TAG, "Failed to create IpReachabilityMonitor", e);
-            }
         }
 
         @Override
         public void exit() {
-            if (mIpReachabilityMonitor != null) {
-                mIpReachabilityMonitor.stop();
-                mIpReachabilityMonitor = null;
-            }
+            mIpManager.stop();
 
             // This is handled by receiving a NETWORK_DISCONNECTION_EVENT in ConnectModeState
             // Bug: 15347363
@@ -8191,9 +8154,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     handlePostDhcpSetup();
                     if (message.arg1 == DhcpStateMachine.DHCP_SUCCESS) {
                         if (DBG) log("DHCP successful");
-                        handleIPv4Success((DhcpResults) message.obj, DhcpStateMachine.DHCP_SUCCESS);
-                        // We advance to mConnectedState because handleIPv4Success will call
-                        // updateLinkProperties, which then sends CMD_IP_CONFIGURATION_SUCCESSFUL.
+                        mIpManager.updateWithDhcpResults(
+                                (DhcpResults) message.obj, DhcpStateMachine.DHCP_SUCCESS);
+                        // We advance to mConnectedState because IpManager will send back a
+                        // CMD_IPV4_PROVISIONING_SUCCESS message, which calls handleIPv4Success(),
+                        // which calls updateLinkProperties, which then sends
+                        // CMD_IP_CONFIGURATION_SUCCESSFUL.
                     } else if (message.arg1 == DhcpStateMachine.DHCP_FAILURE) {
                         mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_DHCP_FAILURE);
                         if (DBG) {
@@ -8208,10 +8174,17 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         }
                         mWifiMetrics.endConnectionEvent(0,
                                 WifiMetricsProto.ConnectionEvent.HLF_DHCP);
-                        handleIPv4Failure(DhcpStateMachine.DHCP_FAILURE);
-                        // As above, we transition to mDisconnectingState via updateLinkProperties.
+                        mIpManager.updateWithDhcpResults(null, DhcpStateMachine.DHCP_FAILURE);
+                        // As above, we transition to mDisconnectingState via messages send back
+                        // from IpManager.
                     }
-                  break;
+                    break;
+                case CMD_IPV4_PROVISIONING_SUCCESS:
+                    handleIPv4Success((DhcpResults) message.obj, message.arg1);
+                    break;
+                case CMD_IPV4_PROVISIONING_FAILURE:
+                    handleIPv4Failure(message.arg1);
+                    break;
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                     handleSuccessfulIpConfiguration();
                     mWifiMetrics.endConnectionEvent(0, WifiMetricsProto.ConnectionEvent.HLF_NONE);
@@ -8550,16 +8523,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             // We must clear the config BSSID, as the wifi chipset may decide to roam
             // from this point on and having the BSSID specified in the network block would
-            // cause the roam to faile and the device to disconnect
+            // cause the roam to fail and the device to disconnect.
             clearCurrentConfigBSSID("ObtainingIpAddress");
-
-            try {
-                mNwService.enableIpv6(mInterfaceName);
-            } catch (RemoteException re) {
-                loge("Failed to enable IPv6: " + re);
-            } catch (IllegalStateException e) {
-                loge("Failed to enable IPv6: " + e);
-            }
 
             if (!mWifiConfigStore.isUsingStaticIp(mLastNetworkId)) {
                 if (isRoaming()) {
@@ -8569,6 +8534,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // IP configuration to DHCP. This is safe because if we get here when not
                     // roaming, we don't have a usable address.
                     clearIPv4Address(mInterfaceName);
+
+                    // TODO: be better about static vs DHCP vs ...
+                    mIpManager.startProvisioning();
+
                     startDhcp();
                 }
                 obtainingIpWatchdogCount++;
@@ -8586,69 +8555,71 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     logd("Static IP lacks address");
                     sendMessage(CMD_STATIC_IP_FAILURE);
                 } else {
+                    mIpManager.startProvisioning(config);
                     InterfaceConfiguration ifcg = new InterfaceConfiguration();
                     ifcg.setLinkAddress(config.ipAddress);
                     ifcg.setInterfaceUp();
                     try {
                         mNwService.setInterfaceConfig(mInterfaceName, ifcg);
                         if (DBG) log("Static IP configuration succeeded");
-                        DhcpResults dhcpResults = new DhcpResults(config);
-                        sendMessage(CMD_STATIC_IP_SUCCESS, dhcpResults);
+                        mIpManager.updateWithDhcpResults(
+                                new DhcpResults(config), CMD_STATIC_IP_SUCCESS);
                     } catch (RemoteException re) {
                         loge("Static IP configuration failed: " + re);
-                        sendMessage(CMD_STATIC_IP_FAILURE);
+                        mIpManager.updateWithDhcpResults(null, CMD_STATIC_IP_FAILURE);
                     } catch (IllegalStateException e) {
                         loge("Static IP configuration failed: " + e);
-                        sendMessage(CMD_STATIC_IP_FAILURE);
+                        mIpManager.updateWithDhcpResults(null, CMD_STATIC_IP_FAILURE);
                     }
                 }
             }
         }
-      @Override
-      public boolean processMessage(Message message) {
-          logStateAndMessage(message, this);
 
-          switch(message.what) {
-              case CMD_STATIC_IP_SUCCESS:
-                  handleIPv4Success((DhcpResults) message.obj, CMD_STATIC_IP_SUCCESS);
-                  break;
-              case CMD_STATIC_IP_FAILURE:
-                  handleIPv4Failure(CMD_STATIC_IP_FAILURE);
-                  break;
-              case CMD_AUTO_CONNECT:
-              case CMD_AUTO_ROAM:
-                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
-                  break;
-              case WifiManager.SAVE_NETWORK:
-              case WifiStateMachine.CMD_AUTO_SAVE_NETWORK:
-                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
-                  deferMessage(message);
-                  break;
-                  /* Defer any power mode changes since we must keep active power mode at DHCP */
-              case CMD_SET_HIGH_PERF_MODE:
-                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
-                  deferMessage(message);
-                  break;
-                  /* Defer scan request since we should not switch to other channels at DHCP */
-              case CMD_START_SCAN:
-                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
-                  deferMessage(message);
-                  break;
-              case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
-                  if (message.arg1 == obtainingIpWatchdogCount) {
-                      logd("ObtainingIpAddress: Watchdog Triggered, count="
-                              + obtainingIpWatchdogCount);
-                      handleIpConfigurationLost();
-                      transitionTo(mDisconnectingState);
-                      break;
-                  }
-                  messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
-                  break;
-              default:
-                  return NOT_HANDLED;
-          }
-          return HANDLED;
-      }
+        @Override
+        public boolean processMessage(Message message) {
+            logStateAndMessage(message, this);
+
+            switch(message.what) {
+                case CMD_STATIC_IP_SUCCESS:
+                    handleIPv4Success((DhcpResults) message.obj, CMD_STATIC_IP_SUCCESS);
+                    break;
+                case CMD_STATIC_IP_FAILURE:
+                    handleIPv4Failure(CMD_STATIC_IP_FAILURE);
+                    break;
+                case CMD_AUTO_CONNECT:
+                case CMD_AUTO_ROAM:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    break;
+                case WifiManager.SAVE_NETWORK:
+                case WifiStateMachine.CMD_AUTO_SAVE_NETWORK:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
+                    deferMessage(message);
+                    break;
+                    /* Defer any power mode changes since we must keep active power mode at DHCP */
+                case CMD_SET_HIGH_PERF_MODE:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
+                    deferMessage(message);
+                    break;
+                    /* Defer scan request since we should not switch to other channels at DHCP */
+                case CMD_START_SCAN:
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
+                    deferMessage(message);
+                    break;
+                case CMD_OBTAINING_IP_ADDRESS_WATCHDOG_TIMER:
+                    if (message.arg1 == obtainingIpWatchdogCount) {
+                        logd("ObtainingIpAddress: Watchdog Triggered, count="
+                                + obtainingIpWatchdogCount);
+                        handleIpConfigurationLost();
+                        transitionTo(mDisconnectingState);
+                        break;
+                    }
+                    messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    break;
+                default:
+                    return NOT_HANDLED;
+            }
+            return HANDLED;
+        }
     }
 
     private void sendConnectedState() {
@@ -10246,4 +10217,3 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         return sb.toString();
     }
 }
-
