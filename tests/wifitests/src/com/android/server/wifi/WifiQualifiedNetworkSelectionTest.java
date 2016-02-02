@@ -64,7 +64,7 @@ public class WifiQualifiedNetworkSelectionTest {
         mWifiConfigStore = getWifiConfigStore();
         mWifiInfo = getWifiInfo();
         mWifiQualifiedNetworkSelector = new WifiQualifiedNetworkSelector(mWifiConfigStore, mContext,
-                mWifiStateMachine, mWifiInfo);
+                mWifiInfo);
         mWifiQualifiedNetworkSelector.enableVerboseLogging(1);
     }
 
@@ -208,8 +208,6 @@ public class WifiQualifiedNetworkSelectionTest {
         int[] security = {SECURITY_PSK, SECURITY_PSK};
 
         List<ScanDetail> scanDetails = getScanDetails(ssids, bssids, frequencies, caps, levels);
-        when(mWifiStateMachine.getScanResultsListNoCopyUnsync()).thenReturn(scanDetails);
-        when(mWifiStateMachine.isDisconnected()).thenReturn(true);
 
         final List<WifiConfiguration> savedNetwork =
                 Arrays.asList(generateWifiConfigurations(ssids, security));
@@ -242,9 +240,12 @@ public class WifiQualifiedNetworkSelectionTest {
                 associateWithScanResult2);
         ScanResult chosenScanResult = scanDetails.get(scanDetails.size() - 1).getScanResult();
 
-        mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
-        assertEquals("choose the wrong SSID", chosenScanResult.SSID,
-                mWifiQualifiedNetworkSelector.getConnetionTargetNetwork().SSID);
+        WifiConfiguration candidate = mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false,
+                false, scanDetails, false, false, true, false);
+
+        ScanResult candidateScan = candidate.getNetworkSelectionStatus().getCandidate();
+        assertEquals("choose the wrong SSID", chosenScanResult.SSID, candidate.SSID);
+        assertEquals("choose the wrong BSSID", chosenScanResult.BSSID, candidateScan.BSSID);
     }
 
 
@@ -334,8 +335,6 @@ public class WifiQualifiedNetworkSelectionTest {
         int[] levels = {-50, -65, -55};
 
         List<ScanDetail> scanDetails = getScanDetails(ssids, bssids, frequencies, caps, levels);
-        when(mWifiStateMachine.getScanResultsListNoCopyUnsync()).thenReturn(scanDetails);
-        when(mWifiStateMachine.isDisconnected()).thenReturn(true);
 
         List<WifiConfiguration> associateWithScanResult1 = new ArrayList<WifiConfiguration>();
         associateWithScanResult1.add(configs[0]);
@@ -355,8 +354,11 @@ public class WifiQualifiedNetworkSelectionTest {
         ScanResult chosenScanResult = scanDetails.get(scanDetails.size() - 1).getScanResult();
         when(mWifiConfigStore.getWifiConfiguration(configs[2].configKey()))
                 .thenReturn(configs[2]);
-        mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false);
-        assertEquals("choose the wrong SSID", chosenScanResult.SSID,
-                mWifiQualifiedNetworkSelector.getConnetionTargetNetwork().SSID);
+
+        WifiConfiguration candidate = mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false,
+                false, scanDetails, false, false, true, false);
+        ScanResult candidateScan = candidate.getNetworkSelectionStatus().getCandidate();
+        assertEquals("choose the wrong SSID", chosenScanResult.SSID, candidate.SSID);
+        assertEquals("choose the wrong BSSID", chosenScanResult.BSSID, candidateScan.BSSID);
     }
 }
