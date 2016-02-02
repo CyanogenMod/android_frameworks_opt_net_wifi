@@ -65,8 +65,8 @@ public class FrameworkFacade {
         return new SupplicantStateTracker(context, wifiStateMachine, configStore, handler);
     }
 
-    public WifiApConfigStore makeApConfigStore(Context context, Handler handler) {
-        return WifiApConfigStore.makeWifiApConfigStore(context, handler);
+    public WifiApConfigStore makeApConfigStore(Context context) {
+        return new WifiApConfigStore(context);
     }
 
     public long getTxPackets(String iface) {
