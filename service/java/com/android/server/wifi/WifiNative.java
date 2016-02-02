@@ -334,7 +334,7 @@ public class WifiNative {
         if (disableOthers) {
             return doBooleanCommand("SELECT_NETWORK " + netId);
         } else {
-            return doBooleanCommand("ENABLE_NETWORK " + netId);
+            return doBooleanCommand("ENABLE_NETWORK " + netId + " " + "no-connect");
         }
     }
 
