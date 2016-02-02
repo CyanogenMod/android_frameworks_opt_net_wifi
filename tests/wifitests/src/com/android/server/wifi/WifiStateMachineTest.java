@@ -347,7 +347,7 @@ public class WifiStateMachineTest {
                 WifiManager.WIFI_FREQUENCY_BAND_AUTO)).thenReturn(
                 WifiManager.WIFI_FREQUENCY_BAND_AUTO);
 
-        when(factory.makeApConfigStore(Mockito.eq(context), any(Handler.class)))
+        when(factory.makeApConfigStore(Mockito.eq(context)))
                 .thenCallRealMethod();
 
         when(factory.makeSupplicantStateTracker(
