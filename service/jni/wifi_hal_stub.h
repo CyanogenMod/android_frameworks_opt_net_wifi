@@ -21,7 +21,11 @@
 extern "C"
 {
 #endif
+
 #include "wifi_hal.h"
+
+int init_wifi_stub_hal_func_table(wifi_hal_fn *hal_fn);
+
 /* declare all HAL stub API here*/
 wifi_error wifi_initialize_stub(wifi_handle *handle);
 void wifi_cleanup_stub(wifi_handle handle, wifi_cleaned_up_handler handler);
