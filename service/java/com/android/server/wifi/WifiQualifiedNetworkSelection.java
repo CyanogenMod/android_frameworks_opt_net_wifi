@@ -23,7 +23,6 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
-import android.net.wifi.WifiScanner;
 import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
@@ -37,8 +36,6 @@ import java.util.List;
 import java.util.Map;
 
 class WifiQualifiedNetworkSelector {
-    private WifiScanner mScanner;
-    private WifiStateMachine mWifiStateMachine;
     private WifiConfigStore mWifiConfigStore;
     private WifiInfo mWifiInfo;
     private NetworkScoreManager mScoreManager;
@@ -90,7 +87,6 @@ class WifiQualifiedNetworkSelector {
     private int mLastSelectionAward = LAST_SELECTION_AWARD;
     private int mPasspointSecurityAward = PASSPOINT_SECURITY_AWARD;
     private int mSecurityAward = SECURITY_AWARD;
-    private boolean mAllowUntrustedConnections = false;
     private int mUserPreferedBand = WifiManager.WIFI_FREQUENCY_BAND_AUTO;
 
     private void qnsLog(String log) {
@@ -112,16 +108,16 @@ class WifiQualifiedNetworkSelector {
 
     /**
      * set the user selected preferred band
-     * @param band
+     *
+     * @param band preferred band user selected
      */
-    public void setUserPreferedBand(int band) {
+    public void setUserPreferredBand(int band) {
         mUserPreferedBand = band;
     }
 
     WifiQualifiedNetworkSelector(WifiConfigStore configureStore, Context context,
-                                            WifiStateMachine stateMachine, WifiInfo wifiInfo) {
+            WifiInfo wifiInfo) {
         mWifiConfigStore = configureStore;
-        mWifiStateMachine = stateMachine;
         mWifiInfo = wifiInfo;
         mScoreManager =
                 (NetworkScoreManager) context.getSystemService(Context.NETWORK_SCORE_SERVICE);
@@ -155,18 +151,6 @@ class WifiQualifiedNetworkSelector {
         mDbg = verbose > 0;
     }
 
-    /**
-     * Set whether connections to untrusted connections are allowed.
-     */
-    void setAllowUntrustedConnections(boolean allow) {
-        boolean changed = (mAllowUntrustedConnections != allow);
-        mAllowUntrustedConnections = allow;
-        if (changed) {
-            // Trigger a scan so as to reattempt autojoin
-            mWifiStateMachine.startScanForUntrustedSettingChange();
-        }
-    }
-
     private String getNetworkString(WifiConfiguration network) {
         if (network == null) {
             return null;
@@ -186,6 +170,7 @@ class WifiQualifiedNetworkSelector {
 
     /**
      * check whether current network is good enough we need not consider any potential switch
+     *
      * @param currentNetwork -- current connected network
      * @return true -- qualified and do not consider potential network switch
      *         false -- not good enough and should try potential network switch
@@ -234,23 +219,32 @@ class WifiQualifiedNetworkSelector {
 
     /**
      * check whether QualifiedNetworkSelection is needed or not
-     * return - true need a Qualified Network Selection procedure
-     *        - false do not need a QualifiedNetworkSelection procedure
+     *
+     * @param isLinkDebouncing true -- Link layer is under debouncing
+     *                         false -- Link layer is not under debouncing
+     * @param isConnected true -- device is connected to an AP currently
+     *                    false -- device is not connected to an AP currently
+     * @param isDisconnected true -- WifiStateMachine is at disconnected state
+     *                       false -- WifiStateMachine is not at disconnected state
+     * @param isSupplicantTransientState true -- supplicant is in a transient state now
+     *                                   false -- supplicant is not in a transient state now
+     * @return true -- need a Qualified Network Selection procedure
+     *         false -- do not need a QualifiedNetworkSelection procedure
      */
-    private boolean needQualifiedNetworkSelection() {
-        mScanDetails = mWifiStateMachine.getScanResultsListNoCopyUnsync();
+    private boolean needQualifiedNetworkSelection(boolean isLinkDebouncing, boolean isConnected,
+            boolean isDisconnected, boolean isSupplicantTransientState) {
         if (mScanDetails.size() == 0) {
             qnsLog("empty scan result");
             return false;
         }
 
         // Do not trigger Qualified Network Selection during L2 link debouncing procedure
-        if (mWifiStateMachine.isLinkDebouncing()) {
+        if (isLinkDebouncing) {
             qnsLog("Need not Qualified Network Selection during L2 debouncing");
             return false;
         }
 
-        if (mWifiStateMachine.isConnected()) {
+        if (isConnected) {
             //already connected. Just try to find better candidate
             //if switch network is not allowed in connected mode, do not trigger Qualified Network
             //Selection
@@ -303,11 +297,11 @@ class WifiQualifiedNetworkSelector {
             } else {
                 return false;
             }
-        } else if (mWifiStateMachine.isDisconnected()) {
+        } else if (isDisconnected) {
             mCurrentConnectedNetwork = null;
             mCurrentBssid = null;
             //Do not start Qualified Network Selection if current state is a transient state
-            if (mWifiStateMachine.isSupplicantTransientState()) {
+            if (isSupplicantTransientState) {
                 return false;
             }
         } else {
@@ -426,42 +420,6 @@ class WifiQualifiedNetworkSelector {
     }
 
     /**
-     * Roaming to a new AP. This means the new AP belong to the same network with the current
-     * connection
-     * @param scanResultCandidate : new AP to roam to
-     */
-    private void roamToNewAp(ScanResult scanResultCandidate) {
-        String currentAssociationId = (mCurrentConnectedNetwork == null ? "Disconnected" :
-                mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
-        String targetAssociationId = scanResultCandidate.SSID + ":" + scanResultCandidate.BSSID;
-
-        qnsLog("Roaming from " + currentAssociationId + " to " + targetAssociationId);
-        // the third parameter 0 means roam from Network Selection
-        mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_ROAM,
-                    mCurrentConnectedNetwork.networkId, 0, scanResultCandidate);
-        mCurrentBssid = scanResultCandidate.BSSID;
-    }
-
-    /**
-     * Connect to a new AP.This means the new AP belong to a different network with the current
-     * connection
-     */
-    private void connectToNewAp(WifiConfiguration newNetworkCandidate, String newBssid) {
-        // FIXME: 11/12/15 need fix auto_connect wifisatetmachine codes
-        String currentAssociationId = (mCurrentConnectedNetwork == null ? "Disconnected" :
-                mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
-        String targetAssociationId = getNetworkString(newNetworkCandidate);
-
-
-        qnsLog("reconnect from " + currentAssociationId + " to " + targetAssociationId);
-        // the third parameter 0 means connect request from Network Selection
-        mWifiStateMachine.sendMessage(WifiStateMachine.CMD_AUTO_CONNECT,
-                newNetworkCandidate.networkId, 0, newBssid);
-        mCurrentBssid = newBssid;
-        mCurrentConnectedNetwork = newNetworkCandidate;
-    }
-
-    /**
      * This API is called when user explicitly select a network. Currently, it is used in following
      * cases:
      * (1) User explicitly choose to connect to a saved network
@@ -537,15 +495,34 @@ class WifiQualifiedNetworkSelector {
     }
 
     /**
-     * ToDo: This should be called in Connectivity Scan Manager get scan result
+     * ToDo: This should be called in Connectivity Manager when it gets new scan result
      * check whether a network slection is needed. If need, check all the new scan results and
      * select a new qualified network/BSSID to connect to
-     * @param forceSelectNetwork if this one is true, start a qualified network selection anyway,
-     *                           no matter current network is already qualified or not.
+     *
+     * @param forceSelectNetwork true -- start a qualified network selection anyway,no matter
+     *                           current network is already qualified or not.
+     *                           false -- if current network is already qualified, do not do new
+     *                           selection
+     * @param isUntrustedConnectionsAllowed true -- user allow to connect to untrusted network
+     *                                      false -- user do not allow to connect to untrusted
+     *                                      network
+     * @param scanDetails latest scan result obtained (should be connectivity scan only)
+     * @param isLinkDebouncing true -- Link layer is under debouncing
+     *                         false -- Link layer is not under debouncing
+     * @param isConnected true -- device is connected to an AP currently
+     *                    false -- device is not connected to an AP currently
+     * @param isDisconnected true -- WifiStateMachine is at disconnected state
+     *                       false -- WifiStateMachine is not at disconnected state
+     * @param isSupplicantTransient true -- supplicant is in a transient state
+     *                              false -- supplicant is not in a transient state
+     * @return the qualified network candidate found. If no available candidate, return null
      */
-    public void selectQualifiedNetwork(boolean forceSelectNetwork) {
+    public WifiConfiguration selectQualifiedNetwork(boolean forceSelectNetwork ,
+            boolean isUntrustedConnectionsAllowed, List<ScanDetail>  scanDetails,
+            boolean isLinkDebouncing, boolean isConnected, boolean isDisconnected,
+            boolean isSupplicantTransient) {
         qnsLog("==========start qualified Network Selection==========");
-
+        mScanDetails = scanDetails;
         if (mCurrentConnectedNetwork == null) {
             mCurrentConnectedNetwork =
                     mWifiConfigStore.getWifiConfiguration(mWifiInfo.getNetworkId());
@@ -555,10 +532,11 @@ class WifiQualifiedNetworkSelector {
             mCurrentBssid = mWifiInfo.getBSSID();
         }
 
-        if (!forceSelectNetwork && !needQualifiedNetworkSelection()) {
+        if (!forceSelectNetwork && !needQualifiedNetworkSelection(isLinkDebouncing, isConnected,
+                isDisconnected, isSupplicantTransient)) {
             qnsLog("Quit qualified Network Selection since it is not forced and current network is"
                     + " qualified already");
-            return;
+            return null;
         }
 
         int currentHighestScore = Integer.MIN_VALUE;
@@ -633,7 +611,7 @@ class WifiQualifiedNetworkSelector {
             }
 
             if (ephemeral) {
-                if (mAllowUntrustedConnections && mNetworkScoreCache != null) {
+                if (isUntrustedConnectionsAllowed && mNetworkScoreCache != null) {
                     int netScore = mNetworkScoreCache.getNetworkScore(scanResult, false);
                     //get network score
                     if (netScore != WifiNetworkScoreCache.INVALID_NETWORK_SCORE) {
@@ -726,12 +704,11 @@ class WifiQualifiedNetworkSelector {
         }
 
         // if we can not find scanCadidate in saved network
-        if (scanResultCandidate == null && mAllowUntrustedConnections) {
+        if (scanResultCandidate == null && isUntrustedConnectionsAllowed) {
 
             if (untrustedScanResultCandidate == null) {
-
                 qnsLog("Can not find any candidate");
-                return;
+                return null;
             }
 
             if (unTrustedNetworkCandidate == null) {
@@ -753,37 +730,42 @@ class WifiQualifiedNetworkSelector {
                         + ":" + untrustedScanResultCandidate.BSSID + "network ID:"
                         + unTrustedNetworkCandidate.networkId);
             }
+            unTrustedNetworkCandidate.getNetworkSelectionStatus()
+                    .setCandidate(untrustedScanResultCandidate);
             scanResultCandidate = untrustedScanResultCandidate;
             networkCandidate = unTrustedNetworkCandidate;
-
         }
 
         if (scanResultCandidate == null) {
             qnsLog("Can not find any suitable candidates");
-            return;
+            return null;
         }
-        String currentAssociationId = (mCurrentConnectedNetwork == null ? "Disconnected" :
-                mCurrentConnectedNetwork.SSID + ":" + mCurrentBssid);
 
-        //In passpoint, saved configuration has garbage SSID
+        String currentAssociationId = mCurrentConnectedNetwork == null ? "Disconnected" :
+                getNetworkString(mCurrentConnectedNetwork);
+        String targetAssociationId = getNetworkString(networkCandidate);
+        //In passpoint, saved configuration has garbage SSID. We need update it with the SSID of
+        //the scan result.
         if (networkCandidate.isPasspoint()) {
             // This will updateb the passpoint configuration in WifiConfigStore
             networkCandidate.SSID = "\"" + scanResultCandidate.SSID + "\"";
         }
+
+        //For debug purpose only
         if (scanResultCandidate.BSSID.equals(mCurrentBssid)) {
-            //current BSSID is best, need not change
             qnsLog(currentAssociationId + " is already the best choice!");
         } else if (mCurrentConnectedNetwork != null
                 && (mCurrentConnectedNetwork.networkId == networkCandidate.networkId
-                        || mCurrentConnectedNetwork.isLinked(networkCandidate))) {
-            roamToNewAp(scanResultCandidate);
+                || mCurrentConnectedNetwork.isLinked(networkCandidate))) {
+            qnsLog("Roaming from " + currentAssociationId + " to " + targetAssociationId);
         } else {
-            //select another network case Fix me
-            // FIXME: 11/12/15 need fix auto_connect wifisatetmachine codes
-            connectToNewAp(networkCandidate, scanResultCandidate.BSSID);
+            qnsLog("reconnect from " + currentAssociationId + " to " + targetAssociationId);
         }
+
+        mCurrentBssid = scanResultCandidate.BSSID;
+        mCurrentConnectedNetwork = networkCandidate;
         mLastQualifiedNetworkSelectionTimeStamp = System.currentTimeMillis();
-        return;
+        return networkCandidate;
     }
 
     //Dump the logs
