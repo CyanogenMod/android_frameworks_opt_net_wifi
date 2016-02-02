@@ -4522,33 +4522,6 @@ public class WifiConfigStore extends IpConfigStore {
         lastUnwantedNetworkDisconnectTimestamp = System.currentTimeMillis();
     }
 
-    boolean handleBSSIDBlackList(int netId, String BSSID, boolean enable) {
-        boolean found = false;
-        if (BSSID == null)
-            return found;
-
-        // Look for the BSSID in our config store
-        for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
-            if (getScanDetailCache(config) != null) {
-                for (ScanDetail scanDetail : getScanDetailCache(config).values()) {
-                    if (scanDetail.getBSSIDString().equals(BSSID)) {
-                        if (enable) {
-                            scanDetail.getScanResult().setAutoJoinStatus(ScanResult.ENABLED);
-                        } else {
-                            // Black list the BSSID we were trying to join
-                            // so as the Roam state machine
-                            // doesn't pick it up over and over
-                            scanDetail.getScanResult().setAutoJoinStatus(
-                                    ScanResult.AUTO_ROAM_DISABLED);
-                            found = true;
-                        }
-                    }
-                }
-            }
-        }
-        return found;
-    }
-
     int getMaxDhcpRetries() {
         return mFacade.getIntegerSetting(mContext,
                 Settings.Global.WIFI_MAX_DHCP_RETRY_COUNT,

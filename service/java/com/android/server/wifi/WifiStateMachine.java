@@ -7012,8 +7012,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (bssid != null) {
                         // If we have a BSSID, tell configStore to black list it
                         synchronized(mScanResultCache) {
-                            didBlackListBSSID = mWifiConfigStore.handleBSSIDBlackList
-                                    (mLastNetworkId, bssid, false);
+                            didBlackListBSSID = mWifiQualifiedNetworkSelector
+                                    .enableBssidForQualitynetworkSelection(bssid, false);
                         }
                     }
 
@@ -8711,35 +8711,36 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         transitionTo(mDisconnectedState);
                     }
                     break;
-               case WifiMonitor.NETWORK_CONNECTION_EVENT:
-                   if (mAssociated) {
-                       if (DBG) log("roaming and Network connection established");
-                       mLastNetworkId = message.arg1;
-                       mLastBssid = (String) message.obj;
-                       mWifiInfo.setBSSID(mLastBssid);
-                       mWifiInfo.setNetworkId(mLastNetworkId);
-                       mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, mLastBssid, true);
-                       sendNetworkStateChangeBroadcast(mLastBssid);
-                       transitionTo(mObtainingIpState);
-                   } else {
-                       messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
-                   }
-                   break;
-               case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
-                   // Throw away but only if it corresponds to the network we're roaming to
-                   String bssid = (String)message.obj;
-                   if (true) {
-                       String target = "";
-                       if (mTargetRoamBSSID != null) target = mTargetRoamBSSID;
-                       log("NETWORK_DISCONNECTION_EVENT in roaming state"
-                               + " BSSID=" + bssid
-                               + " target=" + target);
-                   }
-                   if (bssid != null && bssid.equals(mTargetRoamBSSID)) {
-                       handleNetworkDisconnect();
-                       transitionTo(mDisconnectedState);
-                   }
-                   break;
+                case WifiMonitor.NETWORK_CONNECTION_EVENT:
+                    if (mAssociated) {
+                        if (DBG) log("roaming and Network connection established");
+                        mLastNetworkId = message.arg1;
+                        mLastBssid = (String) message.obj;
+                        mWifiInfo.setBSSID(mLastBssid);
+                        mWifiInfo.setNetworkId(mLastNetworkId);
+                        mWifiQualifiedNetworkSelector.enableBssidForQualitynetworkSelection(
+                                mLastBssid, true);
+                        sendNetworkStateChangeBroadcast(mLastBssid);
+                        transitionTo(mObtainingIpState);
+                    } else {
+                        messageHandlingStatus = MESSAGE_HANDLING_STATUS_DISCARD;
+                    }
+                    break;
+                case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
+                    // Throw away but only if it corresponds to the network we're roaming to
+                    String bssid = (String) message.obj;
+                    if (true) {
+                        String target = "";
+                        if (mTargetRoamBSSID != null) target = mTargetRoamBSSID;
+                        log("NETWORK_DISCONNECTION_EVENT in roaming state"
+                                + " BSSID=" + bssid
+                                + " target=" + target);
+                    }
+                    if (bssid != null && bssid.equals(mTargetRoamBSSID)) {
+                        handleNetworkDisconnect();
+                        transitionTo(mDisconnectedState);
+                    }
+                    break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
                     // Auth error while roaming
                     logd("SSID_TEMP_DISABLED nid=" + Integer.toString(mLastNetworkId)
