@@ -6030,6 +6030,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             logStateAndMessage(message, getClass().getSimpleName());
             switch (message.what) {
                 case CMD_START_SUPPLICANT:
+                   /* Stop a running supplicant after a runtime restart
+                    * Avoids issues with drivers that do not handle interface down
+                    * on a running supplicant properly.
+                    */
+                    mWifiMonitor.killSupplicant(mP2pSupported);
+
                     if (mWifiNative.loadDriver()) {
                         try {
                             mNwService.wifiFirmwareReload(mInterfaceName, "STA");
@@ -6060,12 +6066,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         } catch (IllegalStateException ie) {
                             loge("Unable to change interface settings: " + ie);
                         }
-
-                       /* Stop a running supplicant after a runtime restart
-                        * Avoids issues with drivers that do not handle interface down
-                        * on a running supplicant properly.
-                        */
-                        mWifiMonitor.killSupplicant(mP2pSupported);
 
                         if (WifiNative.startHal() == false) {
                             /* starting HAL is optional */
