@@ -1,12 +1,12 @@
 package com.android.server.wifi.anqp;
 
+import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
+
 import java.io.IOException;
 import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
-
-import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 
 /**
  * A generic Internationalized name used in ANQP elements as specified in 802.11-2012 and
@@ -18,11 +18,11 @@ public class I18Name {
     private final String mText;
 
     public I18Name(ByteBuffer payload) throws ProtocolException {
-        if (payload.remaining() < 4) {
+        if (payload.remaining() < Constants.LANG_CODE_LENGTH + 1) {
             throw new ProtocolException("Truncated I18Name: " + payload.remaining());
         }
         int nameLength = payload.get() & BYTE_MASK;
-        if (nameLength < 3) {
+        if (nameLength < Constants.LANG_CODE_LENGTH) {
             throw new ProtocolException("Runt I18Name: " + nameLength);
         }
         mLanguage = Constants.getTrimmedString(payload,
@@ -33,11 +33,11 @@ public class I18Name {
     }
 
     public I18Name(String compoundString) throws IOException {
-        if (compoundString.length() < 3) {
+        if (compoundString.length() < Constants.LANG_CODE_LENGTH) {
             throw new IOException("I18String too short: '" + compoundString + "'");
         }
-        mLanguage = compoundString.substring(0, 3);
-        mText = compoundString.substring(3);
+        mLanguage = compoundString.substring(0, Constants.LANG_CODE_LENGTH);
+        mText = compoundString.substring(Constants.LANG_CODE_LENGTH);
         mLocale = Locale.forLanguageTag(mLanguage);
     }
 

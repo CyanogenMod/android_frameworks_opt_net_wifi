@@ -92,7 +92,8 @@ public class SupplicantBridge {
         }
         String result = mSupplicantHook.doCustomSupplicantCommand(anqpGet);
         if (result != null && result.startsWith("OK")) {
-            Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on " + scanDetail + " (" + anqpGet + ")");
+            Log.d(Utils.hs2LogTag(getClass()), "ANQP initiated on "
+                    + scanDetail + " (" + anqpGet + ")");
             return true;
         }
         else {
@@ -116,7 +117,8 @@ public class SupplicantBridge {
                 int size = Math.min(iconEvent.getSize() - offset, IconChunkSize);
 
                 String command = String.format("GET_HS20_ICON %s %s %d %d",
-                        Utils.macToString(iconEvent.getBSSID()), iconEvent.getFileName(), offset, size);
+                        Utils.macToString(iconEvent.getBSSID()), iconEvent.getFileName(),
+                        offset, size);
                 Log.d(OSUManager.TAG, "Issuing '" + command + "'");
                 String response = mSupplicantHook.doCustomSupplicantCommand(command);
                 if (response == null) {
@@ -124,16 +126,7 @@ public class SupplicantBridge {
                 }
 
                 try {
-                    String[] chunks = response.split(" ");
-                    if (chunks.length != 5 ||
-                            !chunks[0].equals("HS20-ICON-DATA") ||
-                            Utils.parseMac(chunks[1]) != iconEvent.getBSSID() ||
-                            !chunks[2].equals(iconEvent.getFileName()) ||
-                            Integer.parseInt(chunks[3]) != offset) {
-                        throw new IOException("Bad response to '" + command + "': " + response);
-                    }
-
-                    byte[] fragment = Base64.decode(chunks[4], Base64.DEFAULT);
+                    byte[] fragment = Base64.decode(response, Base64.DEFAULT);
                     if (fragment.length == 0) {
                         throw new IOException("Null data for '" + command + "': " + response);
                     }
@@ -143,7 +136,8 @@ public class SupplicantBridge {
                     System.arraycopy(fragment, 0, iconData, offset, fragment.length);
                     offset += fragment.length;
                 } catch (IllegalArgumentException iae) {
-                    throw new IOException("Failed to parse response to '" + command + "': " + response);
+                    throw new IOException("Failed to parse response to '" + command
+                            + "': " + response);
                 }
             }
             if (offset != iconEvent.getSize()) {

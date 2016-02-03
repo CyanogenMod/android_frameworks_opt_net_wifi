@@ -3,23 +3,22 @@ package com.android.server.wifi.hotspot2.pps;
 import android.util.Base64;
 
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
 import com.android.server.wifi.hotspot2.omadm.OMAException;
 import com.android.server.wifi.hotspot2.omadm.OMANode;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_CertSHA256Fingerprint;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_CertURL;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_Password;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_Restriction;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_TrustRoot;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_URI;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_UpdateInterval;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_UpdateMethod;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_Username;
-import static com.android.server.wifi.hotspot2.omadm.MOManager.TAG_UsernamePassword;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_CertSHA256Fingerprint;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_CertURL;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_Password;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_Restriction;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_TrustRoot;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_URI;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_UpdateInterval;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_UpdateMethod;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_Username;
+import static com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager.TAG_UsernamePassword;
 
 public class UpdateInfo {
     public enum UpdateRestriction {HomeSP, RoamingPartner, Unrestricted}
@@ -34,16 +33,18 @@ public class UpdateInfo {
     private final String mCertFP;
 
     public UpdateInfo(OMANode policyUpdate) throws OMAException {
-        mInterval = MOManager.getLong(policyUpdate, TAG_UpdateInterval, null) *
-                MOManager.IntervalFactor;
-        mSPPClientInitiated = MOManager.getSelection(policyUpdate, TAG_UpdateMethod);
-        mUpdateRestriction = MOManager.getSelection(policyUpdate, TAG_Restriction);
-        mURI = MOManager.getString(policyUpdate, TAG_URI);
+        mInterval = PasspointManagementObjectManager.getLong(policyUpdate, TAG_UpdateInterval, null)
+                * PasspointManagementObjectManager.IntervalFactor;
+        mSPPClientInitiated = PasspointManagementObjectManager.getSelection(policyUpdate,
+                TAG_UpdateMethod);
+        mUpdateRestriction =
+                PasspointManagementObjectManager.getSelection(policyUpdate, TAG_Restriction);
+        mURI = PasspointManagementObjectManager.getString(policyUpdate, TAG_URI);
 
         OMANode unp = policyUpdate.getChild(TAG_UsernamePassword);
         if (unp != null) {
-            mUsername = MOManager.getString(unp.getChild(TAG_Username));
-            String pw = MOManager.getString(unp.getChild(TAG_Password));
+            mUsername = PasspointManagementObjectManager.getString(unp.getChild(TAG_Username));
+            String pw = PasspointManagementObjectManager.getString(unp.getChild(TAG_Password));
             mPassword = new String(Base64.decode(pw.getBytes(StandardCharsets.US_ASCII),
                     Base64.DEFAULT), StandardCharsets.UTF_8);
         }
@@ -52,9 +53,9 @@ public class UpdateInfo {
             mPassword = null;
         }
 
-        OMANode trustRoot = MOManager.getChild(policyUpdate, TAG_TrustRoot);
-        mCertURL = MOManager.getString(trustRoot, TAG_CertURL);
-        mCertFP = MOManager.getString(trustRoot, TAG_CertSHA256Fingerprint);
+        OMANode trustRoot = PasspointManagementObjectManager.getChild(policyUpdate, TAG_TrustRoot);
+        mCertURL = PasspointManagementObjectManager.getString(trustRoot, TAG_CertURL);
+        mCertFP = PasspointManagementObjectManager.getString(trustRoot, TAG_CertSHA256Fingerprint);
     }
 
     public long getInterval() {

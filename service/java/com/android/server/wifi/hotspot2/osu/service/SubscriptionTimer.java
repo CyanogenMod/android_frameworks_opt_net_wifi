@@ -9,7 +9,7 @@ import android.content.IntentFilter;
 import android.util.Log;
 
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.osu.OSUManager;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
@@ -20,7 +20,7 @@ import java.util.Map;
 public class SubscriptionTimer {
     private final AlarmManager mAlarmManager;
     private final OSUManager mOSUManager;
-    private final MOManager mMOManager;
+    private final PasspointManagementObjectManager mMOManager;
     private final PendingIntent mTimerIntent;
     private final Map<HomeSP, UpdateAction> mOutstanding = new HashMap<>();
 
@@ -62,7 +62,7 @@ public class SubscriptionTimer {
     private static final String ACTION_TIMER =
             "com.android.server.wifi.hotspot2.osu.service.SubscriptionTimer.action.TICK";
 
-    public SubscriptionTimer(OSUManager osuManager, MOManager moManager, Context context) {
+    public SubscriptionTimer(OSUManager osuManager, PasspointManagementObjectManager moManager, Context context) {
         mOSUManager = osuManager;
         mMOManager = moManager;
         mAlarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);

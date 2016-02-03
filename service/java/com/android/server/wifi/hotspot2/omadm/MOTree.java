@@ -57,10 +57,6 @@ public class MOTree {
         OMAConstructed realRoot;
         switch (urn) {
             case OMAConstants.PPS_URN:
-                realRoot = new OMAConstructed(null, MgmtTreeTag, urn, "xmlns", OMAConstants.SyncML);
-                OMAConstructed pps = (OMAConstructed) realRoot.addChild(MOManager.TAG_PerProviderSubscription, urn, null, null);
-                pps.addChild(root);
-                return new MOTree(urn, rev, realRoot);
             case OMAConstants.DevInfoURN:
             case OMAConstants.DevDetailURN:
             case OMAConstants.DevDetailXURN:
@@ -249,6 +245,10 @@ public class MOTree {
         }
 
         String version = OMAConstants.deserializeString(in);
+        int next = in.read();
+        if (next != '(') {
+            throw new IOException("Expected URN in tree definition");
+        }
         String urn = OMAConstants.readURN(in);
 
         OMAConstructed root = OMANode.unmarshal(in);

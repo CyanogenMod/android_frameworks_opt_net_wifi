@@ -21,9 +21,9 @@ import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyObject;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.intThat;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -45,7 +45,7 @@ import android.text.TextUtils;
 
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
@@ -107,7 +107,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
     @Mock private WifiNative mWifiNative;
     @Mock private FrameworkFacade mFrameworkFacade;
     @Mock private DelayedDiskWrite mWriter;
-    @Mock private MOManager mMOManager;
+    @Mock private PasspointManagementObjectManager mMOManager;
     private WifiConfigStore mConfigStore;
     private ConfigurationMap mConfiguredNetworks;
     public byte[] mNetworkHistory;
@@ -546,9 +546,11 @@ public class WifiConfigStoreTest extends AndroidTestCase {
         for (WifiConfiguration config : CONFIGS) {
             if (config.FQDN != null) {
                 homeSPs.add(new HomeSP(null, config.FQDN, new HashSet<Long>(),
-                        new HashSet<String>(), new HashSet<Long>(), new ArrayList<Long>(),
-                        config.providerFriendlyName, null, new Credential(0, 0, null, false, null,
-                        null), null, 0, null, null, null));
+                        new HashSet<String>(),
+                        new HashSet<Long>(), new ArrayList<Long>(),
+                        config.providerFriendlyName, null,
+                        new Credential(0, 0, null, false, null, null),
+                        null, 0, null, null, null, 0));
             }
         }
         when(mMOManager.loadAllSPs()).thenReturn(homeSPs);

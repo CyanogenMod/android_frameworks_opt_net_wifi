@@ -4,24 +4,23 @@ import android.net.wifi.ScanResult;
 import android.util.Log;
 
 import com.android.server.wifi.anqp.ANQPElement;
+
+import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
+import static com.android.server.wifi.anqp.Constants.BYTES_IN_EUI48;
+
 import com.android.server.wifi.anqp.Constants;
+import com.android.server.wifi.anqp.RawByteElement;
 import com.android.server.wifi.anqp.VenueNameElement;
 import com.android.server.wifi.util.InformationElementUtil;
 
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
-import static com.android.server.wifi.anqp.Constants.BYTES_IN_EUI48;
-import static com.android.server.wifi.anqp.Constants.BYTE_MASK;
 
 public class NetworkDetail {
 
@@ -351,6 +350,14 @@ public class NetworkDetail {
 
     public int getAnqpDomainID() {
         return mAnqpDomainID;
+    }
+
+    public byte[] getOsuProviders() {
+        if (mANQPElements == null) {
+            return null;
+        }
+        ANQPElement osuProviders = mANQPElements.get(Constants.ANQPElementType.HSOSUProviders);
+        return osuProviders != null ? ((RawByteElement) osuProviders).getPayload() : null;
     }
 
     public int getAnqpOICount() {

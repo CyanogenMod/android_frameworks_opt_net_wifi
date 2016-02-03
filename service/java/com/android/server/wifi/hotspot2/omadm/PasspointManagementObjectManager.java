@@ -1,5 +1,6 @@
 package com.android.server.wifi.hotspot2.omadm;
 
+import android.net.wifi.PasspointManagementObjectDefinition;
 import android.util.Base64;
 import android.util.Log;
 
@@ -10,8 +11,7 @@ import com.android.server.wifi.anqp.eap.ExpandedEAPMethod;
 import com.android.server.wifi.anqp.eap.InnerAuthEAP;
 import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.osu.OSUManager;
-import com.android.server.wifi.hotspot2.osu.commands.MOData;
+import com.android.server.wifi.hotspot2.osu.commands.PasspointManagementObjectData;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 import com.android.server.wifi.hotspot2.pps.Policy;
@@ -47,7 +47,7 @@ import java.util.TimeZone;
 /**
  * Handles provisioning of PerProviderSubscription data.
  */
-public class MOManager {
+public class PasspointManagementObjectManager {
 
     public static final String TAG_AAAServerTrustRoot = "AAAServerTrustRoot";
     public static final String TAG_AbleToShare = "AbleToShare";
@@ -148,7 +148,7 @@ public class MOManager {
         Map<String, Object> kvp = new HashMap<>();
         sSelectionMap.put(key, kvp);
         for (int n = 0; n < pairs.length; n += 2) {
-            kvp.put(pairs[n].toString(), pairs[n+1]);
+            kvp.put(pairs[n].toString(), pairs[n + 1]);
         }
     }
 
@@ -156,7 +156,7 @@ public class MOManager {
     private final boolean mEnabled;
     private final Map<String, HomeSP> mSPs;
 
-    public MOManager(File ppsFile, boolean hs2enabled) {
+    public PasspointManagementObjectManager(File ppsFile, boolean hs2enabled) {
         mPpsFile = ppsFile;
         mEnabled = hs2enabled;
         mSPs = new HashMap<>();
@@ -197,7 +197,8 @@ public class MOManager {
                     if (mSPs.put(sp.getFQDN(), sp) != null) {
                         throw new OMAException("Multiple SPs for FQDN '" + sp.getFQDN() + "'");
                     } else {
-                        Log.d(Utils.hs2LogTag(getClass()), "retrieved " + sp.getFQDN() + " from PPS");
+                        Log.d(Utils.hs2LogTag(getClass()),
+                                "retrieved " + sp.getFQDN() + " from PPS");
                     }
                 }
                 return sps;
@@ -218,9 +219,18 @@ public class MOManager {
         return spList.iterator().next();
     }
 
-    public HomeSP addSP(String xml, OSUManager osuManager) throws IOException, SAXException {
+    public HomeSP addSP(String xml) throws IOException, SAXException {
         OMAParser omaParser = new OMAParser();
-        return addSP(omaParser.parse(xml, OMAConstants.PPS_URN), osuManager);
+        return addSP(omaParser.parse(xml, OMAConstants.PPS_URN));
+    }
+
+    public int modifySP(String fqdn, List<PasspointManagementObjectDefinition> mods)
+            throws IOException, SAXException {
+        List<PasspointManagementObjectData> moData = new ArrayList<>();
+        for (PasspointManagementObjectDefinition mod : mods) {
+            moData.add(new PasspointManagementObjectData(mod));
+        }
+        return modifySP(fqdn, moData);
     }
 
     private static final List<String> FQDNPath = Arrays.asList(TAG_HomeSP, TAG_FQDN);
@@ -230,13 +240,13 @@ public class MOManager {
      * @param homeSP
      * @throws IOException
      */
-    public void addSP(HomeSP homeSP, OSUManager osuManager) throws IOException {
+    public void addSP(HomeSP homeSP) throws IOException {
         if (!mEnabled) {
             throw new IOException("HS2.0 not enabled on this device");
         }
         if (mSPs.containsKey(homeSP.getFQDN())) {
-            Log.d(Utils.hs2LogTag(getClass()), "HS20 profile for " +
-                    homeSP.getFQDN() + " already exists");
+            Log.d(Utils.hs2LogTag(getClass()), "HS20 profile for "
+                    + homeSP.getFQDN() + " already exists");
             return;
         }
         Log.d(Utils.hs2LogTag(getClass()), "Adding new HS20 profile for " + homeSP.getFQDN());
@@ -244,17 +254,16 @@ public class MOManager {
         OMAConstructed dummyRoot = new OMAConstructed(null, TAG_PerProviderSubscription, null);
         buildHomeSPTree(homeSP, dummyRoot, mSPs.size() + 1);
         try {
-            addSP(dummyRoot, osuManager);
-        }
-        catch (FileNotFoundException fnfe) {
-            // No file to load a pre-build MO tree from, create a new one and save it.
-            MOTree tree = new MOTree(OMAConstants.PPS_URN, OMAConstants.OMAVersion, dummyRoot);
-            writeMO(tree, mPpsFile, osuManager);
+            addSP(dummyRoot);
+        } catch (FileNotFoundException fnfe) {
+            MOTree tree = MOTree.buildMgmtTree(OMAConstants.PPS_URN,
+                    OMAConstants.OMAVersion, dummyRoot);
+            writeMO(tree, mPpsFile);
         }
         mSPs.put(homeSP.getFQDN(), homeSP);
     }
 
-    public HomeSP addSP(MOTree instanceTree, OSUManager osuManager) throws IOException {
+    public HomeSP addSP(MOTree instanceTree) throws IOException {
         List<HomeSP> spList = buildSPs(instanceTree);
         if (spList.size() != 1) {
             throw new OMAException("Expected exactly one HomeSP, got " + spList.size());
@@ -266,15 +275,15 @@ public class MOManager {
             throw new OMAException("SP " + fqdn + " already exists");
         }
 
-        OMAConstructed pps = (OMAConstructed) instanceTree.getRoot().
-                getChild(TAG_PerProviderSubscription);
+        OMAConstructed pps = (OMAConstructed) instanceTree.getRoot()
+                .getChild(TAG_PerProviderSubscription);
 
         try {
-            addSP(pps, osuManager);
-        }
-        catch (FileNotFoundException fnfe) {
-            MOTree tree = new MOTree(instanceTree.getUrn(), instanceTree.getDtdRev(), pps);
-            writeMO(tree, mPpsFile, osuManager);
+            addSP(pps);
+        } catch (FileNotFoundException fnfe) {
+            MOTree tree = new MOTree(instanceTree.getUrn(), instanceTree.getDtdRev(),
+                    instanceTree.getRoot());
+            writeMO(tree, mPpsFile);
         }
 
         return sp;
@@ -286,108 +295,96 @@ public class MOManager {
      * @param mo The new MO
      * @throws IOException
      */
-    private void addSP(OMANode mo, OSUManager osuManager) throws IOException {
+    private void addSP(OMANode mo) throws IOException {
         MOTree moTree;
         try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(mPpsFile))) {
             moTree = MOTree.unmarshal(in);
-            Log.d("ZXZ", "Adding to MO tree " + mo);
-            for (OMANode child : mo.getChildren()) {
-                if (!child.isLeaf()) {
-                    moTree.getRoot().addChild(child);
-                }
-                else if (child.getName().equals(TAG_UpdateIdentifier)) {
-                    OMANode currentUD = moTree.getRoot().getChild(TAG_UpdateIdentifier);
-                    if (currentUD != null) {
-                        moTree.getRoot().replaceNode(currentUD, child);
-                    }
-                    else {
-                        moTree.getRoot().addChild(child);
-                    }
-                }
-            }
+            moTree.getRoot().addChild(mo);
         }
-        writeMO(moTree, mPpsFile, osuManager);
+        writeMO(moTree, mPpsFile);
     }
 
     private static OMAConstructed findTargetTree(MOTree moTree, String fqdn) throws OMAException {
         OMANode pps = moTree.getRoot();
         for (OMANode node : pps.getChildren()) {
-            Log.d("ZXZ", "Checking " + node.getName());
-            if (!node.isLeaf()) {
-                String nodeFqdn = getString(node.getListValue(FQDNPath.iterator()));
+            OMANode instance = null;
+            if (node.getName().equals(TAG_PerProviderSubscription)) {
+                instance = getInstanceNode((OMAConstructed) node);
+            } else if (!node.isLeaf()) {
+                instance = node;
+            }
+            if (instance != null) {
+                String nodeFqdn = getString(instance.getListValue(FQDNPath.iterator()));
                 if (fqdn.equalsIgnoreCase(nodeFqdn)) {
                     return  (OMAConstructed) node;
-                    // targetTree is rooted at the sp instance, e.g. "Cred01"
+                    // targetTree is rooted at the PPS
                 }
             }
         }
         return null;
     }
 
-    public HomeSP modifySP(HomeSP homeSP, Collection<MOData> mods, OSUManager osuManager)
-            throws IOException {
+    private static OMAConstructed getInstanceNode(OMAConstructed root) throws OMAException {
+        for (OMANode child : root.getChildren()) {
+            if (!child.isLeaf()) {
+                return (OMAConstructed) child;
+            }
+        }
+        throw new OMAException("Cannot find instance node");
+    }
+
+    public int modifySP(String fqdn, Collection<PasspointManagementObjectData> mods) throws IOException {
+
+        Log.d(Utils.hs2LogTag(getClass()), "modifying SP: " + mods);
         MOTree moTree;
         int ppsMods = 0;
+        int updateIdentifier = 0;
         try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(mPpsFile))) {
             moTree = MOTree.unmarshal(in);
             // moTree is PPS/?/provider-data
 
-            OMAConstructed targetTree = findTargetTree(moTree, homeSP.getFQDN());
+            OMAConstructed targetTree = findTargetTree(moTree, fqdn);
             if (targetTree == null) {
-                throw new IOException("Failed to find PPS tree for " + homeSP.getFQDN());
+                throw new IOException("Failed to find PPS tree for " + fqdn);
             }
+            OMAConstructed instance = getInstanceNode(targetTree);
 
-            int updateIdentifier = -1;
-            for (MOData mod : mods) {
-                LinkedList<String> tailPath = getTailPath(mod.getBaseURI(), TAG_PerProviderSubscription);
+            for (PasspointManagementObjectData mod : mods) {
+                LinkedList<String> tailPath = getTailPath(mod.getBaseURI(),
+                        TAG_PerProviderSubscription);
                 OMAConstructed modRoot = mod.getMOTree().getRoot();
-                // modRoot is the MgmtTree with the actual object as a direct child (e.g. Credential)
+                // modRoot is the MgmtTree with the actual object as a
+                // direct child (e.g. Credential)
 
                 if (tailPath.getFirst().equals(TAG_UpdateIdentifier)) {
                     updateIdentifier = getInteger(modRoot.getChildren().iterator().next());
-                }
-                else {
+                    OMANode oldUdi = targetTree.getChild(TAG_UpdateIdentifier);
+                    if (getInteger(oldUdi) != updateIdentifier) {
+                        ppsMods++;
+                    }
+                    if (oldUdi != null) {
+                        targetTree.replaceNode(oldUdi, modRoot.getChild(TAG_UpdateIdentifier));
+                    } else {
+                        targetTree.addChild(modRoot.getChild(TAG_UpdateIdentifier));
+                    }
+                } else {
                     tailPath.removeFirst();     // Drop the instance
-                    OMANode current = targetTree.getListValue(tailPath.iterator());
+                    OMANode current = instance.getListValue(tailPath.iterator());
                     if (current == null) {
-                        throw new IOException("No previous node for " + tailPath + " in " +
-                                homeSP.getFQDN());
+                        throw new IOException("No previous node for " + tailPath + " in " + fqdn);
                     }
                     for (OMANode newNode : modRoot.getChildren()) {
                         // newNode is something like Credential
                         // current is the same existing node
                         OMANode old = current.getParent().replaceNode(current, newNode);
-                        Log.d("ZXZ", "Replacing " + current.getName() + " with " + newNode.getName() + ": " + (old != null ? old.getName() : "-"));
                         ppsMods++;
                     }
                 }
             }
-
-            if (updateIdentifier >= 0) {
-                OMAConstructed pps = moTree.getRoot();
-                OMANode current = pps.getChild(TAG_UpdateIdentifier);
-                pps.replaceNode(current, new OMAScalar(pps, TAG_UpdateIdentifier,
-                        null, Integer.toString(updateIdentifier)));
-            }
         }
-        writeMO(moTree, mPpsFile, osuManager);
+        writeMO(moTree, mPpsFile);
 
-        if (ppsMods == 0) {
-            return null;    // HomeSP not modified.
-        }
-
-        // Return a new rebuilt HomeSP
-        List<HomeSP> sps = buildSPs(moTree);
-        if (sps != null) {
-            for (HomeSP sp : sps) {
-                if (sp.getFQDN().equals(homeSP.getFQDN())) {
-                    return sp;
-                }
-            }
-        } else {
-            throw new OMAException("Failed to build HomeSP");
-        }
-        return null;
+        return ppsMods;
     }
 
     private static LinkedList<String> getTailPath(String pathString, String rootName)
@@ -415,7 +412,7 @@ public class MOManager {
         return mSPs.get(fqdn);
     }
 
-    public void removeSP(String fqdn, OSUManager osuManager) throws IOException {
+    public void removeSP(String fqdn) throws IOException {
         if (mSPs.remove(fqdn) == null) {
             Log.d(Utils.hs2LogTag(getClass()), "No HS20 profile to delete for " + fqdn);
             return;
@@ -436,7 +433,22 @@ public class MOManager {
                 throw new IOException("Failed to remove " + fqdn + " out of MO tree");
             }
         }
-        writeMO(moTree, mPpsFile, osuManager);
+        writeMO(moTree, mPpsFile);
+    }
+
+    public String getMOTree(String fqdn) throws IOException {
+        if (fqdn == null) {
+            return null;
+        }
+        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(mPpsFile))) {
+            MOTree moTree = MOTree.unmarshal(in);
+            OMAConstructed target = findTargetTree(moTree, fqdn);
+            if (target == null) {
+                return null;
+            }
+            return MOTree.buildMgmtTree(OMAConstants.PPS_URN,
+                    OMAConstants.OMAVersion, target).toXml();
+        }
     }
 
     public MOTree getMOTree(HomeSP homeSP) throws IOException {
@@ -450,13 +462,12 @@ public class MOManager {
         }
     }
 
-    private static void writeMO(MOTree moTree, File f, OSUManager osuManager) throws IOException {
+    private static void writeMO(MOTree moTree, File f) throws IOException {
         try (BufferedOutputStream out =
                      new BufferedOutputStream(new FileOutputStream(f, false))) {
             moTree.marshal(out);
             out.flush();
         }
-        osuManager.recheckTimers();
     }
 
     private static String fqdnList(Collection<HomeSP> sps) {
@@ -465,8 +476,7 @@ public class MOManager {
         for (HomeSP sp : sps) {
             if (first) {
                 first = false;
-            }
-            else {
+            } else {
                 sb.append(", ");
             }
             sb.append(sp.getFQDN());
@@ -487,10 +497,12 @@ public class MOManager {
             int instance = 0;
             for (Map.Entry<String, Long> entry : homeSP.getSSIDs().entrySet()) {
                 OMAConstructed inode =
-                        (OMAConstructed) nwkIDNode.addChild(getInstanceString(instance++), null, null, null);
+                        (OMAConstructed) nwkIDNode.addChild(getInstanceString(instance++),
+                                null, null, null);
                 inode.addChild(TAG_SSID, null, entry.getKey(), null);
                 if (entry.getValue() != null) {
-                    inode.addChild(TAG_HESSID, null, String.format("%012x", entry.getValue()), null);
+                    inode.addChild(TAG_HESSID, null,
+                            String.format("%012x", entry.getValue()), null);
                 }
             }
         }
@@ -537,7 +549,8 @@ public class MOManager {
         }
 
         if (!homeSP.getRoamingConsortiums().isEmpty()) {
-            homeSpNode.addChild(TAG_RoamingConsortiumOI, null, getRCList(homeSP.getRoamingConsortiums()), null);
+            homeSpNode.addChild(TAG_RoamingConsortiumOI, null,
+                    getRCList(homeSP.getRoamingConsortiums()), null);
         }
 
         // The Credential:
@@ -605,8 +618,7 @@ public class MOManager {
         for (Long roamingConsortium : rcs) {
             if (first) {
                 first = false;
-            }
-            else {
+            } else {
                 builder.append(',');
             }
             builder.append(String.format("%x", roamingConsortium));
@@ -616,31 +628,45 @@ public class MOManager {
 
     private static List<HomeSP> buildSPs(MOTree moTree) throws OMAException {
         OMAConstructed spList;
-        if (moTree.getRoot().getName().equals(TAG_PerProviderSubscription)) {
-            // The PPS file is rooted at PPS instead of MgmtTree to conserve space
-            spList = moTree.getRoot();
-        }
-        else {
-            List<String> spPath = Arrays.asList(TAG_PerProviderSubscription);
-            spList = (OMAConstructed) moTree.getRoot().getListValue(spPath.iterator());
-        }
-
         List<HomeSP> homeSPs = new ArrayList<>();
+        if (moTree.getRoot().getName().equals(TAG_PerProviderSubscription)) {
+            // The old PPS file was rooted at PPS instead of MgmtTree to conserve space
+            spList = moTree.getRoot();
 
-        if (spList == null) {
-            return homeSPs;
-        }
+            if (spList == null) {
+                return homeSPs;
+            }
 
-        for (OMANode node : spList.getChildren()) {
-            if (!node.isLeaf()) {
-                homeSPs.add(buildHomeSP(node));
+            for (OMANode node : spList.getChildren()) {
+                if (!node.isLeaf()) {
+                    homeSPs.add(buildHomeSP(node, 0));
+                }
+            }
+        } else {
+            for (OMANode ppsRoot : moTree.getRoot().getChildren()) {
+                if (ppsRoot.getName().equals(TAG_PerProviderSubscription)) {
+                    Integer updateIdentifier = null;
+                    OMANode instance = null;
+                    for (OMANode child : ppsRoot.getChildren()) {
+                        if (child.getName().equals(TAG_UpdateIdentifier)) {
+                            updateIdentifier = getInteger(child);
+                        } else if (!child.isLeaf()) {
+                            instance = child;
+                        }
+                    }
+                    if (instance == null) {
+                        throw new OMAException("PPS node missing instance node");
+                    }
+                    homeSPs.add(buildHomeSP(instance,
+                            updateIdentifier != null ? updateIdentifier : 0));
+                }
             }
         }
 
         return homeSPs;
     }
 
-    private static HomeSP buildHomeSP(OMANode ppsRoot) throws OMAException {
+    private static HomeSP buildHomeSP(OMANode ppsRoot, int updateIdentifier) throws OMAException {
         OMANode spRoot = ppsRoot.getChild(TAG_HomeSP);
 
         String fqdn = spRoot.getScalarValue(Arrays.asList(TAG_FQDN).iterator());
@@ -697,8 +723,7 @@ public class MOManager {
         OMANode aaaRootNode = ppsRoot.getChild(TAG_AAAServerTrustRoot);
         if (aaaRootNode == null) {
             aaaTrustRoots = null;
-        }
-        else {
+        } else {
             aaaTrustRoots = new HashMap<>(aaaRootNode.getChildren().size());
             for (OMANode child : aaaRootNode.getChildren()) {
                 aaaTrustRoots.put(getString(child, TAG_CertURL),
@@ -709,13 +734,13 @@ public class MOManager {
         OMANode updateNode = ppsRoot.getChild(TAG_SubscriptionUpdate);
         UpdateInfo subscriptionUpdate = updateNode != null ? new UpdateInfo(updateNode) : null;
         OMANode subNode = ppsRoot.getChild(TAG_SubscriptionParameters);
-        SubscriptionParameters subscriptionParameters = subNode != null ?
-                new SubscriptionParameters(subNode) : null;
+        SubscriptionParameters subscriptionParameters = subNode != null
+                ? new SubscriptionParameters(subNode) : null;
 
         return new HomeSP(ssids, fqdn, roamingConsortiums, otherHomePartners,
                 matchAnyOIs, matchAllOIs, friendlyName, iconURL, credential,
                 policy, getInteger(ppsRoot.getChild(TAG_CredentialPriority), 0),
-                aaaTrustRoots, subscriptionUpdate, subscriptionParameters);
+                aaaTrustRoots, subscriptionUpdate, subscriptionParameters, updateIdentifier);
     }
 
     private static Credential buildCredential(OMANode credNode) throws OMAException {
@@ -795,8 +820,7 @@ public class MOManager {
 
                 return new Credential(ctime, expTime, realm, checkAAACert, eapMethod,
                         Credential.mapCertType(certTypeString), fingerPrint);
-            }
-            catch (NumberFormatException nfe) {
+            } catch (NumberFormatException nfe) {
                 throw new OMAException("Bad hex string: " + nfe.toString());
             }
         }
@@ -809,8 +833,7 @@ public class MOManager {
                                 null);
 
                 return new Credential(ctime, expTime, realm, checkAAACert, eapMethod, imsi);
-            }
-            catch (IOException ioe) {
+            } catch (IOException ioe) {
                 throw new OMAException("Failed to parse IMSI: " + ioe);
             }
         }
@@ -829,8 +852,7 @@ public class MOManager {
         OMANode child = node.getChild(key);
         if (child == null) {
             throw new OMAException("Missing value for " + key);
-        }
-        else if (!child.isLeaf()) {
+        } else if (!child.isLeaf()) {
             throw new OMAException(key + " is not a leaf node");
         }
         return child.getValue();
@@ -841,24 +863,21 @@ public class MOManager {
         if (child == null) {
             if (dflt != null) {
                 return dflt;
-            }
-            else {
+            } else {
                 throw new OMAException("Missing value for " + key);
             }
-        }
-        else {
+        } else {
             if (!child.isLeaf()) {
                 throw new OMAException(key + " is not a leaf node");
             }
             String value = child.getValue();
             try {
                 long result = Long.parseLong(value);
-                if (result < 0 ) {
+                if (result < 0) {
                     throw new OMAException("Negative value for " + key);
                 }
                 return result;
-            }
-            catch (NumberFormatException nfe) {
+            } catch (NumberFormatException nfe) {
                 throw new OMAException("Value for " + key + " is non-numeric: " + value);
             }
         }
@@ -868,8 +887,7 @@ public class MOManager {
         OMANode child = node.getChild(key);
         if (child == null) {
             throw new OMAException("Missing value for " + key);
-        }
-        else if (!child.isLeaf()) {
+        } else if (!child.isLeaf()) {
             throw new OMAException(key + " is not a leaf node");
         }
         return getSelection(key, child.getValue());
@@ -880,7 +898,7 @@ public class MOManager {
             throw new OMAException("No value for " + key);
         }
         Map<String, Object> kvp = sSelectionMap.get(key);
-        T result = (T)kvp.get(value.toLowerCase());
+        T result = (T) kvp.get(value.toLowerCase());
         if (result == null) {
             throw new OMAException("Invalid value '" + value + "' for " + key);
         }

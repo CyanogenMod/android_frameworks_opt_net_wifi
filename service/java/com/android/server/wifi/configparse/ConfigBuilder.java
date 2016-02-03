@@ -12,7 +12,7 @@ import com.android.server.wifi.anqp.eap.AuthParam;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
 import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
@@ -159,7 +159,7 @@ public class ConfigBuilder {
             throw new IOException("Missing profile");
         }
 
-        HomeSP homeSP = MOManager.buildSP(moText);
+        HomeSP homeSP = PasspointManagementObjectManager.buildSP(moText);
 
         return buildConfig(homeSP, caCert, clientChain, clientKey);
     }
@@ -348,6 +348,9 @@ public class ConfigBuilder {
         enterpriseConfig.setEapMethod(remapEAPMethod(eapMethodID));
         enterpriseConfig.setRealm(homeSP.getCredential().getRealm());
         config.enterpriseConfig = enterpriseConfig;
+        if (homeSP.getUpdateIdentifier() >= 0) {
+            config.updateIdentifier = Integer.toString(homeSP.getUpdateIdentifier());
+        }
 
         return config;
     }

@@ -47,7 +47,7 @@ import android.net.NetworkScorerAppManager;
 import android.net.NetworkUtils;
 import android.net.Uri;
 import android.net.wifi.IWifiManager;
-import android.net.wifi.ScanInfo;
+import android.net.wifi.PasspointManagementObjectDefinition;
 import android.net.wifi.ScanResult;
 import android.net.wifi.ScanSettings;
 import android.net.wifi.WifiActivityEnergyInfo;
@@ -83,9 +83,6 @@ import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.util.AsyncChannel;
 import com.android.server.am.BatteryStatsService;
 import com.android.server.wifi.configparse.ConfigBuilder;
-import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.osu.OSUInfo;
-import com.android.server.wifi.hotspot2.osu.OSUManager;
 
 import org.xml.sax.SAXException;
 
@@ -107,10 +104,7 @@ import java.security.cert.PKIXParameters;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * WifiService handles remote WiFi operation requests by implementing
@@ -789,7 +783,6 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         return mWifiStateMachine.syncGetMatchingWifiConfig(scanResult, mWifiStateMachineChannel);
     }
 
-
     /**
      * see {@link android.net.wifi.WifiManager#addOrUpdateNetwork(WifiConfiguration)}
      * @return the supplicant-assigned identifier for the new or updated
@@ -801,10 +794,13 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
             WifiEnterpriseConfig enterpriseConfig = config.enterpriseConfig;
 
-            if (!OSUManager.R2_TEST) {
-                if (config.isPasspoint() &&
-                        (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
-                                enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
+            if (config.isPasspoint() &&
+                    (enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TLS ||
+                            enterpriseConfig.getEapMethod() == WifiEnterpriseConfig.Eap.TTLS)) {
+                if (config.updateIdentifier != null) {
+                    enforceAccessPermission();
+                }
+                else {
                     try {
                         verifyCert(enterpriseConfig.getCaCertificate());
                     } catch (CertPathValidatorException cpve) {
@@ -956,91 +952,50 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         }
     }
 
-    private static final long BSSIDNeighborDistance = 16;
-
     /**
-     * An augmented version of getScanResults that returns ScanResults as well as OSU information
-     * wrapped in ScanInfo objects.
-     * @param callingPackage
-     * @return
+     * Add a Hotspot 2.0 release 2 Management Object
+     * @param mo The MO in XML form
+     * @return -1 for failure
      */
-    public List<ScanInfo> getScanInfos(String callingPackage) {
-        List<ScanResult> scanResults = getScanResults(callingPackage);
-        Collection<OSUInfo> osuInfos = mWifiStateMachine.getOSUInfos();
-        Map<Long, Integer> rssiMap = new HashMap<>();
-
-        Map<String, List<ScanResult>> ssidMap = new HashMap<>();
-        for (ScanResult scanResult : scanResults) {
-            List<ScanResult> scanResultSet = ssidMap.get(scanResult.SSID);
-            if (scanResultSet == null) {
-                scanResultSet = new ArrayList<>();
-                ssidMap.put(scanResult.SSID, scanResultSet);
-            }
-            scanResultSet.add(scanResult);
-            rssiMap.put(Utils.parseMac(scanResult.BSSID), scanResult.level);
-        }
-
-        Map<String, List<OSUInfo>> osuSsids = new HashMap<>();
-        for (OSUInfo osuInfo : osuInfos) {
-            List<OSUInfo> osuSet = osuSsids.get(osuInfo.getSSID());
-            if (osuSet == null) {
-                osuSet = new ArrayList<>();
-                osuSsids.put(osuInfo.getSSID(), osuSet);
-            }
-            osuSet.add(osuInfo);
-        }
-
-        List<ScanInfo> scanInfos = new ArrayList<>();
-        for (Map.Entry<String, List<ScanResult>> entry : ssidMap.entrySet()) {
-            List<ScanResult> scanResultSet = entry.getValue();
-            List<OSUInfo> osuSet = osuSsids.get(entry.getKey());
-            if (osuSet != null) {
-                if (scanResultSet.size() > 1) {
-                    // If there are multiple scan results with the same matching OSU SSID, only drop
-                    // the ones that have adjacent BSSIDs to some OSU (assuming OSU SSIDs lives on
-                    // the same AP as the one advertising the OSU.
-                    for (ScanResult scanResult : scanResultSet) {
-                        boolean sameAP = false;
-                        for (OSUInfo osuInfo : osuSet) {
-                            if (Math.abs(Utils.parseMac(scanResult.BSSID) - osuInfo.getBSSID()) <
-                                    BSSIDNeighborDistance) {
-                                sameAP = true;
-                                break;
-                            }
-                        }
-                        if (!sameAP) {
-                            scanInfos.add(new ScanInfo(scanResult));
-                        }
-                    }
-                }
-                // Else simply don't add the scan result
-            }
-            else {
-                // No OSU match, retain the scan result
-                for (ScanResult scanResult : scanResultSet) {
-                    scanInfos.add(new ScanInfo(scanResult));
-                }
-            }
-        }
-
-        for (OSUInfo osuInfo : osuInfos) {
-            Integer rssi = rssiMap.get(osuInfo.getBSSID());
-            scanInfos.add(new ScanInfo(
-                    osuInfo.getBSSID(),
-                    rssi != null ? rssi : -40,
-                    osuInfo.getSSID(),
-                    osuInfo.getName(null),
-                    osuInfo.getServiceDescription(null),
-                    osuInfo.getIconFileElement().getType(),
-                    osuInfo.getIconFileElement().getIconData(),
-                    osuInfo.getOsuID()));
-        }
-
-        return scanInfos;
+    public int addPasspointManagementObject(String mo) {
+        return mWifiStateMachine.syncAddPasspointManagementObject(mWifiStateMachineChannel, mo);
     }
 
-    public void setOsuSelection(int osuID) {
-        mWifiStateMachine.setOSUSelection(osuID);
+    /**
+     * Modify a Hotspot 2.0 release 2 Management Object
+     * @param fqdn The FQDN of the service provider
+     * @param mos A List of MO definitions to be updated
+     * @return the number of nodes updated, or -1 for failure
+     */
+    public int modifyPasspointManagementObject(String fqdn, List<PasspointManagementObjectDefinition> mos) {
+        return mWifiStateMachine.syncModifyPasspointManagementObject(mWifiStateMachineChannel, fqdn, mos);
+    }
+
+    /**
+     * Query for a Hotspot 2.0 release 2 OSU icon
+     * @param bssid The BSSID of the AP
+     * @param fileName Icon file name
+     */
+    public void queryPasspointIcon(long bssid, String fileName) {
+        mWifiStateMachine.syncQueryPasspointIcon(mWifiStateMachineChannel, bssid, fileName);
+    }
+
+    /**
+     * Match the currently associated network against the SP matching the given FQDN
+     * @param fqdn FQDN of the SP
+     * @return ordinal [HomeProvider, RoamingProvider, Incomplete, None, Declined]
+     */
+    public int matchProviderWithCurrentNetwork(String fqdn) {
+        return mWifiStateMachine.matchProviderWithCurrentNetwork(mWifiStateMachineChannel, fqdn);
+    }
+
+    /**
+     * Deauthenticate and set the re-authentication hold off time for the current network
+     * @param holdoff hold off time in milliseconds
+     * @param ess set if the hold off pertains to an ESS rather than a BSS
+     */
+    public void deauthenticateNetwork(long holdoff, boolean ess) {
+        mWifiStateMachine.deauthenticateNetwork(mWifiStateMachineChannel, holdoff, ess);
     }
 
     private boolean isLocationEnabled(String callingPackage) {

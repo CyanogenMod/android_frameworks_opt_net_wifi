@@ -16,10 +16,6 @@
 
 package com.android.server.wifi;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.mockito.Mockito.when;
-
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.WifiScanner.ChannelSpec;
@@ -33,6 +29,10 @@ import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.mockito.Mockito.when;
 
 /**
  * Utilities for testing Wifi Scanning
@@ -163,8 +163,8 @@ public class ScanTestUtil {
     }
 
     public static ScanResult createScanResult(int freq) {
-        return new ScanResult(WifiSsid.createFromAsciiEncoded("AN SSID"), "00:00:00:00:00:00", "",
-                0, freq, 0);
+        return new ScanResult(WifiSsid.createFromAsciiEncoded("AN SSID"), "00:00:00:00:00:00", 0L,
+                -1, null, "", 0, freq, 0);
     }
 
     public static ScanData createScanData(int... freqs) {

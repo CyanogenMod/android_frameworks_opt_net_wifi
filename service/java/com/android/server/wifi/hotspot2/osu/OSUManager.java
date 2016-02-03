@@ -29,9 +29,9 @@ import com.android.server.wifi.hotspot2.PasspointMatch;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.WifiNetworkAdapter;
-import com.android.server.wifi.hotspot2.omadm.MOManager;
+import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.omadm.MOTree;
-import com.android.server.wifi.hotspot2.osu.commands.MOData;
+import com.android.server.wifi.hotspot2.osu.commands.PasspointManagementObjectData;
 import com.android.server.wifi.hotspot2.osu.service.RedirectListener;
 import com.android.server.wifi.hotspot2.osu.service.SubscriptionTimer;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
@@ -87,7 +87,7 @@ public class OSUManager {
     private final SupplicantBridge mSupplicantBridge;
     private final WifiConfigStore mWifiConfigStore;
     private final IconCache mIconCache;
-    private final MOManager mMOManager;
+    private final PasspointManagementObjectManager mMOManager;
     private final SubscriptionTimer mSubscriptionTimer;
     private final Map<OSUListener, Boolean> mOSUListeners = new IdentityHashMap<>();
     private final Set<String> mOSUSSIDs = new HashSet<>();
@@ -114,7 +114,7 @@ public class OSUManager {
     private final LinkedList<Map<Long, NetworkDetail>> mLastScanBatches = new LinkedList<>();
 
     public OSUManager(WifiConfigStore wifiConfigStore, Context context,
-                      SupplicantBridge supplicantBridge, MOManager moManager,
+                      SupplicantBridge supplicantBridge, PasspointManagementObjectManager moManager,
                       WifiStateMachine wifiStateMachine) {
         mWifiConfigStore = wifiConfigStore;
         mContext = context;
@@ -930,13 +930,13 @@ public class OSUManager {
         mUserInputListener.operationStatus(OSUOperationStatus.ProvisioningFailure, message);
     }
 
-    public void provisioningComplete(MOData moData, Map<OSUCertType, List<X509Certificate>> certs,
+    public void provisioningComplete(PasspointManagementObjectData moData, Map<OSUCertType, List<X509Certificate>> certs,
                                      PrivateKey privateKey, Network osuNetwork) {
         synchronized (mWifiNetworkAdapter) {
             mProvisioningThread = null;
         }
         try {
-            HomeSP homeSP = mMOManager.addSP(moData.getMOTree(), this);
+            HomeSP homeSP = mMOManager.addSP(moData.getMOTree());
 
             WifiConfiguration config = ConfigBuilder.buildConfig(homeSP,
                     certs.get(OSUCertType.AAA).iterator().next(),
@@ -953,7 +953,7 @@ public class OSUManager {
             if (!saved) {
                 mUserInputListener.operationStatus(OSUOperationStatus.ProvisioningFailure,
                         "Failed to save network configuration " + nwkId);
-                mMOManager.removeSP(homeSP.getFQDN(), this);
+                mMOManager.removeSP(homeSP.getFQDN());
                 mWifiNetworkAdapter.detachOSUNetwork(osuNetwork,
                         WifiConfiguration.INVALID_NETWORK_ID);
                 return;
@@ -980,12 +980,12 @@ public class OSUManager {
         }
     }
 
-    public void remediationComplete(HomeSP homeSP, Collection<MOData> mods,
+    public void remediationComplete(HomeSP homeSP, Collection<PasspointManagementObjectData> mods,
                                     Map<OSUCertType, List<X509Certificate>> certs,
                                     PrivateKey privateKey)
             throws IOException, GeneralSecurityException {
 
-        HomeSP altSP = mMOManager.modifySP(homeSP, mods, this);
+        HomeSP altSP = null; //mMOManager.modifySP(homeSP.getFQDN(), mods);
         X509Certificate caCert = null;
         List<X509Certificate> clientCerts = null;
         if (certs != null) {
