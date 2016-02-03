@@ -35,6 +35,7 @@ import android.content.res.Resources;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
 import android.net.ip.IpManager;
+import android.net.LinkProperties;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
@@ -122,6 +123,16 @@ public class WifiStateMachineTest {
 
         @Override
         public void confirmConfiguration() {}
+
+        void injectDhcpSuccess(DhcpResults dhcpResults) {
+            mCallback.onNewDhcpResults(dhcpResults);
+            mCallback.onProvisioningSuccess(new LinkProperties());
+        }
+
+        void injectDhcpFailure() {
+            mCallback.onNewDhcpResults(null);
+            mCallback.onProvisioningFailure(new LinkProperties());
+        }
     }
 
     private FrameworkFacade getFrameworkFacade() throws InterruptedException {
@@ -162,7 +173,8 @@ public class WifiStateMachineTest {
                 .then(new AnswerWithArguments() {
                     public IpManager answer(
                             Context context, String ifname, IpManager.Callback callback) {
-                        return new TestIpManager(context, ifname, callback);
+                        mTestIpManager = new TestIpManager(context, ifname, callback);
+                        return mTestIpManager;
                     }
                 });
 
@@ -282,6 +294,7 @@ public class WifiStateMachineTest {
     AsyncChannel  mWsmAsyncChannel;
     MockAlarmManager mAlarmManager;
     MockWifiMonitor mWifiMonitor;
+    TestIpManager mTestIpManager;
 
     @Mock WifiNative mWifiNative;
     @Mock SupplicantStateTracker mSupplicantStateTracker;
@@ -545,7 +558,7 @@ public class WifiStateMachineTest {
         dhcpResults.addDns("8.8.8.8");
         dhcpResults.setLeaseDuration(3600);
 
-        mWsm.sendMessage(WifiStateMachine.CMD_IPV4_PROVISIONING_SUCCESS, 0, 0, dhcpResults);
+        mTestIpManager.injectDhcpSuccess(dhcpResults);
         wait(200);
 
         assertEquals("ConnectedState", getCurrentState().getName());
@@ -569,7 +582,7 @@ public class WifiStateMachineTest {
 
         assertEquals("ObtainingIpState", getCurrentState().getName());
 
-        mWsm.sendMessage(WifiStateMachine.CMD_IPV4_PROVISIONING_FAILURE, 0, 0, null);
+        mTestIpManager.injectDhcpFailure();
         wait(200);
 
         assertEquals("DisconnectingState", getCurrentState().getName());
