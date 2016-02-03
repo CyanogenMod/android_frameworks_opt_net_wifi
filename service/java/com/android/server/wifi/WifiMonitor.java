@@ -41,6 +41,7 @@ import com.android.server.wifi.p2p.WifiP2pServiceImpl.P2pStatus;
 import com.android.internal.util.Protocol;
 import com.android.internal.util.StateMachine;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -510,7 +511,6 @@ public class WifiMonitor {
 
     /* hotspot 2.0 events */
     public static final int HS20_REMEDIATION_EVENT               = BASE + 61;
-    public static final int HS20_DEAUTH_EVENT                    = BASE + 62;
 
     /**
      * This indicates a read error on the monitor socket conenction
@@ -828,10 +828,10 @@ public class WifiMonitor {
             }
             else if (eventStr.startsWith(HS20_SUB_REM_STR)) {
                 // Tack on the last connected BSSID so we have some idea what AP the WNM pertains to
-                handleWnmRemediationFrame(String.format("%012x %s",
+                handleWnmFrame(String.format("%012x %s",
                                 mLastConnectBSSIDs.get(iface), eventStr), iface);
             } else if (eventStr.startsWith(HS20_DEAUTH_STR)) {
-                handleWnmDeauthFrame(String.format("%012x %s",
+                handleWnmFrame(String.format("%012x %s",
                                 mLastConnectBSSIDs.get(iface), eventStr), iface);
             } else if (eventStr.startsWith(REQUEST_PREFIX_STR)) {
                 handleRequests(eventStr, iface);
@@ -1276,12 +1276,13 @@ public class WifiMonitor {
         }
     }
 
-    private void handleWnmRemediationFrame(String eventStr, String iface) {
-        sendMessage(iface, HS20_REMEDIATION_EVENT, eventStr);
-    }
-
-    private void handleWnmDeauthFrame(String eventStr, String iface) {
-        sendMessage(iface, HS20_DEAUTH_EVENT, eventStr);
+    private void handleWnmFrame(String eventStr, String iface) {
+        try {
+            WnmData wnmData = WnmData.buildWnmData(eventStr);
+            sendMessage(iface, HS20_REMEDIATION_EVENT, wnmData);
+        } catch (IOException | NumberFormatException e) {
+            Log.w(TAG, "Bad WNM event: '" + eventStr + "'");
+        }
     }
 
     /**
