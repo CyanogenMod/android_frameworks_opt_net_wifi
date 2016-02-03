@@ -316,6 +316,17 @@ wifi_error wifi_nan_get_version_mock(wifi_handle handle, NanVersion* version) {
   return WIFI_ERROR_UNINITIALIZED;
 }
 
+wifi_error wifi_nan_get_capabilities_mock(transaction_id id,
+                                          wifi_interface_handle iface) {
+  JNIHelper helper(mock_mVM);
+
+  ALOGD("wifi_nan_get_capabilities_mock");
+
+  helper.callMethod(mock_mObj, "getCapabilitiesHalMockNative", "(S)V",
+                    (short) id);
+  return WIFI_SUCCESS;
+}
+
 // Callbacks
 
 extern "C" void Java_com_android_server_wifi_nan_WifiNanHalMock_callNotifyResponse(
@@ -338,6 +349,31 @@ extern "C" void Java_com_android_server_wifi_nan_WifiNanHalMock_callNotifyRespon
   } else if (msg.response_type == NAN_RESPONSE_SUBSCRIBE) {
     msg.body.subscribe_response.subscribe_id = jsonR.get_int(
         "body.subscribe_response.subscribe_id", &error);
+  } else if (msg.response_type == NAN_GET_CAPABILITIES) {
+    msg.body.nan_capabilities.max_concurrent_nan_clusters = jsonR.get_int(
+        "body.nan_capabilities.max_concurrent_nan_clusters", &error);
+    msg.body.nan_capabilities.max_publishes = jsonR.get_int(
+        "body.nan_capabilities.max_publishes", &error);
+    msg.body.nan_capabilities.max_subscribes = jsonR.get_int(
+        "body.nan_capabilities.max_subscribes", &error);
+    msg.body.nan_capabilities.max_service_name_len = jsonR.get_int(
+        "body.nan_capabilities.max_service_name_len", &error);
+    msg.body.nan_capabilities.max_match_filter_len = jsonR.get_int(
+        "body.nan_capabilities.max_match_filter_len", &error);
+    msg.body.nan_capabilities.max_total_match_filter_len = jsonR.get_int(
+        "body.nan_capabilities.max_total_match_filter_len", &error);
+    msg.body.nan_capabilities.max_service_specific_info_len = jsonR.get_int(
+        "body.nan_capabilities.max_service_specific_info_len", &error);
+    msg.body.nan_capabilities.max_vsa_data_len = jsonR.get_int(
+        "body.nan_capabilities.max_vsa_data_len", &error);
+    msg.body.nan_capabilities.max_mesh_data_len = jsonR.get_int(
+        "body.nan_capabilities.max_mesh_data_len", &error);
+    msg.body.nan_capabilities.max_ndi_interfaces = jsonR.get_int(
+        "body.nan_capabilities.max_ndi_interfaces", &error);
+    msg.body.nan_capabilities.max_ndp_sessions = jsonR.get_int(
+        "body.nan_capabilities.max_ndp_sessions", &error);
+    msg.body.nan_capabilities.max_app_info_len = jsonR.get_int(
+        "body.nan_capabilities.max_app_info_len", &error);
   }
 
   if (error) {
@@ -532,6 +568,7 @@ int init_wifi_nan_hal_func_table_mock(wifi_hal_fn *hal_fn) {
       wifi_nan_beacon_sdf_payload_request_mock;
   hal_fn->wifi_nan_register_handler = wifi_nan_register_handler_mock;
   hal_fn->wifi_nan_get_version = wifi_nan_get_version_mock;
+  hal_fn->wifi_nan_get_capabilities = wifi_nan_get_capabilities_mock;
 
   return 0;
 }

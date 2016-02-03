@@ -148,6 +148,8 @@ wifi_error wifi_nan_register_handler_stub(wifi_interface_handle iface,
                                 NanCallbackHandler handlers);
 wifi_error wifi_nan_get_version_stub(wifi_handle handle,
                            NanVersion* version);
+wifi_error wifi_nan_get_capabilities_stub(transaction_id id,
+                                wifi_interface_handle iface);
 wifi_error wifi_get_packet_filter_capabilities_stub(wifi_interface_handle handle,
                                           u32 *version, u32 *max_len);
 wifi_error wifi_set_packet_filter_stub(wifi_interface_handle handle,

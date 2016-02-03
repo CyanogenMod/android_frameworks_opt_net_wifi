@@ -336,6 +336,11 @@ wifi_error wifi_nan_get_version_stub(wifi_handle handle,
   return WIFI_ERROR_NOT_SUPPORTED;
 }
 
+wifi_error wifi_nan_get_capabilities_stub(transaction_id id,
+                                wifi_interface_handle iface) {
+  return WIFI_ERROR_NOT_SUPPORTED;
+}
+
 wifi_error wifi_get_packet_filter_capabilities_stub(wifi_interface_handle handle,
                                           u32 *version, u32 *max_len) {
   return WIFI_ERROR_NOT_SUPPORTED;

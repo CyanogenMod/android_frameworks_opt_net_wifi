@@ -31,6 +31,10 @@ import java.lang.reflect.Field;
  * </ul>
  */
 public class WifiNanHalMock {
+    public void getCapabilitiesHalMockNative(short transactionId) {
+        throw new IllegalStateException("Please mock this class!");
+    }
+
     public void enableHalMockNative(short transactionId, String jsonArgs) {
         throw new IllegalStateException("Please mock this class!");
     }

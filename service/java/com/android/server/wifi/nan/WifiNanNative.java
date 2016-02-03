@@ -66,7 +66,36 @@ public class WifiNanNative {
         return sWifiNanNativeSingleton;
     }
 
-    public static native int initNanHandlersNative(Object cls, int iface);
+    public static class Capabilities {
+        public int maxConcurrentNanClusters;
+        public int maxPublishes;
+        public int maxSubscribes;
+        public int maxServiceNameLen;
+        public int maxMatchFilterLen;
+        public int maxTotalMatchFilterLen;
+        public int maxServiceSpecificInfoLen;
+        public int maxVsaDataLen;
+        public int maxMeshDataLen;
+        public int maxNdiInterfaces;
+        public int maxNdpSessions;
+        public int maxAppInfoLen;
+
+        @Override
+        public String toString() {
+            return "Capabilities [maxConcurrentNanClusters=" + maxConcurrentNanClusters
+                    + ", maxPublishes=" + maxPublishes + ", maxSubscribes=" + maxSubscribes
+                    + ", maxServiceNameLen=" + maxServiceNameLen + ", maxMatchFilterLen="
+                    + maxMatchFilterLen + ", maxTotalMatchFilterLen=" + maxTotalMatchFilterLen
+                    + ", maxServiceSpecificInfoLen=" + maxServiceSpecificInfoLen
+                    + ", maxVsaDataLen=" + maxVsaDataLen + ", maxMeshDataLen=" + maxMeshDataLen
+                    + ", maxNdiInterfaces=" + maxNdiInterfaces + ", maxNdpSessions="
+                    + maxNdpSessions + ", maxAppInfoLen=" + maxAppInfoLen + "]";
+        }
+    }
+
+    /* package */ static native int initNanHandlersNative(Object cls, int iface);
+
+    private static native int getCapabilitiesNative(short transactionId, Object cls, int iface);
 
     private boolean isNanInit(boolean tryToInit) {
         if (!tryToInit || sNanNativeInit) {
@@ -83,6 +112,15 @@ public class WifiNanNative {
                 int ret = initNanHandlersNative(WifiNative.class, WifiNative.sWlan0Index);
                 if (DBG) Log.d(TAG, "initNanHandlersNative: res=" + ret);
                 sNanNativeInit = ret == WIFI_SUCCESS;
+
+                if (sNanNativeInit) {
+                    ret = getCapabilitiesNative(
+                            WifiNanStateManager.getInstance().createNextTransactionId(),
+                            WifiNative.class,
+                            WifiNative.sWlan0Index);
+                    if (DBG) Log.d(TAG, "getCapabilitiesNative: res=" + ret);
+                }
+
                 return sNanNativeInit;
             } else {
                 Log.w(TAG, "isNanInit: HAL not initialized");
@@ -289,6 +327,7 @@ public class WifiNanNative {
     public static final int NAN_RESPONSE_TRANSMIT_FOLLOWUP = 4;
     public static final int NAN_RESPONSE_SUBSCRIBE = 5;
     public static final int NAN_RESPONSE_SUBSCRIBE_CANCEL = 6;
+    public static final int NAN_RESPONSE_GET_CAPABILITIES = 12;
 
     // direct copy from wifi_nan.h: need to keep in sync
     public static final int NAN_STATUS_SUCCESS = 0;
@@ -418,12 +457,11 @@ public class WifiNanNative {
 
     // callback from native
     private static void onNanNotifyResponse(short transactionId, int responseType, int status,
-            int value, int pubSubId) {
+            int value) {
         if (VDBG) {
             Log.v(TAG,
                     "onNanNotifyResponse: transactionId=" + transactionId + ", responseType="
-                            + responseType + ", status=" + status + ", value=" + value
-                            + ", pubSubId=" + pubSubId);
+                    + responseType + ", status=" + status + ", value=" + value);
         }
 
         switch (responseType) {
@@ -432,14 +470,6 @@ public class WifiNanNative {
                     WifiNanStateManager.getInstance().onConfigCompleted(transactionId);
                 } else {
                     WifiNanStateManager.getInstance().onConfigFailed(transactionId,
-                            translateHalStatusToPublicStatus(status));
-                }
-                break;
-            case NAN_RESPONSE_PUBLISH:
-                if (status == NAN_STATUS_SUCCESS) {
-                    WifiNanStateManager.getInstance().onPublishSuccess(transactionId, pubSubId);
-                } else {
-                    WifiNanStateManager.getInstance().onPublishFail(transactionId,
                             translateHalStatusToPublicStatus(status));
                 }
                 break;
@@ -457,14 +487,6 @@ public class WifiNanNative {
                             translateHalStatusToPublicStatus(status));
                 }
                 break;
-            case NAN_RESPONSE_SUBSCRIBE:
-                if (status == NAN_STATUS_SUCCESS) {
-                    WifiNanStateManager.getInstance().onSubscribeSuccess(transactionId, pubSubId);
-                } else {
-                    WifiNanStateManager.getInstance().onSubscribeFail(transactionId,
-                            translateHalStatusToPublicStatus(status));
-                }
-                break;
             case NAN_RESPONSE_SUBSCRIBE_CANCEL:
                 if (status != NAN_STATUS_SUCCESS) {
                     Log.e(TAG, "onNanNotifyResponse: NAN_RESPONSE_PUBLISH_CANCEL error - status="
@@ -475,6 +497,54 @@ public class WifiNanNative {
                 WifiNanStateManager.getInstance().onUnknownTransaction(responseType, transactionId,
                         translateHalStatusToPublicStatus(status));
                 break;
+        }
+    }
+
+    private static void onNanNotifyResponsePublishSubscribe(short transactionId, int responseType,
+            int status, int value, int pubSubId) {
+        if (VDBG) {
+            Log.v(TAG,
+                    "onNanNotifyResponsePublishSubscribe: transactionId=" + transactionId
+                            + ", responseType=" + responseType + ", status=" + status + ", value="
+                            + value + ", pubSubId=" + pubSubId);
+        }
+
+        switch (responseType) {
+            case NAN_RESPONSE_PUBLISH:
+                if (status == NAN_STATUS_SUCCESS) {
+                    WifiNanStateManager.getInstance().onPublishSuccess(transactionId, pubSubId);
+                } else {
+                    WifiNanStateManager.getInstance().onPublishFail(transactionId,
+                            translateHalStatusToPublicStatus(status));
+                }
+                break;
+            case NAN_RESPONSE_SUBSCRIBE:
+                if (status == NAN_STATUS_SUCCESS) {
+                    WifiNanStateManager.getInstance().onSubscribeSuccess(transactionId, pubSubId);
+                } else {
+                    WifiNanStateManager.getInstance().onSubscribeFail(transactionId,
+                            translateHalStatusToPublicStatus(status));
+                }
+                break;
+            default:
+                WifiNanStateManager.getInstance().onUnknownTransaction(responseType, transactionId,
+                        translateHalStatusToPublicStatus(status));
+                break;
+        }
+    }
+
+    private static void onNanNotifyResponseCapabilities(short transactionId, int status, int value,
+            Capabilities capabilities) {
+        if (VDBG) {
+            Log.v(TAG, "onNanNotifyResponsePublishSubscribe: transactionId=" + transactionId
+                    + ", status=" + status + ", value=" + value + ", capabilities=" + capabilities);
+        }
+
+        if (status == NAN_STATUS_SUCCESS) {
+            WifiNanStateManager.getInstance().onCapabilitiesUpdate(transactionId, capabilities);
+        } else {
+            Log.e(TAG,
+                    "onNanNotifyResponseCapabilities: error status=" + status + ", value=" + value);
         }
     }
 

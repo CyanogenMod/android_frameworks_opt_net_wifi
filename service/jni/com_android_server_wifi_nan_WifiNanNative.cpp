@@ -46,23 +46,73 @@ extern wifi_hal_fn hal_fn;
 // Start NAN functions
 
 static void OnNanNotifyResponse(transaction_id id, NanResponseMsg* msg) {
-    ALOGD("OnNanNotifyResponse: transaction_id=%d, status=%d, value=%d, response_type=%d",
-          id, msg->status, msg->value, msg->response_type);
+  ALOGD(
+      "OnNanNotifyResponse: transaction_id=%d, status=%d, value=%d, response_type=%d",
+      id, msg->status, msg->value, msg->response_type);
 
-    int pub_sub_id = 0;
-    if (msg->response_type == NAN_RESPONSE_PUBLISH) {
-        pub_sub_id = msg->body.publish_response.publish_id;
-    } else if (msg->response_type == NAN_RESPONSE_SUBSCRIBE) {
-      pub_sub_id = msg->body.subscribe_response.subscribe_id;
+  JNIHelper helper(mVM);
+  switch (msg->response_type) {
+    case NAN_RESPONSE_PUBLISH:
+      helper.reportEvent(mCls, "onNanNotifyResponsePublishSubscribe",
+                         "(SIIII)V", (short) id, (int) msg->response_type,
+                         (int) msg->status, (int) msg->value,
+                         msg->body.publish_response.publish_id);
+      break;
+    case NAN_RESPONSE_SUBSCRIBE:
+      helper.reportEvent(mCls, "onNanNotifyResponsePublishSubscribe",
+                         "(SIIII)V", (short) id, (int) msg->response_type,
+                         (int) msg->status, (int) msg->value,
+                         msg->body.subscribe_response.subscribe_id);
+      break;
+    case NAN_GET_CAPABILITIES: {
+      JNIObject<jobject> data = helper.createObject(
+          "com/android/server/wifi/nan/WifiNanNative$Capabilities");
+      if (data == NULL) {
+        ALOGE(
+            "Error in allocating WifiNanNative.Capabilities OnNanNotifyResponse");
+        return;
+      }
+
+      helper.setIntField(
+          data, "maxConcurrentNanClusters",
+          (int) msg->body.nan_capabilities.max_concurrent_nan_clusters);
+      helper.setIntField(data, "maxPublishes",
+                         (int) msg->body.nan_capabilities.max_publishes);
+      helper.setIntField(data, "maxSubscribes",
+                         (int) msg->body.nan_capabilities.max_subscribes);
+      helper.setIntField(data, "maxServiceNameLen",
+                         (int) msg->body.nan_capabilities.max_service_name_len);
+      helper.setIntField(data, "maxMatchFilterLen",
+                         (int) msg->body.nan_capabilities.max_match_filter_len);
+      helper.setIntField(
+          data, "maxTotalMatchFilterLen",
+          (int) msg->body.nan_capabilities.max_total_match_filter_len);
+      helper.setIntField(
+          data, "maxServiceSpecificInfoLen",
+          (int) msg->body.nan_capabilities.max_service_specific_info_len);
+      helper.setIntField(data, "maxVsaDataLen",
+                         (int) msg->body.nan_capabilities.max_vsa_data_len);
+      helper.setIntField(data, "maxMeshDataLen",
+                         (int) msg->body.nan_capabilities.max_mesh_data_len);
+      helper.setIntField(data, "maxNdiInterfaces",
+                         (int) msg->body.nan_capabilities.max_ndi_interfaces);
+      helper.setIntField(data, "maxNdpSessions",
+                         (int) msg->body.nan_capabilities.max_ndp_sessions);
+      helper.setIntField(data, "maxAppInfoLen",
+                         (int) msg->body.nan_capabilities.max_app_info_len);
+
+      helper.reportEvent(
+          mCls, "onNanNotifyResponseCapabilities",
+          "(SIILcom/android/server/wifi/nan/WifiNanNative$Capabilities;)V",
+          (short) id, (int) msg->status, (int) msg->value, data.get());
+      break;
     }
-
-    JNIHelper helper(mVM);
-    helper.reportEvent(mCls, "onNanNotifyResponse", "(SIIII)V",
-                       (short) id,
-                       (int) msg->response_type,
-                       (int) msg->status,
-                       (int) msg->value,
-                       pub_sub_id);
+    default:
+      helper.reportEvent(mCls, "onNanNotifyResponse", "(SIII)V", (short) id,
+                         (int) msg->response_type, (int) msg->status,
+                         (int) msg->value);
+      break;
+  }
 }
 
 static void OnNanEventPublishTerminated(NanPublishTerminatedInd* event) {
@@ -210,6 +260,19 @@ static jint android_net_wifi_nan_enable_request(JNIEnv *env, jclass cls,
     msg.cluster_high = helper.getIntField(config_request, "mClusterHigh");
 
     return hal_fn.wifi_nan_enable_request(transaction_id, handle, &msg);
+}
+
+static jint android_net_wifi_nan_get_capabilities(JNIEnv *env, jclass cls,
+                                                  jshort transaction_id,
+                                                  jclass wifi_native_cls,
+                                                  jint iface) {
+  JNIHelper helper(env);
+  wifi_interface_handle handle = getIfaceHandle(helper, wifi_native_cls, iface);
+
+  ALOGD("android_net_wifi_nan_get_capabilities handle=%p, id=%d", handle,
+        transaction_id);
+
+  return hal_fn.wifi_nan_get_capabilities(transaction_id, handle);
 }
 
 static jint android_net_wifi_nan_disable_request(JNIEnv *env, jclass cls,
@@ -442,6 +505,7 @@ static JNINativeMethod gWifiNanMethods[] = {
     /* name, signature, funcPtr */
 
     {"initNanHandlersNative", "(Ljava/lang/Object;I)I", (void*)android_net_wifi_nan_register_handler },
+    {"getCapabilitiesNative", "(SLjava/lang/Object;I)I", (void*)android_net_wifi_nan_get_capabilities },
     {"enableAndConfigureNative", "(SLjava/lang/Object;ILandroid/net/wifi/nan/ConfigRequest;)I", (void*)android_net_wifi_nan_enable_request },
     {"disableNative", "(SLjava/lang/Object;I)I", (void*)android_net_wifi_nan_disable_request },
     {"publishNative", "(SILjava/lang/Object;ILandroid/net/wifi/nan/PublishData;Landroid/net/wifi/nan/PublishSettings;)I", (void*)android_net_wifi_nan_publish },

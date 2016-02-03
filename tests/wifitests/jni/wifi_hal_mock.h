@@ -88,6 +88,8 @@ wifi_error wifi_nan_beacon_sdf_payload_request_mock(
 wifi_error wifi_nan_register_handler_mock(wifi_interface_handle iface,
                                           NanCallbackHandler handlers);
 wifi_error wifi_nan_get_version_mock(wifi_handle handle, NanVersion* version);
+wifi_error wifi_nan_get_capabilities_mock(transaction_id id,
+                                wifi_interface_handle iface);
 
 }  // namespace android
 
