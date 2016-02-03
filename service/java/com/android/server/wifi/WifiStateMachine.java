@@ -9411,6 +9411,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (toBSSID != null && !toBSSID.equals(mWifiInfo.getBSSID())) {
                         mWifiConfigStore.driverRoamedFrom(mWifiInfo);
                     }
+                    mWifiConfigStore.unblackListDriverRoamedBSSID(toBSSID);
                     return NOT_HANDLED;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     long lastRoam = 0;

@@ -1156,6 +1156,24 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    void unblackListDriverRoamedBSSID(String bssid) {
+          for (WifiConfiguration config : mConfiguredNetworks.values()) {
+               ScanDetailCache cache = getScanDetailCache(config);
+               if (cache != null) {
+                   ScanResult result = cache.get(bssid);
+                   if (result != null) {
+                       if (result.autoJoinStatus == (ScanResult.AUTO_ROAM_DISABLED + 1)) {
+                           if (DBG) {
+                               Log.d(TAG,"unblacklisted driver roamed BSSID = "+result.BSSID);
+                           }
+                           result.setAutoJoinStatus(ScanResult.ENABLED);
+                       }
+                   }
+               }
+          }
+    }
+
+
     void noteRoamingFailure(WifiConfiguration config, int reason) {
         if (config == null) return;
         config.lastRoamingFailure = System.currentTimeMillis();
