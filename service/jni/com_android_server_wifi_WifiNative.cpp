@@ -417,8 +417,8 @@ static void onScanEvent(wifi_request_id id, wifi_scan_event event) {
     helper.reportEvent(mCls, "onScanStatus", "(II)V", id, event);
 }
 
-    static void onFullScanResult(wifi_request_id id, wifi_scan_result *result,
-            unsigned buckets_scanned) {
+static void onFullScanResult(wifi_request_id id, wifi_scan_result *result,
+        unsigned buckets_scanned) {
 
     JNIHelper helper(mVM);
 
@@ -441,8 +441,8 @@ static void onScanEvent(wifi_request_id id, wifi_scan_event event) {
 
     // ALOGD("Returning result");
 
-    helper.reportEvent(mCls, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[BI)V", id,
-            scanResult.get(), elements.get(), buckets_scanned);
+    helper.reportEvent(mCls, "onFullScanResult", "(ILandroid/net/wifi/ScanResult;[BII)V", id,
+            scanResult.get(), elements.get(), buckets_scanned, (jint) result->capability);
 }
 
 static jboolean android_net_wifi_startScan(
@@ -1766,6 +1766,7 @@ static void onPnoNetworkFound(wifi_request_id id,
 
     jbyte *bytes;
     JNIObject<jobjectArray> scanResults(helper, NULL);
+    jintArray beaconCaps;
     //jbyteArray elements;
 
     for (unsigned i=0; i<num_results; i++) {
@@ -1775,12 +1776,19 @@ static void onPnoNetworkFound(wifi_request_id id,
             scanResults = helper.newObjectArray(
                     num_results, "android/net/wifi/ScanResult", scanResult);
             if (scanResults == 0) {
-                ALOGE("cant allocate array");
+                ALOGE("cant allocate scanResults array");
             } else {
-                ALOGD("allocated array %u", helper.getArrayLength(scanResults));
+                ALOGD("allocated scanResults array %u", helper.getArrayLength(scanResults));
+            }
+            beaconCaps = helper.newIntArray(num_results);
+            if (beaconCaps == 0) {
+                ALOGE("cant allocate beaconCaps array");
+            } else {
+                ALOGD("allocated beaconCaps array %u", helper.getArrayLength(beaconCaps));
             }
         } else {
             helper.setObjectArrayElement(scanResults, i, scanResult);
+            helper.setIntArrayRegion(beaconCaps, i, i+1, (jint *)&(results[i].capability));
         }
 
         ALOGD("Scan result with ie length %d, i %u, <%s> rssi=%d %02x:%02x:%02x:%02x:%02x:%02x",
@@ -1805,8 +1813,8 @@ static void onPnoNetworkFound(wifi_request_id id,
 
     ALOGD("calling report");
 
-    helper.reportEvent(mCls, "onPnoNetworkFound", "(I[Landroid/net/wifi/ScanResult;)V", id,
-               scanResults.get());
+    helper.reportEvent(mCls, "onPnoNetworkFound", "(I[Landroid/net/wifi/ScanResult;[I)V", id,
+               scanResults.get(), beaconCaps);
         ALOGD("free ref");
 }
 
