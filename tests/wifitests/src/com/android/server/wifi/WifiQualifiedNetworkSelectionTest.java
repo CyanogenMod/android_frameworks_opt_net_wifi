@@ -361,4 +361,101 @@ public class WifiQualifiedNetworkSelectionTest {
         assertEquals("choose the wrong SSID", chosenScanResult.SSID, candidate.SSID);
         assertEquals("choose the wrong BSSID", chosenScanResult.BSSID, candidateScan.BSSID);
     }
+
+    /**
+     * case #4
+     *
+     * For two s, BSSIDA and BSSIDB. Disable BSSIDA, then check whether BSSIDA is disabled and
+     * BSSIDB is enabled. Then enable BSSIDA, check whether both BSSIDs are enabled.
+     */
+    @Test
+    public void enableBssidTest() {
+        String bssidA = "6c:f3:7f:ae:8c:f3";
+        String bssidB = "6c:f3:7f:ae:8c:f4";
+        //check by default these two BSSIDs should be enabled
+        assertEquals("bssidA should be enabled by default",
+                mWifiQualifiedNetworkSelector.isBssidDisabled(bssidA), false);
+        assertEquals("bssidB should be enabled by default",
+                mWifiQualifiedNetworkSelector.isBssidDisabled(bssidB), false);
+
+        //disable bssidA, check whether A is dsiabled and B is still enabled
+        mWifiQualifiedNetworkSelector.enableBssidForQualitynetworkSelection(bssidA, false);
+        assertEquals("bssidA should be disabled",
+                mWifiQualifiedNetworkSelector.isBssidDisabled(bssidA), true);
+        assertEquals("bssidB should still be enabled",
+                mWifiQualifiedNetworkSelector.isBssidDisabled(bssidB), false);
+
+        //re-enable bssidA, check whether A is dsiabled and B is still enabled
+        mWifiQualifiedNetworkSelector.enableBssidForQualitynetworkSelection(bssidA, true);
+        assertEquals("bssidA should be enabled by default",
+                mWifiQualifiedNetworkSelector.isBssidDisabled(bssidA), false);
+        assertEquals("bssidB should be enabled by default",
+                mWifiQualifiedNetworkSelector.isBssidDisabled(bssidB), false);
+
+        //make sure illegal input will not cause crash
+        mWifiQualifiedNetworkSelector.enableBssidForQualitynetworkSelection(null, true);
+    }
+
+    /**
+     * case #5
+     * In this test. we simulate following scenario:
+     * WifiStateMachine is under disconnected state
+     * Two networks test1, test2 are secured network and found in scan results
+     * Both network are enabled
+     * test1 is @ 2GHz with RSSI -50
+     * test2 is @ 5Ghz with RSSI -65
+     * test2's BSSID is disabled
+     * expected return test1
+     */
+    @Test
+    public void networkChooseWithOneBssidDisabled() {
+        String[] ssids = {"\"test1\"", "\"test2\""};
+        String[] bssids = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4"};
+        int[] frequencies = {2437, 5180};
+        String[] caps = {"[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS][ESS]"};
+        int[] levels = {-50, -65};
+        int[] security = {SECURITY_PSK, SECURITY_PSK};
+
+        List<ScanDetail> scanDetails = getScanDetails(ssids, bssids, frequencies, caps, levels);
+
+        final List<WifiConfiguration> savedNetwork =
+                Arrays.asList(generateWifiConfigurations(ssids, security));
+
+        WifiConfiguration configuration1 = savedNetwork.get(0);
+        WifiConfiguration configuration2 = savedNetwork.get(1);
+
+        when(mWifiConfigStore.getWifiConfiguration(anyInt()))
+                .then(new AnswerWithArguments<Boolean>() {
+                        public WifiConfiguration answer(int netId) {
+                            if (netId >= 0 && netId < savedNetwork.size()) {
+                                return savedNetwork.get(netId);
+                            } else {
+                                return null;
+                            }
+                        }
+                });
+
+        when(mWifiConfigStore.getConfiguredNetworks()).thenReturn(savedNetwork);
+
+        List<WifiConfiguration> associateWithScanResult1 = new ArrayList<WifiConfiguration>();
+        associateWithScanResult1.add(configuration1);
+
+        List<WifiConfiguration> associateWithScanResult2 = new ArrayList<WifiConfiguration>();
+        associateWithScanResult2.add(configuration2);
+
+        when(mWifiConfigStore.updateSavedNetworkWithNewScanDetail(scanDetails.get(0))).thenReturn(
+                associateWithScanResult1);
+        when(mWifiConfigStore.updateSavedNetworkWithNewScanDetail(scanDetails.get(1))).thenReturn(
+                associateWithScanResult2);
+        ScanResult chosenScanResult = scanDetails.get(0).getScanResult();
+
+        mWifiQualifiedNetworkSelector.enableBssidForQualitynetworkSelection(bssids[1], false);
+        WifiConfiguration candidate = mWifiQualifiedNetworkSelector.selectQualifiedNetwork(false,
+                false, scanDetails, false, false, true, false);
+
+        ScanResult candidateScan = candidate.getNetworkSelectionStatus().getCandidate();
+        assertEquals("choose the wrong SSID", chosenScanResult.SSID, candidate.SSID);
+        assertEquals("choose the wrong BSSID", chosenScanResult.BSSID, candidateScan.BSSID);
+    }
+
 }
