@@ -32,6 +32,7 @@ import com.android.internal.R;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -88,7 +89,7 @@ class WifiQualifiedNetworkSelector {
     private int mPasspointSecurityAward = PASSPOINT_SECURITY_AWARD;
     private int mSecurityAward = SECURITY_AWARD;
     private int mUserPreferedBand = WifiManager.WIFI_FREQUENCY_BAND_AUTO;
-
+    private HashSet<String> mBssidBlacklist = new HashSet<String>();
     private void qnsLog(String log) {
         if (mDbg) {
             mLocalLog.log(log);
@@ -495,6 +496,38 @@ class WifiQualifiedNetworkSelector {
     }
 
     /**
+     * enable/disable a BSSID for Quality Network Selection
+     * When an association rejection event is obtained, Quality Network Selector will disable this
+     * BSSID but supplicant still can try to connect to this bssid. If supplicant connect to it
+     * successfully later, this bssid can be re-enabled.
+     *
+     * @param bssid the bssid to be enabled / disabled
+     * @param enable -- true enable a bssid if it has been disabled
+     *               -- false disable a bssid
+     */
+    public boolean enableBssidForQualitynetworkSelection(String bssid, boolean enable) {
+        if (enable) {
+            return mBssidBlacklist.remove(bssid);
+        } else {
+            if (bssid != null) {
+                mBssidBlacklist.add(bssid);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check whether a bssid is disabled
+     * @param bssid -- the bssid to check
+     * @return true -- bssid is disabled
+     *         false -- bssid is not disabled
+     */
+    public boolean isBssidDisabled(String bssid) {
+        return mBssidBlacklist.contains(bssid);
+    }
+
+    /**
      * ToDo: This should be called in Connectivity Manager when it gets new scan result
      * check whether a network slection is needed. If need, check all the new scan results and
      * select a new qualified network/BSSID to connect to
@@ -575,7 +608,8 @@ class WifiQualifiedNetworkSelector {
 
             String scanId = scanResult.SSID + ":" + scanResult.BSSID;
             //check whether this BSSID is blocked or not
-            if (mWifiConfigStore.isBssidBlacklisted(scanResult.BSSID)) {
+            if (mWifiConfigStore.isBssidBlacklisted(scanResult.BSSID)
+                    || isBssidDisabled(scanResult.BSSID)) {
                 //We should not see this in ePNO
                 Log.e(TAG, scanId + " is in blacklist.");
                 continue;
