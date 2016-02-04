@@ -168,7 +168,8 @@ public abstract class BaseWifiScannerImplTest {
         // start scan
         assertTrue(mScanner.startSingleScan(settings, eventHandler));
 
-        // TODO expect failure callback once implemented
+        mLooper.dispatchAll();
+        order.verify(eventHandler).onScanStatus(WifiNative.WIFI_SCAN_FAILED);
 
         verifyNoMoreInteractions(eventHandler);
     }
@@ -284,7 +285,7 @@ public abstract class BaseWifiScannerImplTest {
             }
         }
 
-        order.verify(eventHandler).onScanResultsAvailable();
+        order.verify(eventHandler).onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
         assertScanDataEquals(results.getScanData(), mScanner.getLatestSingleScanResults());
     }
 }
