@@ -2041,7 +2041,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
     }
 
-    private void handleScanRequest(int type, Message message) {
+    private void handleScanRequest(Message message) {
         ScanSettings settings = null;
         WorkSource workSource = null;
 
@@ -2062,7 +2062,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
 
         // call wifi native to start the scan
-        if (startScanNative(type, freqs)) {
+        if (startScanNative(freqs)) {
             // only count battery consumption if scan request is accepted
             noteScanStart(message.arg1, workSource);
             // a full scan covers everything, clearing scan request buffer
@@ -2116,8 +2116,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     /**
      * return true iff scan request is accepted
      */
-    private boolean startScanNative(int type, Set<Integer> freqs) {
-        if (mWifiNative.scan(type, freqs)) {
+    private boolean startScanNative(Set<Integer> freqs) {
+        if (mWifiNative.scan(freqs)) {
             mIsScanOngoing = true;
             mIsFullScanOngoing = (freqs == null);
             lastScanFreqs = freqs;
@@ -6204,7 +6204,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             switch(message.what) {
                 case CMD_START_SCAN:
-                    handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                    handleScanRequest(message);
                     break;
                 case CMD_SET_FREQUENCY_BAND:
                     int band =  message.arg1;
@@ -6216,8 +6216,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mFrequencyBand.set(band);
                         // Flush old data - like scan results
                         mWifiNative.bssFlush();
-                        // Fetch the latest scan results when frequency band is set
-//                        startScanNative(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, null);
 
                         if (PDBG)  logd("done set frequency band " + band);
 
@@ -6490,7 +6488,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 // Handle scan. All the connection related commands are
                 // handled only in ConnectModeState
                 case CMD_START_SCAN:
-                    handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                    handleScanRequest(message);
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     SupplicantState state = handleSupplicantStateChange(message);
@@ -8065,8 +8063,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             logd("starting scan for " + config.configKey() + " with " + freqs);
             //}
             // Call wifi native to start the scan
-            if (startScanNative(
-                    WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs)) {
+            if (startScanNative(freqs)) {
                 // Only count battery consumption if scan request is accepted
                 noteScanStart(SCAN_ALARM_SOURCE, null);
                 messageHandlingStatus = MESSAGE_HANDLING_STATUS_OK;
@@ -8371,8 +8368,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                         + fullBandConnectedTimeIntervalMilli);
                                     }
                                 }
-                                handleScanRequest(
-                                        WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                                handleScanRequest(message);
                             } else {
                                 if (!startScanForConfiguration(
                                         currentConfiguration, restrictChannelList)) {
@@ -8393,8 +8389,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                                     + fullBandConnectedTimeIntervalMilli);
                                         }
                                     }
-                                    handleScanRequest(
-                                                WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                                    handleScanRequest(message);
                                 }
                             }
 
@@ -9325,7 +9320,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         }
                         /* Disable background scan temporarily during a regular scan */
                         enableBackgroundScan(false);
-                        handleScanRequest(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, message);
+                        handleScanRequest(message);
                         ret = HANDLED;
                     } else {
 

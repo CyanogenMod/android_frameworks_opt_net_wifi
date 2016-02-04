@@ -116,7 +116,7 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
         }
 
         mSingleScanEventHandler = eventHandler;
-        if (!mWifiNative.scan(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs)) {
+        if (!mWifiNative.scan(freqs)) {
             mSingleScanEventHandler = null;
             // TODO call on failure callback in handler
         }

@@ -327,38 +327,34 @@ public class WifiNative {
     }
 
 
-    public static final int SCAN_WITHOUT_CONNECTION_SETUP          = 1;
-    public static final int SCAN_WITH_CONNECTION_SETUP             = 2;
-
-    public boolean scan(int type, Set<Integer> freqs) {
-        if(freqs == null) {
-            return scan(type, (String)null);
-        }
-        else if (freqs.size() != 0) {
+    /**
+     * Start a scan using wpa_supplicant for the given frequencies.
+     * If freqs is null then all supported channels are scanned.
+     */
+    public boolean scan(Set<Integer> freqs) {
+        if (freqs == null) {
+            return scanFrequencyList(null);
+        } else if (freqs.size() != 0) {
             StringBuilder freqList = new StringBuilder();
             boolean first = true;
             for (Integer freq : freqs) {
-                if (!first)
+                if (!first) {
                     freqList.append(",");
+                }
                 freqList.append(freq.toString());
                 first = false;
             }
-            return scan(type, freqList.toString());
-        }
-        else {
+            return scanFrequencyList(freqList.toString());
+        } else {
             return false;
         }
     }
 
-    private boolean scan(int type, String freqList) {
-        if (type == SCAN_WITHOUT_CONNECTION_SETUP) {
-            if (freqList == null) return doBooleanCommand("SCAN TYPE=ONLY");
-            else return doBooleanCommand("SCAN TYPE=ONLY freq=" + freqList);
-        } else if (type == SCAN_WITH_CONNECTION_SETUP) {
-            if (freqList == null) return doBooleanCommand("SCAN");
-            else return doBooleanCommand("SCAN freq=" + freqList);
+    private boolean scanFrequencyList(String freqList) {
+        if (freqList == null) {
+            return doBooleanCommand("SCAN TYPE=ONLY");
         } else {
-            throw new IllegalArgumentException("Invalid scan type");
+            return doBooleanCommand("SCAN TYPE=ONLY freq=" + freqList);
         }
     }
 

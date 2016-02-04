@@ -358,8 +358,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
 
             if (freqs.size() > 0) {
-                boolean success = mWifiNative.scan(
-                        WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, freqs);
+                boolean success = mWifiNative.scan(freqs);
                 if (success) {
                     // TODO handle scan timeout
                     Log.d(TAG, "Starting wifi scan for " + freqs.size() + " freqs"
