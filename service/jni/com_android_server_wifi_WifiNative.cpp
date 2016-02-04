@@ -45,78 +45,6 @@ static jint DBG = false;
 
 //Please put all HAL function call here and call from the function table instead of directly call
 wifi_hal_fn hal_fn;
-int init_wifi_hal_func_table(wifi_hal_fn *hal_fn) {
-    if (hal_fn == NULL) {
-        return -1;
-    }
-    hal_fn->wifi_initialize = wifi_initialize_stub;
-    hal_fn->wifi_cleanup = wifi_cleanup_stub;
-    hal_fn->wifi_event_loop = wifi_event_loop_stub;
-    hal_fn->wifi_get_error_info = wifi_get_error_info_stub;
-    hal_fn->wifi_get_supported_feature_set = wifi_get_supported_feature_set_stub;
-    hal_fn->wifi_get_concurrency_matrix = wifi_get_concurrency_matrix_stub;
-    hal_fn->wifi_set_scanning_mac_oui =  wifi_set_scanning_mac_oui_stub;
-    hal_fn->wifi_get_supported_channels = wifi_get_supported_channels_stub;
-    hal_fn->wifi_is_epr_supported = wifi_is_epr_supported_stub;
-    hal_fn->wifi_get_ifaces = wifi_get_ifaces_stub;
-    hal_fn->wifi_get_iface_name = wifi_get_iface_name_stub;
-    hal_fn->wifi_reset_iface_event_handler = wifi_reset_iface_event_handler_stub;
-    hal_fn->wifi_start_gscan = wifi_start_gscan_stub;
-    hal_fn->wifi_stop_gscan = wifi_stop_gscan_stub;
-    hal_fn->wifi_get_cached_gscan_results = wifi_get_cached_gscan_results_stub;
-    hal_fn->wifi_set_bssid_hotlist = wifi_set_bssid_hotlist_stub;
-    hal_fn->wifi_reset_bssid_hotlist = wifi_reset_bssid_hotlist_stub;
-    hal_fn->wifi_set_significant_change_handler = wifi_set_significant_change_handler_stub;
-    hal_fn->wifi_reset_significant_change_handler = wifi_reset_significant_change_handler_stub;
-    hal_fn->wifi_get_gscan_capabilities = wifi_get_gscan_capabilities_stub;
-    hal_fn->wifi_set_link_stats = wifi_set_link_stats_stub;
-    hal_fn->wifi_get_link_stats = wifi_get_link_stats_stub;
-    hal_fn->wifi_clear_link_stats = wifi_clear_link_stats_stub;
-    hal_fn->wifi_get_valid_channels = wifi_get_valid_channels_stub;
-    hal_fn->wifi_rtt_range_request = wifi_rtt_range_request_stub;
-    hal_fn->wifi_rtt_range_cancel = wifi_rtt_range_cancel_stub;
-    hal_fn->wifi_get_rtt_capabilities = wifi_get_rtt_capabilities_stub;
-    hal_fn->wifi_start_logging = wifi_start_logging_stub;
-    hal_fn->wifi_set_epno_list = wifi_set_epno_list_stub;
-    hal_fn->wifi_set_country_code = wifi_set_country_code_stub;
-    hal_fn->wifi_enable_tdls = wifi_enable_tdls_stub;
-    hal_fn->wifi_disable_tdls = wifi_disable_tdls_stub;
-    hal_fn->wifi_get_tdls_status = wifi_get_tdls_status_stub;
-    hal_fn->wifi_get_tdls_capabilities = wifi_get_tdls_capabilities_stub;
-    hal_fn->wifi_set_nodfs_flag = wifi_set_nodfs_flag_stub;
-    hal_fn->wifi_get_firmware_memory_dump = wifi_get_firmware_memory_dump_stub;
-    hal_fn->wifi_set_log_handler = wifi_set_log_handler_stub;
-    hal_fn->wifi_reset_log_handler = wifi_reset_log_handler_stub;
-    hal_fn->wifi_set_alert_handler = wifi_set_alert_handler_stub;
-    hal_fn->wifi_reset_alert_handler = wifi_reset_alert_handler_stub;
-    hal_fn->wifi_get_firmware_version = wifi_get_firmware_version_stub;
-    hal_fn->wifi_get_ring_buffers_status = wifi_get_ring_buffers_status_stub;
-    hal_fn->wifi_get_logger_supported_feature_set = wifi_get_logger_supported_feature_set_stub;
-    hal_fn->wifi_get_ring_data = wifi_get_ring_data_stub;
-    hal_fn->wifi_get_driver_version = wifi_get_driver_version_stub;
-    hal_fn->wifi_set_bssid_blacklist = wifi_set_bssid_blacklist_stub;
-    hal_fn->wifi_start_sending_offloaded_packet = wifi_start_sending_offloaded_packet_stub;
-    hal_fn->wifi_stop_sending_offloaded_packet = wifi_stop_sending_offloaded_packet_stub;
-    hal_fn->wifi_get_wake_reason_stats = wifi_get_wake_reason_stats_stub;
-    hal_fn->wifi_configure_nd_offload = wifi_configure_nd_offload_stub;
-    hal_fn->wifi_nan_enable_request = wifi_nan_enable_request_stub;
-    hal_fn->wifi_nan_disable_request = wifi_nan_disable_request_stub;
-    hal_fn->wifi_nan_publish_request = wifi_nan_publish_request_stub;
-    hal_fn->wifi_nan_publish_cancel_request = wifi_nan_publish_cancel_request_stub;
-    hal_fn->wifi_nan_subscribe_request = wifi_nan_subscribe_request_stub;
-    hal_fn->wifi_nan_subscribe_cancel_request = wifi_nan_subscribe_cancel_request_stub;
-    hal_fn->wifi_nan_transmit_followup_request = wifi_nan_transmit_followup_request_stub;
-    hal_fn->wifi_nan_stats_request = wifi_nan_stats_request_stub;
-    hal_fn->wifi_nan_config_request = wifi_nan_config_request_stub;
-    hal_fn->wifi_nan_tca_request = wifi_nan_tca_request_stub;
-    hal_fn->wifi_nan_beacon_sdf_payload_request = wifi_nan_beacon_sdf_payload_request_stub;
-    hal_fn->wifi_nan_register_handler = wifi_nan_register_handler_stub;
-    hal_fn->wifi_nan_get_version = wifi_nan_get_version_stub;
-    hal_fn->wifi_get_packet_filter_capabilities = wifi_get_packet_filter_capabilities_stub;
-    hal_fn->wifi_set_packet_filter = wifi_set_packet_filter_stub;
-
-    return 0;
-}
 
 static bool doCommand(JNIEnv* env, jstring javaCommand,
                       char* reply, size_t reply_len) {
@@ -355,7 +283,7 @@ static jboolean android_net_wifi_startHal(JNIEnv* env, jclass cls) {
     wifi_handle halHandle = getWifiHandle(helper, cls);
     if (halHandle == NULL) {
 
-        if(init_wifi_hal_func_table(&hal_fn) != 0 ) {
+        if(init_wifi_stub_hal_func_table(&hal_fn) != 0 ) {
             ALOGE("Can not initialize the basic function pointer table");
             return false;
         }
