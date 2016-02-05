@@ -486,7 +486,7 @@ public class WifiConfigStore extends IpConfigStore {
             WifiEnterpriseConfig.CA_CERT_KEY, WifiEnterpriseConfig.SUBJECT_MATCH_KEY,
             WifiEnterpriseConfig.ENGINE_KEY, WifiEnterpriseConfig.ENGINE_ID_KEY,
             WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY, WifiEnterpriseConfig.ALTSUBJECT_MATCH_KEY,
-            WifiEnterpriseConfig.DOM_SUFFIX_MATCH_KEY
+            WifiEnterpriseConfig.DOM_SUFFIX_MATCH_KEY, WifiEnterpriseConfig.CA_PATH_KEY
     };
 
 
