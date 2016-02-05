@@ -65,13 +65,28 @@ public class WifiNanClientState {
         return mConfigRequest;
     }
 
+    public int getUid() {
+        return mUid;
+    }
+
+    public WifiNanSessionState getNanSessionStateForPubSubId(int pubSubId) {
+        for (int i = 0; i < mSessions.size(); ++i) {
+            WifiNanSessionState session = mSessions.valueAt(i);
+            if (session.isPubSubIdSession(pubSubId)) {
+                return session;
+            }
+        }
+
+        return null;
+    }
+
     public void createSession(int sessionId, IWifiNanSessionListener listener, int events) {
         WifiNanSessionState session = mSessions.get(sessionId);
         if (session != null) {
             Log.e(TAG, "createSession: sessionId already exists (replaced) - " + sessionId);
         }
 
-        mSessions.put(sessionId, new WifiNanSessionState(mUid, sessionId, listener, events));
+        mSessions.put(sessionId, new WifiNanSessionState(sessionId, listener, events));
     }
 
     public void destroySession(int sessionId) {
@@ -99,10 +114,10 @@ public class WifiNanClientState {
         }
     }
 
-    public void onConfigFailed(int reason) {
+    public void onConfigFailed(ConfigRequest failedConfig, int reason) {
         if (mListener != null && (mEvents & WifiNanEventListener.LISTEN_CONFIG_FAILED) != 0) {
             try {
-                mListener.onConfigFailed(reason);
+                mListener.onConfigFailed(failedConfig, reason);
             } catch (RemoteException e) {
                 Log.w(TAG, "onConfigFailed: RemoteException - ignored: " + e);
             }

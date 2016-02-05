@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package wifitests.src.com.android.server.wifi;
+package com.android.server.wifi;
 
 import android.os.Bundle;
 import android.util.Log;

@@ -54,12 +54,9 @@ public class WifiNanManagerTest {
         final int masterPreference = 55;
         final boolean supportBand5g = true;
 
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setClusterHigh(clusterHigh);
-        builder.setClusterLow(clusterLow);
-        builder.setMasterPreference(masterPreference);
-        builder.setSupport5gBand(supportBand5g);
-        ConfigRequest configRequest = builder.build();
+        ConfigRequest configRequest = new ConfigRequest.Builder().setClusterHigh(clusterHigh)
+                .setClusterLow(clusterLow).setMasterPreference(masterPreference)
+                .setSupport5gBand(supportBand5g).build();
 
         collector.checkThat("mClusterHigh", clusterHigh, equalTo(configRequest.mClusterHigh));
         collector.checkThat("mClusterLow", clusterLow, equalTo(configRequest.mClusterLow));
@@ -78,60 +75,50 @@ public class WifiNanManagerTest {
     @Test
     public void testConfigRequestBuilderMasterPrefReserved1() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setMasterPreference(1);
+        new ConfigRequest.Builder().setMasterPreference(1);
     }
 
     @Test
     public void testConfigRequestBuilderMasterPrefReserved255() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setMasterPreference(255);
+        new ConfigRequest.Builder().setMasterPreference(255);
     }
 
     @Test
     public void testConfigRequestBuilderMasterPrefTooLarge() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setMasterPreference(256);
+        new ConfigRequest.Builder().setMasterPreference(256);
     }
 
     @Test
     public void testConfigRequestBuilderClusterLowNegative() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setClusterLow(-1);
+        new ConfigRequest.Builder().setClusterLow(-1);
     }
 
     @Test
     public void testConfigRequestBuilderClusterHighNegative() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setClusterHigh(-1);
+        new ConfigRequest.Builder().setClusterHigh(-1);
     }
 
     @Test
     public void testConfigRequestBuilderClusterLowAboveMax() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setClusterLow(ConfigRequest.CLUSTER_ID_MAX + 1);
+        new ConfigRequest.Builder().setClusterLow(ConfigRequest.CLUSTER_ID_MAX + 1);
     }
 
     @Test
     public void testConfigRequestBuilderClusterHighAboveMax() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setClusterHigh(ConfigRequest.CLUSTER_ID_MAX + 1);
+        new ConfigRequest.Builder().setClusterHigh(ConfigRequest.CLUSTER_ID_MAX + 1);
     }
 
     @Test
     public void testConfigRequestBuilderClusterLowLargerThanHigh() {
         thrown.expect(IllegalArgumentException.class);
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-
-        builder.setClusterLow(100);
-        builder.setClusterHigh(5);
-        ConfigRequest configRequest = builder.build();
+        ConfigRequest configRequest = new ConfigRequest.Builder().setClusterLow(100)
+                .setClusterHigh(5).build();
     }
 
     @Test
@@ -141,12 +128,9 @@ public class WifiNanManagerTest {
         final int masterPreference = 177;
         final boolean supportBand5g = true;
 
-        ConfigRequest.Builder builder = new ConfigRequest.Builder();
-        builder.setClusterHigh(clusterHigh);
-        builder.setClusterLow(clusterLow);
-        builder.setMasterPreference(masterPreference);
-        builder.setSupport5gBand(supportBand5g);
-        ConfigRequest configRequest = builder.build();
+        ConfigRequest configRequest = new ConfigRequest.Builder().setClusterHigh(clusterHigh)
+                .setClusterLow(clusterLow).setMasterPreference(masterPreference)
+                .setSupport5gBand(supportBand5g).build();
 
         Parcel parcelW = Parcel.obtain();
         configRequest.writeToParcel(parcelW, 0);
@@ -174,12 +158,9 @@ public class WifiNanManagerTest {
         final byte[] rxFilter = {
                 1, 127, 0, 1, -5, 1, 22 };
 
-        SubscribeData.Builder builder = new SubscribeData.Builder();
-        builder.setServiceName(serviceName);
-        builder.setServiceSpecificInfo(serviceSpecificInfo);
-        builder.setTxFilter(txFilter, txFilter.length);
-        builder.setRxFilter(rxFilter, rxFilter.length);
-        SubscribeData subscribeData = builder.build();
+        SubscribeData subscribeData = new SubscribeData.Builder().setServiceName(serviceName)
+                .setServiceSpecificInfo(serviceSpecificInfo).setTxFilter(txFilter, txFilter.length)
+                .setRxFilter(rxFilter, rxFilter.length).build();
 
         collector.checkThat("mServiceName", serviceName, equalTo(subscribeData.mServiceName));
         String mServiceSpecificInfo = new String(subscribeData.mServiceSpecificInfo, 0,
@@ -204,12 +185,9 @@ public class WifiNanManagerTest {
         final byte[] rxFilter = {
                 1, 127, 0, 1, -5, 1, 22 };
 
-        SubscribeData.Builder builder = new SubscribeData.Builder();
-        builder.setServiceName(serviceName);
-        builder.setServiceSpecificInfo(serviceSpecificInfo);
-        builder.setTxFilter(txFilter, txFilter.length);
-        builder.setTxFilter(rxFilter, rxFilter.length);
-        SubscribeData subscribeData = builder.build();
+        SubscribeData subscribeData = new SubscribeData.Builder().setServiceName(serviceName)
+                .setServiceSpecificInfo(serviceSpecificInfo).setTxFilter(txFilter, txFilter.length)
+                .setTxFilter(rxFilter, rxFilter.length).build();
 
         Parcel parcelW = Parcel.obtain();
         subscribeData.writeToParcel(parcelW, 0);
@@ -234,11 +212,9 @@ public class WifiNanManagerTest {
         final int subscribeCount = 10;
         final int subscribeTtl = 15;
 
-        SubscribeSettings.Builder builder = new SubscribeSettings.Builder();
-        builder.setSubscribeType(subscribeType);
-        builder.setSubscribeCount(subscribeCount);
-        builder.setTtlSec(subscribeTtl);
-        SubscribeSettings subscribeSetting = builder.build();
+        SubscribeSettings subscribeSetting = new SubscribeSettings.Builder()
+                .setSubscribeType(subscribeType).setSubscribeCount(subscribeCount)
+                .setTtlSec(subscribeTtl).build();
 
         collector.checkThat("mSubscribeType", subscribeType,
                 equalTo(subscribeSetting.mSubscribeType));
@@ -250,22 +226,19 @@ public class WifiNanManagerTest {
     @Test
     public void testSubscribeSettingsBuilderBadSubscribeType() {
         thrown.expect(IllegalArgumentException.class);
-        SubscribeSettings.Builder builder = new SubscribeSettings.Builder();
-        builder.setSubscribeType(10);
+        new SubscribeSettings.Builder().setSubscribeType(10);
     }
 
     @Test
     public void testSubscribeSettingsBuilderNegativeCount() {
         thrown.expect(IllegalArgumentException.class);
-        SubscribeSettings.Builder builder = new SubscribeSettings.Builder();
-        builder.setSubscribeCount(-1);
+        new SubscribeSettings.Builder().setSubscribeCount(-1);
     }
 
     @Test
     public void testSubscribeSettingsBuilderNegativeTtl() {
         thrown.expect(IllegalArgumentException.class);
-        SubscribeSettings.Builder builder = new SubscribeSettings.Builder();
-        builder.setTtlSec(-100);
+        new SubscribeSettings.Builder().setTtlSec(-100);
     }
 
     @Test
@@ -274,11 +247,9 @@ public class WifiNanManagerTest {
         final int subscribeCount = 10;
         final int subscribeTtl = 15;
 
-        SubscribeSettings.Builder builder = new SubscribeSettings.Builder();
-        builder.setSubscribeType(subscribeType);
-        builder.setSubscribeCount(subscribeCount);
-        builder.setTtlSec(subscribeTtl);
-        SubscribeSettings subscribeSetting = builder.build();
+        SubscribeSettings subscribeSetting = new SubscribeSettings.Builder()
+                .setSubscribeType(subscribeType).setSubscribeCount(subscribeCount)
+                .setTtlSec(subscribeTtl).build();
 
         Parcel parcelW = Parcel.obtain();
         subscribeSetting.writeToParcel(parcelW, 0);
@@ -307,12 +278,9 @@ public class WifiNanManagerTest {
         final byte[] rxFilter = {
                 1, 127, 0, 1, -5, 1, 22 };
 
-        PublishData.Builder builder = new PublishData.Builder();
-        builder.setServiceName(serviceName);
-        builder.setServiceSpecificInfo(serviceSpecificInfo);
-        builder.setTxFilter(txFilter, txFilter.length);
-        builder.setRxFilter(rxFilter, rxFilter.length);
-        PublishData publishData = builder.build();
+        PublishData publishData = new PublishData.Builder().setServiceName(serviceName)
+                .setServiceSpecificInfo(serviceSpecificInfo).setTxFilter(txFilter, txFilter.length)
+                .setRxFilter(rxFilter, rxFilter.length).build();
 
         collector.checkThat("mServiceName", serviceName, equalTo(publishData.mServiceName));
         String mServiceSpecificInfo = new String(publishData.mServiceSpecificInfo, 0,
@@ -336,12 +304,9 @@ public class WifiNanManagerTest {
         final byte[] rxFilter = {
                 1, 127, 0, 1, -5, 1, 22 };
 
-        PublishData.Builder builder = new PublishData.Builder();
-        builder.setServiceName(serviceName);
-        builder.setServiceSpecificInfo(serviceSpecificInfo);
-        builder.setTxFilter(txFilter, txFilter.length);
-        builder.setTxFilter(rxFilter, rxFilter.length);
-        PublishData publishData = builder.build();
+        PublishData publishData = new PublishData.Builder().setServiceName(serviceName)
+                .setServiceSpecificInfo(serviceSpecificInfo).setTxFilter(txFilter, txFilter.length)
+                .setTxFilter(rxFilter, rxFilter.length).build();
 
         Parcel parcelW = Parcel.obtain();
         publishData.writeToParcel(parcelW, 0);
@@ -366,11 +331,8 @@ public class WifiNanManagerTest {
         final int publishCount = 10;
         final int publishTtl = 15;
 
-        PublishSettings.Builder builder = new PublishSettings.Builder();
-        builder.setPublishType(publishType);
-        builder.setPublishCount(publishCount);
-        builder.setTtlSec(publishTtl);
-        PublishSettings publishSetting = builder.build();
+        PublishSettings publishSetting = new PublishSettings.Builder().setPublishType(publishType)
+                .setPublishCount(publishCount).setTtlSec(publishTtl).build();
 
         collector.checkThat("mPublishType", publishType, equalTo(publishSetting.mPublishType));
         collector.checkThat("mPublishCount", publishCount, equalTo(publishSetting.mPublishCount));
@@ -380,22 +342,19 @@ public class WifiNanManagerTest {
     @Test
     public void testPublishSettingsBuilderBadPublishType() {
         thrown.expect(IllegalArgumentException.class);
-        PublishSettings.Builder builder = new PublishSettings.Builder();
-        builder.setPublishType(5);
+        new PublishSettings.Builder().setPublishType(5);
     }
 
     @Test
     public void testPublishSettingsBuilderNegativeCount() {
         thrown.expect(IllegalArgumentException.class);
-        PublishSettings.Builder builder = new PublishSettings.Builder();
-        builder.setPublishCount(-4);
+        new PublishSettings.Builder().setPublishCount(-4);
     }
 
     @Test
     public void testPublishSettingsBuilderNegativeTtl() {
         thrown.expect(IllegalArgumentException.class);
-        PublishSettings.Builder builder = new PublishSettings.Builder();
-        builder.setTtlSec(-10);
+        new PublishSettings.Builder().setTtlSec(-10);
     }
 
     @Test
@@ -404,11 +363,8 @@ public class WifiNanManagerTest {
         final int publishCount = 10;
         final int publishTtl = 15;
 
-        PublishSettings.Builder builder = new PublishSettings.Builder();
-        builder.setPublishType(publishType);
-        builder.setPublishCount(publishCount);
-        builder.setTtlSec(publishTtl);
-        PublishSettings configSetting = builder.build();
+        PublishSettings configSetting = new PublishSettings.Builder().setPublishType(publishType)
+                .setPublishCount(publishCount).setTtlSec(publishTtl).build();
 
         Parcel parcelW = Parcel.obtain();
         configSetting.writeToParcel(parcelW, 0);
