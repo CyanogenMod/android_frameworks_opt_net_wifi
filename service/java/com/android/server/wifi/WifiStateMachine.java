@@ -4765,9 +4765,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 }
                 if ((!SSID.equals(currentSSID)) && (getCurrentState() == mConnectedState)) {
                     lastConnectAttemptTimestamp = System.currentTimeMillis();
-                    //Create new connection event for connection attempt.
-                    mWifiMetrics.startConnectionEvent(mWifiInfo,
-                            WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE);
                     targetWificonfiguration =
                             mWifiConfigStore.getWifiConfiguration(mWifiInfo.getNetworkId());
                     transitionTo(mRoamingState);
@@ -4975,8 +4972,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             }
             log("DHCP failure count=" + count);
         }
-        mWifiMetrics.endConnectionEvent(0, WifiMetricsProto.ConnectionEvent.HLF_DHCP);
-
+        mWifiMetrics.endConnectionEvent(
+                WifiMetrics.ConnectionEvent.LLF_NONE,
+                WifiMetricsProto.ConnectionEvent.HLF_DHCP);
         synchronized(mDhcpResultsLock) {
              if (mDhcpResults != null) {
                  mDhcpResults.clear();
@@ -6960,6 +6958,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             .DISABLED_ASSOCIATION_REJECTION);
 
                     mSupplicantStateTracker.sendMessage(WifiMonitor.ASSOCIATION_REJECTION_EVENT);
+                    //If rejection occurred while Metrics is tracking a ConnnectionEvent, end it.
+                    mWifiMetrics.endConnectionEvent(
+                            WifiMetrics.ConnectionEvent.LLF_ASSOCIATION_REJECTION,
+                            WifiMetricsProto.ConnectionEvent.HLF_NONE);
                     break;
                 case WifiMonitor.AUTHENTICATION_FAILURE_EVENT:
                     mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_AUTH_FAILURE);
@@ -6969,6 +6971,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                                 WifiConfiguration.NetworkSelectionStatus
                                         .DISABLED_AUTHENTICATION_FAILURE);
                     }
+                    //If failure occurred while Metrics is tracking a ConnnectionEvent, end it.
+                    mWifiMetrics.endConnectionEvent(
+                            WifiMetrics.ConnectionEvent.LLF_AUTHENTICATION_FAILURE,
+                            WifiMetricsProto.ConnectionEvent.HLF_NONE);
                     break;
                 case WifiMonitor.SSID_TEMP_DISABLED:
                     Log.e(TAG, "Supplicant SSID temporary disabled:"
@@ -6977,6 +6983,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             message.arg1,
                             WifiConfiguration.NetworkSelectionStatus
                             .DISABLED_AUTHENTICATION_FAILURE);
+                    mWifiMetrics.endConnectionEvent(
+                            WifiMetrics.ConnectionEvent.LLF_SSID_TEMP_DISABLED,
+                            WifiMetricsProto.ConnectionEvent.HLF_NONE);
                     break;
                 case WifiMonitor.SSID_REENABLED:
                     Log.d(TAG, "Supplicant SSID reenable:"
@@ -7068,9 +7077,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                                 // Remember time of last connection attempt
                                 lastConnectAttemptTimestamp = System.currentTimeMillis();
-                                //Create clearcut connection event of type USER_SELECTED
-                                mWifiMetrics.startConnectionEvent(mWifiInfo,
-                                        WifiMetricsProto.ConnectionEvent.ROAM_USER_SELECTED);
                                 mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
 
                                 // As a courtesy to the caller, trigger a scan now
@@ -7132,8 +7138,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mWifiQualifiedNetworkSelector.enableNetworkByUser(config);
                         // Remember time of last connection attempt
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
-                        mWifiMetrics.startConnectionEvent(mWifiInfo,
-                                WifiMetricsProto.ConnectionEvent.ROAM_USER_SELECTED);
                         mWifiConnectionStatistics.numWifiManagerJoinAttempt++;
                     }
                     // Cancel auto roam requests
@@ -7292,7 +7296,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_REASSOCIATE:
                     lastConnectAttemptTimestamp = System.currentTimeMillis();
-                    mWifiMetrics.startConnectionEvent(mWifiInfo);
                     mWifiNative.reassociate();
                     break;
                 case CMD_RELOAD_TLS_AND_RECONNECT:
@@ -7300,7 +7303,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         logd("Reconnecting to give a chance to un-connected TLS networks");
                         mWifiNative.disconnect();
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
-                        mWifiMetrics.startConnectionEvent(mWifiInfo);
                         mWifiNative.reconnect();
                     }
                     break;
@@ -7384,12 +7386,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             && UserHandle.getUserId(config.lastConnectUid) == mCurrentUserId) {
                         lastConnectUid = config.lastConnectUid;
                     }
-
+                    mWifiMetrics.startConnectionEvent(mWifiInfo, config,
+                            WifiMetricsProto.ConnectionEvent.ROAM_NONE);
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
                             lastConnectUid) && mWifiNative.reconnect()) {
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
-                        mWifiMetrics.startConnectionEvent(mWifiInfo,
-                                WifiMetricsProto.ConnectionEvent.ROAM_UNRELATED);
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
                         config = mWifiConfigStore.getWifiConfiguration(netId);
                         if (config != null
@@ -7409,6 +7410,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                             mWifiConfigStore.
                                  setAndEnableLastSelectedConfiguration(
                                          WifiConfiguration.INVALID_NETWORK_ID);
+                            mWifiMetrics.setConnectionEventRoamType(
+                                    WifiMetricsProto.ConnectionEvent.ROAM_USER_SELECTED);
                         }
                         mAutoRoaming = false;
                         if (isRoaming() || linkDebouncing) {
@@ -7432,6 +7435,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         loge("Failed to connect config: " + config + " netId: " + netId);
                         replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
                                 WifiManager.ERROR);
+                        mWifiMetrics.endConnectionEvent(
+                                WifiMetrics.ConnectionEvent.LLF_CONNECT_NETWORK_FAILED,
+                                WifiMetricsProto.ConnectionEvent.HLF_NONE);
                         break;
                     }
                     break;
@@ -7559,8 +7565,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ true,
                             message.sendingUid) && mWifiNative.reconnect()) {
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
-                        mWifiMetrics.startConnectionEvent(mWifiInfo,
-                                WifiMetricsProto.ConnectionEvent.ROAM_USER_SELECTED);
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
                         /* The state tracker handles enabling networks upon completion/failure */
@@ -7767,7 +7771,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     mWifiInfo.setBSSID(mLastBssid);
                     mWifiInfo.setNetworkId(mLastNetworkId);
-
                     sendNetworkStateChangeBroadcast(mLastBssid);
                     transitionTo(mObtainingIpState);
                     break;
@@ -8119,7 +8122,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                 }
                 case CMD_IP_CONFIGURATION_SUCCESSFUL:
                     handleSuccessfulIpConfiguration();
-                    mWifiMetrics.endConnectionEvent(0, WifiMetricsProto.ConnectionEvent.HLF_NONE);
+                    mWifiMetrics.endConnectionEvent(
+                            WifiMetrics.ConnectionEvent.LLF_NONE,
+                            WifiMetricsProto.ConnectionEvent.HLF_NONE);
                     sendConnectedState();
                     transitionTo(mConnectedState);
                     break;
@@ -8513,6 +8518,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     deferMessage(message);
                     break;
                     /* Defer any power mode changes since we must keep active power mode at DHCP */
+
+                case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
+                    mWifiMetrics.endConnectionEvent(
+                            WifiMetrics.ConnectionEvent.LLF_NETWORK_DISCONNECTION,
+                            WifiMetricsProto.ConnectionEvent.HLF_NONE);
+                    return NOT_HANDLED;
                 case CMD_SET_HIGH_PERF_MODE:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                     deferMessage(message);
@@ -8854,6 +8865,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     return NOT_HANDLED;
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     long lastRoam = 0;
+                    mWifiMetrics.endConnectionEvent(
+                            WifiMetrics.ConnectionEvent.LLF_NETWORK_DISCONNECTION,
+                            WifiMetricsProto.ConnectionEvent.HLF_NONE);
                     if (mLastDriverRoamAttempt != 0) {
                         // Calculate time since last driver roam attempt
                         lastRoam = System.currentTimeMillis() - mLastDriverRoamAttempt;
@@ -8954,16 +8968,19 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
                     boolean ret = false;
                     if (mLastNetworkId != netId) {
-                       if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
-                               WifiConfiguration.UNKNOWN_UID) && mWifiNative.reconnect()) {
-                           ret = true;
-                       }
+                        mWifiMetrics.startConnectionEvent(mWifiInfo, config,
+                                WifiMetricsProto.ConnectionEvent.ROAM_UNRELATED);
+                        if (mWifiConfigStore.selectNetwork(config, /* updatePriorities = */ false,
+                                WifiConfiguration.UNKNOWN_UID) && mWifiNative.reconnect()) {
+                            ret = true;
+                        }
                     } else {
-                         ret = mWifiNative.reassociate();
+                        mWifiMetrics.startConnectionEvent(mWifiInfo, config,
+                                WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE);
+                        ret = mWifiNative.reassociate();
                     }
                     if (ret) {
                         lastConnectAttemptTimestamp = System.currentTimeMillis();
-                        mWifiMetrics.startConnectionEvent(mWifiInfo);
                         targetWificonfiguration = mWifiConfigStore.getWifiConfiguration(netId);
 
                         // replyToMessage(message, WifiManager.CONNECT_NETWORK_SUCCEEDED);
@@ -8975,6 +8992,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
                                 WifiManager.ERROR);
                         messageHandlingStatus = MESSAGE_HANDLING_STATUS_FAIL;
+                        mWifiMetrics.endConnectionEvent(
+                                WifiMetrics.ConnectionEvent.LLF_CONNECT_NETWORK_FAILED,
+                                WifiMetricsProto.ConnectionEvent.HLF_NONE);
                         break;
                     }
                     break;
@@ -9186,9 +9206,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     /* Ignore network disconnect */
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     // Interpret this as an L2 connection failure
-                    // End current connection event and log L2 reason code.
-                    mWifiMetrics.endConnectionEvent(message.arg2,
-                            WifiMetricsProto.ConnectionEvent.HLF_UNKNOWN);
                     break;
                 case WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT:
                     StateChangeResult stateChangeResult = (StateChangeResult) message.obj;
@@ -9412,8 +9429,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         mSourceMessage.recycle();
                         mSourceMessage = null;
                         transitionTo(mDisconnectedState);
-                        mWifiMetrics.endConnectionEvent(
-                                message.arg1, WifiMetricsProto.ConnectionEvent.HLF_UNKNOWN);
                     } else {
                         if (DBG) log("Ignore unspecified fail event during WPS connection");
                     }

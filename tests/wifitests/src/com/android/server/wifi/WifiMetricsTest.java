@@ -17,7 +17,6 @@ package com.android.server.wifi;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import android.net.wifi.WifiInfo;
@@ -26,6 +25,7 @@ import android.util.Base64;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
@@ -41,32 +41,34 @@ public class WifiMetricsTest {
     WifiMetrics mWifiMetrics;
     WifiMetricsProto.WifiLog mDeserializedWifiMetrics;
     @Mock WifiInfo mWifiInfo;
-
     @Before
     public void setUp() throws Exception {
-        mWifiInfo = null;
+        MockitoAnnotations.initMocks(this);
+        when(mWifiInfo.getRssi()).thenReturn(-70);
         mDeserializedWifiMetrics = null;
         mWifiMetrics = new WifiMetrics();
     }
 
     /**
      * Test that startConnectionEvent and endConnectionEvent can be called repeatedly and out of
-     * order. Only tests no exception occurs
+     * order. Only tests no exception occurs. Creates 3 ConnectionEvents.
      */
     @Test
     public void startAndEndConnectionEventSucceeds() throws Exception {
-        mWifiInfo = mock(WifiInfo.class);
-        when(mWifiInfo.getRssi()).thenReturn(77);
         //Start and end Connection event
-        mWifiMetrics.startConnectionEvent(mWifiInfo,
+        mWifiMetrics.startConnectionEvent(mWifiInfo, null,
                 WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE);
-        mWifiMetrics.endConnectionEvent(88, WifiMetricsProto.ConnectionEvent.HLF_DHCP);
+        mWifiMetrics.endConnectionEvent(
+                WifiMetrics.ConnectionEvent.LLF_AUTHENTICATION_FAILURE,
+                WifiMetricsProto.ConnectionEvent.HLF_DHCP);
         //end Connection event without starting one
-        mWifiMetrics.endConnectionEvent(99, WifiMetricsProto.ConnectionEvent.HLF_DHCP);
+        mWifiMetrics.endConnectionEvent(
+                WifiMetrics.ConnectionEvent.LLF_AUTHENTICATION_FAILURE,
+                WifiMetricsProto.ConnectionEvent.HLF_DHCP);
         //start two ConnectionEvents in a row
-        mWifiMetrics.startConnectionEvent(mWifiInfo,
+        mWifiMetrics.startConnectionEvent(mWifiInfo, null,
                 WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE);
-        mWifiMetrics.startConnectionEvent(mWifiInfo,
+        mWifiMetrics.startConnectionEvent(mWifiInfo, null,
                 WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE);
     }
 
@@ -220,8 +222,8 @@ public class WifiMetricsTest {
         startAndEndConnectionEventSucceeds();
         serializeDeserialize();
         assertDeserializedMetricsCorrect();
-        assertEquals("mDeserializedWifiMetrics.connectionEvent.length == 4",
-                mDeserializedWifiMetrics.connectionEvent.length, 4);
+        assertEquals("mDeserializedWifiMetrics.connectionEvent.length",
+                3, mDeserializedWifiMetrics.connectionEvent.length);
         //<TODO> test individual connectionEvents for correctness,
         // check scanReturnEntries & wifiSystemStateEntries counts and individual elements
         // pending their implementation</TODO>
