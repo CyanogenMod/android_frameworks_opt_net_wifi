@@ -267,8 +267,15 @@ class WifiQualifiedNetworkSelector {
 
             WifiConfiguration currentNetwork =
                     mWifiConfigStore.getWifiConfiguration(mWifiInfo.getNetworkId());
-            if (mCurrentConnectedNetwork != null && mCurrentConnectedNetwork.networkId
-                    != currentNetwork.networkId) {
+            if (currentNetwork == null) {
+                // WifiStateMachine in connected state but WifiInfo is not. It means there is a race
+                // condition happened. Do not make QNS until WifiStateMachine goes into
+                // disconnectted state
+                return false;
+            }
+
+            if (mCurrentConnectedNetwork != null
+                    && mCurrentConnectedNetwork.networkId != currentNetwork.networkId) {
                 //If this happens, supplicant switch the connection silently. This is a bug
                 // FIXME: 11/10/15
                 qnsLoge("supplicant switched the network silently" + " last Qualified Network"
