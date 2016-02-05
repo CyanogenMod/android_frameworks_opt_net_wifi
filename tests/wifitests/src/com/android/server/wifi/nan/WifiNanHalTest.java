@@ -246,6 +246,75 @@ public class WifiNanHalTest {
     }
 
     @Test
+    public void testNotifyCapabilities() throws JSONException {
+        final short transactionId = 23;
+        final int max_concurrent_nan_clusters = 1;
+        final int max_publishes = 2;
+        final int max_subscribes = 3;
+        final int max_service_name_len = 4;
+        final int max_match_filter_len = 5;
+        final int max_total_match_filter_len = 6;
+        final int max_service_specific_info_len = 7;
+        final int max_vsa_data_len = 8;
+        final int max_mesh_data_len = 9;
+        final int max_ndi_interfaces = 10;
+        final int max_ndp_sessions = 11;
+        final int max_app_info_len = 12;
+
+        ArgumentCaptor<WifiNanNative.Capabilities> capabilitiesCapture = ArgumentCaptor
+                .forClass(WifiNanNative.Capabilities.class);
+
+        Bundle args = new Bundle();
+        args.putInt("status", WifiNanNative.NAN_STATUS_SUCCESS);
+        args.putInt("value", 0);
+        args.putInt("response_type", WifiNanNative.NAN_RESPONSE_GET_CAPABILITIES);
+
+        args.putInt("body.nan_capabilities.max_concurrent_nan_clusters",
+                max_concurrent_nan_clusters);
+        args.putInt("body.nan_capabilities.max_publishes", max_publishes);
+        args.putInt("body.nan_capabilities.max_subscribes", max_subscribes);
+        args.putInt("body.nan_capabilities.max_service_name_len", max_service_name_len);
+        args.putInt("body.nan_capabilities.max_match_filter_len", max_match_filter_len);
+        args.putInt("body.nan_capabilities.max_total_match_filter_len", max_total_match_filter_len);
+        args.putInt("body.nan_capabilities.max_service_specific_info_len",
+                max_service_specific_info_len);
+        args.putInt("body.nan_capabilities.max_vsa_data_len", max_vsa_data_len);
+        args.putInt("body.nan_capabilities.max_mesh_data_len", max_mesh_data_len);
+        args.putInt("body.nan_capabilities.max_ndi_interfaces", max_ndi_interfaces);
+        args.putInt("body.nan_capabilities.max_ndp_sessions", max_ndp_sessions);
+        args.putInt("body.nan_capabilities.max_app_info_len", max_app_info_len);
+
+        WifiNanHalMock.callNotifyResponse(transactionId,
+                HalMockUtils.convertBundleToJson(args).toString());
+
+        verify(mNanStateManager).onCapabilitiesUpdate(eq(transactionId),
+                capabilitiesCapture.capture());
+        WifiNanNative.Capabilities capabilities = capabilitiesCapture.getValue();
+        collector.checkThat("max_concurrent_nan_clusters", capabilities.maxConcurrentNanClusters,
+                equalTo(max_concurrent_nan_clusters));
+        collector.checkThat("max_publishes", capabilities.maxPublishes, equalTo(max_publishes));
+        collector.checkThat("max_subscribes", capabilities.maxSubscribes, equalTo(max_subscribes));
+        collector.checkThat("max_service_name_len", capabilities.maxServiceNameLen,
+                equalTo(max_service_name_len));
+        collector.checkThat("max_match_filter_len", capabilities.maxMatchFilterLen,
+                equalTo(max_match_filter_len));
+        collector.checkThat("max_total_match_filter_len", capabilities.maxTotalMatchFilterLen,
+                equalTo(max_total_match_filter_len));
+        collector.checkThat("max_service_specific_info_len", capabilities.maxServiceSpecificInfoLen,
+                equalTo(max_service_specific_info_len));
+        collector.checkThat("max_vsa_data_len", capabilities.maxVsaDataLen,
+                equalTo(max_vsa_data_len));
+        collector.checkThat("max_mesh_data_len", capabilities.maxMeshDataLen,
+                equalTo(max_mesh_data_len));
+        collector.checkThat("max_ndi_interfaces", capabilities.maxNdiInterfaces,
+                equalTo(max_ndi_interfaces));
+        collector.checkThat("max_ndp_sessions", capabilities.maxNdpSessions,
+                equalTo(max_ndp_sessions));
+        collector.checkThat("max_app_info_len", capabilities.maxAppInfoLen,
+                equalTo(max_app_info_len));
+    }
+
+    @Test
     public void testNotifyResponseConfigSuccess() throws JSONException {
         final short transactionId = 23;
 

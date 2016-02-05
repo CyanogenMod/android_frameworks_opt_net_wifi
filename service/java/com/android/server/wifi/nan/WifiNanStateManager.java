@@ -69,6 +69,7 @@ public class WifiNanStateManager {
     private static final int MESSAGE_ON_UNKNOWN_TRANSACTION = 24;
     private static final int MESSAGE_ON_MATCH = 25;
     private static final int MESSAGE_ON_MESSAGE_RECEIVED = 26;
+    private static final int MESSAGE_ON_CAPABILITIES_UPDATED = 27;
 
     private static final String MESSAGE_BUNDLE_KEY_SESSION_ID = "session_id";
     private static final String MESSAGE_BUNDLE_KEY_EVENTS = "events";
@@ -87,6 +88,8 @@ public class WifiNanStateManager {
     private static final String MESSAGE_BUNDLE_KEY_MAC_ADDRESS = "mac_address";
     private static final String MESSAGE_BUNDLE_KEY_MESSAGE_DATA = "message_data";
     private static final String MESSAGE_BUNDLE_KEY_MESSAGE_LENGTH = "message_length";
+
+    private WifiNanNative.Capabilities mCapabilities;
 
     private WifiNanStateHandler mHandler;
 
@@ -199,6 +202,13 @@ public class WifiNanStateManager {
         msg.arg1 = uid;
         msg.arg2 = messageLength;
         msg.setData(data);
+        mHandler.sendMessage(msg);
+    }
+
+    public void onCapabilitiesUpdate(short transactionId, WifiNanNative.Capabilities capabilities) {
+        Message msg = mHandler.obtainMessage(MESSAGE_ON_CAPABILITIES_UPDATED);
+        msg.arg1 = transactionId;
+        msg.obj = capabilities;
         mHandler.sendMessage(msg);
     }
 
@@ -427,6 +437,10 @@ public class WifiNanStateManager {
                     stopSessionLocal(msg.arg1, msg.arg2);
                     break;
                 }
+                case MESSAGE_ON_CAPABILITIES_UPDATED:
+                    onCapabilitiesUpdatedLocal((short) msg.arg1,
+                            (WifiNanNative.Capabilities) msg.obj);
+                    break;
                 case MESSAGE_ON_CONFIG_COMPLETED:
                     onConfigCompletedLocal((short) msg.arg1);
                     break;
@@ -773,6 +787,16 @@ public class WifiNanStateManager {
     /*
      * Callbacks (calls from HAL/Native to service)
      */
+
+    private void onCapabilitiesUpdatedLocal(short transactionId,
+            WifiNanNative.Capabilities capabilities) {
+        if (VDBG) {
+            Log.v(TAG, "onCapabilitiesUpdatedLocal: transactionId=" + transactionId
+                    + ", capabilites=" + capabilities);
+        }
+
+        mCapabilities = capabilities;
+    }
 
     private void onConfigCompletedLocal(short transactionId) {
         if (VDBG) {
@@ -1139,6 +1163,7 @@ public class WifiNanStateManager {
         pw.println("NanStateManager:");
         pw.println("  mClients: [" + mClients + "]");
         pw.println("  mPendingResponses: [" + mPendingResponses + "]");
+        pw.println("  mCapabilities: [" + mCapabilities + "]");
         pw.println("  mNextTransactionId: " + mNextTransactionId);
         for (int i = 0; i < mClients.size(); ++i) {
             mClients.valueAt(i).dump(fd, pw, args);
