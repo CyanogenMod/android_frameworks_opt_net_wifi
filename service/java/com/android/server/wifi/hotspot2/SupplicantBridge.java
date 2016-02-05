@@ -12,7 +12,6 @@ import com.android.server.wifi.anqp.Constants;
 import com.android.server.wifi.anqp.eap.AuthParam;
 import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.anqp.eap.EAPMethod;
-import com.android.server.wifi.hotspot2.osu.OSUManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 
 import java.io.BufferedReader;
@@ -119,7 +118,7 @@ public class SupplicantBridge {
                 String command = String.format("GET_HS20_ICON %s %s %d %d",
                         Utils.macToString(iconEvent.getBSSID()), iconEvent.getFileName(),
                         offset, size);
-                Log.d(OSUManager.TAG, "Issuing '" + command + "'");
+                Log.d(Utils.hs2LogTag(getClass()), "Issuing '" + command + "'");
                 String response = mSupplicantHook.doCustomSupplicantCommand(command);
                 if (response == null) {
                     throw new IOException("No icon data returned");
@@ -141,12 +140,12 @@ public class SupplicantBridge {
                 }
             }
             if (offset != iconEvent.getSize()) {
-                Log.w(OSUManager.TAG, "Partial icon data: " + offset +
+                Log.w(Utils.hs2LogTag(getClass()), "Partial icon data: " + offset +
                         ", expected " + iconEvent.getSize());
             }
         }
         finally {
-            Log.d(OSUManager.TAG, "Deleting icon for " + iconEvent);
+            Log.d(Utils.hs2LogTag(getClass()), "Deleting icon for " + iconEvent);
             String result = mSupplicantHook.doCustomSupplicantCommand("DEL_HS20_ICON " +
                     Utils.macToString(iconEvent.getBSSID()) + " " + iconEvent.getFileName());
         }
