@@ -40,7 +40,7 @@ jobject mock_mObj; /* saved HalMock object (not class!) */
 JavaVM* mock_mVM = NULL; /* saved JVM pointer */
 
 /* Variable and function declared and defined in:
- *  com_android_servier_wifi_nan_WifiNanNative.cpp
+ *  com_android_server_wifi_nan_WifiNanNative.cpp
  */
 extern wifi_hal_fn hal_fn;
 extern "C" jint Java_com_android_server_wifi_WifiNative_registerNatives(
@@ -180,7 +180,7 @@ int init_wifi_hal_func_table_mock(wifi_hal_fn *hal_fn) {
   return 0;
 }
 
-extern "C" jint Java_wifitests_src_com_android_server_wifi_HalMockUtils_initHalMock(
+extern "C" jint Java_com_android_server_wifi_HalMockUtils_initHalMock(
     JNIEnv* env, jclass clazz) {
   env->GetJavaVM(&mock_mVM);
 
@@ -188,7 +188,7 @@ extern "C" jint Java_wifitests_src_com_android_server_wifi_HalMockUtils_initHalM
   return init_wifi_hal_func_table_mock(&hal_fn);
 }
 
-extern "C" void Java_wifitests_src_com_android_server_wifi_HalMockUtils_setHalMockObject(
+extern "C" void Java_com_android_server_wifi_HalMockUtils_setHalMockObject(
     JNIEnv* env, jclass clazz, jobject hal_mock_object) {
   mock_mObj = (jobject) env->NewGlobalRef(hal_mock_object);
 }
