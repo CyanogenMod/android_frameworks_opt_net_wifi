@@ -54,7 +54,7 @@ public class ScanDetail {
         mMatches = null;
     }
 
-    private ScanDetail(ScanResult scanResult, NetworkDetail networkDetail,
+    public ScanDetail(ScanResult scanResult, NetworkDetail networkDetail,
                        Map<HomeSP, PasspointMatch> matches) {
         mScanResult = scanResult;
         mNetworkDetail = networkDetail;
