@@ -16,12 +16,16 @@
 
 package com.android.server.wifi;
 
+import static com.android.server.wifi.ScanTestUtil.assertNativeScanSettingsEquals;
+import static com.android.server.wifi.ScanTestUtil.assertScanDatasEquals;
 import static com.android.server.wifi.ScanTestUtil.createRequest;
 import static com.android.server.wifi.ScanTestUtil.installWlanWifiNative;
 import static com.android.server.wifi.ScanTestUtil.setupMockChannels;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.validateMockitoUsage;
@@ -48,6 +52,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -88,14 +93,16 @@ public class WifiScanningServiceTest {
         validateMockitoUsage();
     }
 
-
-    ArgumentCaptor<BroadcastReceiver> mBroadcastReceiverCaptor =
-            ArgumentCaptor.forClass(BroadcastReceiver.class);
+    /**
+     * Internal BroadcastReceiver that WifiScanningServiceImpl uses to listen for broadcasts
+     * this is initialized by calling startServiceAndLoadDriver
+     */
+    BroadcastReceiver mBroadcastReceiver;
 
     private void sendWifiScanAvailable(int scanAvailable) {
         Intent intent = new Intent(WifiManager.WIFI_SCAN_AVAILABLE);
         intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, scanAvailable);
-        mBroadcastReceiverCaptor.getValue().onReceive(mContext, intent);
+        mBroadcastReceiver.onReceive(mContext, intent);
     }
 
     private WifiScanner.ScanSettings generateValidScanSettings() {
@@ -112,43 +119,75 @@ public class WifiScanningServiceTest {
         return controlChannel;
     }
 
-    private Message sendRequest(BidirectionalAsyncChannel controlChannel, Handler handler,
-            Message msg) {
-        controlChannel.sendMessage(msg);
-        mLooper.dispatchAll();
+    private Message verifyHandleMessageAndGetMessage(InOrder order, Handler handler) {
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
-        verify(handler).handleMessage(messageCaptor.capture());
+        order.verify(handler).handleMessage(messageCaptor.capture());
         return messageCaptor.getValue();
     }
 
-    private void sendAndAssertSuccessfulyBackgroundScan(BidirectionalAsyncChannel controlChannel,
-            Handler handler, int scanRequestId, WifiScanner.ScanSettings settings) {
-        Message response = sendRequest(controlChannel, handler,
-                Message.obtain(null, WifiScanner.CMD_START_BACKGROUND_SCAN, 0, scanRequestId,
-                        settings));
-        assertEquals("response.what", WifiScanner.CMD_OP_SUCCEEDED, response.what);
-        assertEquals("response.arg2", scanRequestId, response.arg2);
-        assertEquals("response.obj", null, response.obj);
+    private void verifyScanResultsRecieved(InOrder order, Handler handler, int listenerId,
+            WifiScanner.ScanData... expected) {
+        Message scanResultMessage = verifyHandleMessageAndGetMessage(order, handler);
+        assertScanResultsMessage(listenerId, expected, scanResultMessage);
     }
 
-    private void sendAndAssertFailedBackgroundScan(BidirectionalAsyncChannel controlChannel,
-            Handler handler, int scanRequestId, WifiScanner.ScanSettings settings,
+    private void assertScanResultsMessage(int listenerId, WifiScanner.ScanData[] expected,
+            Message scanResultMessage) {
+        assertEquals("what", WifiScanner.CMD_SCAN_RESULT, scanResultMessage.what);
+        assertEquals("listenerId", listenerId, scanResultMessage.arg2);
+        assertScanDatasEquals(expected,
+                ((WifiScanner.ParcelableScanData) scanResultMessage.obj).getResults());
+    }
+
+    private void sendBackgroundScanRequest(BidirectionalAsyncChannel controlChannel,
+            int scanRequestId, WifiScanner.ScanSettings settings) {
+        controlChannel.sendMessage(Message.obtain(null, WifiScanner.CMD_START_BACKGROUND_SCAN, 0,
+                        scanRequestId, settings));
+    }
+
+    private void verifySuccessfulResponse(InOrder order, Handler handler, int arg2) {
+        Message response = verifyHandleMessageAndGetMessage(order, handler);
+        assertSuccessfulResponse(arg2, response);
+    }
+
+    private void assertSuccessfulResponse(int arg2, Message response) {
+        if (response.what == WifiScanner.CMD_OP_FAILED) {
+            WifiScanner.OperationResult result = (WifiScanner.OperationResult) response.obj;
+            fail("response indicates failure, reason=" + result.reason
+                    + ", description=" + result.description);
+        } else {
+            assertEquals("response.what", WifiScanner.CMD_OP_SUCCEEDED, response.what);
+            assertEquals("response.arg2", arg2, response.arg2);
+        }
+    }
+
+    private void verifyFailedResponse(InOrder order, Handler handler, int arg2,
             int expectedErrorReason, String expectedErrorDescription) {
-        Message response = sendRequest(controlChannel, handler,
-                Message.obtain(null, WifiScanner.CMD_START_BACKGROUND_SCAN, 0, scanRequestId,
-                        settings));
-        assertFailedResponse(scanRequestId, expectedErrorReason, expectedErrorDescription,
-                response);
+        Message response = verifyHandleMessageAndGetMessage(order, handler);
+        assertFailedResponse(arg2, expectedErrorReason, expectedErrorDescription, response);
     }
 
     private void assertFailedResponse(int arg2, int expectedErrorReason,
             String expectedErrorDescription, Message response) {
-        assertEquals("response.what", WifiScanner.CMD_OP_FAILED, response.what);
-        assertEquals("response.arg2", arg2, response.arg2);
-        assertEquals("response.obj.reason",
-                expectedErrorReason, ((WifiScanner.OperationResult) response.obj).reason);
-        assertEquals("response.obj.description",
-                expectedErrorDescription, ((WifiScanner.OperationResult) response.obj).description);
+        if (response.what == WifiScanner.CMD_OP_SUCCEEDED) {
+            fail("response indicates success");
+        } else {
+            assertEquals("response.what", WifiScanner.CMD_OP_FAILED, response.what);
+            assertEquals("response.arg2", arg2, response.arg2);
+            WifiScanner.OperationResult result = (WifiScanner.OperationResult) response.obj;
+            assertEquals("response.obj.reason",
+                    expectedErrorReason, result.reason);
+            assertEquals("response.obj.description",
+                    expectedErrorDescription, result.description);
+        }
+    }
+
+    private void verifyStartBackgroundScan(InOrder order, WifiNative.ScanSettings expected) {
+        ArgumentCaptor<WifiNative.ScanSettings> scanSettingsCaptor =
+                ArgumentCaptor.forClass(WifiNative.ScanSettings.class);
+        order.verify(mWifiScannerImpl).startBatchedScan(scanSettingsCaptor.capture(),
+                any(WifiNative.ScanEventHandler.class));
+        assertNativeScanSettingsEquals(expected, scanSettingsCaptor.getValue());
     }
 
     private void startServiceAndLoadDriver() {
@@ -166,8 +205,11 @@ public class WifiScanningServiceTest {
                             return true;
                         }
                     });
+        ArgumentCaptor<BroadcastReceiver> broadcastReceiverCaptor =
+                ArgumentCaptor.forClass(BroadcastReceiver.class);
         verify(mContext)
-                .registerReceiver(mBroadcastReceiverCaptor.capture(), any(IntentFilter.class));
+                .registerReceiver(broadcastReceiverCaptor.capture(), any(IntentFilter.class));
+        mBroadcastReceiver = broadcastReceiverCaptor.getValue();
         sendWifiScanAvailable(WifiManager.WIFI_STATE_ENABLED);
         mLooper.dispatchAll();
     }
@@ -185,8 +227,10 @@ public class WifiScanningServiceTest {
 
         Handler handler = mock(Handler.class);
         BidirectionalAsyncChannel controlChannel = connectChannel(handler);
-        sendAndAssertFailedBackgroundScan(controlChannel, handler, 122, generateValidScanSettings(),
-                WifiScanner.REASON_UNSPECIFIED, "not available");
+        InOrder order = inOrder(handler);
+        sendBackgroundScanRequest(controlChannel, 122, generateValidScanSettings());
+        mLooper.dispatchAll();
+        verifyFailedResponse(order, handler, 122, WifiScanner.REASON_UNSPECIFIED, "not available");
     }
 
     @Test
@@ -196,10 +240,12 @@ public class WifiScanningServiceTest {
 
         Handler handler = mock(Handler.class);
         BidirectionalAsyncChannel controlChannel = connectChannel(handler);
+        InOrder order = inOrder(handler);
         when(mWifiScannerImpl.startBatchedScan(any(WifiNative.ScanSettings.class),
                         any(WifiNative.ScanEventHandler.class))).thenReturn(true);
-        sendAndAssertSuccessfulyBackgroundScan(controlChannel, handler, 192,
-                generateValidScanSettings());
+        sendBackgroundScanRequest(controlChannel, 192, generateValidScanSettings());
+        mLooper.dispatchAll();
+        verifySuccessfulResponse(order, handler, 192);
     }
 
     @Test
@@ -208,9 +254,10 @@ public class WifiScanningServiceTest {
 
         Handler handler = mock(Handler.class);
         BidirectionalAsyncChannel controlChannel = connectChannel(handler);
-        Message response = sendRequest(controlChannel, handler,
-                Message.obtain(null, Protocol.BASE_WIFI_MANAGER));
-        assertFailedResponse(0, WifiScanner.REASON_INVALID_REQUEST, "Invalid request", response);
+        InOrder order = inOrder(handler, mWifiScannerImpl);
+        controlChannel.sendMessage(Message.obtain(null, Protocol.BASE_WIFI_MANAGER));
+        mLooper.dispatchAll();
+        verifyFailedResponse(order, handler, 0, WifiScanner.REASON_INVALID_REQUEST,
+                "Invalid request");
     }
-
 }
