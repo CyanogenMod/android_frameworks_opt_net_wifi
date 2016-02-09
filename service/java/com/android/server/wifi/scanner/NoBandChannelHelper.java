@@ -21,11 +21,27 @@ import android.util.ArraySet;
 
 import com.android.server.wifi.WifiNative;
 
+import java.util.Set;
+
 /**
  * ChannelHelper that offers channel manipulation utilities when the channels in a band are not
  * known. Operations performed may simplify any band to include all channels.
  */
 public class NoBandChannelHelper extends ChannelHelper {
+
+    @Override
+    public boolean settingsContainChannel(WifiScanner.ScanSettings settings, int channel) {
+        if (settings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+            for (int i = 0; i < settings.channels.length; ++i) {
+                if (settings.channels[i].frequency == channel) {
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            return true;
+        }
+    }
 
     /**
      * ChannelCollection that merges channels without knowing which channels are in each band. In
@@ -49,6 +65,16 @@ public class NoBandChannelHelper extends ChannelHelper {
         }
 
         @Override
+        public boolean containsChannel(int channel) {
+            return mAllChannels || mChannels.contains(channel);
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return !mAllChannels && mChannels.isEmpty();
+        }
+
+        @Override
         public void clear() {
             mAllChannels = false;
             mChannels.clear();
@@ -69,6 +95,15 @@ public class NoBandChannelHelper extends ChannelHelper {
                     channelSettings.frequency = mChannels.valueAt(i);
                     bucketSettings.channels[i] = channelSettings;
                 }
+            }
+        }
+
+        @Override
+        public Set<Integer> getSupplicantScanFreqs() {
+            if (mAllChannels) {
+                return null;
+            } else {
+                return new ArraySet<Integer>(mChannels);
             }
         }
     }

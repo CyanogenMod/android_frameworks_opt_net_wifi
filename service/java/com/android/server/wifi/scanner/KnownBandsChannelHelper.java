@@ -21,6 +21,8 @@ import android.util.ArraySet;
 
 import com.android.server.wifi.WifiNative;
 
+import java.util.Set;
+
 /**
  * ChannelHelper that offers channel manipulation utilities when the channels in a band are known.
  * This allows more fine operations on channels than if band channels are not known.
@@ -90,6 +92,7 @@ public class KnownBandsChannelHelper extends ChannelHelper {
         return false;
     }
 
+    // TODO this should be rewritten to be based on the input data instead of hardcoded ranges
     private int getBandFromChannel(int frequency) {
         if (2400 <= frequency && frequency < 2500) {
             return WifiScanner.WIFI_BAND_24_GHZ;
@@ -102,14 +105,40 @@ public class KnownBandsChannelHelper extends ChannelHelper {
         }
     }
 
+    @Override
+    public boolean settingsContainChannel(WifiScanner.ScanSettings settings, int channel) {
+        WifiScanner.ChannelSpec[] settingsChannels;
+        if (settings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+            settingsChannels = settings.channels;
+        } else {
+            settingsChannels = getChannelsForBand(settings.band);
+        }
+        for (int i = 0; i < settingsChannels.length; ++i) {
+            if (settingsChannels[i].frequency == channel) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * ChannelCollection that merges channels so that the optimal schedule will be generated.
      * When the max channels value is satisfied this implementation will always create a channel
      * list that includes no more than the added channels.
      */
     public class KnownBandsChannelCollection extends ChannelCollection {
+        /**
+         * Stores all channels, including those that belong to added bands.
+         */
         private final ArraySet<Integer> mChannels = new ArraySet<Integer>();
+        /**
+         * Contains only the bands that were explicitly added as bands.
+         */
         private int mExactBands = 0;
+        /**
+         * Contains all bands, including those that were added because an added channel was in that
+         * band.
+         */
         private int mAllBands = 0;
 
         @Override
@@ -126,6 +155,16 @@ public class KnownBandsChannelHelper extends ChannelHelper {
             for (int i = 0; i < bandChannels.length; ++i) {
                 mChannels.add(bandChannels[i].frequency);
             }
+        }
+
+        @Override
+        public boolean containsChannel(int channel) {
+            return mChannels.contains(channel);
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return mChannels.isEmpty();
         }
 
         @Override
@@ -151,6 +190,15 @@ public class KnownBandsChannelHelper extends ChannelHelper {
                     channelSettings.frequency = mChannels.valueAt(i);
                     bucketSettings.channels[i] = channelSettings;
                 }
+            }
+        }
+
+        @Override
+        public Set<Integer> getSupplicantScanFreqs() {
+            if (mAllBands == mExactBands && mExactBands == WifiScanner.WIFI_BAND_BOTH_WITH_DFS) {
+                return null;
+            } else {
+                return new ArraySet<Integer>(mChannels);
             }
         }
     }

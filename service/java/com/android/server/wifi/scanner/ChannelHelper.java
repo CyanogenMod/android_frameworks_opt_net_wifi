@@ -20,6 +20,8 @@ import android.net.wifi.WifiScanner;
 
 import com.android.server.wifi.WifiNative;
 
+import java.util.Set;
+
 /**
  * ChannelHelper offers an abstraction for channel manipulation utilities allowing operation to be
  * adjusted based on the amount of information known about the available channels.
@@ -30,6 +32,11 @@ public abstract class ChannelHelper {
      * Create a new collection that can be used to store channels
      */
     public abstract ChannelCollection createChannelCollection();
+
+    /**
+     * Return true if the specified channel is expected for a scan with the given settings
+     */
+    public abstract boolean settingsContainChannel(WifiScanner.ScanSettings settings, int channel);
 
     /**
      * Object that supports accumulation of channels and bands
@@ -44,6 +51,14 @@ public abstract class ChannelHelper {
          */
         public abstract void addBand(int band);
         /**
+         * @return true if the collection contains the supplied channel
+         */
+        public abstract boolean containsChannel(int channel);
+        /**
+         * @return true if the collection contains no channels
+         */
+        public abstract boolean isEmpty();
+        /**
          * Remove all channels from the collection
          */
         public abstract void clear();
@@ -51,13 +66,26 @@ public abstract class ChannelHelper {
         /**
          * Add all channels in the ScanSetting to the collection
          */
-        public void addChannels(WifiScanner.ScanSettings setting) {
-            if (setting.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
-                for (int j = 0; j < setting.channels.length; ++j) {
-                    addChannel(setting.channels[j].frequency);
+        public void addChannels(WifiScanner.ScanSettings scanSettings) {
+            if (scanSettings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+                for (int j = 0; j < scanSettings.channels.length; ++j) {
+                    addChannel(scanSettings.channels[j].frequency);
                 }
             } else {
-                addBand(setting.band);
+                addBand(scanSettings.band);
+            }
+        }
+
+        /**
+         * Add all channels in the BucketSettings to the collection
+         */
+        public void addChannels(WifiNative.BucketSettings bucketSettings) {
+            if (bucketSettings.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
+                for (int j = 0; j < bucketSettings.channels.length; ++j) {
+                    addChannel(bucketSettings.channels[j].frequency);
+                }
+            } else {
+                addBand(bucketSettings.band);
             }
         }
 
@@ -67,5 +95,11 @@ public abstract class ChannelHelper {
          * channel list.
          */
         public abstract void fillBucketSettings(WifiNative.BucketSettings bucket, int maxChannels);
+
+        /**
+         * Gets the list of channels that should be supplied to supplicant for a scan. Will either
+         * be a collection of all channels or null if all channels should be scanned.
+         */
+        public abstract Set<Integer> getSupplicantScanFreqs();
     }
 }

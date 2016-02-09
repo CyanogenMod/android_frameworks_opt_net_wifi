@@ -133,21 +133,21 @@ public class ScanTestUtil {
         }
 
         public NativeScanSettingsBuilder addBucketWithChannels(
-                int period, int reportEvents, int... channels) {
-            return addBucketWithChannels(period, reportEvents, channelsToSpec(channels));
+                int period, int reportEvents, ChannelSpec... channels) {
+            int[] channelFreqs = new int[channels.length];
+            for (int i = 0; i < channels.length; ++i) {
+                channelFreqs[i] = channels[i].frequency;
+            }
+            return addBucketWithChannels(period, reportEvents, channelFreqs);
         }
 
         public NativeScanSettingsBuilder addBucketWithChannels(
-                int period, int reportEvents, ChannelSpec... channels) {
+                int period, int reportEvents, int... channels) {
             WifiNative.BucketSettings bucket = new WifiNative.BucketSettings();
             bucket.bucket = mSettings.num_buckets;
             bucket.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
             bucket.num_channels = channels.length;
-            bucket.channels = new WifiNative.ChannelSettings[channels.length];
-            for (int i = 0; i < channels.length; ++i) {
-                bucket.channels[i] = new WifiNative.ChannelSettings();
-                bucket.channels[i].frequency = channels[i].frequency;
-            }
+            bucket.channels = channelsToNativeSettings(channels);
             bucket.period_ms = period;
             bucket.report_events = reportEvents;
             return addBucket(bucket);
@@ -289,6 +289,18 @@ public class ScanTestUtil {
                         || actual.buckets[i].channels.length == 0);
             }
         }
+    }
+
+    /**
+     * Convert a list of channel frequencies to an array of equivalent WifiNative.ChannelSettings
+     */
+    public static WifiNative.ChannelSettings[] channelsToNativeSettings(int... channels) {
+        WifiNative.ChannelSettings[] channelSpecs = new WifiNative.ChannelSettings[channels.length];
+        for (int i = 0; i < channels.length; ++i) {
+            channelSpecs[i] = new WifiNative.ChannelSettings();
+            channelSpecs[i].frequency = channels[i];
+        }
+        return channelSpecs;
     }
 
     public static ChannelSpec[] getAllChannels(WifiNative.BucketSettings bucket) {

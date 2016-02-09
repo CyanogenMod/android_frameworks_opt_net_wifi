@@ -18,8 +18,14 @@ package com.android.server.wifi.scanner;
 
 import static com.android.server.wifi.ScanTestUtil.bandIs;
 import static com.android.server.wifi.ScanTestUtil.channelsAre;
+import static com.android.server.wifi.ScanTestUtil.channelsToSpec;
+import static com.android.server.wifi.ScanTestUtil.createRequest;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import android.net.wifi.WifiScanner;
 import android.test.suitebuilder.annotation.SmallTest;
@@ -31,12 +37,90 @@ import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+
 /**
  * Unit tests for {@link com.android.server.wifi.scanner.KnownBandsChannelHelper}.
  */
 @SmallTest
 @RunWith(Enclosed.class) // WARNING: tests cannot be declared in the outer class
 public class KnownBandsChannelHelperTest {
+
+    /**
+     * Unit tests for
+     * {@link com.android.server.wifi.scanner.KnownBandsChannelHelper.settingsContainChannel}.
+     */
+    public static class SettingsContainChannelTest {
+        KnownBandsChannelHelper mChannelHelper;
+
+        /**
+         * Called before each test
+         * Create a channel helper
+         */
+        @Before
+        public void setUp() throws Exception {
+            mChannelHelper = new KnownBandsChannelHelper(
+                    new int[]{2400, 2450},
+                    new int[]{5150, 5175},
+                    new int[]{5600, 5650, 5660});
+        }
+
+        /**
+         * check a settings object with no channels
+         */
+        @Test
+        public void emptySettings() {
+            WifiScanner.ScanSettings testSettings = createRequest(channelsToSpec(),
+                    10000, 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+
+            assertFalse(mChannelHelper.settingsContainChannel(testSettings, 2400));
+            assertFalse(mChannelHelper.settingsContainChannel(testSettings, 5150));
+            assertFalse(mChannelHelper.settingsContainChannel(testSettings, 5650));
+        }
+
+        /**
+         * check a settings object with some channels
+         */
+        @Test
+        public void settingsWithChannels() {
+            WifiScanner.ScanSettings testSettings = createRequest(channelsToSpec(2400, 5650),
+                    10000, 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+
+            assertTrue(mChannelHelper.settingsContainChannel(testSettings, 2400));
+            assertFalse(mChannelHelper.settingsContainChannel(testSettings, 5150));
+            assertTrue(mChannelHelper.settingsContainChannel(testSettings, 5650));
+        }
+
+        /**
+         * check a settings object with a band specified
+         */
+        @Test
+        public void settingsWithBand() {
+            WifiScanner.ScanSettings testSettings = createRequest(WifiScanner.WIFI_BAND_24_GHZ,
+                    10000, 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+
+            assertTrue(mChannelHelper.settingsContainChannel(testSettings, 2400));
+            assertTrue(mChannelHelper.settingsContainChannel(testSettings, 2450));
+            assertFalse(mChannelHelper.settingsContainChannel(testSettings, 5150));
+            assertFalse(mChannelHelper.settingsContainChannel(testSettings, 5650));
+        }
+
+        /**
+         * check a settings object with multiple bands specified
+         */
+        @Test
+        public void settingsWithMultiBand() {
+            WifiScanner.ScanSettings testSettings = createRequest(WifiScanner.WIFI_BAND_BOTH,
+                    10000, 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+
+            assertTrue(mChannelHelper.settingsContainChannel(testSettings, 2400));
+            assertTrue(mChannelHelper.settingsContainChannel(testSettings, 2450));
+            assertTrue(mChannelHelper.settingsContainChannel(testSettings, 5150));
+            assertFalse(mChannelHelper.settingsContainChannel(testSettings, 5650));
+        }
+    }
 
     /**
      * Unit tests for
@@ -65,8 +149,14 @@ public class KnownBandsChannelHelperTest {
         public void empty() {
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
-
             assertThat(bucketSettings, channelsAre());
+
+            assertEquals(Collections.<Integer>emptySet(),
+                    mChannelCollection.getSupplicantScanFreqs());
+
+            assertTrue(mChannelCollection.isEmpty());
+            assertFalse(mChannelCollection.containsChannel(2400));
+            assertFalse(mChannelCollection.containsChannel(5150));
         }
 
         /**
@@ -80,6 +170,13 @@ public class KnownBandsChannelHelperTest {
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
             assertThat(bucketSettings, channelsAre());
+
+            assertEquals(Collections.<Integer>emptySet(),
+                    mChannelCollection.getSupplicantScanFreqs());
+
+            assertTrue(mChannelCollection.isEmpty());
+            assertFalse(mChannelCollection.containsChannel(2400));
+            assertFalse(mChannelCollection.containsChannel(5150));
         }
 
         /**
@@ -92,6 +189,13 @@ public class KnownBandsChannelHelperTest {
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
             assertThat(bucketSettings, bandIs(WifiScanner.WIFI_BAND_24_GHZ));
+
+            assertEquals(new HashSet<Integer>(Arrays.asList(2400, 2450)),
+                    mChannelCollection.getSupplicantScanFreqs());
+
+            assertFalse(mChannelCollection.isEmpty());
+            assertTrue(mChannelCollection.containsChannel(2400));
+            assertFalse(mChannelCollection.containsChannel(5150));
         }
 
         /**
@@ -104,6 +208,13 @@ public class KnownBandsChannelHelperTest {
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
             assertThat(bucketSettings, channelsAre(2400));
+
+            assertEquals(new HashSet<Integer>(Arrays.asList(2400)),
+                    mChannelCollection.getSupplicantScanFreqs());
+
+            assertFalse(mChannelCollection.isEmpty());
+            assertTrue(mChannelCollection.containsChannel(2400));
+            assertFalse(mChannelCollection.containsChannel(5150));
         }
 
         /**
@@ -117,6 +228,13 @@ public class KnownBandsChannelHelperTest {
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
             assertThat(bucketSettings, channelsAre(2400, 2450));
+
+            assertEquals(new HashSet<Integer>(Arrays.asList(2400, 2450)),
+                    mChannelCollection.getSupplicantScanFreqs());
+
+            assertFalse(mChannelCollection.isEmpty());
+            assertTrue(mChannelCollection.containsChannel(2400));
+            assertFalse(mChannelCollection.containsChannel(5150));
         }
 
         /**
@@ -130,6 +248,13 @@ public class KnownBandsChannelHelperTest {
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
             assertThat(bucketSettings, bandIs(WifiScanner.WIFI_BAND_24_GHZ));
+
+            assertEquals(new HashSet<Integer>(Arrays.asList(2400, 2450)),
+                    mChannelCollection.getSupplicantScanFreqs());
+
+            assertFalse(mChannelCollection.isEmpty());
+            assertTrue(mChannelCollection.containsChannel(2400));
+            assertFalse(mChannelCollection.containsChannel(5150));
         }
 
         /**
@@ -143,6 +268,33 @@ public class KnownBandsChannelHelperTest {
             WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
             mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
             assertThat(bucketSettings, channelsAre(2400, 2450, 5150));
+
+            assertEquals(new HashSet<Integer>(Arrays.asList(2400, 2450, 5150)),
+                    mChannelCollection.getSupplicantScanFreqs());
+
+            assertFalse(mChannelCollection.isEmpty());
+            assertTrue(mChannelCollection.containsChannel(2400));
+            assertTrue(mChannelCollection.containsChannel(5150));
+        }
+
+        /**
+         * Add a band that should contain all channels
+         */
+        @Test
+        public void addChannel_and_addBand_all() {
+            mChannelCollection.addBand(WifiScanner.WIFI_BAND_BOTH_WITH_DFS);
+            mChannelCollection.addChannel(5150);
+
+            WifiNative.BucketSettings bucketSettings = new WifiNative.BucketSettings();
+            mChannelCollection.fillBucketSettings(bucketSettings, Integer.MAX_VALUE);
+            assertThat(bucketSettings, bandIs(WifiScanner.WIFI_BAND_BOTH_WITH_DFS));
+
+            assertNull(mChannelCollection.getSupplicantScanFreqs());
+
+            assertFalse(mChannelCollection.isEmpty());
+            assertTrue(mChannelCollection.containsChannel(2400));
+            assertTrue(mChannelCollection.containsChannel(5150));
+            assertTrue(mChannelCollection.containsChannel(5600));
         }
 
         /**
