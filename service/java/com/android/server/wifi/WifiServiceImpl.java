@@ -324,8 +324,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         mPowerManager = context.getSystemService(PowerManager.class);
         mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
 
-        mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);
-
+        mNotificationController = new WifiNotificationController(mContext,
+                mWifiStateMachine, facade, null);
 
         mClientHandler = new ClientHandler(wifiThread.getLooper());
         mWifiStateMachineHandler = new WifiStateMachineHandler(wifiThread.getLooper());
