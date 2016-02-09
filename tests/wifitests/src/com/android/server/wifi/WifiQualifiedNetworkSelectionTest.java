@@ -196,7 +196,7 @@ public class WifiQualifiedNetworkSelectionTest {
      */
     private void prepareConfigStore(final WifiConfiguration[] configs) {
         when(mWifiConfigStore.getWifiConfiguration(anyInt()))
-                .then(new AnswerWithArguments<Boolean>() {
+                .then(new AnswerWithArguments() {
                     public WifiConfiguration answer(int netId) {
                         if (netId >= 0 && netId < configs.length) {
                             return configs[netId];

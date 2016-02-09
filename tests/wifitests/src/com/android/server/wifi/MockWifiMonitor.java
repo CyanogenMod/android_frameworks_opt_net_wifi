@@ -54,7 +54,7 @@ public class MockWifiMonitor {
     }
 
     private final Map<String, SparseArray<Handler>> mHandlerMap = new HashMap<>();
-    private class RegisterHandlerAnswer extends AnswerWithArguments<Void> {
+    private class RegisterHandlerAnswer extends AnswerWithArguments {
         public void answer(String iface, int what, Handler handler) {
             SparseArray<Handler> ifaceHandlers = mHandlerMap.get(iface);
             if (ifaceHandlers == null) {
