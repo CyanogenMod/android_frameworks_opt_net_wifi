@@ -1753,10 +1753,10 @@ public class WifiNative {
     }
 
     /* scan status, keep these values in sync with gscan.h */
-    private static final int WIFI_SCAN_RESULTS_AVAILABLE = 0;
-    private static final int WIFI_SCAN_THRESHOLD_NUM_SCANS = 1;
-    private static final int WIFI_SCAN_THRESHOLD_PERCENT = 2;
-    private static final int WIFI_SCAN_DISABLED = 3;
+    public static final int WIFI_SCAN_RESULTS_AVAILABLE = 0;
+    public static final int WIFI_SCAN_THRESHOLD_NUM_SCANS = 1;
+    public static final int WIFI_SCAN_THRESHOLD_PERCENT = 2;
+    public static final int WIFI_SCAN_FAILED = 3;
 
     // Callback from native
     private static void onScanStatus(int id, int event) {
@@ -1768,8 +1768,8 @@ public class WifiNative {
                 handler.onScanStatus();
             }
         }
-        else if (event == WIFI_SCAN_DISABLED) {
-            // TODO signal that scan has been disabled
+        else if (event == WIFI_SCAN_FAILED) {
+            // TODO signal that scan has failed
         }
     }
 
