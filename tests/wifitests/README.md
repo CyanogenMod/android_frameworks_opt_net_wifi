@@ -14,16 +14,16 @@ runtest frameworks-wifi
 `runtest` will build the test project and push the APK to the connected device. It will then run the
 tests on the device. See `runtest --help` for options to specify individual test classes or methods.
 
-**WARNING:** You have to build wifi-service first before you run runtest for changes there to take
-effect. You can use the following command from your build root to build the wifi service and run
-tests.
+**WARNING:** You have to build the components under test (wifi-service, etc) first before you run
+runtest for changes there to take effect. You can use the following command from your build root to
+build the wifi service and run tests.
 
 ```
-mmm frameworks/opt/net/wifi/service && runtest frameworks-wifi
+mmma frameworks/opt/net/wifi/tests && runtest frameworks-wifi
 ```
 
 
-If you manually build and push the APK to the device you can run tests using
+If you manually build and push the test APK to the device you can run tests using
 
 ```
 adb shell am instrument -w 'com.android.server.wifi.test/android.support.test.runner.AndroidJUnitRunner'
@@ -32,3 +32,8 @@ adb shell am instrument -w 'com.android.server.wifi.test/android.support.test.ru
 ## Adding Tests
 Tests can be added by adding classes to the src directory. JUnit4 style test cases can
 be written by simply annotating test methods with `org.junit.Test`.
+
+## Debugging Tests
+If you are trying to debug why tests are not doing what you expected, you can add android log
+statements and use logcat to view them. The beginning and end of every tests is automatically logged
+with the tag `TestRunner`.
