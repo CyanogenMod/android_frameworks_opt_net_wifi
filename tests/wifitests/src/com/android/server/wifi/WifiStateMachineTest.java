@@ -67,7 +67,6 @@ import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
-import com.android.server.wifi.hotspot2.osu.OSUManager;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
 import org.junit.After;
@@ -160,11 +159,6 @@ public class WifiStateMachineTest {
 
         IBinder batteryStatsBinder = mockService(BatteryStats.class, IBatteryStats.class);
         when(facade.getService(BatteryStats.SERVICE_NAME)).thenReturn(batteryStatsBinder);
-
-        when(facade.makeOsuManager(any(WifiConfigStore.class), any(Context.class), any(
-                SupplicantBridge.class),
-                any(PasspointManagementObjectManager.class), any(WifiStateMachine.class)))
-                .thenReturn(mock(OSUManager.class));
 
         when(facade.makeIpManager(any(Context.class), anyString(), any(IpManager.Callback.class)))
                 .then(new AnswerWithArguments<IpManager>() {

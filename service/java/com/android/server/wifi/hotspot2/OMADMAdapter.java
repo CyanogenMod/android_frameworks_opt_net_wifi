@@ -12,7 +12,6 @@ import com.android.server.wifi.anqp.eap.EAP;
 import com.android.server.wifi.hotspot2.omadm.MOTree;
 import com.android.server.wifi.hotspot2.omadm.OMAConstants;
 import com.android.server.wifi.hotspot2.omadm.OMAConstructed;
-import com.android.server.wifi.hotspot2.osu.OSUManager;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -140,7 +139,8 @@ public class OMADMAdapter {
             if (strDevId != null && strDevId.length() >= IMEI_Length) {
                 strDevId = strDevId.substring(0, IMEI_Length);
             } else {
-                Log.w(OSUManager.TAG, "MEID cannot be extracted from DeviceId " + strDevId);
+                Log.w(Utils.hs2LogTag(getClass()),
+                        "MEID cannot be extracted from DeviceId " + strDevId);
             }
         } else {
             if (isPhoneTypeLTE()) {
@@ -275,7 +275,7 @@ public class OMADMAdapter {
             }
         }
         catch (IOException ioe) {
-            Log.e(OSUManager.TAG, "Caught exception building OMA Tree: " + ioe, ioe);
+            Log.e(Utils.hs2LogTag(getClass()), "Caught exception building OMA Tree: " + ioe, ioe);
             return null;
         }
 

@@ -11,7 +11,6 @@ import com.android.server.wifi.anqp.eap.ExpandedEAPMethod;
 import com.android.server.wifi.anqp.eap.InnerAuthEAP;
 import com.android.server.wifi.anqp.eap.NonEAPInnerAuth;
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.osu.commands.PasspointManagementObjectData;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 import com.android.server.wifi.hotspot2.pps.Policy;
@@ -224,15 +223,6 @@ public class PasspointManagementObjectManager {
         return addSP(omaParser.parse(xml, OMAConstants.PPS_URN));
     }
 
-    public int modifySP(String fqdn, List<PasspointManagementObjectDefinition> mods)
-            throws IOException, SAXException {
-        List<PasspointManagementObjectData> moData = new ArrayList<>();
-        for (PasspointManagementObjectDefinition mod : mods) {
-            moData.add(new PasspointManagementObjectData(mod));
-        }
-        return modifySP(fqdn, moData);
-    }
-
     private static final List<String> FQDNPath = Arrays.asList(TAG_HomeSP, TAG_FQDN);
 
     /**
@@ -333,7 +323,8 @@ public class PasspointManagementObjectManager {
         throw new OMAException("Cannot find instance node");
     }
 
-    public int modifySP(String fqdn, Collection<PasspointManagementObjectData> mods) throws IOException {
+    public int modifySP(String fqdn, Collection<PasspointManagementObjectDefinition> mods)
+            throws IOException, SAXException {
 
         Log.d(Utils.hs2LogTag(getClass()), "modifying SP: " + mods);
         MOTree moTree;
@@ -349,10 +340,10 @@ public class PasspointManagementObjectManager {
             }
             OMAConstructed instance = getInstanceNode(targetTree);
 
-            for (PasspointManagementObjectData mod : mods) {
-                LinkedList<String> tailPath = getTailPath(mod.getBaseURI(),
+            for (PasspointManagementObjectDefinition mod : mods) {
+                LinkedList<String> tailPath = getTailPath(mod.getBaseUri(),
                         TAG_PerProviderSubscription);
-                OMAConstructed modRoot = mod.getMOTree().getRoot();
+                OMAConstructed modRoot = buildMoTree(mod).getRoot();
                 // modRoot is the MgmtTree with the actual object as a
                 // direct child (e.g. Credential)
 
@@ -385,6 +376,14 @@ public class PasspointManagementObjectManager {
         writeMO(moTree, mPpsFile);
 
         return ppsMods;
+    }
+
+    private static MOTree buildMoTree(PasspointManagementObjectDefinition
+                                              managementObjectDefinition)
+            throws IOException, SAXException {
+
+        OMAParser omaParser = new OMAParser();
+        return omaParser.parse(managementObjectDefinition.getMoTree(), OMAConstants.PPS_URN);
     }
 
     private static LinkedList<String> getTailPath(String pathString, String rootName)

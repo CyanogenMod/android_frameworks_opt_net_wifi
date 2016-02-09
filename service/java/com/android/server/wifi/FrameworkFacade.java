@@ -11,11 +11,6 @@ import android.os.IBinder;
 import android.os.ServiceManager;
 import android.provider.Settings;
 
-import com.android.internal.util.StateMachine;
-import com.android.server.wifi.hotspot2.SupplicantBridge;
-import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
-import com.android.server.wifi.hotspot2.osu.OSUManager;
-
 /**
  * This class allows overriding objects with mocks to write unit tests
  */
@@ -48,13 +43,6 @@ public class FrameworkFacade {
 
     public PendingIntent getBroadcast(Context context, int requestCode, Intent intent, int flags) {
         return PendingIntent.getBroadcast(context, requestCode, intent, flags);
-    }
-
-    public OSUManager makeOsuManager(WifiConfigStore wifiConfigStore, Context context,
-             SupplicantBridge supplicantBridge, PasspointManagementObjectManager moManager,
-             WifiStateMachine wifiStateMachine) {
-        return new OSUManager(wifiConfigStore, context,
-                supplicantBridge, moManager, wifiStateMachine);
     }
 
     public SupplicantStateTracker makeSupplicantStateTracker(Context context,
