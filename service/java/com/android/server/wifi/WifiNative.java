@@ -63,6 +63,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -1813,7 +1814,8 @@ public class WifiNative {
         return true;
     }
 
-    private static void populateScanResult(ScanResult result, byte bytes[], String dbg) {
+    private static void populateScanResult(ScanResult result, byte[] bytes, int beaconCap,
+                                            String dbg) {
         if (bytes == null) return;
         if (dbg == null) dbg = "";
 
@@ -1851,11 +1853,23 @@ public class WifiNative {
             result.centerFreq0 = htOperation.getCenterFreq0(result.frequency);
             result.centerFreq1  = 0;
         }
+
+        // build capabilities string
+        BitSet beaconCapBits = new BitSet(16);
+        for (int i = 0; i < 16; i++) {
+            if ((beaconCap & (1 << i)) != 0) {
+                beaconCapBits.set(i);
+            }
+        }
+        result.capabilities = InformationElementUtil.Capabilities.buildCapabilities(elements,
+                                               beaconCapBits);
+
         if(DBG) {
-            Log.d(TAG, dbg + "SSID: " + result.SSID + " ChannelWidth is: " + result.channelWidth +
-                    " PrimaryFreq: " + result.frequency +" mCenterfreq0: " + result.centerFreq0 +
-                    " mCenterfreq1: " + result.centerFreq1 + (extendedCaps.is80211McRTTResponder ?
-                    "Support RTT reponder: " : "Do not support RTT responder"));
+            Log.d(TAG, dbg + "SSID: " + result.SSID + " ChannelWidth is: " + result.channelWidth
+                    + " PrimaryFreq: " + result.frequency + " mCenterfreq0: " + result.centerFreq0
+                    + " mCenterfreq1: " + result.centerFreq1 + (extendedCaps.is80211McRTTResponder
+                    ? "Support RTT reponder: " : "Do not support RTT responder")
+                    + " Capabilities: " + result.capabilities);
         }
 
         result.informationElements = elements;
@@ -1863,13 +1877,13 @@ public class WifiNative {
 
     // Callback from native
     private static void onFullScanResult(int id, ScanResult result, byte bytes[],
-            int bucketsScanned) {
+            int bucketsScanned, int beaconCap) {
         if (DBG) Log.i(TAG, "Got a full scan results event, ssid = " + result.SSID + ", " +
                 "num = " + bytes.length);
 
         ScanEventHandler handler = sScanEventHandler;
         if (handler != null) {
-            populateScanResult(result, bytes, " onFullScanResult ");
+            populateScanResult(result, bytes, beaconCap, " onFullScanResult ");
             handler.onFullScanResult(result);
         }
     }
@@ -2655,7 +2669,7 @@ public class WifiNative {
     }
 
     // Callback from native
-    private static void onPnoNetworkFound(int id, ScanResult[] results) {
+    private static void onPnoNetworkFound(int id, ScanResult[] results, int[] beaconCaps) {
         if (results == null) {
             Log.e(TAG, "onPnoNetworkFound null results");
             return;
@@ -2669,7 +2683,8 @@ public class WifiNative {
                 Log.e(TAG, "onPnoNetworkFound SSID " + results[i].SSID
                         + " " + results[i].level + " " + results[i].frequency);
 
-                populateScanResult(results[i], results[i].bytes, "onPnoNetworkFound ");
+                populateScanResult(results[i], results[i].bytes, beaconCaps[i],
+                                    "onPnoNetworkFound ");
                 results[i].wifiSsid = WifiSsid.createFromAsciiEncoded(results[i].SSID);
             }
 

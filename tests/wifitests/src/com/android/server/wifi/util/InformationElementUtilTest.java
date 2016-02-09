@@ -27,6 +27,7 @@ import org.junit.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.BitSet;
 
 /**
  * Unit tests for {@link com.android.server.wifi.util.InformationElementUtil}.
@@ -235,5 +236,110 @@ public class InformationElementUtilTest {
         assertEquals("First result should have data of 1 byte", 1, results[0].bytes.length);
         assertEquals("First result should have data set to 0x00",
                 invalidLengthTagWithSSIDBytes[2], results[0].bytes[0]);
+    }
+
+    /**
+     * Test Capabilities.buildCapabilities() with a RSN IE.
+     * Expect the function to return a string with the proper security information.
+     *
+     */
+    @Test
+    public void buildCapabilities_rsnElement() {
+        InformationElement ie = new InformationElement();
+        ie.id = InformationElement.EID_RSN;
+        ie.bytes = new byte[] { (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x0F,
+                                (byte) 0xAC, (byte) 0x02, (byte) 0x02, (byte) 0x00,
+                                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x04,
+                                (byte) 0x00, (byte) 0x0F, (byte) 0xAC, (byte) 0x02,
+                                (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x0F,
+                                (byte) 0xAC, (byte) 0x02, (byte) 0x00, (byte) 0x00 };
+
+        InformationElement[] ies = new InformationElement[] { ie };
+
+        BitSet beaconCap = new BitSet(16);
+        beaconCap.set(4);
+
+        String result = InformationElementUtil.Capabilities.buildCapabilities(ies, beaconCap);
+
+        assertEquals("[WPA2-PSK]", result);
+    }
+
+    /**
+     * Test Capabilities.buildCapabilities() with a WPA type 1 IE.
+     * Expect the function to return a string with the proper security information.
+     *
+     */
+    @Test
+    public void buildCapabilities_wpa1Element() {
+        InformationElement ie = new InformationElement();
+        ie.id = InformationElement.EID_VSA;
+        ie.bytes = new byte[] { (byte) 0x00, (byte) 0x50, (byte) 0xF2, (byte) 0x01,
+                                (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x50,
+                                (byte) 0xF2, (byte) 0x02, (byte) 0x02, (byte) 0x00,
+                                (byte) 0x00, (byte) 0x50, (byte) 0xF2, (byte) 0x04,
+                                (byte) 0x00, (byte) 0x50, (byte) 0xF2, (byte) 0x02,
+                                (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x50,
+                                (byte) 0xF2, (byte) 0x02, (byte) 0x00, (byte) 0x00 };
+
+        InformationElement[] ies = new InformationElement[] { ie };
+
+        BitSet beaconCap = new BitSet(16);
+        beaconCap.set(4);
+
+        String result = InformationElementUtil.Capabilities.buildCapabilities(ies, beaconCap);
+
+        assertEquals("[WPA-PSK]", result);
+    }
+
+    /**
+     * Test Capabilities.buildCapabilities() with a vendor specific element which
+     * is not WPA type 1 however. Beacon Capability Information field has the Privacy
+     * bit set.
+     *
+     * Expect the function to return a string with the proper security information.
+     *
+     */
+    @Test
+    public void buildCapabilities_nonRsnWpa1Element_privacySet() {
+        InformationElement ie = new InformationElement();
+        ie.id = InformationElement.EID_VSA;
+        ie.bytes = new byte[] { (byte) 0x00, (byte) 0x04, (byte) 0x0E, (byte) 0x01,
+                                (byte) 0x01, (byte) 0x02, (byte) 0x01, (byte) 0x00,
+                                (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00 };
+
+        InformationElement[] ies = new InformationElement[] { ie };
+
+        BitSet beaconCap = new BitSet(16);
+        beaconCap.set(4);
+
+        String result = InformationElementUtil.Capabilities.buildCapabilities(ies, beaconCap);
+
+        assertEquals("[WEP]", result);
+    }
+
+    /**
+     * Test Capabilities.buildCapabilities() with a vendor specific element which
+     * is not WPA type 1 however. Beacon Capability Information field doesn't have the
+     * Privacy bit set.
+     *
+     * Expect the function to return a string with the proper security information.
+     *
+     */
+    @Test
+    public void buildCapabilities_nonRsnWpa1Element_privacyClear() {
+        InformationElement ie = new InformationElement();
+        ie.id = InformationElement.EID_VSA;
+        ie.bytes = new byte[] { (byte) 0x00, (byte) 0x04, (byte) 0x0E, (byte) 0x01,
+                                (byte) 0x01, (byte) 0x02, (byte) 0x01, (byte) 0x00,
+                                (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00 };
+
+        InformationElement[] ies = new InformationElement[] { ie };
+
+        BitSet beaconCap = new BitSet(16);
+        beaconCap.clear(4);
+
+        String result = InformationElementUtil.Capabilities.buildCapabilities(ies, beaconCap);
+
+        assertEquals("", result);
     }
 }

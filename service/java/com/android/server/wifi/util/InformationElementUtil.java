@@ -13,8 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.android.server.wifi.util;
+
+import static com.android.server.wifi.anqp.Constants.getInteger;
 
 import android.net.wifi.ScanResult.InformationElement;
 import android.util.Log;
@@ -24,11 +25,11 @@ import com.android.server.wifi.anqp.VenueNameElement;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 
 import java.net.ProtocolException;
+import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-
-import static com.android.server.wifi.anqp.Constants.getInteger;
+import java.util.BitSet;
 
 public class InformationElementUtil {
 
@@ -44,14 +45,14 @@ public class InformationElementUtil {
             int eid = data.get() & Constants.BYTE_MASK;
             int elementLength = data.get() & Constants.BYTE_MASK;
 
-            if (elementLength > data.remaining() || (eid == InformationElement.EID_SSID &&
-                    found_ssid)) {
+            if (elementLength > data.remaining() || (eid == InformationElement.EID_SSID
+                    && found_ssid)) {
                 // APs often pad the data with bytes that happen to match that of the EID_SSID
                 // marker.  This is not due to a known issue for APs to incorrectly send the SSID
                 // name multiple times.
                 break;
             }
-            if(eid == InformationElement.EID_SSID) {
+            if (eid == InformationElement.EID_SSID) {
                 found_ssid = true;
             }
 
@@ -71,12 +72,12 @@ public class InformationElementUtil {
         public int capacity = 0;
 
         public void from(InformationElement ie) {
-            if(ie.id != InformationElement.EID_BSS_LOAD) {
+            if (ie.id != InformationElement.EID_BSS_LOAD) {
                 throw new IllegalArgumentException("Element id is not BSS_LOAD, : " + ie.id);
             }
             if (ie.bytes.length != 5) {
-                throw new IllegalArgumentException("BSS Load element length is not 5: " +
-                                                   ie.bytes.length);
+                throw new IllegalArgumentException("BSS Load element length is not 5: "
+                                                   + ie.bytes.length);
             }
             ByteBuffer data = ByteBuffer.wrap(ie.bytes).order(ByteOrder.LITTLE_ENDIAN);
             stationCount = data.getShort() & Constants.SHORT_MASK;
@@ -89,10 +90,9 @@ public class InformationElementUtil {
         public int secondChannelOffset = 0;
 
         public int getChannelWidth() {
-            if(secondChannelOffset != 0) {
+            if (secondChannelOffset != 0) {
                 return 1;
-            }
-            else {
+            } else {
                 return 0;
             }
         }
@@ -114,7 +114,7 @@ public class InformationElementUtil {
         }
 
         public void from(InformationElement ie) {
-            if(ie.id != InformationElement.EID_HT_OPERATION) {
+            if (ie.id != InformationElement.EID_HT_OPERATION) {
                 throw new IllegalArgumentException("Element id is not HT_OPERATION, : " + ie.id);
             }
             secondChannelOffset = ie.bytes[1] & 0x3;
@@ -140,7 +140,7 @@ public class InformationElementUtil {
         }
 
         public int getCenterFreq1() {
-            if(channelMode > 1) { //160MHz
+            if (channelMode > 1) { //160MHz
                 return (centerFreqIndex2 - 36) * 5 + 5180;
             } else {
                 return 0;
@@ -148,7 +148,7 @@ public class InformationElementUtil {
         }
 
         public void from(InformationElement ie) {
-            if(ie.id != InformationElement.EID_VHT_OPERATION) {
+            if (ie.id != InformationElement.EID_VHT_OPERATION) {
                 throw new IllegalArgumentException("Element id is not VHT_OPERATION, : " + ie.id);
             }
             channelMode = ie.bytes[0] & Constants.BYTE_MASK;
@@ -165,7 +165,7 @@ public class InformationElementUtil {
         public long hessid = 0L;
 
         public void from(InformationElement ie) {
-            if(ie.id != InformationElement.EID_INTERWORKING) {
+            if (ie.id != InformationElement.EID_INTERWORKING) {
                 throw new IllegalArgumentException("Element id is not INTERWORKING, : " + ie.id);
             }
             ByteBuffer data = ByteBuffer.wrap(ie.bytes).order(ByteOrder.LITTLE_ENDIAN);
@@ -185,8 +185,8 @@ public class InformationElementUtil {
                     /*Cannot happen*/
                 }
             } else if (ie.bytes.length != 1 && ie.bytes.length != 7) {
-                throw new IllegalArgumentException("Bad Interworking element length: " +
-                        ie.bytes.length);
+                throw new IllegalArgumentException("Bad Interworking element length: "
+                        + ie.bytes.length);
             }
             if (ie.bytes.length == 7 || ie.bytes.length == 9) {
                 hessid = getInteger(data, ByteOrder.BIG_ENDIAN, 6);
@@ -199,9 +199,9 @@ public class InformationElementUtil {
         public long[] roamingConsortiums = null;
 
         public void from(InformationElement ie) {
-            if(ie.id != InformationElement.EID_ROAMING_CONSORTIUM) {
-                throw new IllegalArgumentException("Element id is not ROAMING_CONSORTIUM, : " +
-                        ie.id);
+            if (ie.id != InformationElement.EID_ROAMING_CONSORTIUM) {
+                throw new IllegalArgumentException("Element id is not ROAMING_CONSORTIUM, : "
+                        + ie.id);
             }
             ByteBuffer data = ByteBuffer.wrap(ie.bytes).order(ByteOrder.LITTLE_ENDIAN);
             anqpOICount = data.get() & Constants.BYTE_MASK;
@@ -294,11 +294,260 @@ public class InformationElementUtil {
 
             int index = RTT_RESP_ENABLE_BIT / 8;
             byte offset = RTT_RESP_ENABLE_BIT % 8;
-            if(ie.bytes.length < index + 1) {
+            if (ie.bytes.length < index + 1) {
                 is80211McRTTResponder = false;
             } else {
-                is80211McRTTResponder = (ie.bytes[index] & ((byte)0x1 << offset)) != 0;
+                is80211McRTTResponder = (ie.bytes[index] & ((byte) 0x1 << offset)) != 0;
             }
+        }
+    }
+
+    /**
+     * parse beacon to build the capabilities
+     *
+     * This class is used to build the capabilities string of the scan results coming
+     * from HAL. It parses the ieee beacon's capability field, WPA and RSNE IE as per spec,
+     * and builds the ScanResult.capabilities String in a way that mirrors the values returned
+     * by wpa_supplicant.
+     */
+    public static class Capabilities {
+        private static final int CAP_PRIVACY_BIT_OFFSET = 4;
+
+        private static final int WPA_VENDOR_OUI_TYPE_ONE = 0x01f25000;
+        private static final short WPA_VENDOR_OUI_VERSION = 0x0001;
+        private static final short RSNE_VERSION = 0x0001;
+
+        private static final int WPA_AKM_EAP = 0x01f25000;
+        private static final int WPA_AKM_PSK = 0x02f25000;
+
+        private static final int WPA2_AKM_EAP = 0x01ac0f00;
+        private static final int WPA2_AKM_PSK = 0x02ac0f00;
+        private static final int WPA2_AKM_FT_EAP = 0x03ac0f00;
+        private static final int WPA2_AKM_FT_PSK = 0x04ac0f00;
+        private static final int WPA2_AKM_EAP_SHA256 = 0x05ac0f00;
+        private static final int WPA2_AKM_PSK_SHA256 = 0x06ac0f00;
+
+        public Capabilities() {
+        }
+
+        // RSNE format (size unit: byte)
+        //
+        // | Element ID | Length | Version | Group Data Cipher Suite |
+        //      1           1         2                 4
+        // | Pairwise Cipher Suite Count | Pairwise Cipher Suite List |
+        //              2                            4 * m
+        // | AKM Suite Count | AKM Suite List | RSN Capabilities |
+        //          2               4 * n               2
+        // | PMKID Count | PMKID List | Group Management Cipher Suite |
+        //        2          16 * s                 4
+        //
+        // Note: InformationElement.bytes has 'Element ID' and 'Length'
+        //       stripped off already
+        private static String parseRsnElement(InformationElement ie) {
+            ByteBuffer buf = ByteBuffer.wrap(ie.bytes).order(ByteOrder.LITTLE_ENDIAN);
+
+            try {
+                // version
+                if (buf.getShort() != RSNE_VERSION) {
+                    // incorrect version
+                    return null;
+                }
+
+                // group data cipher suite
+                // here we simply advance the buffer position
+                buf.getInt();
+
+                // found the RSNE IE, hence start building the capability string
+                String security = "[WPA2";
+
+                // pairwise cipher suite count
+                short cipherCount = buf.getShort();
+
+                // pairwise cipher suite list
+                for (int i = 0; i < cipherCount; i++) {
+                    // here we simply advance the buffer position
+                    buf.getInt();
+                }
+
+                // AKM
+                // AKM suite count
+                short akmCount = buf.getShort();
+
+                // parse AKM suite list
+                if (akmCount == 0) {
+                    security += "-EAP"; //default AKM
+                }
+                boolean found = false;
+                for (int i = 0; i < akmCount; i++) {
+                    int akm = buf.getInt();
+                    switch (akm) {
+                        case WPA2_AKM_EAP:
+                            security += (found ? "+" : "-") + "EAP";
+                            found = true;
+                            break;
+                        case WPA2_AKM_PSK:
+                            security += (found ? "+" : "-") + "PSK";
+                            found = true;
+                            break;
+                        case WPA2_AKM_FT_EAP:
+                            security += (found ? "+" : "-") + "FT/EAP";
+                            found = true;
+                            break;
+                        case WPA2_AKM_FT_PSK:
+                            security += (found ? "+" : "-") + "FT/PSK";
+                            found = true;
+                            break;
+                        case WPA2_AKM_EAP_SHA256:
+                            security += (found ? "+" : "-") + "EAP-SHA256";
+                            found = true;
+                            break;
+                        case WPA2_AKM_PSK_SHA256:
+                            security += (found ? "+" : "-") + "PSK-SHA256";
+                            found = true;
+                            break;
+                        default:
+                            // do nothing
+                            break;
+                    }
+                }
+
+                // we parsed what we want at this point
+                security += "]";
+                return security;
+            } catch (BufferUnderflowException e) {
+                Log.e("IE_Capabilities", "Couldn't parse RSNE, buffer underflow");
+                return null;
+            }
+        }
+
+        private static boolean isWpaOneElement(InformationElement ie) {
+            ByteBuffer buf = ByteBuffer.wrap(ie.bytes).order(ByteOrder.LITTLE_ENDIAN);
+
+            try {
+                // WPA OUI and type
+                return (buf.getInt() == WPA_VENDOR_OUI_TYPE_ONE);
+            } catch (BufferUnderflowException e) {
+                Log.e("IE_Capabilities", "Couldn't parse VSA IE, buffer underflow");
+                return false;
+            }
+        }
+
+        // WPA type 1 format (size unit: byte)
+        //
+        // | Element ID | Length | OUI | Type | Version |
+        //      1           1       3     1        2
+        // | Pairwise Cipher Suite Count | Pairwise Cipher Suite List |
+        //              2                            4 * m
+        // | AKM Suite Count | AKM Suite List |
+        //          2               4 * n
+        //
+        // Note: InformationElement.bytes has 'Element ID' and 'Length'
+        //       stripped off already
+        //
+        private static String parseWpaOneElement(InformationElement ie) {
+            ByteBuffer buf = ByteBuffer.wrap(ie.bytes).order(ByteOrder.LITTLE_ENDIAN);
+
+            try {
+                // skip WPA OUI and type parsing. isWpaOneElement() should have
+                // been called for verification before we reach here.
+                buf.getInt();
+
+                // start building the string
+                String security = "[WPA";
+
+                // version
+                if (buf.getShort() != WPA_VENDOR_OUI_VERSION)  {
+                    // incorrect version
+                    return null;
+                }
+
+                // group data cipher suite
+                // here we simply advance buffer position
+                buf.getInt();
+
+                // pairwise cipher suite count
+                short cipherCount = buf.getShort();
+
+                // pairwise chipher suite list
+                for (int i = 0; i < cipherCount; i++) {
+                    // here we simply advance buffer position
+                    buf.getInt();
+                }
+
+                // AKM
+                // AKM suite count
+                short akmCount = buf.getShort();
+
+                // AKM suite list
+                if (akmCount == 0) {
+                    security += "-EAP"; //default AKM
+                }
+                boolean found = false;
+                for (int i = 0; i < akmCount; i++) {
+                    int akm = buf.getInt();
+                    switch (akm) {
+                        case WPA_AKM_EAP:
+                            security += (found ? "+" : "-") + "EAP";
+                            found = true;
+                            break;
+                        case WPA_AKM_PSK:
+                            security += (found ? "+" : "-") + "PSK";
+                            found = true;
+                            break;
+                        default:
+                            // do nothing
+                            break;
+                    }
+                }
+
+                // we parsed what we want at this point
+                security += "]";
+                return security;
+            } catch (BufferUnderflowException e) {
+                Log.e("IE_Capabilities", "Couldn't parse type 1 WPA, buffer underflow");
+                return null;
+            }
+        }
+
+        /**
+         * Parse the Information Element and the 16-bit Capability Information field
+         * to build the ScanResult.capabilities String.
+         *
+         * @param ies -- Information Element array
+         * @param beaconCap -- 16-bit Beacon Capability Information field
+         * @return security string that mirrors what wpa_supplicant generates
+         */
+        public static String buildCapabilities(InformationElement[] ies, BitSet beaconCap) {
+            String capabilities = "";
+            boolean rsneFound = false;
+            boolean wpaFound = false;
+
+            if (ies == null || beaconCap == null) {
+                return capabilities;
+            }
+
+            boolean privacy = beaconCap.get(CAP_PRIVACY_BIT_OFFSET);
+
+            for (InformationElement ie : ies) {
+                if (ie.id == InformationElement.EID_RSN) {
+                    rsneFound = true;
+                    capabilities += parseRsnElement(ie);
+                }
+
+                if (ie.id == InformationElement.EID_VSA) {
+                    if (isWpaOneElement(ie)) {
+                        wpaFound = true;
+                        capabilities += parseWpaOneElement(ie);
+                    }
+                }
+            }
+
+            if (!rsneFound && !wpaFound && privacy) {
+                //private Beacon without an RSNE or WPA IE, hence WEP0
+                capabilities += "[WEP]";
+            }
+
+            return capabilities;
         }
     }
 }
