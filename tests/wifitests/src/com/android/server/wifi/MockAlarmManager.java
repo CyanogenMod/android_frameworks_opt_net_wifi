@@ -103,7 +103,7 @@ public class MockAlarmManager {
         }
     }
 
-    private class SetListenerAnswer extends AnswerWithArguments<Void> {
+    private class SetListenerAnswer extends AnswerWithArguments {
         public void answer(int type, long triggerAtMillis, String tag,
                 AlarmManager.OnAlarmListener listener, Handler handler) {
             mPendingAlarms.add(new PendingAlarm(type, triggerAtMillis, tag,
@@ -111,7 +111,7 @@ public class MockAlarmManager {
         }
     }
 
-    private class CancelListenerAnswer extends AnswerWithArguments<Void> {
+    private class CancelListenerAnswer extends AnswerWithArguments {
         public void answer(AlarmManager.OnAlarmListener listener) {
             Iterator<PendingAlarm> alarmItr = mPendingAlarms.iterator();
             while (alarmItr.hasNext()) {

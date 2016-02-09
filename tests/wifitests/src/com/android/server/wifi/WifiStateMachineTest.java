@@ -18,11 +18,11 @@ package com.android.server.wifi;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.anyObject;
-import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyObject;
+import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,9 +64,7 @@ import com.android.internal.util.IState;
 import com.android.internal.util.StateMachine;
 import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
 import com.android.server.wifi.hotspot2.NetworkDetail;
-import com.android.server.wifi.hotspot2.SupplicantBridge;
 import com.android.server.wifi.hotspot2.Utils;
-import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
 
 import org.junit.After;
@@ -161,7 +159,7 @@ public class WifiStateMachineTest {
         when(facade.getService(BatteryStats.SERVICE_NAME)).thenReturn(batteryStatsBinder);
 
         when(facade.makeIpManager(any(Context.class), anyString(), any(IpManager.Callback.class)))
-                .then(new AnswerWithArguments<IpManager>() {
+                .then(new AnswerWithArguments() {
                     public IpManager answer(
                             Context context, String ifname, IpManager.Callback callback) {
                         return new TestIpManager(context, ifname, callback);
@@ -443,7 +441,7 @@ public class WifiStateMachineTest {
 
         when(mWifiNative.addNetwork()).thenReturn(0);
         when(mWifiNative.setNetworkVariable(anyInt(), anyString(), anyString()))
-                .then(new AnswerWithArguments<Boolean>() {
+                .then(new AnswerWithArguments() {
                     public boolean answer(int netId, String name, String value) {
                         if (netId != 0) {
                             Log.d(TAG, "Can't set var " + name + " for " + netId);
@@ -457,7 +455,7 @@ public class WifiStateMachineTest {
                 });
 
         when(mWifiNative.setNetworkExtra(anyInt(), anyString(), (Map<String, String>) anyObject()))
-                .then(new AnswerWithArguments<Boolean>() {
+                .then(new AnswerWithArguments() {
                     public boolean answer(int netId, String name, Map<String, String> values) {
                         if (netId != 0) {
                             Log.d(TAG, "Can't set extra " + name + " for " + netId);
@@ -470,7 +468,7 @@ public class WifiStateMachineTest {
                 });
 
         when(mWifiNative.getNetworkVariable(anyInt(), anyString()))
-                .then(new AnswerWithArguments<String>() {
+                .then(new AnswerWithArguments() {
                     public String answer(int netId, String name) throws Throwable {
                         if (netId != 0) {
                             Log.d(TAG, "Can't find var " + name + " for " + netId);
