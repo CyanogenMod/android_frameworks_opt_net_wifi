@@ -270,7 +270,7 @@ class WifiQualifiedNetworkSelector {
             if (currentNetwork == null) {
                 // WifiStateMachine in connected state but WifiInfo is not. It means there is a race
                 // condition happened. Do not make QNS until WifiStateMachine goes into
-                // disconnectted state
+                // disconnected state
                 return false;
             }
 
