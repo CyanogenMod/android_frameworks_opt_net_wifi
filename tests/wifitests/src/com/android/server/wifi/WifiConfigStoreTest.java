@@ -51,8 +51,6 @@ import com.android.server.wifi.hotspot2.pps.HomeSP;
 
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -133,7 +131,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
         mConfiguredNetworks = (ConfigurationMap) configuredNetworksField.get(mConfigStore);
 
         // Intercept writes to networkHistory.txt.
-        doAnswer(new AnswerWithArguments<Void>() {
+        doAnswer(new AnswerWithArguments() {
             public void answer(String filePath, DelayedDiskWrite.Writer writer) throws Exception {
                 final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
                 final DataOutputStream stream = new DataOutputStream(buffer);
@@ -704,29 +702,21 @@ public class WifiConfigStoreTest extends AndroidTestCase {
         reset(mWifiNative);
         when(mWifiNative.addNetwork()).thenReturn(0);
         when(mWifiNative.setNetworkVariable(anyInt(), anyString(), anyString())).thenAnswer(
-                new Answer<Boolean>() {
-                    @Override
-                    public Boolean answer(InvocationOnMock invocation) throws Throwable {
-                        Object[] args = invocation.getArguments();
+                new AnswerWithArguments() {
+                    public boolean answer(int netId, String name, String value) {
                         // Verify that no wpa_supplicant variables were written for any other
                         // network configurations.
-                        assertEquals((Integer) args[0], (Integer) 0);
-                        String name = (String) args[1];
-                        String value = (String) args[2];
+                        assertEquals(netId, 0);
                         networkVariables.put(name, value);
                         return true;
                     }
                 });
         when(mWifiNative.getNetworkVariable(anyInt(), anyString())).then(
-                new Answer<String>() {
-                    @Override
-                    public String answer(InvocationOnMock invocationOnMock) throws Throwable {
-                        Object args[] = invocationOnMock.getArguments();
-                        Integer netId = (Integer) args[0];
-                        String name = (String) args[1];
+                new AnswerWithArguments() {
+                    public String answer(int netId, String name) {
                         // Verify that no wpa_supplicant variables were read for any other
                         // network configurations.
-                        assertEquals(netId, (Integer) 0);
+                        assertEquals(netId, 0);
                         return networkVariables.get(name);
                     }
                 });

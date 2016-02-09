@@ -30,12 +30,12 @@ public class MockAnswerUtil {
 
     /**
      * Answer that calls the method in the Answer called "answer" that matches the type signature of
-     * the method being answered. An error will be thrown if the signature does not match exactly.
-     *
-     * @param <R> the return type of the method
+     * the method being answered. An error will be thrown at runtime if the signature does not match
+     * exactly.
      */
-    public static class AnswerWithArguments<R> implements Answer<R> {
-        public final R answer(InvocationOnMock invocation) throws Throwable {
+    public static class AnswerWithArguments implements Answer<Object> {
+        @Override
+        public final Object answer(InvocationOnMock invocation) throws Throwable {
             Method method = invocation.getMethod();
             try {
                 Method implementation = getClass().getMethod("answer", method.getParameterTypes());
@@ -46,7 +46,7 @@ public class MockAnswerUtil {
                 }
                 Object[] args = invocation.getArguments();
                 try {
-                    return (R) implementation.invoke(this, args);
+                    return implementation.invoke(this, args);
                 } catch (IllegalAccessException e) {
                     throw new RuntimeException("Error invoking answer method", e);
                 } catch (InvocationTargetException e) {
