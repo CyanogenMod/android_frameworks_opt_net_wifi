@@ -35,7 +35,6 @@ import static org.mockito.Mockito.when;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
@@ -98,12 +97,6 @@ public class WifiScanningServiceTest {
      * this is initialized by calling startServiceAndLoadDriver
      */
     BroadcastReceiver mBroadcastReceiver;
-
-    private void sendWifiScanAvailable(int scanAvailable) {
-        Intent intent = new Intent(WifiManager.WIFI_SCAN_AVAILABLE);
-        intent.putExtra(WifiManager.EXTRA_SCAN_AVAILABLE, scanAvailable);
-        mBroadcastReceiver.onReceive(mContext, intent);
-    }
 
     private WifiScanner.ScanSettings generateValidScanSettings() {
         return createRequest(WifiScanner.WIFI_BAND_BOTH, 30000, 0, 20,
@@ -210,7 +203,8 @@ public class WifiScanningServiceTest {
         verify(mContext)
                 .registerReceiver(broadcastReceiverCaptor.capture(), any(IntentFilter.class));
         mBroadcastReceiver = broadcastReceiverCaptor.getValue();
-        sendWifiScanAvailable(WifiManager.WIFI_STATE_ENABLED);
+        TestUtil.sendWifiScanAvailable(broadcastReceiverCaptor.getValue(), mContext,
+                WifiManager.WIFI_STATE_ENABLED);
         mLooper.dispatchAll();
     }
 

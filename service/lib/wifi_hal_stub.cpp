@@ -149,6 +149,23 @@ wifi_error wifi_get_rtt_capabilities_stub(wifi_interface_handle iface,
     return WIFI_ERROR_NOT_SUPPORTED;
 }
 
+/* API to enable RTT responder role */
+wifi_error wifi_enable_responder_stub(wifi_request_id id, wifi_interface_handle iface,
+        wifi_channel_info channel_hint, unsigned max_duration_seconds,
+        wifi_channel_info* channel_used) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+/* API to disable RTT responder role */
+wifi_error wifi_disable_responder_stub(wifi_request_id id, wifi_interface_handle iface) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
+/* API to get available channel for RTT responder role */
+wifi_error wifi_rtt_get_available_channnel_stub(wifi_interface_handle iface, wifi_channel_info* channel) {
+    return WIFI_ERROR_NOT_SUPPORTED;
+}
+
 wifi_error wifi_set_nodfs_flag_stub(wifi_interface_handle iface, u32 nodfs) {
     return WIFI_ERROR_NOT_SUPPORTED;
 }

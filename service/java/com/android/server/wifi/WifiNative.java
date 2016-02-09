@@ -16,6 +16,7 @@
 
 package com.android.server.wifi;
 
+import android.annotation.Nullable;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -23,6 +24,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.wifi.RttManager;
+import android.net.wifi.RttManager.ResponderConfig;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiEnterpriseConfig;
@@ -1730,6 +1732,17 @@ public class WifiNative {
         BucketSettings buckets[];
     }
 
+    /**
+     * Wi-Fi channel information.
+     */
+    public static class WifiChannelInfo {
+        int mPrimaryFrequency;
+        int mCenterFrequency0;
+        int mCenterFrequency1;
+        int mChannelWidth;
+        // TODO: add preamble once available in HAL.
+    }
+
     public static interface ScanEventHandler {
         void onScanResultsAvailable();
         void onFullScanResult(ScanResult fullScanResult);
@@ -2180,6 +2193,48 @@ public class WifiNative {
             } else {
                 return false;
             }
+        }
+    }
+
+    private static int sRttResponderCmdId = 0;
+
+    private static native ResponderConfig enableRttResponderNative(int iface, int commandId,
+            int timeoutSeconds, WifiChannelInfo channelHint);
+    /**
+     * Enable RTT responder role on the device. Returns {@link ResponderConfig} if the responder
+     * role is successfully enabled, {@code null} otherwise.
+     */
+    @Nullable
+    public ResponderConfig enableRttResponder(int timeoutSeconds) {
+        synchronized (sLock) {
+            if (!isHalStarted()) return null;
+            if (sRttResponderCmdId != 0) {
+                if (DBG) Log.e(mTAG, "responder mode already enabled - this shouldn't happen");
+                return null;
+            }
+            int id = getNewCmdIdLocked();
+            ResponderConfig config = enableRttResponderNative(
+                    sWlan0Index, id, timeoutSeconds, null);
+            if (config != null) sRttResponderCmdId = id;
+            if (DBG) Log.d(TAG, "enabling rtt " + (config != null));
+            return config;
+        }
+    }
+
+    private static native boolean disableRttResponderNative(int iface, int commandId);
+    /**
+     * Disable RTT responder role. Returns {@code true} if responder role is successfully disabled,
+     * {@code false} otherwise.
+     */
+    public boolean disableRttResponder() {
+        synchronized (sLock) {
+            if (!isHalStarted()) return false;
+            if (sRttResponderCmdId == 0) {
+                Log.e(mTAG, "responder role not enabled yet");
+                return true;
+            }
+            sRttResponderCmdId = 0;
+            return disableRttResponderNative(sWlan0Index, sRttResponderCmdId);
         }
     }
 
