@@ -511,7 +511,7 @@ public class WifiStateMachineTest {
         mWsm.startScan(-1, 0, null, null);
         wait(200);
 
-        verify(mWifiNative).scan(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP, null);
+        verify(mWifiNative).scan(null);
 
         when(mWifiNative.getScanResults()).thenReturn(getMockScanResults());
         mWsm.sendMessage(WifiMonitor.SCAN_RESULTS_EVENT);
