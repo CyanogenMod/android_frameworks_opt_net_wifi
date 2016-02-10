@@ -25,6 +25,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.net.BaseDhcpStateMachine;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
 import android.net.DhcpStateMachine;
@@ -32,6 +33,7 @@ import android.net.InterfaceConfiguration;
 import android.net.LinkAddress;
 import android.net.NetworkInfo;
 import android.net.NetworkUtils;
+import android.net.dhcp.DhcpClient;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.net.wifi.p2p.WifiP2pConfig;
@@ -109,7 +111,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     private Notification mNotification;
 
     INetworkManagementService mNwService;
-    private DhcpStateMachine mDhcpStateMachine;
+    private BaseDhcpStateMachine mDhcpClient;
 
     private P2pStateMachine mP2pStateMachine;
     private AsyncChannel mReplyChannel = new AsyncChannel();
@@ -1717,11 +1719,11 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         startDhcpServer(mGroup.getInterface());
                     } else {
                         mWifiNative.setP2pGroupIdle(mGroup.getInterface(), GROUP_IDLE_TIME_S);
-                        mDhcpStateMachine = DhcpStateMachine.makeDhcpStateMachine(mContext,
+                        mDhcpClient = DhcpClient.makeDhcpStateMachine(mContext,
                                 P2pStateMachine.this, mGroup.getInterface());
                         // TODO: We should use DHCP state machine PRE message like WifiStateMachine
                         mWifiNative.setP2pPowerSave(mGroup.getInterface(), false);
-                        mDhcpStateMachine.sendMessage(DhcpStateMachine.CMD_START_DHCP);
+                        mDhcpClient.sendMessage(DhcpStateMachine.CMD_START_DHCP);
                         WifiP2pDevice groupOwner = mGroup.getOwner();
                         WifiP2pDevice peer = mPeers.get(groupOwner.deviceAddress);
                         if (peer != null) {
@@ -2835,9 +2837,9 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
             stopDhcpServer(mGroup.getInterface());
         } else {
             if (DBG) logd("stop DHCP client");
-            mDhcpStateMachine.sendMessage(DhcpStateMachine.CMD_STOP_DHCP);
-            mDhcpStateMachine.doQuit();
-            mDhcpStateMachine = null;
+            mDhcpClient.sendMessage(DhcpStateMachine.CMD_STOP_DHCP);
+            mDhcpClient.doQuit();
+            mDhcpClient = null;
             try {
                 mNwService.removeInterfaceFromLocalNetwork(mGroup.getInterface());
             } catch (RemoteException e) {
