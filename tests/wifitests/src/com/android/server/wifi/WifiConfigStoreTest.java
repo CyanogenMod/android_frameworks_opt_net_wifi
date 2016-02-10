@@ -17,6 +17,12 @@
 package com.android.server.wifi;
 
 import static org.hamcrest.CoreMatchers.not;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyObject;
@@ -40,7 +46,8 @@ import android.net.wifi.WifiEnterpriseConfig.Phase2;
 import android.os.Process;
 import android.os.UserHandle;
 import android.security.Credentials;
-import android.test.AndroidTestCase;
+import android.support.test.InstrumentationRegistry;
+import android.test.suitebuilder.annotation.SmallTest;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -50,6 +57,7 @@ import com.android.server.wifi.hotspot2.omadm.PasspointManagementObjectManager;
 import com.android.server.wifi.hotspot2.pps.Credential;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -83,7 +91,8 @@ import java.util.TreeMap;
 /**
  * Unit tests for {@link com.android.server.wifi.WifiConfigStore}.
  */
-public class WifiConfigStoreTest extends AndroidTestCase {
+@SmallTest
+public class WifiConfigStoreTest {
     private static final List<WifiConfiguration> CONFIGS = Arrays.asList(
             WifiConfigurationUtil.generateWifiConfig(
                     0, 1000000, "\"red\"", true, true, null, null),
@@ -118,11 +127,14 @@ public class WifiConfigStoreTest extends AndroidTestCase {
     public byte[] mNetworkHistory;
     private MockKeyStore mMockKeyStore;
 
-    @Override
+    /**
+     * Called before each test
+     */
+    @Before
     public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
 
-        final Context realContext = getContext();
+        final Context realContext = InstrumentationRegistry.getContext();
         when(mContext.getPackageName()).thenReturn(realContext.getPackageName());
         when(mContext.getResources()).thenReturn(realContext.getResources());
         when(mContext.getPackageManager()).thenReturn(realContext.getPackageManager());
@@ -207,6 +219,7 @@ public class WifiConfigStoreTest extends AndroidTestCase {
      * Verifies that getConfiguredNetworksSize() returns the number of network configurations
      * visible to the current user.
      */
+    @Test
     public void testGetConfiguredNetworksSize() throws Exception {
         addNetworks();
         for (Map.Entry<Integer, List<WifiConfiguration>> entry : VISIBLE_CONFIGS.entrySet()) {
