@@ -16,6 +16,7 @@
 
 package com.android.server.wifi;
 
+import android.app.backup.BackupManager;
 import android.content.Context;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
@@ -105,6 +106,8 @@ public class WifiApConfigStore {
             mWifiApConfig = config;
         }
         writeApConfiguration(mApConfigFile, mWifiApConfig);
+        // Stage the backup of the SettingsProvider package which backs this up
+        BackupManager.dataChanged("com.android.providers.settings");
     }
 
     public ArrayList<Integer> getAllowed2GChannel() {
