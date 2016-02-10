@@ -25,7 +25,6 @@ import static com.android.server.wifi.ScanTestUtil.setupMockChannels;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -140,7 +139,7 @@ public abstract class BaseWifiScannerImplTest {
         WifiNative.ScanEventHandler eventHandler2 = mock(WifiNative.ScanEventHandler.class);
 
         // scan start succeeds
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         assertTrue(mScanner.startSingleScan(settings, eventHandler));
         assertFalse("second scan while first scan running should fail immediately",
@@ -164,7 +163,7 @@ public abstract class BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // scan fails
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(false);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(false);
 
         // start scan
         assertTrue(mScanner.startSingleScan(settings, eventHandler));
@@ -213,7 +212,7 @@ public abstract class BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // scans succeed
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         // start first scan
         assertTrue(mScanner.startSingleScan(settings, eventHandler));
@@ -257,7 +256,7 @@ public abstract class BaseWifiScannerImplTest {
         InOrder order = inOrder(eventHandler, mWifiNative);
 
         // scan succeeds
-        when(mWifiNative.scan(anyInt(), any(Set.class))).thenReturn(true);
+        when(mWifiNative.scan(any(Set.class))).thenReturn(true);
 
         // start scan
         assertTrue(mScanner.startSingleScan(settings, eventHandler));
@@ -270,8 +269,7 @@ public abstract class BaseWifiScannerImplTest {
     protected void expectSuccessfulSingleScan(InOrder order,
             WifiNative.ScanEventHandler eventHandler, Set<Integer> expectedScan,
             ScanResults results, boolean expectFullResults) {
-        order.verify(mWifiNative).scan(eq(WifiNative.SCAN_WITHOUT_CONNECTION_SETUP),
-                eq(expectedScan));
+        order.verify(mWifiNative).scan(eq(expectedScan));
 
         when(mWifiNative.getScanResults()).thenReturn(results.getScanDetailArrayList());
 
