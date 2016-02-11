@@ -27,6 +27,10 @@ import android.net.wifi.WifiScanner.ChannelSpec;
 import android.net.wifi.WifiScanner.ScanData;
 import android.net.wifi.WifiSsid;
 
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.hamcrest.TypeSafeDiagnosingMatcher;
+
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -129,21 +133,21 @@ public class ScanTestUtil {
         }
 
         public NativeScanSettingsBuilder addBucketWithChannels(
-                int period, int reportEvents, int... channels) {
-            return addBucketWithChannels(period, reportEvents, channelsToSpec(channels));
+                int period, int reportEvents, ChannelSpec... channels) {
+            int[] channelFreqs = new int[channels.length];
+            for (int i = 0; i < channels.length; ++i) {
+                channelFreqs[i] = channels[i].frequency;
+            }
+            return addBucketWithChannels(period, reportEvents, channelFreqs);
         }
 
         public NativeScanSettingsBuilder addBucketWithChannels(
-                int period, int reportEvents, ChannelSpec... channels) {
+                int period, int reportEvents, int... channels) {
             WifiNative.BucketSettings bucket = new WifiNative.BucketSettings();
             bucket.bucket = mSettings.num_buckets;
             bucket.band = WifiScanner.WIFI_BAND_UNSPECIFIED;
             bucket.num_channels = channels.length;
-            bucket.channels = new WifiNative.ChannelSettings[channels.length];
-            for (int i = 0; i < channels.length; ++i) {
-                bucket.channels[i] = new WifiNative.ChannelSettings();
-                bucket.channels[i].frequency = channels[i].frequency;
-            }
+            bucket.channels = channelsToNativeSettings(channels);
             bucket.period_ms = period;
             bucket.report_events = reportEvents;
             return addBucket(bucket);
@@ -287,6 +291,18 @@ public class ScanTestUtil {
         }
     }
 
+    /**
+     * Convert a list of channel frequencies to an array of equivalent WifiNative.ChannelSettings
+     */
+    public static WifiNative.ChannelSettings[] channelsToNativeSettings(int... channels) {
+        WifiNative.ChannelSettings[] channelSpecs = new WifiNative.ChannelSettings[channels.length];
+        for (int i = 0; i < channels.length; ++i) {
+            channelSpecs[i] = new WifiNative.ChannelSettings();
+            channelSpecs[i].frequency = channels[i];
+        }
+        return channelSpecs;
+    }
+
     public static ChannelSpec[] getAllChannels(WifiNative.BucketSettings bucket) {
         if (bucket.band == WifiScanner.WIFI_BAND_UNSPECIFIED) {
             ChannelSpec[] channels = new ChannelSpec[bucket.num_channels];
@@ -308,5 +324,94 @@ public class ScanTestUtil {
         } else {
             return WifiChannelHelper.getChannelsForBand(settings.band);
         }
+    }
+
+    /**
+     * Matcher to check that a BucketSettings has the given band
+     */
+    public static Matcher<WifiNative.BucketSettings> bandIs(final int expectedBand) {
+        return new TypeSafeDiagnosingMatcher<WifiNative.BucketSettings>() {
+            @Override
+            public boolean matchesSafely(WifiNative.BucketSettings bucketSettings,
+                    Description mismatchDescription) {
+                if (bucketSettings.band != expectedBand) {
+                    mismatchDescription
+                            .appendText("did not have expected band ").appendValue(expectedBand)
+                            .appendText(", was ").appendValue(bucketSettings.band);
+                    return false;
+                } else {
+                    return true;
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description) {
+                description.appendText("bucket band is ").appendValue(expectedBand);
+            }
+        };
+    }
+
+    /**
+     * Matcher to check that a BucketSettings has exactly the given channels
+     */
+    public static Matcher<WifiNative.BucketSettings> channelsAre(final int... expectedChannels) {
+        return new TypeSafeDiagnosingMatcher<WifiNative.BucketSettings>() {
+            @Override
+            public boolean matchesSafely(WifiNative.BucketSettings bucketSettings,
+                    Description mismatchDescription) {
+                if (bucketSettings.band != WifiScanner.WIFI_BAND_UNSPECIFIED) {
+                    mismatchDescription.appendText("did not have expected unspecified band, was ")
+                            .appendValue(bucketSettings.band);
+                    return false;
+                } else if (bucketSettings.num_channels != expectedChannels.length) {
+                    mismatchDescription
+                            .appendText("did not have expected num_channels ")
+                            .appendValue(expectedChannels.length)
+                            .appendText(", was ").appendValue(bucketSettings.num_channels);
+                    return false;
+                } else if (bucketSettings.channels == null) {
+                    mismatchDescription.appendText("had null channels array");
+                    return false;
+                } else if (bucketSettings.channels.length != expectedChannels.length) {
+                    mismatchDescription
+                            .appendText("did not have channels array length matching excepted ")
+                            .appendValue(expectedChannels.length)
+                            .appendText(", was ").appendValue(bucketSettings.channels.length);
+                    return false;
+                } else {
+                    Set<Integer> foundChannelsSet = new HashSet<>();
+                    for (int i = 0; i < bucketSettings.channels.length; ++i) {
+                        foundChannelsSet.add(bucketSettings.channels[i].frequency);
+                    }
+                    Set<Integer> expectedChannelsSet = new HashSet<>();
+                    for (int i = 0; i < expectedChannels.length; ++i) {
+                        expectedChannelsSet.add(expectedChannels[i]);
+                    }
+
+                    if (!foundChannelsSet.containsAll(expectedChannelsSet)
+                            || foundChannelsSet.size() != expectedChannelsSet.size()) {
+                        Set<Integer> extraChannelsSet = new HashSet<>(foundChannelsSet);
+                        extraChannelsSet.removeAll(expectedChannelsSet);
+                        expectedChannelsSet.removeAll(foundChannelsSet);
+                        mismatchDescription
+                                .appendText("does not contain expected channels ")
+                                .appendValue(expectedChannelsSet);
+                        if (extraChannelsSet.size() > 0) {
+                            mismatchDescription
+                                    .appendText(", but contains extra channels ")
+                                    .appendValue(extraChannelsSet);
+                        }
+                        return false;
+                    } else {
+                        return true;
+                    }
+                }
+            }
+
+            @Override
+            public void describeTo(final Description description) {
+                description.appendText("bucket channels are ").appendValue(expectedChannels);
+            }
+        };
     }
 }
