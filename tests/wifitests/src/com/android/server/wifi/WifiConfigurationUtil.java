@@ -11,7 +11,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- * limitations under the License.
+ * limitations under the License
  */
 
 package com.android.server.wifi;
@@ -22,7 +22,7 @@ import android.net.wifi.WifiEnterpriseConfig;
 /**
  * Helper for creating and populating WifiConfigurations in unit tests.
  */
-public class WifiConfigurationTestUtil {
+public class WifiConfigurationUtil {
     /**
      * These values are used to describe AP's security setting. One AP can support multiple of them,
      * only if there is no conflict.
@@ -32,17 +32,6 @@ public class WifiConfigurationTestUtil {
     public static final int SECURITY_PSK =  1 << 1;
     public static final int SECURITY_EAP =  1 << 2;
 
-    /**
-     * Construct a {@link android.net.wifi.WifiConfiguration}.
-     * @param networkId the configuration's networkId
-     * @param uid the configuration's creator uid
-     * @param ssid the configuration's ssid
-     * @param shared whether the configuration is shared with other users on the device
-     * @param enabled whether the configuration is enabled
-     * @param fqdn the configuration's FQDN (Hotspot 2.0 only)
-     * @param providerFriendlyName the configuration's provider's friendly name (Hotspot 2.0 only)
-     * @return the constructed {@link android.net.wifi.WifiConfiguration}
-     */
     public static WifiConfiguration generateWifiConfig(int networkId, int uid, String ssid,
             boolean shared, boolean enabled, String fqdn, String providerFriendlyName) {
         final WifiConfiguration config = new WifiConfiguration();
@@ -60,18 +49,6 @@ public class WifiConfigurationTestUtil {
         return config;
     }
 
-    /**
-     * Construct a {@link android.net.wifi.WifiConfiguration}.
-     * @param networkId the configuration's networkId
-     * @param uid the configuration's creator uid
-     * @param ssid the configuration's ssid
-     * @param shared whether the configuration is shared with other users on the device
-     * @param enabled whether the configuration is enabled
-     * @param fqdn the configuration's FQDN (Hotspot 2.0 only)
-     * @param providerFriendlyName the configuration's provider's friendly name (Hotspot 2.0 only)
-     * @param security the configuration's security type
-     * @return the constructed {@link android.net.wifi.WifiConfiguration}
-     */
     public static WifiConfiguration generateWifiConfig(int networkId, int uid, String ssid,
             boolean shared, boolean enabled, String fqdn, String providerFriendlyName,
             int security) {
