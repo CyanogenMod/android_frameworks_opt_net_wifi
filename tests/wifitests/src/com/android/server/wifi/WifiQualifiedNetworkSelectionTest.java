@@ -16,10 +16,10 @@
 
 package com.android.server.wifi;
 
-import static com.android.server.wifi.WifiConfigurationTestUtil.SECURITY_EAP;
-import static com.android.server.wifi.WifiConfigurationTestUtil.SECURITY_NONE;
-import static com.android.server.wifi.WifiConfigurationTestUtil.SECURITY_PSK;
-import static com.android.server.wifi.WifiConfigurationTestUtil.generateWifiConfig;
+import static com.android.server.wifi.WifiConfigurationUtil.SECURITY_EAP;
+import static com.android.server.wifi.WifiConfigurationUtil.SECURITY_NONE;
+import static com.android.server.wifi.WifiConfigurationUtil.SECURITY_PSK;
+import static com.android.server.wifi.WifiConfigurationUtil.generateWifiConfig;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Matchers.anyInt;
