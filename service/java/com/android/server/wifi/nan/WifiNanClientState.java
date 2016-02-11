@@ -29,7 +29,7 @@ import java.io.PrintWriter;
 
 public class WifiNanClientState {
     private static final String TAG = "WifiNanClientState";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false; // STOPSHIP if true
 
     /* package */ static final int CLUSTER_CHANGE_EVENT_STARTED = 0;

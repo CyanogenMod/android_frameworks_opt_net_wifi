@@ -38,7 +38,7 @@ import java.io.PrintWriter;
 
 public class WifiNanServiceImpl extends IWifiNanManager.Stub {
     private static final String TAG = "WifiNanService";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false; // STOPSHIP if true
 
     private Context mContext;
