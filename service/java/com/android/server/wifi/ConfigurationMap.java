@@ -1,10 +1,7 @@
 package com.android.server.wifi;
 
-import android.content.Context;
-import android.content.pm.UserInfo;
 import android.net.wifi.WifiConfiguration;
 import android.os.UserHandle;
-import android.os.UserManager;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,20 +17,13 @@ public class ConfigurationMap {
     private final Map<Integer, WifiConfiguration> mPerIDForCurrentUser = new HashMap<>();
     private final Map<String, WifiConfiguration> mPerFQDNForCurrentUser = new HashMap<>();
 
-    private final UserManager mUserManager;
-
     private int mCurrentUserId = UserHandle.USER_SYSTEM;
-
-    ConfigurationMap(Context context) {
-        mUserManager = UserManager.get(context);
-    }
 
     // RW methods:
     public WifiConfiguration put(WifiConfiguration config) {
         final WifiConfiguration current = mPerID.put(config.networkId, config);
         mPerConfigKey.put(config.configKey().hashCode(), config);   // This is ridiculous...
-        if (WifiConfigurationUtil.isVisibleToAnyProfile(config,
-                mUserManager.getProfiles(mCurrentUserId))) {
+        if (config.isVisibleToUser(mCurrentUserId)) {
             mPerIDForCurrentUser.put(config.networkId, config);
             if (config.FQDN != null && config.FQDN.length() > 0) {
                 mPerFQDNForCurrentUser.put(config.FQDN, config);
@@ -80,19 +70,18 @@ public class ConfigurationMap {
         mPerIDForCurrentUser.clear();
         mPerFQDNForCurrentUser.clear();
 
-        final List<UserInfo> previousUserProfiles = mUserManager.getProfiles(mCurrentUserId);
+        final int previousUserId = mCurrentUserId;
         mCurrentUserId = userId;
-        final List<UserInfo> currentUserProfiles = mUserManager.getProfiles(mCurrentUserId);
 
         final List<WifiConfiguration> hiddenConfigurations = new ArrayList<>();
         for (Map.Entry<Integer, WifiConfiguration> entry : mPerID.entrySet()) {
             final WifiConfiguration config = entry.getValue();
-            if (WifiConfigurationUtil.isVisibleToAnyProfile(config, currentUserProfiles)) {
+            if (config.isVisibleToUser(mCurrentUserId)) {
                 mPerIDForCurrentUser.put(entry.getKey(), config);
                 if (config.FQDN != null && config.FQDN.length() > 0) {
                     mPerFQDNForCurrentUser.put(config.FQDN, config);
                 }
-            } else if (WifiConfigurationUtil.isVisibleToAnyProfile(config, previousUserProfiles)) {
+            } else if (config.isVisibleToUser(previousUserId)) {
                 hiddenConfigurations.add(config);
             }
         }

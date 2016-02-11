@@ -316,14 +316,13 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         mWifiMetrics = new WifiMetrics();
         mTrafficPoller = new WifiTrafficPoller(mContext, wifiThread.getLooper(),
                 WifiNative.getWlanNativeInterface().getInterfaceName());
-        mUserManager = UserManager.get(mContext);
-        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller, facade, mWifiMetrics,
-                mUserManager);
+        mWifiStateMachine = new WifiStateMachine(mContext, mTrafficPoller, facade, mWifiMetrics);
         mSettingsStore = new WifiSettingsStore(mContext);
         mWifiStateMachine.enableRssiPolling(true);
         mBatteryStats = BatteryStatsService.getService();
         mPowerManager = context.getSystemService(PowerManager.class);
         mAppOps = (AppOpsManager)context.getSystemService(Context.APP_OPS_SERVICE);
+        mUserManager = UserManager.get(mContext);
         mCertManager = new WifiCertManager(mContext);
 
         mNotificationController = new WifiNotificationController(mContext, mWifiStateMachine);

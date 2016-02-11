@@ -40,7 +40,6 @@ import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.IPackageManager;
 import android.content.pm.PackageManager;
-import android.content.pm.UserInfo;
 import android.database.ContentObserver;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
@@ -91,7 +90,6 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
-import android.os.UserManager;
 import android.os.WorkSource;
 import android.provider.Settings;
 import android.telephony.TelephonyManager;
@@ -201,7 +199,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private final AtomicBoolean mP2pConnected = new AtomicBoolean(false);
     private boolean mTemporarilyDisconnectWifi = false;
     private final String mPrimaryDeviceType;
-    private final UserManager mUserManager;
 
     /* Scan results handling */
     private List<ScanDetail> mScanResults = new ArrayList<>();
@@ -1151,13 +1148,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private FrameworkFacade mFacade;
 
     public WifiStateMachine(Context context, WifiTrafficPoller trafficPoller,
-                            FrameworkFacade facade, WifiMetrics wifiMetrics,
-                            UserManager userManager) {
+                            FrameworkFacade facade, WifiMetrics wifiMetrics) {
         super("WifiStateMachine");
         mWifiMetrics = wifiMetrics;
         mContext = context;
         mFacade = facade;
-        mUserManager = userManager;
         mWifiNative = WifiNative.getWlanNativeInterface();
 
         // TODO refactor WifiNative use of context out into it's own class
@@ -7044,7 +7039,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_ADD_OR_UPDATE_NETWORK:
                     // Only the current foreground user can modify networks.
-                    if (!isCurrentUserProfile(UserHandle.getUserId(message.sendingUid))) {
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
                         loge("Only the current foreground user can modify networks "
                                 + " currentUserId=" + mCurrentUserId
                                 + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
@@ -7095,7 +7090,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_REMOVE_NETWORK:
                     // Only the current foreground user can modify networks.
-                    if (!isCurrentUserProfile(UserHandle.getUserId(message.sendingUid))) {
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
                         loge("Only the current foreground user can modify networks "
                                 + " currentUserId=" + mCurrentUserId
                                 + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
@@ -7121,7 +7116,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case CMD_ENABLE_NETWORK:
                     // Only the current foreground user can modify networks.
-                    if (!isCurrentUserProfile(UserHandle.getUserId(message.sendingUid))) {
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
                         loge("Only the current foreground user can modify networks "
                                 + " currentUserId=" + mCurrentUserId
                                 + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
@@ -7390,7 +7385,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // lastConnectUid on a per-user basis.
                     int lastConnectUid = WifiConfiguration.UNKNOWN_UID;
                     if (mWifiConfigStore.isLastSelectedConfiguration(config)
-                            && isCurrentUserProfile(UserHandle.getUserId(config.lastConnectUid))) {
+                            && UserHandle.getUserId(config.lastConnectUid) == mCurrentUserId) {
                         lastConnectUid = config.lastConnectUid;
                     }
                     mWifiMetrics.startConnectionEvent(mWifiInfo, config,
@@ -7456,7 +7451,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case WifiManager.CONNECT_NETWORK:
                     // Only the current foreground user can modify networks.
-                    if (!isCurrentUserProfile(UserHandle.getUserId(message.sendingUid))) {
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
                         loge("Only the current foreground user can modify networks "
                                 + " currentUserId=" + mCurrentUserId
                                 + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
@@ -7604,7 +7599,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     // Fall thru
                 case WifiStateMachine.CMD_AUTO_SAVE_NETWORK:
                     // Only the current foreground user can modify networks.
-                    if (!isCurrentUserProfile(UserHandle.getUserId(message.sendingUid))) {
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
                         loge("Only the current foreground user can modify networks "
                                 + " currentUserId=" + mCurrentUserId
                                 + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
@@ -7703,7 +7698,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     break;
                 case WifiManager.FORGET_NETWORK:
                     // Only the current foreground user can modify networks.
-                    if (!isCurrentUserProfile(UserHandle.getUserId(message.sendingUid))) {
+                    if (UserHandle.getUserId(message.sendingUid) != mCurrentUserId) {
                         loge("Only the current foreground user can modify networks "
                                 + " currentUserId=" + mCurrentUserId
                                 + " sendingUserId=" + UserHandle.getUserId(message.sendingUid));
@@ -10054,18 +10049,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     public int getCurrentUserId() {
         return mCurrentUserId;
-    }
-
-    private boolean isCurrentUserProfile(int userId) {
-        if (userId == mCurrentUserId) {
-            return true;
-        }
-        final UserInfo parent = mUserManager.getProfileParent(userId);
-        return parent != null && parent.id == mCurrentUserId;
-    }
-
-    public List<UserInfo> getCurrentUserProfiles() {
-        return mUserManager.getProfiles(mCurrentUserId);
     }
 
     /**
