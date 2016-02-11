@@ -255,7 +255,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
 
             Set<Integer> freqs = new HashSet<>();
-            LastScanSettings newScanSettings = new LastScanSettings(SystemClock.elapsedRealtime());
+            final LastScanSettings newScanSettings =
+                    new LastScanSettings(SystemClock.elapsedRealtime());
 
             // Update scan settings if there is a pending scan
             if (!mBackgroundScanPaused) {
@@ -361,13 +362,23 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 boolean success = mWifiNative.scan(freqs);
                 if (success) {
                     // TODO handle scan timeout
-                    Log.d(TAG, "Starting wifi scan for " + freqs.size() + " freqs"
+                    Log.d(TAG, "Starting wifi scan for freqs=" + freqs
                             + ", background=" + newScanSettings.backgroundScanActive
                             + ", single=" + newScanSettings.singleScanActive);
                     mLastScanSettings = newScanSettings;
                 } else {
-                    Log.w(TAG, "Failed starting wifi scan for " + freqs.size() + " freqs");
-                    // TODO indicate failure for single and background scans
+                    Log.e(TAG, "Failed to start scan, freqs=" + freqs);
+                    // indicate scan failure async
+                    mEventHandler.post(new Runnable() {
+                            public void run() {
+                                newScanSettings.singleScanActive = false;
+                                if (newScanSettings.singleScanEventHandler != null) {
+                                    newScanSettings.singleScanEventHandler
+                                            .onScanStatus(WifiNative.WIFI_SCAN_FAILED);
+                                }
+                            }
+                        });
+                    // TODO if scans fail enough background scans should be failed as well
                 }
             }
         }
@@ -456,7 +467,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                                                     / 100)
                                             || mBackgroundScanBuffer.size()
                                             >= mLastScanSettings.reportNumScansThreshold))) {
-                        mBackgroundScanEventHandler.onScanStatus();
+                        mBackgroundScanEventHandler
+                                .onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
                     }
                 }
 
@@ -483,7 +495,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 Collections.sort(singleScanResults, SCAN_RESULT_SORT_COMPARATOR);
                 mLatestSingleScanResult = new WifiScanner.ScanData(mLastScanSettings.scanId, 0,
                         singleScanResults.toArray(new ScanResult[singleScanResults.size()]));
-                mLastScanSettings.singleScanEventHandler.onScanResultsAvailable();
+                mLastScanSettings.singleScanEventHandler
+                        .onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
             }
 
             mLastScanSettings = null;

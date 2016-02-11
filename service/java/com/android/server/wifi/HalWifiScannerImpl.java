@@ -64,10 +64,12 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
     public boolean handleMessage(Message msg) {
         switch(msg.what) {
             case WifiMonitor.SCAN_FAILED_EVENT:
-                Log.w(TAG, "Single scan failed");
                 if (mSingleScanEventHandler != null) {
-                    // TODO indicate failure to caller
+                    Log.e(TAG, "Single scan failed");
+                    mSingleScanEventHandler.onScanStatus(WifiNative.WIFI_SCAN_FAILED);
                     mSingleScanEventHandler = null;
+                } else {
+                    Log.w(TAG, "Got single scan failed event without an active scan request");
                 }
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
@@ -117,8 +119,16 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
 
         mSingleScanEventHandler = eventHandler;
         if (!mWifiNative.scan(freqs)) {
-            mSingleScanEventHandler = null;
-            // TODO call on failure callback in handler
+            Log.e(TAG, "Failed to start scan, freqs=" + freqs);
+            // indicate scan failure async
+            mEventHandler.post(new Runnable() {
+                    public void run() {
+                        if (mSingleScanEventHandler != null) {
+                            mSingleScanEventHandler.onScanStatus(WifiNative.WIFI_SCAN_FAILED);
+                        }
+                        mSingleScanEventHandler = null;
+                    }
+                });
         }
         return true;
     }
@@ -148,7 +158,7 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
         Arrays.sort(results, SCAN_RESULT_SORT_COMPARATOR);
         mLatestSingleScanResult = new WifiScanner.ScanData(0, 0, results);
         if (mSingleScanEventHandler != null) {
-            mSingleScanEventHandler.onScanResultsAvailable();
+            mSingleScanEventHandler.onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
             mSingleScanEventHandler = null;
         }
     }

@@ -214,6 +214,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final int CMD_SCAN_PAUSED                         = BASE + 8;
     private static final int CMD_SCAN_RESTARTED                      = BASE + 9;
     private static final int CMD_STOP_SCAN_INTERNAL                  = BASE + 10;
+    private static final int CMD_SCAN_FAILED                       = BASE + 11;
 
     private final Context mContext;
     private final Looper mLooper;
@@ -284,15 +285,21 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         @Override
-        public void onScanResultsAvailable() {
-            if (DBG) localLog("onScanResultAvailable event received");
-            sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
-        }
-
-        @Override
-        public void onScanStatus() {
-            if (DBG) localLog("onScanStatus event received");
-            sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
+        public void onScanStatus(int event) {
+            if (DBG) localLog("onScanStatus event received, event=" + event);
+            switch(event) {
+                case WifiNative.WIFI_SCAN_RESULTS_AVAILABLE:
+                case WifiNative.WIFI_SCAN_THRESHOLD_NUM_SCANS:
+                case WifiNative.WIFI_SCAN_THRESHOLD_PERCENT:
+                    sendMessage(CMD_SCAN_RESULTS_AVAILABLE);
+                    break;
+                case WifiNative.WIFI_SCAN_FAILED:
+                    sendMessage(CMD_SCAN_FAILED);
+                    break;
+                default:
+                    Log.e(TAG, "Unknown scan status event: " + event);
+                    break;
+            }
         }
 
         @Override
@@ -490,6 +497,11 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case CMD_SCAN_PAUSED:
                         reportScanResults((ScanData[]) msg.obj);
                         transitionTo(mPausedState);
+                        break;
+                    case CMD_SCAN_FAILED:
+                        // TODO handle this gracefully (currently no implementations are know to
+                        // report this)
+                        Log.e(TAG, "WifiScanner background scan gave CMD_SCAN_TERMINATED");
                         break;
                     default:
                         return NOT_HANDLED;

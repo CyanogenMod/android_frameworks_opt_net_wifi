@@ -674,8 +674,7 @@ public class WifiNative {
                                 Log.d(TAG, "HSNwk: '" + networkDetail);
                             }
                             ScanDetail scan = new ScanDetail(networkDetail, wifiSsid, bssid, flags,
-                                    level, freq, tsf);
-                            scan.getScanResult().informationElements = infoElements;
+                                    level, freq, tsf, infoElements, anqpLines);
                             results.add(scan);
                         } catch (IllegalArgumentException iae) {
                             Log.d(TAG, "Failed to parse information elements: " + iae);
@@ -1792,10 +1791,23 @@ public class WifiNative {
     }
 
     public static interface ScanEventHandler {
-        void onScanResultsAvailable();
+        /**
+         * Called for each AP as it is found with the entire contents of the beacon/probe response.
+         * Only called when WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT is specified.
+         */
         void onFullScanResult(ScanResult fullScanResult);
-        void onScanStatus();
+        /**
+         * Callback on an event during a gscan scan.
+         * See WifiNative.WIFI_SCAN_* for possible values.
+         */
+        void onScanStatus(int event);
+        /**
+         * Called with the current cached scan results when gscan is paused.
+         */
         void onScanPaused(WifiScanner.ScanData[] data);
+        /**
+         * Called with the current cached scan results when gscan is resumed.
+         */
         void onScanRestarted();
     }
 
@@ -1808,15 +1820,8 @@ public class WifiNative {
     // Callback from native
     private static void onScanStatus(int id, int event) {
         ScanEventHandler handler = sScanEventHandler;
-        if (event == WIFI_SCAN_RESULTS_AVAILABLE || event == WIFI_SCAN_THRESHOLD_NUM_SCANS
-                || event == WIFI_SCAN_THRESHOLD_PERCENT) {
-            if (handler != null) {
-                // TODO pass event back to framework
-                handler.onScanStatus();
-            }
-        }
-        else if (event == WIFI_SCAN_FAILED) {
-            // TODO signal that scan has failed
+        if (handler != null) {
+            handler.onScanStatus(event);
         }
     }
 

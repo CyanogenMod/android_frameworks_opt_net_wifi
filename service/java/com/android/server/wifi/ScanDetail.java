@@ -26,7 +26,8 @@ public class ScanDetail {
     private long mSeen = 0;
 
     public ScanDetail(NetworkDetail networkDetail, WifiSsid wifiSsid, String BSSID,
-                      String caps, int level, int frequency, long tsf) {
+            String caps, int level, int frequency, long tsf,
+            ScanResult.InformationElement[] informationElements, List<String> anqpLines) {
         mNetworkDetail = networkDetail;
         mScanResult = new ScanResult(wifiSsid, BSSID, networkDetail.getHESSID(),
                 networkDetail.getAnqpDomainID(), networkDetail.getOsuProviders(),
@@ -36,6 +37,8 @@ public class ScanDetail {
         mScanResult.channelWidth = networkDetail.getChannelWidth();
         mScanResult.centerFreq0 = networkDetail.getCenterfreq0();
         mScanResult.centerFreq1 = networkDetail.getCenterfreq1();
+        mScanResult.informationElements = informationElements;
+        mScanResult.anqpLines = anqpLines;
         if (networkDetail.is80211McResponderSupport())
             mScanResult.setFlag(ScanResult.FLAG_80211mc_RESPONDER);
         mMatches = null;

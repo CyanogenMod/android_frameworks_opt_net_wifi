@@ -658,7 +658,7 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
 
         if (expectedScanResults != null) {
             // Verify scan results delivered
-            order.verify(eventHandler).onScanStatus();
+            order.verify(eventHandler).onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
             assertScanDatasEquals("period[" + periodId + "].", expectedScanResults,
                     mScanner.getLatestBatchedScanResults(true));
         }
@@ -668,6 +668,8 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
             Set<Integer> scanFreqs) {
         // Verify scan started
         order.verify(mWifiNative).scan(eq(scanFreqs));
+
+        // TODO: verify failure event
     }
 
     private void expectFailedEventScan(InOrder order, WifiNative.ScanEventHandler eventHandler,
@@ -678,11 +680,13 @@ public class SupplicantWifiScannerTest extends BaseWifiScannerImplTest {
         // Notify scan has failed
         mWifiMonitor.sendMessage(mWifiNative.getInterfaceName(), WifiMonitor.SCAN_FAILED_EVENT);
         assertEquals("dispatch message after results event", 1, mLooper.dispatchAll());
+
+        // TODO: verify failure event
     }
 
     private void dispatchOnlyAlarm() {
         assertEquals("dispatch only one alarm", 1, mAlarmManager.dispatchAll());
-        assertEquals("dispatch only one message", 1, mLooper.dispatchAll());
+        mLooper.dispatchAll();
     }
 
     private static class ScanPeriod {

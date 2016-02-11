@@ -34,8 +34,8 @@ import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
-import android.net.ip.IpManager;
 import android.net.LinkProperties;
+import android.net.ip.IpManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SupplicantState;
 import android.net.wifi.WifiConfiguration;
@@ -267,8 +267,9 @@ public class WifiStateMachineTest {
         ie[0] = ScanResults.generateSsidIe(sSSID);
         NetworkDetail nd = new NetworkDetail(sBSSID, ie, new ArrayList<String>(), sFreq);
         ScanDetail detail = new ScanDetail(nd, sWifiSsid, sBSSID, "", rssi, sFreq,
-                Long.MAX_VALUE /* needed so that scan results aren't rejected because
-                                  there older than scan start */);
+                Long.MAX_VALUE, /* needed so that scan results aren't rejected because
+                                   there older than scan start */
+                null, null);
         return detail;
     }
 
