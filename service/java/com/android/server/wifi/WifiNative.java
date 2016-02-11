@@ -1755,29 +1755,29 @@ public class WifiNative {
     private static native void setWifiLinkLayerStatsNative(int iface, int enable);
 
     public static class ChannelSettings {
-        int frequency;
-        int dwell_time_ms;
-        boolean passive;
+        public int frequency;
+        public int dwell_time_ms;
+        public boolean passive;
     }
 
     public static class BucketSettings {
-        int bucket;
-        int band;
-        int period_ms;
-        int max_period_ms;
-        int step_count;
-        int report_events;
-        int num_channels;
-        ChannelSettings channels[];
+        public int bucket;
+        public int band;
+        public int period_ms;
+        public int max_period_ms;
+        public int step_count;
+        public int report_events;
+        public int num_channels;
+        public ChannelSettings[] channels;
     }
 
     public static class ScanSettings {
-        int base_period_ms;
-        int max_ap_per_scan;
-        int report_threshold_percent;
-        int report_threshold_num_scans;
-        int num_buckets;
-        BucketSettings buckets[];
+        public int base_period_ms;
+        public int max_ap_per_scan;
+        public int report_threshold_percent;
+        public int report_threshold_num_scans;
+        public int num_buckets;
+        public BucketSettings[] buckets;
     }
 
     /**
