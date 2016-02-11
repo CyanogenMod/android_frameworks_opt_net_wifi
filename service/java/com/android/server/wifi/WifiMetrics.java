@@ -16,6 +16,7 @@
 
 package com.android.server.wifi;
 
+import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.os.SystemClock;
 import android.util.Base64;
@@ -38,6 +39,7 @@ import java.util.List;
 public class WifiMetrics {
     private static final String TAG = "WifiMetrics";
     private final Object mLock = new Object();
+    private static final int MAX_CONNECTION_EVENTS = 256;
     /**
      * Metrics are stored within an instance of the WifiLog proto during runtime,
      * The ConnectionEvent, SystemStateEntries & ScanReturnEntries metrics are stored during
@@ -66,22 +68,8 @@ public class WifiMetrics {
 
     class RouterFingerPrint {
         private WifiMetricsProto.RouterFingerPrint mRouterFingerPrintProto;
-
-        public RouterFingerPrint(int roamType,
-                                 int channelInfo,
-                                 int dtim,
-                                 int authentication,
-                                 boolean hidden,
-                                 int routerTechnology,
-                                 boolean supportsIpv6) {
+        RouterFingerPrint() {
             mRouterFingerPrintProto = new WifiMetricsProto.RouterFingerPrint();
-            mRouterFingerPrintProto.roamType = roamType;
-            mRouterFingerPrintProto.channelInfo = channelInfo;
-            mRouterFingerPrintProto.dtim = dtim;
-            mRouterFingerPrintProto.authentication = authentication;
-            mRouterFingerPrintProto.hidden = hidden;
-            mRouterFingerPrintProto.routerTechnology = routerTechnology;
-            mRouterFingerPrintProto.supportsIpv6 = supportsIpv6;
         }
 
         public String toString() {
@@ -96,6 +84,30 @@ public class WifiMetrics {
                 sb.append(", mSupportsIpv6=" + mRouterFingerPrintProto.supportsIpv6);
             }
             return sb.toString();
+        }
+        public void updateFromWifiConfiguration(WifiConfiguration config) {
+            if (config != null) {
+                /*<TODO>
+                mRouterFingerPrintProto.roamType
+                mRouterFingerPrintProto.dtim
+                mRouterFingerPrintProto.routerTechnology
+                mRouterFingerPrintProto.supportsIpv6
+                */
+                if (config.allowedAuthAlgorithms != null
+                        && config.allowedAuthAlgorithms.get(WifiConfiguration.AuthAlgorithm.OPEN)) {
+                    mRouterFingerPrintProto.authentication =
+                            WifiMetricsProto.RouterFingerPrint.AUTH_OPEN;
+                } else if (config.isEnterprise()) {
+                    mRouterFingerPrintProto.authentication =
+                            WifiMetricsProto.RouterFingerPrint.AUTH_ENTERPRISE;
+                } else {
+                    mRouterFingerPrintProto.authentication =
+                            WifiMetricsProto.RouterFingerPrint.AUTH_PERSONAL;
+                }
+                mRouterFingerPrintProto.hidden = config.hiddenSSID;
+                mRouterFingerPrintProto.channelInfo = config.apChannel;
+
+            }
         }
     }
 
@@ -113,12 +125,30 @@ public class WifiMetrics {
         private int mEventCompleteness;
         private long mRealEndTime;
 
+        //<TODO> Move these constants into a wifi.proto Enum
+        // Level 2 Failure Codes
+        // Failure is unknown
+        public static final int LLF_UNKNOWN = 0;
+        // NONE
+        public static final int LLF_NONE = 1;
+        // ASSOCIATION_REJECTION_EVENT
+        public static final int LLF_ASSOCIATION_REJECTION = 2;
+        // AUTHENTICATION_FAILURE_EVENT
+        public static final int LLF_AUTHENTICATION_FAILURE = 3;
+        // SSID_TEMP_DISABLED (Also Auth failure)
+        public static final int LLF_SSID_TEMP_DISABLED = 4;
+        // CONNECT_NETWORK_FAILED
+        public static final int LLF_CONNECT_NETWORK_FAILED = 5;
+        // NETWORK_DISCONNECTION_EVENT
+        public static final int LLF_NETWORK_DISCONNECTION = 6;
+
         private ConnectionEvent() {
             mConnectionEvent = new WifiMetricsProto.ConnectionEvent();
             mConnectionEvent.startTimeMillis = -1;
             mRealEndTime = -1;
             mConnectionEvent.durationTakenToConnectMillis = -1;
-            mRouterFingerPrint = new RouterFingerPrint(0, 0, 0, 0, false, 0, false);
+            mRouterFingerPrint = new RouterFingerPrint();
+            mConnectionEvent.routerFingerprint = mRouterFingerPrint.mRouterFingerPrintProto;
             mConnectionEvent.signalStrength = -1;
             mConnectionEvent.roamType = WifiMetricsProto.ConnectionEvent.ROAM_UNKNOWN;
             mConnectionEvent.connectionResult = -1;
@@ -143,6 +173,26 @@ public class WifiMetrics {
                         String.format("%tm-%td %tH:%tM:%tS.%tL", c, c, c, c, c, c));
                 sb.append(", durationTakenToConnectMillis=");
                 sb.append(mConnectionEvent.durationTakenToConnectMillis);
+                sb.append(", roamType=");
+                switch(mConnectionEvent.roamType){
+                    case 1:
+                        sb.append("ROAM_NONE");
+                        break;
+                    case 2:
+                        sb.append("ROAM_DBDC");
+                        break;
+                    case 3:
+                        sb.append("ROAM_ENTERPRISE");
+                        break;
+                    case 4:
+                        sb.append("ROAM_USER_SELECTED");
+                        break;
+                    case 5:
+                        sb.append("ROAM_UNRELATED");
+                        break;
+                    default:
+                        sb.append("ROAM_UNKNOWN");
+                }
                 sb.append(", level2FailureCode=");
                 sb.append(mConnectionEvent.level2FailureCode);
                 sb.append(", connectivityLevelFailureCode=");
@@ -150,7 +200,7 @@ public class WifiMetrics {
                 sb.append(", mEventCompleteness=");
                 sb.append(mEventCompleteness);
                 sb.append("\n  ");
-                sb.append("mRouterFingerprint:\n ");
+                sb.append("mRouterFingerprint: ");
                 sb.append(mRouterFingerPrint.toString());
             }
             return sb.toString();
@@ -174,34 +224,36 @@ public class WifiMetrics {
      * @param wifiInfo WifiInfo for the current connection attempt, used for connection metrics
      * @param roamType Roam type that caused connection attempt, see WifiMetricsProto.WifiLog.ROAM_X
      */
-    public void startConnectionEvent(WifiInfo wifiInfo, int roamType) {
+    public void startConnectionEvent(WifiInfo wifiInfo, WifiConfiguration config, int roamType) {
         synchronized (mLock) {
-            mCurrentConnectionEvent = new ConnectionEvent();
-            mCurrentConnectionEvent.mEventCompleteness |= 1;
-            mCurrentConnectionEvent.mConnectionEvent.startTimeMillis = System.currentTimeMillis();
-            mCurrentConnectionEvent.mConnectionEvent.roamType = roamType;
-            //<TODO> Get actual routerfingerprint metrics, not these placeholders
-            mCurrentConnectionEvent.mRouterFingerPrint = new RouterFingerPrint(
-                    WifiMetricsProto.RouterFingerPrint.ROAM_TYPE_UNKNOWN, //TODO
-                    -1, //mChannelInfo TODO
-                    -1, //Dtim TODO
-                    WifiMetricsProto.RouterFingerPrint.AUTH_UNKNOWN, //TODO
-                    false, //mHidden TODO
-                    WifiMetricsProto.RouterFingerPrint.ROUTER_TECH_UNKNOWN, //TODO
-                    false //mSupportsIpv6 TODO
-            );
-            if (wifiInfo != null) {
-                mCurrentConnectionEvent.mConnectionEvent.signalStrength = wifiInfo.getRssi();
+            if (mConnectionEventList.size() <= MAX_CONNECTION_EVENTS) {
+                mCurrentConnectionEvent = new ConnectionEvent();
+                mCurrentConnectionEvent.mEventCompleteness |= 1;
+                mCurrentConnectionEvent.mConnectionEvent.startTimeMillis =
+                        System.currentTimeMillis();
+                mCurrentConnectionEvent.mConnectionEvent.roamType = roamType;
+                mCurrentConnectionEvent.mRouterFingerPrint.updateFromWifiConfiguration(config);
+                if (wifiInfo != null) {
+                    mCurrentConnectionEvent.mConnectionEvent.signalStrength = wifiInfo.getRssi();
+                }
+                mCurrentConnectionEvent.mRealStartTime = SystemClock.elapsedRealtime();
+                mConnectionEventList.add(mCurrentConnectionEvent);
             }
-            mCurrentConnectionEvent.mRealStartTime = SystemClock.elapsedRealtime();
-            mConnectionEventList.add(mCurrentConnectionEvent);
         }
     }
 
     public void startConnectionEvent(WifiInfo wifiInfo) {
-        startConnectionEvent(wifiInfo, WifiMetricsProto.ConnectionEvent.ROAM_NONE);
+        startConnectionEvent(wifiInfo, null, WifiMetricsProto.ConnectionEvent.ROAM_NONE);
     }
 
+    /**
+     * set the RoamType of the current ConnectionEvent (if any)
+     */
+    public void setConnectionEventRoamType(int roamType) {
+        if (mCurrentConnectionEvent != null) {
+            mCurrentConnectionEvent.mConnectionEvent.roamType = roamType;
+        }
+    }
     /**
      * End a Connection event record. Call when wifi connection attempt succeeds or fails.
      * If a Connection event has not been started and is active when .end is called, a new one is
@@ -212,20 +264,21 @@ public class WifiMetrics {
      */
     public void endConnectionEvent(int level2FailureCode, int connectivityFailureCode) {
         synchronized (mLock) {
-            if (mCurrentConnectionEvent == null) {
-                //No currentConnectionEvent exists, create an 'un-started' one, and End it
-                mCurrentConnectionEvent = new ConnectionEvent();
-                mConnectionEventList.add(mCurrentConnectionEvent);
+            if (mCurrentConnectionEvent != null) {
+                boolean result = (level2FailureCode == 1)
+                        && (connectivityFailureCode == WifiMetricsProto.ConnectionEvent.HLF_NONE);
+                mCurrentConnectionEvent.mConnectionEvent.connectionResult = result ? 1 : 0;
+                mCurrentConnectionEvent.mEventCompleteness |= 2;
+                mCurrentConnectionEvent.mRealEndTime = SystemClock.elapsedRealtime();
+                mCurrentConnectionEvent.mConnectionEvent.durationTakenToConnectMillis = (int)
+                        (mCurrentConnectionEvent.mRealEndTime
+                        - mCurrentConnectionEvent.mRealStartTime);
+                mCurrentConnectionEvent.mConnectionEvent.level2FailureCode = level2FailureCode;
+                mCurrentConnectionEvent.mConnectionEvent.connectivityLevelFailureCode =
+                        connectivityFailureCode;
+                //ConnectionEvent already added to ConnectionEvents List
+                mCurrentConnectionEvent = null;
             }
-            mCurrentConnectionEvent.mEventCompleteness |= 2;
-            mCurrentConnectionEvent.mRealEndTime = SystemClock.elapsedRealtime();
-            mCurrentConnectionEvent.mConnectionEvent.durationTakenToConnectMillis = (int)
-                    (mCurrentConnectionEvent.mRealEndTime - mCurrentConnectionEvent.mRealStartTime);
-            mCurrentConnectionEvent.mConnectionEvent.level2FailureCode = level2FailureCode;
-            mCurrentConnectionEvent.mConnectionEvent.connectivityLevelFailureCode =
-                    connectivityFailureCode;
-            //ConnectionEvent already added to ConnectionEvents List
-            mCurrentConnectionEvent = null;
         }
     }
 
@@ -353,7 +406,6 @@ public class WifiMetrics {
         }
     }
 
-
     public static final String PROTO_DUMP_ARG = "wifiMetricsProto";
     /**
      * Dump all WifiMetrics. Collects some metrics from ConfigStore, Settings and WifiManager
@@ -380,6 +432,7 @@ public class WifiMetrics {
                 String metricsProtoDump = Base64.encodeToString(wifiMetricsProto, Base64.DEFAULT);
                 pw.println(metricsProtoDump);
                 pw.println("EndWifiMetrics");
+                clear();
             } else {
                 pw.println("mConnectionEvents:");
                 for (ConnectionEvent event : mConnectionEventList) {
@@ -428,11 +481,10 @@ public class WifiMetrics {
             for (ConnectionEvent event : mConnectionEventList) {
                 if (!incremental || ((mCurrentConnectionEvent != event)
                         && !event.mConnectionEvent.automaticBugReportTaken)) {
-                    //<TODO> Revisit logic on when to mark connection events
-                    // as 'automaticBugreportTaken'</TODO>
                     //Get all ConnectionEvents that haven not been dumped as a proto, also exclude
                     //the current active un-ended connection event
                     events.add(event.mConnectionEvent);
+                    event.mConnectionEvent.automaticBugReportTaken = true;
                 }
             }
             if (events.size() > 0) {
@@ -451,5 +503,20 @@ public class WifiMetrics {
     public byte[] toByteArray() {
         consolidateProto(false);
         return mWifiLogProto.toByteArray(mWifiLogProto);
+    }
+
+    /**
+     * Clear all WifiMetrics, except for currentConnectionEvent.
+     */
+    private void clear() {
+        synchronized (mLock) {
+            mConnectionEventList.clear();
+            if (mCurrentConnectionEvent != null) {
+                mConnectionEventList.add(mCurrentConnectionEvent);
+            }
+            mScanReturnEntries.clear();
+            mWifiSystemStateEntries.clear();
+            mWifiLogProto.clear();
+        }
     }
 }
