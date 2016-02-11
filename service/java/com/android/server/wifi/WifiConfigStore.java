@@ -18,7 +18,6 @@ package com.android.server.wifi;
 
 import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
 
-import android.app.AppGlobals;
 import android.app.admin.DeviceAdminInfo;
 import android.app.admin.DevicePolicyManagerInternal;
 import android.content.ContentResolver;
@@ -176,7 +175,7 @@ public class WifiConfigStore extends IpConfigStore {
     private static final String PPS_FILE = "/data/misc/wifi/PerProviderSubscription.conf";
 
     /* configured networks with network id as the key */
-    private final ConfigurationMap mConfiguredNetworks = new ConfigurationMap();
+    private final ConfigurationMap mConfiguredNetworks;
 
     /* A network id is a unique identifier for a network configured in the
      * supplicant. Network ids are generated when the supplicant reads
@@ -681,6 +680,7 @@ public class WifiConfigStore extends IpConfigStore {
         boolean hs2on = mContext.getResources().getBoolean(R.bool.config_wifi_hotspot2_enabled);
         Log.d(Utils.hs2LogTag(getClass()), "Passpoint is " + (hs2on ? "enabled" : "disabled"));
 
+        mConfiguredNetworks = new ConfigurationMap(mContext);
         mMOManager = new PasspointManagementObjectManager(new File(PPS_FILE), hs2on);
         mEnableOsuQueries = true;
         mAnqpCache = new AnqpCache();
@@ -972,7 +972,8 @@ public class WifiConfigStore extends IpConfigStore {
     boolean selectNetwork(WifiConfiguration config, boolean updatePriorities, int uid) {
         if (VDBG) localLogNetwork("selectNetwork", config.networkId);
         if (config.networkId == INVALID_NETWORK_ID) return false;
-        if (!config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+        if (!WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                mWifiStateMachine.getCurrentUserProfiles())) {
             loge("selectNetwork " + Integer.toString(config.networkId) + ": Network config is not "
                     + "visible to current user.");
             return false;
@@ -1048,7 +1049,8 @@ public class WifiConfigStore extends IpConfigStore {
             return new NetworkUpdateResult(INVALID_NETWORK_ID);
         }
 
-        if (!config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+        if (!WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                mWifiStateMachine.getCurrentUserProfiles())) {
             return new NetworkUpdateResult(INVALID_NETWORK_ID);
         }
 
@@ -1267,7 +1269,8 @@ public class WifiConfigStore extends IpConfigStore {
      * @return network Id
      */
     int addOrUpdateNetwork(WifiConfiguration config, int uid) {
-        if (config == null || !config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+        if (config == null || !WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                mWifiStateMachine.getCurrentUserProfiles())) {
             return WifiConfiguration.INVALID_NETWORK_ID;
         }
 
@@ -3393,7 +3396,8 @@ public class WifiConfigStore extends IpConfigStore {
      * @param config
      */
     public void linkConfiguration(WifiConfiguration config) {
-        if (!config.isVisibleToUser(mWifiStateMachine.getCurrentUserId())) {
+        if (!WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                mWifiStateMachine.getCurrentUserProfiles())) {
             loge("linkConfiguration: Attempting to link config " + config.configKey()
                     + " that is not visible to the current user.");
             return;
@@ -4611,7 +4615,7 @@ public class WifiConfigStore extends IpConfigStore {
 
     boolean checkConfigOverridePermission(int uid) {
         try {
-            return (AppGlobals.getPackageManager().checkUidPermission(
+            return (mFacade.checkUidPermission(
                     android.Manifest.permission.OVERRIDE_WIFI_CONFIG, uid)
                     == PackageManager.PERMISSION_GRANTED);
         } catch (RemoteException e) {
