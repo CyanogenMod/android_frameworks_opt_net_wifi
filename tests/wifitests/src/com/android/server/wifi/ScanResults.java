@@ -22,8 +22,6 @@ import android.net.wifi.WifiSsid;
 
 import com.android.server.wifi.hotspot2.NetworkDetail;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -59,42 +57,11 @@ public class ScanResults {
         return ie;
     }
 
-    /**
-     * Walk up the stack and find the first method annotated with @Test
-     * Note: this will evaluate all overloads with the method name for the @Test annotation
-     */
-    private static String getTestMethod() {
-        StackTraceElement[] stack = Thread.currentThread().getStackTrace();
-        for (StackTraceElement e : stack) {
-            if (e.isNativeMethod()) {
-                continue;
-            }
-            Class clazz;
-            try {
-                clazz = Class.forName(e.getClassName());
-            } catch(ClassNotFoundException ex) {
-                throw new RuntimeException("Could not find class from stack", ex);
-            }
-            Method[] methods = clazz.getDeclaredMethods();
-            for (Method method : methods) {
-                if (method.getName().equals(e.getMethodName())) {
-                    Annotation[] annotations = method.getDeclaredAnnotations();
-                    for (Annotation annotation : annotations) {
-                        if (annotation.annotationType().equals(org.junit.Test.class)) {
-                            return e.getClassName() + "#" + e.getMethodName();
-                        }
-                    }
-                }
-            }
-        }
-        throw new RuntimeException("Could not find a test method in the stack");
-    }
-
     private static ScanDetail[] generateNativeResults(int seed, int... freqs) {
         ScanDetail[] results = new ScanDetail[freqs.length];
         // Seed the results based on the provided seed as well as the test method name
         // This provides more varied scan results between individual tests that are very similar.
-        Random r = new Random(seed + getTestMethod().hashCode());
+        Random r = new Random(seed + WifiTestUtil.getTestMethod().hashCode());
         for (int i = 0; i < freqs.length; ++i) {
             int freq = freqs[i];
             String ssid = new BigInteger(128, r).toString(36);
