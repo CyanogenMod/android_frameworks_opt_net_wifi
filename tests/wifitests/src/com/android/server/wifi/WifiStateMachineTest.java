@@ -17,13 +17,16 @@
 package com.android.server.wifi;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyObject;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
@@ -31,6 +34,7 @@ import static org.mockito.Mockito.withSettings;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.pm.UserInfo;
 import android.content.res.Resources;
 import android.net.ConnectivityManager;
 import android.net.DhcpResults;
@@ -43,6 +47,7 @@ import android.net.wifi.WifiManager;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.p2p.IWifiP2pManager;
 import android.os.BatteryStats;
+import android.os.Binder;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -54,6 +59,7 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.provider.Settings;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Log;
@@ -81,6 +87,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +98,11 @@ import java.util.Map;
 @SmallTest
 public class WifiStateMachineTest {
     public static final String TAG = "WifiStateMachineTest";
+
+    private static final int MANAGED_PROFILE_UID = 1100000;
+    private static final int OTHER_USER_UID = 1200000;
+
+    private long mBinderToken;
 
     private static <T> T mockWithInterfaces(Class<T> class1, Class<?>... interfaces) {
         return mock(class1, withSettings().extraInterfaces(interfaces));
@@ -135,7 +147,7 @@ public class WifiStateMachineTest {
         }
     }
 
-    private FrameworkFacade getFrameworkFacade() throws InterruptedException {
+    private FrameworkFacade getFrameworkFacade() throws Exception {
         FrameworkFacade facade = mock(FrameworkFacade.class);
 
         when(facade.makeBaseLogger()).thenReturn(mock(BaseWifiLogger.class));
@@ -177,6 +189,9 @@ public class WifiStateMachineTest {
                         return mTestIpManager;
                     }
                 });
+
+        when(facade.checkUidPermission(eq(android.Manifest.permission.OVERRIDE_WIFI_CONFIG),
+                anyInt())).thenReturn(PackageManager.PERMISSION_GRANTED);
 
         return facade;
     }
@@ -300,6 +315,7 @@ public class WifiStateMachineTest {
     @Mock WifiNative mWifiNative;
     @Mock SupplicantStateTracker mSupplicantStateTracker;
     @Mock WifiMetrics mWifiMetrics;
+    @Mock UserManager mUserManager;
 
     public WifiStateMachineTest() throws Exception {
     }
@@ -337,7 +353,13 @@ public class WifiStateMachineTest {
                 any(Context.class), any(WifiStateMachine.class), any(WifiConfigStore.class),
                 any(Handler.class))).thenReturn(mSupplicantStateTracker);
 
-        mWsm = new WifiStateMachine(context, null, factory, mWifiMetrics);
+        when(mUserManager.getProfileParent(11))
+                .thenReturn(new UserInfo(UserHandle.USER_SYSTEM, "owner", 0));
+        when(mUserManager.getProfiles(UserHandle.USER_SYSTEM)).thenReturn(Arrays.asList(
+                new UserInfo(UserHandle.USER_SYSTEM, "owner", 0),
+                new UserInfo(11, "managed profile", 0)));
+
+        mWsm = new WifiStateMachine(context, null, factory, mWifiMetrics, mUserManager);
         mWsmThread = getWsmHandlerThread(mWsm);
 
         final Object sync = new Object();
@@ -372,10 +394,13 @@ public class WifiStateMachineTest {
         }
 
         /* Now channel is supposed to be connected */
+
+        mBinderToken = Binder.clearCallingIdentity();
     }
 
     @After
     public void cleanUp() throws Exception {
+        Binder.restoreCallingIdentity(mBinderToken);
 
         if (mSyncThread != null) stopLooper(mSyncThread.getLooper());
         if (mWsmThread != null) stopLooper(mWsmThread.getLooper());
@@ -447,8 +472,7 @@ public class WifiStateMachineTest {
         assertEquals("InitialState", getCurrentState().getName());
     }
 
-    @Test
-    public void addNetwork() throws Exception {
+    private void addNetworkAndVerifySuccess() throws Exception {
 
         loadComponents();
 
@@ -516,10 +540,189 @@ public class WifiStateMachineTest {
         assertTrue(config2.allowedKeyManagement.get(WifiConfiguration.KeyMgmt.NONE));
     }
 
+    private void addNetworkAndVerifyFailure() throws Exception {
+        loadComponents();
+
+        final WifiConfiguration config = new WifiConfiguration();
+        config.SSID = sSSID;
+        config.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE);
+
+        mWsm.syncAddOrUpdateNetwork(mWsmAsyncChannel, config);
+        wait(200);
+
+        verify(mWifiNative, never()).addNetwork();
+        verify(mWifiNative, never()).setNetworkVariable(anyInt(), anyString(), anyString());
+
+        assertTrue(mWsm.syncGetConfiguredNetworks(-1, mWsmAsyncChannel).isEmpty());
+    }
+
+    /**
+     * Verifies that the current foreground user is allowed to add a network.
+     */
+    @Test
+    public void addNetworkAsCurrentUser() throws Exception {
+        addNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a managed profile of the current foreground user is allowed to add a network.
+     */
+    @Test
+    public void addNetworkAsCurrentUsersManagedProfile() throws Exception {
+        BinderUtil.setUid(MANAGED_PROFILE_UID);
+        addNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a background user is not allowed to add a network.
+     */
+    @Test
+    public void addNetworkAsOtherUser() throws Exception {
+        BinderUtil.setUid(OTHER_USER_UID);
+        addNetworkAndVerifyFailure();
+    }
+
+    private void removeNetworkAndVerifySuccess() throws Exception {
+        when(mWifiNative.removeNetwork(0)).thenReturn(true);
+        assertTrue(mWsm.syncRemoveNetwork(mWsmAsyncChannel, 0));
+        wait(200);
+        assertTrue(mWsm.syncGetConfiguredNetworks(-1, mWsmAsyncChannel).isEmpty());
+    }
+
+    private void removeNetworkAndVerifyFailure() throws Exception {
+        assertFalse(mWsm.syncRemoveNetwork(mWsmAsyncChannel, 0));
+        wait(200);
+        assertEquals(1, mWsm.syncGetConfiguredNetworks(-1, mWsmAsyncChannel).size());
+        verify(mWifiNative, never()).removeNetwork(anyInt());
+    }
+
+    /**
+     * Verifies that the current foreground user is allowed to remove a network.
+     */
+    @Test
+    public void removeNetworkAsCurrentUser() throws Exception {
+        addNetworkAndVerifySuccess();
+        removeNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a managed profile of the current foreground user is allowed to remove a
+     * network.
+     */
+    @Test
+    public void removeNetworkAsCurrentUsersManagedProfile() throws Exception {
+        addNetworkAndVerifySuccess();
+        BinderUtil.setUid(MANAGED_PROFILE_UID);
+        removeNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a background user is not allowed to remove a network.
+     */
+    @Test
+    public void removeNetworkAsOtherUser() throws Exception {
+        addNetworkAndVerifySuccess();
+        BinderUtil.setUid(OTHER_USER_UID);
+        removeNetworkAndVerifyFailure();
+    }
+
+    private void enableNetworkAndVerifySuccess() throws Exception {
+        when(mWifiNative.enableNetwork(0, true)).thenReturn(true);
+        assertTrue(mWsm.syncEnableNetwork(mWsmAsyncChannel, 0, true));
+        wait(200);
+        verify(mWifiNative).enableNetwork(0, true);
+    }
+
+    private void enableNetworkAndVerifyFailure() throws Exception {
+        assertFalse(mWsm.syncEnableNetwork(mWsmAsyncChannel, 0, true));
+        wait(200);
+        verify(mWifiNative, never()).enableNetwork(anyInt(), anyBoolean());
+    }
+
+    /**
+     * Verifies that the current foreground user is allowed to enable a network.
+     */
+    @Test
+    public void enableNetworkAsCurrentUser() throws Exception {
+        addNetworkAndVerifySuccess();
+        enableNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a managed profile of the current foreground user is allowed to enable a
+     * network.
+     */
+    @Test
+    public void enableNetworkAsCurrentUsersManagedProfile() throws Exception {
+        addNetworkAndVerifySuccess();
+        BinderUtil.setUid(MANAGED_PROFILE_UID);
+        enableNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a background user is not allowed to enable a network.
+     */
+    @Test
+    public void enableNetworkAsOtherUser() throws Exception {
+        addNetworkAndVerifySuccess();
+        BinderUtil.setUid(OTHER_USER_UID);
+        enableNetworkAndVerifyFailure();
+    }
+
+    private void forgetNetworkAndVerifySuccess() throws Exception {
+        when(mWifiNative.removeNetwork(0)).thenReturn(true);
+        final Message result =
+                mWsmAsyncChannel.sendMessageSynchronously(WifiManager.FORGET_NETWORK, 0);
+        assertEquals(WifiManager.FORGET_NETWORK_SUCCEEDED, result.what);
+        result.recycle();
+        wait(200);
+        assertTrue(mWsm.syncGetConfiguredNetworks(-1, mWsmAsyncChannel).isEmpty());
+    }
+
+    private void forgetNetworkAndVerifyFailure() throws Exception {
+        final Message result =
+                mWsmAsyncChannel.sendMessageSynchronously(WifiManager.FORGET_NETWORK, 0);
+        assertEquals(WifiManager.FORGET_NETWORK_FAILED, result.what);
+        result.recycle();
+        wait(200);
+        assertEquals(1, mWsm.syncGetConfiguredNetworks(-1, mWsmAsyncChannel).size());
+        verify(mWifiNative, never()).removeNetwork(anyInt());
+    }
+
+    /**
+     * Verifies that the current foreground user is allowed to forget a network.
+     */
+    @Test
+    public void forgetNetworkAsCurrentUser() throws Exception {
+        addNetworkAndVerifySuccess();
+        forgetNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a managed profile of the current foreground user is allowed to forget a
+     * network.
+     */
+    @Test
+    public void forgetNetworkAsCurrentUsersManagedProfile() throws Exception {
+        addNetworkAndVerifySuccess();
+        BinderUtil.setUid(MANAGED_PROFILE_UID);
+        forgetNetworkAndVerifySuccess();
+    }
+
+    /**
+     * Verifies that a background user is not allowed to forget a network.
+     */
+    @Test
+    public void forgetNetworkAsOtherUser() throws Exception {
+        addNetworkAndVerifySuccess();
+        BinderUtil.setUid(OTHER_USER_UID);
+        forgetNetworkAndVerifyFailure();
+    }
+
     @Test
     public void scan() throws Exception {
 
-        addNetwork();
+        addNetworkAndVerifySuccess();
 
         mWsm.setOperationalMode(WifiStateMachine.CONNECT_MODE);
 
@@ -539,7 +742,7 @@ public class WifiStateMachineTest {
     @Test
     public void connect() throws Exception {
 
-        addNetwork();
+        addNetworkAndVerifySuccess();
 
         mWsm.setOperationalMode(WifiStateMachine.CONNECT_MODE);
         mWsm.syncEnableNetwork(mWsmAsyncChannel, 0, true);
@@ -568,7 +771,7 @@ public class WifiStateMachineTest {
 
     @Test
     public void testDhcpFailure() throws Exception {
-        addNetwork();
+        addNetworkAndVerifySuccess();
 
         mWsm.setOperationalMode(WifiStateMachine.CONNECT_MODE);
         mWsm.syncEnableNetwork(mWsmAsyncChannel, 0, true);
@@ -592,7 +795,7 @@ public class WifiStateMachineTest {
 
     @Test
     public void testBadNetworkEvent() throws Exception {
-        addNetwork();
+        addNetworkAndVerifySuccess();
 
         mWsm.setOperationalMode(WifiStateMachine.CONNECT_MODE);
         mWsm.syncEnableNetwork(mWsmAsyncChannel, 0, true);
@@ -635,7 +838,7 @@ public class WifiStateMachineTest {
     @Test
     public void iconQueryTest() throws Exception {
         /* enable wi-fi */
-        addNetwork();
+        addNetworkAndVerifySuccess();
 
         long bssid = 0x1234567800FFL;
         String filename = "iconFileName.png";
