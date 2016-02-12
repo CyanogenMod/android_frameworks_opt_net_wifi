@@ -62,8 +62,9 @@ public class WifiQualifiedNetworkSelectionTest {
         mContext = getContext();
         mWifiConfigStore = getWifiConfigStore();
         mWifiInfo = getWifiInfo();
+
         mWifiQualifiedNetworkSelector = new WifiQualifiedNetworkSelector(mWifiConfigStore, mContext,
-                mWifiInfo);
+                mWifiInfo, mClock);
         mWifiQualifiedNetworkSelector.enableVerboseLogging(1);
     }
 
@@ -78,6 +79,7 @@ public class WifiQualifiedNetworkSelectionTest {
     private Resources mResource;
     private NetworkScoreManager mScoreManager;
     private WifiInfo mWifiInfo;
+    private Clock mClock = mock(Clock.class);
     private static final String[] DEFAULT_SSIDS = {"\"test1\"", "\"test2\""};
     private static final String[] DEFAULT_BSSIDS = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4"};
     private static final String TAG = "QNS Unit Test";

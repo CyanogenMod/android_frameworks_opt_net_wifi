@@ -202,6 +202,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private boolean mTemporarilyDisconnectWifi = false;
     private final String mPrimaryDeviceType;
     private final UserManager mUserManager;
+    private final Clock mClock = new Clock();
 
     /* Scan results handling */
     private List<ScanDetail> mScanResults = new ArrayList<>();
@@ -1188,7 +1189,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
         mWifiInfo = new WifiInfo();
         mWifiQualifiedNetworkSelector = new WifiQualifiedNetworkSelector(mWifiConfigStore, mContext,
-                mWifiInfo);
+                mWifiInfo, mClock);
         mSupplicantStateTracker = mFacade.makeSupplicantStateTracker(
                 context, this, mWifiConfigStore, getHandler());
 
