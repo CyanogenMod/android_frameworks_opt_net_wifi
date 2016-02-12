@@ -41,6 +41,7 @@ class WifiQualifiedNetworkSelector {
     private WifiInfo mWifiInfo;
     private NetworkScoreManager mScoreManager;
     private WifiNetworkScoreCache mNetworkScoreCache;
+    private Clock mClock;
     private static final String TAG = "WifiQualifiedNetworkSelector:";
     private boolean mDbg = true;
     private WifiConfiguration mCurrentConnectedNetwork = null;
@@ -117,9 +118,10 @@ class WifiQualifiedNetworkSelector {
     }
 
     WifiQualifiedNetworkSelector(WifiConfigStore configureStore, Context context,
-            WifiInfo wifiInfo) {
+            WifiInfo wifiInfo, Clock clock) {
         mWifiConfigStore = configureStore;
         mWifiInfo = wifiInfo;
+        mClock = clock;
         mScoreManager =
                 (NetworkScoreManager) context.getSystemService(Context.NETWORK_SCORE_SERVICE);
         if (mScoreManager != null) {
@@ -257,7 +259,7 @@ class WifiQualifiedNetworkSelector {
             //Do not select again if last selection is within
             //MINIMUM_QUALIFIED_NETWORK_SELECTION_INTERVAL
             if (mLastQualifiedNetworkSelectionTimeStamp != INVALID_TIME_STAMP) {
-                long gap = System.currentTimeMillis() - mLastQualifiedNetworkSelectionTimeStamp;
+                long gap = mClock.currentTimeMillis() - mLastQualifiedNetworkSelectionTimeStamp;
                 if (gap < MINIMUM_QUALIFIED_NETWORK_SELECTION_INTERVAL) {
                     qnsLog("Too short to last successful Qualified Network Selection Gap is:" + gap
                             + " ms!");
@@ -339,7 +341,7 @@ class WifiQualifiedNetworkSelector {
 
         //last user selection award
         if (sameSelect) {
-            long timeDifference = System.currentTimeMillis()
+            long timeDifference = mClock.currentTimeMillis()
                     - mWifiConfigStore.getLastSelectedTimeStamp();
 
             if (timeDifference > 0) {
@@ -464,7 +466,7 @@ class WifiQualifiedNetworkSelector {
 
         boolean change = false;
         String key = selected.configKey();
-        long currentTime = System.currentTimeMillis();
+        long currentTime = mClock.currentTimeMillis();
         List<WifiConfiguration> savedNetworks = mWifiConfigStore.getConfiguredNetworks();
 
         for (WifiConfiguration network : savedNetworks) {
@@ -590,7 +592,7 @@ class WifiQualifiedNetworkSelector {
                 mWifiConfigStore.getWifiConfiguration(lastUserSelectedNetWorkKey);
         if (lastUserSelectedNetwork != null) {
             qnsLog("Last selection is " + lastUserSelectedNetwork.SSID + " Time to now: "
-                    + ((System.currentTimeMillis() - mWifiConfigStore.getLastSelectedTimeStamp())
+                    + ((mClock.currentTimeMillis() - mWifiConfigStore.getLastSelectedTimeStamp())
                             / 1000 / 60 + " minutes"));
         }
 
@@ -805,7 +807,7 @@ class WifiQualifiedNetworkSelector {
 
         mCurrentBssid = scanResultCandidate.BSSID;
         mCurrentConnectedNetwork = networkCandidate;
-        mLastQualifiedNetworkSelectionTimeStamp = System.currentTimeMillis();
+        mLastQualifiedNetworkSelectionTimeStamp = mClock.currentTimeMillis();
         return networkCandidate;
     }
 
