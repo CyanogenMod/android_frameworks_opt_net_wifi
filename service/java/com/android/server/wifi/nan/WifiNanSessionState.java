@@ -33,7 +33,7 @@ import java.io.PrintWriter;
 
 public class WifiNanSessionState {
     private static final String TAG = "WifiNanSessionState";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false; // STOPSHIP if true
 
     private final SparseArray<String> mMacByRequestorInstanceId = new SparseArray<>();

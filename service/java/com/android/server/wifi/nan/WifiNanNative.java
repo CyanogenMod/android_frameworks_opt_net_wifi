@@ -37,7 +37,7 @@ import libcore.util.HexEncoding;
  */
 public class WifiNanNative {
     private static final String TAG = "WifiNanNative";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false; // STOPSHIP if true
 
     private static final int WIFI_SUCCESS = 0;
