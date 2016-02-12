@@ -37,6 +37,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
+import android.content.pm.UserInfo;
 import android.net.wifi.FakeKeys;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
@@ -45,11 +46,13 @@ import android.net.wifi.WifiEnterpriseConfig.Eap;
 import android.net.wifi.WifiEnterpriseConfig.Phase2;
 import android.os.Process;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.security.Credentials;
 import android.support.test.InstrumentationRegistry;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.text.TextUtils;
 import android.util.Log;
+import android.util.SparseArray;
 
 import com.android.server.net.DelayedDiskWrite;
 import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
@@ -94,20 +97,33 @@ import java.util.TreeMap;
 @SmallTest
 public class WifiConfigStoreTest {
     private static final List<WifiConfiguration> CONFIGS = Arrays.asList(
-            WifiConfigurationUtil.generateWifiConfig(
+            WifiConfigurationTestUtil.generateWifiConfig(
                     0, 1000000, "\"red\"", true, true, null, null),
-            WifiConfigurationUtil.generateWifiConfig(
+            WifiConfigurationTestUtil.generateWifiConfig(
                     1, 1000001, "\"green\"", true, true, "example.com", "Green"),
-            WifiConfigurationUtil.generateWifiConfig(
-                    2, 1100000, "\"blue\"", false, true, "example.org", "Blue"));
+            WifiConfigurationTestUtil.generateWifiConfig(
+                    2, 1100000, "\"blue\"", false, true, "example.org", "Blue"),
+            WifiConfigurationTestUtil.generateWifiConfig(
+                    3, 1200000, "\"cyan\"", false, true, null, null));
 
     private static final int[] USER_IDS = {0, 10, 11};
+    private static final int MANAGED_PROFILE_USER_ID = 12;
+    private static final int MANAGED_PROFILE_PARENT_USER_ID = 0;
+    private static final SparseArray<List<UserInfo>> USER_PROFILES = new SparseArray<>();
+    static {
+        USER_PROFILES.put(0, Arrays.asList(new UserInfo(0, "Owner", 0),
+                new UserInfo(12, "Managed Profile", 0)));
+        USER_PROFILES.put(10, Arrays.asList(new UserInfo(10, "Alice", 0)));
+        USER_PROFILES.put(11, Arrays.asList(new UserInfo(11, "Bob", 0)));
+    }
+
     private static final Map<Integer, List<WifiConfiguration>> VISIBLE_CONFIGS = new HashMap<>();
     static {
         for (int userId : USER_IDS) {
             List<WifiConfiguration> configs = new ArrayList<>();
             for (int i = 0; i < CONFIGS.size(); ++i) {
-                if (CONFIGS.get(i).isVisibleToUser(userId)) {
+                if (WifiConfigurationUtil.isVisibleToAnyProfile(CONFIGS.get(i),
+                        USER_PROFILES.get(userId))) {
                     configs.add(CONFIGS.get(i));
                 }
             }
@@ -120,6 +136,7 @@ public class WifiConfigStoreTest {
     @Mock private WifiStateMachine mWifiStateMachine;
     @Mock private WifiNative mWifiNative;
     @Mock private FrameworkFacade mFrameworkFacade;
+    @Mock private UserManager mUserManager;
     @Mock private DelayedDiskWrite mWriter;
     @Mock private PasspointManagementObjectManager mMOManager;
     private WifiConfigStore mConfigStore;
@@ -140,9 +157,15 @@ public class WifiConfigStoreTest {
         when(mContext.getPackageManager()).thenReturn(realContext.getPackageManager());
 
         when(mWifiStateMachine.getCurrentUserId()).thenReturn(UserHandle.USER_SYSTEM);
+        when(mWifiStateMachine.getCurrentUserProfiles())
+                .thenReturn(USER_PROFILES.get(UserHandle.USER_SYSTEM));
+
+        for (int userId : USER_IDS) {
+            when(mUserManager.getProfiles(userId)).thenReturn(USER_PROFILES.get(userId));
+        }
 
         mConfigStore = new WifiConfigStore(mContext, mWifiStateMachine, mWifiNative,
-                mFrameworkFacade);
+                mFrameworkFacade, mUserManager);
 
         final Field configuredNetworksField =
                 WifiConfigStore.class.getDeclaredField("mConfiguredNetworks");
@@ -175,11 +198,18 @@ public class WifiConfigStoreTest {
 
     private void switchUser(int newUserId) {
         when(mWifiStateMachine.getCurrentUserId()).thenReturn(newUserId);
+        when(mWifiStateMachine.getCurrentUserProfiles())
+                .thenReturn(USER_PROFILES.get(newUserId));
         mConfigStore.handleUserSwitch();
     }
 
-    private void switchUserToCreatorOf(WifiConfiguration config) {
-        switchUser(UserHandle.getUserId(config.creatorUid));
+    private void switchUserToCreatorOrParentOf(WifiConfiguration config) {
+        final int creatorUserId = UserHandle.getUserId(config.creatorUid);
+        if (creatorUserId == MANAGED_PROFILE_USER_ID) {
+            switchUser(MANAGED_PROFILE_PARENT_USER_ID);
+        } else {
+            switchUser(creatorUserId);
+        }
     }
 
     private void addNetworks() throws Exception {
@@ -190,7 +220,7 @@ public class WifiConfigStoreTest {
                 .thenReturn(true);
         for (int i = 0; i < CONFIGS.size(); ++i) {
             assertEquals(i, CONFIGS.get(i).networkId);
-            switchUserToCreatorOf(CONFIGS.get(i));
+            switchUserToCreatorOrParentOf(CONFIGS.get(i));
             final WifiConfiguration config = new WifiConfiguration(CONFIGS.get(i));
             config.networkId = -1;
             when(mWifiNative.addNetwork()).thenReturn(i);
@@ -293,7 +323,8 @@ public class WifiConfigStoreTest {
             for (WifiConfiguration expectedConfig: CONFIGS) {
                 final WifiConfiguration actualConfig =
                         mConfigStore.getWifiConfiguration(expectedConfig.networkId);
-                if (expectedConfig.isVisibleToUser(userId)) {
+                if (WifiConfigurationUtil.isVisibleToAnyProfile(expectedConfig,
+                        USER_PROFILES.get(userId))) {
                     verifyNetworkConfig(expectedConfig, actualConfig);
                 } else {
                     assertNull(actualConfig);
@@ -314,7 +345,8 @@ public class WifiConfigStoreTest {
             for (WifiConfiguration expectedConfig: CONFIGS) {
                 final WifiConfiguration actualConfig =
                         mConfigStore.getWifiConfiguration(expectedConfig.configKey());
-                if (expectedConfig.isVisibleToUser(userId)) {
+                if (WifiConfigurationUtil.isVisibleToAnyProfile(expectedConfig,
+                        USER_PROFILES.get(userId))) {
                     verifyNetworkConfig(expectedConfig, actualConfig);
                 } else {
                     assertNull(actualConfig);
@@ -347,7 +379,8 @@ public class WifiConfigStoreTest {
             mConfigStore.enableAllNetworks();
 
             for (WifiConfiguration config : mConfiguredNetworks.valuesForAllUsers()) {
-                assertEquals(config.isVisibleToUser(userId),
+                assertEquals(WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                        USER_PROFILES.get(userId)),
                         config.getNetworkSelectionStatus().isNetworkEnabled());
             }
         }
@@ -374,7 +407,8 @@ public class WifiConfigStoreTest {
                 final WifiNative wifiNative = createNewWifiNativeMock();
                 final boolean success =
                         mConfigStore.selectNetwork(config, false, config.creatorUid);
-                if (!config.isVisibleToUser(userId)) {
+                if (!WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                        USER_PROFILES.get(userId))) {
                     // If the network configuration is not visible to the current user, verify that
                     // nothing changed.
                     assertFalse(success);
@@ -395,7 +429,8 @@ public class WifiConfigStoreTest {
                     verify(wifiNative, never()).enableNetwork(intThat(not(config.networkId)),
                             anyBoolean());
                     for (WifiConfiguration config2 : mConfiguredNetworks.valuesForAllUsers()) {
-                        if (config2.isVisibleToUser(userId)
+                        if (WifiConfigurationUtil.isVisibleToAnyProfile(config2,
+                                USER_PROFILES.get(userId))
                                 && config2.networkId != config.networkId) {
                             assertEquals(WifiConfiguration.Status.DISABLED, config2.status);
                         } else {
@@ -416,7 +451,7 @@ public class WifiConfigStoreTest {
      */
     private void verifySaveNetwork(int network) throws Exception {
         // Switch to the correct user.
-        switchUserToCreatorOf(CONFIGS.get(network));
+        switchUserToCreatorOrParentOf(CONFIGS.get(network));
 
         // Set up wpa_supplicant.
         when(mWifiNative.addNetwork()).thenReturn(0);
@@ -543,13 +578,20 @@ public class WifiConfigStoreTest {
             .thenReturn(null);
         when(mWifiNative.getNetworkVariable(1, WifiConfigStore.ID_STRING_VAR_NAME))
             .thenReturn('"' + CONFIGS.get(1).FQDN + '"');
-        // Up-to-date configuration: Metadata in "id_str".
-        final Map<String, String> metadata = new HashMap<String, String>();
+        // Up-to-date Hotspot 2.0 network configuration: Metadata in "id_str".
+        Map<String, String> metadata = new HashMap<String, String>();
         metadata.put(WifiConfigStore.ID_STRING_KEY_CONFIG_KEY, CONFIGS.get(2).configKey());
         metadata.put(WifiConfigStore.ID_STRING_KEY_CREATOR_UID,
                 Integer.toString(CONFIGS.get(2).creatorUid));
         metadata.put(WifiConfigStore.ID_STRING_KEY_FQDN, CONFIGS.get(2).FQDN);
         when(mWifiNative.getNetworkExtra(2, WifiConfigStore.ID_STRING_VAR_NAME))
+            .thenReturn(metadata);
+        // Up-to-date regular network configuration: Metadata in "id_str".
+        metadata = new HashMap<String, String>();
+        metadata.put(WifiConfigStore.ID_STRING_KEY_CONFIG_KEY, CONFIGS.get(3).configKey());
+        metadata.put(WifiConfigStore.ID_STRING_KEY_CREATOR_UID,
+                Integer.toString(CONFIGS.get(3).creatorUid));
+        when(mWifiNative.getNetworkExtra(3, WifiConfigStore.ID_STRING_VAR_NAME))
             .thenReturn(metadata);
 
         // Set up networkHistory.txt file.
@@ -647,9 +689,10 @@ public class WifiConfigStoreTest {
         final Collection<WifiConfiguration> oldConfigs = mConfiguredNetworks.valuesForAllUsers();
         int expectedNumberOfConfigs = oldConfigs.size();
         for (WifiConfiguration config : oldConfigs) {
-            if (config.isVisibleToUser(oldUserId)) {
+            if (WifiConfigurationUtil.isVisibleToAnyProfile(config, USER_PROFILES.get(oldUserId))) {
                 config.status = WifiConfiguration.Status.ENABLED;
-                if (config.isVisibleToUser(newUserId)) {
+                if (WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                        USER_PROFILES.get(newUserId))) {
                     if (makeOneConfigEphemeral && removedEphemeralConfig == null) {
                         config.ephemeral = true;
                         lastSelectedConfigurationField.set(mConfigStore, config.configKey());
@@ -660,7 +703,8 @@ public class WifiConfigStoreTest {
                 }
             } else {
                 config.status = WifiConfiguration.Status.DISABLED;
-                if (config.isVisibleToUser(newUserId)) {
+                if (WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                        USER_PROFILES.get(newUserId))) {
                     newUserOnlyConfigs.add(config);
                 } else {
                     neitherUserConfigs.add(config);
