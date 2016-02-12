@@ -39,7 +39,7 @@ import java.util.List;
 
 public class WifiNanStateManager {
     private static final String TAG = "WifiNanStateManager";
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false; // STOPSHIP if true
 
     private static WifiNanStateManager sNanStateManagerSingleton;
