@@ -18,12 +18,22 @@ package com.android.server.wifi;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.when;
 
+import android.content.pm.UserInfo;
 import android.net.wifi.WifiConfiguration;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.test.suitebuilder.annotation.SmallTest;
+import android.util.SparseArray;
 
+import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
+
+import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -37,25 +47,56 @@ import java.util.Set;
 @SmallTest
 public class ConfigurationMapTest {
     private static final List<WifiConfiguration> CONFIGS = Arrays.asList(
-            WifiConfigurationUtil.generateWifiConfig(0, 1000000, "\"red\"", true, true, null, null),
-            WifiConfigurationUtil.generateWifiConfig(
-                    1, 1000001, "\"green\"", false, true, null, null),
-            WifiConfigurationUtil.generateWifiConfig(
-                    2, 1000002, "\"blue\"", true, false, "example.com", "Blue"),
-            WifiConfigurationUtil.generateWifiConfig(
+            WifiConfigurationTestUtil.generateWifiConfig(
+                    0, 1000000, "\"red\"", true, true, null, null),
+            WifiConfigurationTestUtil.generateWifiConfig(
+                    1, 1000001, "\"green\"", true, false, "example.com", "Green"),
+            WifiConfigurationTestUtil.generateWifiConfig(
+                    2, 1200000, "\"blue\"", false, true, null, null),
+            WifiConfigurationTestUtil.generateWifiConfig(
                     3, 1100000, "\"cyan\"", true, true, null, null),
-            WifiConfigurationUtil.generateWifiConfig(
-                    4, 1100001, "\"yellow\"", false, false, null, null),
-            WifiConfigurationUtil.generateWifiConfig(
-                    5, 1100002, "\"magenta\"", true, true, "example.org", "Magenta"));
+            WifiConfigurationTestUtil.generateWifiConfig(
+                    4, 1100001, "\"yellow\"", true, true, "example.org", "Yellow"),
+            WifiConfigurationTestUtil.generateWifiConfig(
+                    5, 1100002, "\"magenta\"", false, false, null, null));
+
+    private static final SparseArray<List<UserInfo>> USER_PROFILES = new SparseArray<>();
+    static {
+        USER_PROFILES.put(UserHandle.USER_SYSTEM, Arrays.asList(
+                new UserInfo(UserHandle.USER_SYSTEM, "Owner", 0),
+                new UserInfo(12, "Managed Profile", 0)));
+        USER_PROFILES.put(10, Arrays.asList(new UserInfo(10, "Alice", 0)));
+        USER_PROFILES.put(11, Arrays.asList(new UserInfo(11, "Bob", 0)));
+    }
+
+    @Mock UserManager mUserManager;
 
     private int mCurrentUserId = UserHandle.USER_SYSTEM;
-    private final ConfigurationMap mConfigs = new ConfigurationMap();
+    private ConfigurationMap mConfigs;
+
+    /**
+     * Sets up the test harness before running a test.
+     */
+    @Before
+    public void setUp() {
+        MockitoAnnotations.initMocks(this);
+
+        when(mUserManager.getProfiles(anyInt()))
+                .then(new AnswerWithArguments() {
+                    public List<UserInfo> answer(int userId) {
+                        return USER_PROFILES.get(userId);
+                    }
+                });
+        mConfigs = new ConfigurationMap(mUserManager);
+    }
 
     public void switchUser(int newUserId) {
         Set<WifiConfiguration> hiddenConfigurations = new HashSet<>();
         for (WifiConfiguration config : mConfigs.valuesForAllUsers()) {
-            if (config.isVisibleToUser(mCurrentUserId) && !config.isVisibleToUser(newUserId)) {
+            if (WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                    USER_PROFILES.get(mCurrentUserId))
+                    && !WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                            USER_PROFILES.get(newUserId))) {
                 hiddenConfigurations.add(config);
             }
         }
@@ -73,7 +114,8 @@ public class ConfigurationMapTest {
         // user. Also, check that *ForAllUsers() methods can be used to access all network
         // configurations, irrespective of their visibility to the current user.
         for (WifiConfiguration config : configs) {
-            if (config.isVisibleToUser(mCurrentUserId)) {
+            if (WifiConfigurationUtil.isVisibleToAnyProfile(config,
+                    USER_PROFILES.get(mCurrentUserId))) {
                 configsForCurrentUser.add(config);
                 if (config.status != WifiConfiguration.Status.DISABLED) {
                     enabledConfigsForCurrentUser.add(config);
@@ -176,7 +218,7 @@ public class ConfigurationMapTest {
         configs.add(config2);
         verifyGetters(configs);
 
-        // Add |config3|.
+        // Add |config3|, which belongs to a managed profile of the current user.
         final WifiConfiguration config3 = CONFIGS.get(2);
         assertNull(mConfigs.put(config3));
         // Verify that the getters return |config2| and |config3|.
