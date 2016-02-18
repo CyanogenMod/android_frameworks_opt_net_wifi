@@ -239,7 +239,7 @@ static void ssid_encode(char *txt, size_t maxlen, const char *data, unsigned int
 }
 
 /* check if the SSID string is UTF coded */
-static bool isUTF8String(const char* str, long length)
+static bool isUTF8String(const char* str, int length)
 {
     unsigned int nBytes = 0;
     unsigned char chr;
@@ -277,6 +277,51 @@ static bool isUTF8String(const char* str, long length)
     if (nBytes > 0 || bAllAscii) {
         return false;
     }
+    return true;
+}
+
+/*
+ * https://en.wikipedia.org/wiki/GBK
+ *
+ * GBK character is encoded as 1 or 2 bytes.
+ * - A single byte with range 0x00-0x7f is ASCII.
+ * - A byte with the high bit set indicates that it is
+ *   the first of 2 bytes.
+ *   byte1: (0x81-0xFE)
+ *   byte2: (0x40-0xFE) except 0x7F
+ *
+ * This function only returns true only it is GBK string
+ * but not all character is ASCII.
+ */
+static bool isGBKString(const char *str, int length) {
+    unsigned char byte1;
+    unsigned char byte2;
+    bool isAllASCII = true;
+
+    for (int i = 0; i < length; i ++) {
+        byte1 = *(str+i);
+
+        if (byte1 >= 0x81 && byte1 < 0xFF && (i+1) < length) {
+            byte2 = *(str+i+1);
+            if (byte2 >= 0x40 && byte2 < 0xFF && byte2 != 0x7F) {
+                // GBK
+                isAllASCII = false;
+                i ++;
+                continue;
+            } else {
+                return false;
+            }
+        } else if (byte1 < 0x80){
+            // ASCII
+            continue;
+        } else {
+            return false;
+        }
+    }
+
+    if (isAllASCII)
+        return false;
+
     return true;
 }
 
@@ -325,7 +370,6 @@ void parseScanResults(String16& str, const char *reply)
 {
     unsigned int lineBeg = 0, lineEnd = 0;
     size_t  replyLen = strlen(reply);
-    char    *pos = NULL;
     char    ssid[BUF_SIZE] = {0};
     char    ssid_utf8[BUF_SIZE] = {0};
     char    ssid_txt[BUF_SIZE] = {0};
@@ -352,13 +396,7 @@ void parseScanResults(String16& str, const char *reply)
                 sscanf(line.string() + 5, "%[^\n]", ssid);
                 ssid_decode(buf,BUF_SIZE,ssid);
                 isUTF8 = isUTF8String(buf,sizeof(buf));
-                isCh = false;
-                for (pos = buf; '\0' != *pos; pos++) {
-                    if (0x80 == (*pos & 0x80)) {
-                        isCh = true;
-                        break;
-                    }
-                }
+                isCh = isGBKString(buf, sizeof(buf));
                 if (DBG)
                     ALOGD("%s, ssid = %s, buf = %s,isUTF8= %d, isCh = %d",
                         __FUNCTION__, ssid, buf ,isUTF8, isCh);
@@ -408,7 +446,6 @@ void constructSsid(String16& str, const char *reply)
     char    ssid[BUF_SIZE] = {0};
     char    buf[BUF_SIZE] = {0};
     char    ssid_txt[BUF_SIZE] ={0};
-    char    *pos = NULL;
     bool    isUTF8 = false, isCh = false;
 
     char    dest[CONVERT_LINE_LEN] = {0};
@@ -424,13 +461,7 @@ void constructSsid(String16& str, const char *reply)
         ALOGD("%s, ssid = %s", __FUNCTION__, ssid);
     createFromHex(buf, BUF_SIZE, ssid);
     isUTF8 = isUTF8String(buf, sizeof(buf));
-    isCh = false;
-    for (pos = buf; '\0' != *pos; pos++) {
-        if (0x80 == (*pos & 0x80)) {
-            isCh = true;
-            break;
-        }
-    }
+    isCh = isGBKString(buf, sizeof(buf));
     if (!isUTF8 && isCh) {
         ucnv_toAlgorithmic(conType, pConverter, dest, CONVERT_LINE_LEN,
                             buf, strlen(buf), &err);
@@ -524,7 +555,6 @@ jboolean setNetworkVariable(char *buf)
 
 void constructEventSsid(char *eventstr)
 {
-     char *pos = NULL;
      char *tmp = NULL;
      char ssid[BUF_SIZE] = {0};
      char ssid_txt[BUF_SIZE] = {0};
@@ -550,13 +580,7 @@ void constructEventSsid(char *eventstr)
              ALOGD("%s, SSID = %s", __FUNCTION__, ssid);
          ssid_decode(buf,BUF_SIZE,ssid);
          isUTF8 = isUTF8String(buf,sizeof(buf));
-         isCh = false;
-         for (pos = buf; '\0' != *pos; pos++) {
-             if (0x80 == (*pos & 0x80)) {
-                 isCh = true;
-                 break;
-             }
-         }
+         isCh = isGBKString(buf, sizeof(buf));
          if (!isUTF8 && isCh) {
              ucnv_toAlgorithmic(conType, pConverter, dest, CONVERT_LINE_LEN,
                              buf, strlen(buf), &err);
