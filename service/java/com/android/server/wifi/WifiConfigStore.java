@@ -1330,6 +1330,109 @@ public class WifiConfigStore extends IpConfigStore {
         }
     }
 
+    /**
+     * Returns whether the provided network config is enabled for autojoin or not.
+     */
+    private static boolean isNetworkEnabled(WifiConfiguration config) {
+        return (config.status == Status.ENABLED && !config.ephemeral
+                && (config.autoJoinStatus == WifiConfiguration.AUTO_JOIN_ENABLED));
+    }
+
+    /**
+     * Returns whether the provided network config is only temporarily disabled for autojoin or not.
+     */
+    private static boolean isNetworkTempDisabled(WifiConfiguration config) {
+        return (config.status == Status.ENABLED && !config.ephemeral
+                && ((config.autoJoinStatus <= WifiConfiguration.AUTO_JOIN_DISABLED_ON_AUTH_FAILURE)
+                && (config.autoJoinStatus > WifiConfiguration.AUTO_JOIN_ENABLED)));
+    }
+
+    /**
+     * Returns an integer representing a score for each configuration. The scores are assigned based
+     * on the status of the configuration. The scores are assigned according to this order:
+     * Fully enabled network > Temporarily disabled network > Permanently disabled network.
+     */
+    private static int getPnoNetworkSortScore(WifiConfiguration config) {
+        // Do we need static constants for these scores? We're not using them anywhere else though.
+        if (isNetworkEnabled(config)) {
+            return 3;
+        } else if (isNetworkTempDisabled(config)) {
+            return 2;
+        } else {
+            return 1;
+        }
+    }
+
+    /**
+     * PnoNetwork list sorting algorithm:
+     * 1, Place the fully enabled networks first. Among the fully enabled networks,
+     * sort them in descending order of their |numAssociation| values. If networks have
+     * the same |numAssociation|, then sort them in descending order of their |priority|
+     * values.
+     * 2. Next place all the temporarily disabled networks. Among the temporarily disabled
+     * networks, sort them in the same order as the fully enabled networks.
+     * 3. Place the permanently disabled networks last. The order among permanently disabled
+     * networks doesn't matter.
+     */
+    private static final Comparator<WifiConfiguration> sPnoListSortComparator =
+            new Comparator<WifiConfiguration>() {
+                public int compare(WifiConfiguration a, WifiConfiguration b) {
+                    int configAScore = getPnoNetworkSortScore(a);
+                    int configBScore = getPnoNetworkSortScore(b);
+                    if (configAScore == configBScore) {
+                        // If 2 networks have the same saved |numAssociation| value, sort them
+                        // according to their priority.
+                        if (a.numAssociation != b.numAssociation) {
+                            return Long.compare(b.numAssociation, a.numAssociation);
+                        } else {
+                            return Integer.compare(b.priority, a.priority);
+                        }
+                    } else {
+                        return Integer.compare(configBScore, configAScore);
+                    }
+                }
+            };
+
+    /**
+     * Retrieves an updated list of priorities for all the saved networks before
+     * enabling/disabling PNO.
+     *
+     * wpa_supplicant uses the priority of networks to build the list of SSID's to monitor
+     * during PNO. If there are a lot of saved networks, this list will be truncated and we
+     * might end up not connecting to the networks we use most frequently. So, We want the networks
+     * to be re-sorted based on the relative |numAssociation| values.
+     *
+     * @param enablePno boolean indicating whether PNO is being enabled or disabled.
+     * @return list of networks with updated priorities.
+     */
+    ArrayList<WifiNative.PnoNetworkPriority> retrievePnoNetworkPriorityList(boolean enablePno) {
+        ArrayList<WifiNative.PnoNetworkPriority> pnoList =
+                new ArrayList<WifiNative.PnoNetworkPriority>();
+        ArrayList<WifiConfiguration> wifiConfigurations =
+                new ArrayList<WifiConfiguration>(mConfiguredNetworks.values());
+        if (enablePno) {
+            Collections.sort(wifiConfigurations, sPnoListSortComparator);
+            // Let's use the network list size as the highest priority and then go down from there.
+            // So, the most frequently connected network has the highest priority now.
+            int priority = wifiConfigurations.size();
+            if (DBG) {
+                Log.d(TAG, "Retrieve network priorities before PNO. Max priority: " + priority);
+            }
+            for (WifiConfiguration config : wifiConfigurations) {
+                pnoList.add(new WifiNative.PnoNetworkPriority(config.networkId, priority));
+                priority--;
+            }
+        } else {
+            // Revert the priorities back to the saved config values after PNO.
+            if (DBG) Log.d(TAG, "Retrieve network priorities after PNO.");
+            for (WifiConfiguration config : wifiConfigurations) {
+                pnoList.add(new WifiNative.PnoNetworkPriority(config.networkId, config.priority));
+            }
+        }
+        return pnoList;
+    }
+
+
     String[] getWhiteListedSsids(WifiConfiguration config) {
         int num_ssids = 0;
         String nonQuoteSSID;
