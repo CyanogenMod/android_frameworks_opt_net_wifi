@@ -219,7 +219,7 @@ static JNIObject<jobject> createScanResult(JNIHelper &helper, wifi_scan_result *
     if (fill_ie) {
         JNIObject<jbyteArray> elements = helper.newByteArray(result->ie_length);
         if (elements == NULL) {
-            ALOGE("Error in allocating elements array");
+            ALOGE("Error in allocating elements array, length=%d", result->ie_length);
             return JNIObject<jobject>(helper, NULL);
         }
         jbyte * bytes = (jbyte *)&(result->ie_data[0]);
@@ -551,7 +551,8 @@ static jobject android_net_wifi_getScanResults(
         JNIObject<jobjectArray> scanData = helper.createObjectArray(
                 "android/net/wifi/WifiScanner$ScanData", num_scan_data);
         if (scanData == NULL) {
-            ALOGE("Error in allocating array of scanData");
+            ALOGE("Error in allocating array of scanData for getScanResults, length=%d",
+                  num_scan_data);
             return NULL;
         }
 
@@ -559,7 +560,7 @@ static jobject android_net_wifi_getScanResults(
 
             JNIObject<jobject> data = helper.createObject("android/net/wifi/WifiScanner$ScanData");
             if (data == NULL) {
-                ALOGE("Error in allocating scanData");
+                ALOGE("Error in allocating scanData for getScanResults");
                 return NULL;
             }
 
@@ -573,7 +574,8 @@ static jobject android_net_wifi_getScanResults(
             JNIObject<jobjectArray> scanResults = helper.createObjectArray(
                     "android/net/wifi/ScanResult", scan_data[i].num_results);
             if (scanResults == NULL) {
-                ALOGE("Error in allocating scanResult array");
+                ALOGE("Error in allocating scanResult array for getScanResults, length=%d",
+                      scan_data[i].num_results);
                 return NULL;
             }
 
@@ -582,7 +584,7 @@ static jobject android_net_wifi_getScanResults(
 
                 JNIObject<jobject> scanResult = createScanResult(helper, &results[j], false);
                 if (scanResult == NULL) {
-                    ALOGE("Error in creating scan result");
+                    ALOGE("Error in creating scan result for getScanResults");
                     return NULL;
                 }
 
@@ -691,7 +693,7 @@ static void onHotlistApFound(wifi_request_id id,
     JNIObject<jobjectArray> scanResults = helper.newObjectArray(num_results,
             "android/net/wifi/ScanResult", NULL);
     if (scanResults == NULL) {
-        ALOGE("Error in allocating array");
+        ALOGE("Error in allocating ScanResult array in onHotlistApFound, length=%d", num_results);
         return;
     }
 
@@ -699,7 +701,7 @@ static void onHotlistApFound(wifi_request_id id,
 
         JNIObject<jobject> scanResult = createScanResult(helper, &results[i], false);
         if (scanResult == NULL) {
-            ALOGE("Error in creating scan result");
+            ALOGE("Error in creating scan result in onHotlistApFound");
             return;
         }
 
@@ -721,7 +723,7 @@ static void onHotlistApLost(wifi_request_id id,
     JNIObject<jobjectArray> scanResults = helper.newObjectArray(num_results,
             "android/net/wifi/ScanResult", NULL);
     if (scanResults == NULL) {
-        ALOGE("Error in allocating array");
+        ALOGE("Error in allocating ScanResult array onHotlistApLost, length=%d", num_results);
         return;
     }
 
@@ -729,7 +731,7 @@ static void onHotlistApLost(wifi_request_id id,
 
         JNIObject<jobject> scanResult = createScanResult(helper, &results[i], false);
         if (scanResult == NULL) {
-            ALOGE("Error in creating scan result");
+            ALOGE("Error in creating scan result in onHotlistApLost");
             return;
         }
 
@@ -760,7 +762,7 @@ static jboolean android_net_wifi_setHotlist(
     params.num_bssid = helper.getArrayLength(array);
 
     if (params.num_bssid == 0) {
-        ALOGE("Error in accesing array");
+        ALOGE("setHotlist array length was 0");
         return false;
     }
 
@@ -821,7 +823,8 @@ void onSignificantWifiChange(wifi_request_id id,
     JNIObject<jobjectArray> scanResults = helper.newObjectArray(
             num_results, "android/net/wifi/ScanResult", NULL);
     if (scanResults == NULL) {
-        ALOGE("Error in allocating array");
+        ALOGE("Error in allocating ScanResult array in onSignificantWifiChange, length=%d",
+              num_results);
         return;
     }
 
@@ -831,7 +834,7 @@ void onSignificantWifiChange(wifi_request_id id,
 
         JNIObject<jobject> scanResult = helper.createObject("android/net/wifi/ScanResult");
         if (scanResult == NULL) {
-            ALOGE("Error in creating scan result");
+            ALOGE("Error in creating scan result in onSignificantWifiChange");
             return;
         }
 
@@ -875,7 +878,7 @@ static jboolean android_net_wifi_trackSignificantWifiChange(
     params.num_bssid = helper.getArrayLength(bssids);
 
     if (params.num_bssid == 0) {
-        ALOGE("Error in accessing array");
+        ALOGE("BssidInfo array length was 0");
         return false;
     }
 
@@ -1048,7 +1051,7 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
     JNIObject<jobjectArray> rttResults = helper.newObjectArray(
             num_results, "android/net/wifi/RttManager$RttResult", NULL);
     if (rttResults == NULL) {
-        ALOGE("Error in allocating array");
+        ALOGE("Error in allocating RttResult array in onRttResults, length=%d", num_results);
         return;
     }
 
@@ -1058,7 +1061,7 @@ static void onRttResults(wifi_request_id id, unsigned num_results, wifi_rtt_resu
 
         JNIObject<jobject> rttResult = helper.createObject("android/net/wifi/RttManager$RttResult");
         if (rttResult == NULL) {
-            ALOGE("Error in creating rtt result");
+            ALOGE("Error in creating rtt result in onRttResults");
             return;
         }
 
@@ -1296,7 +1299,7 @@ static jboolean android_net_wifi_setScanningMacOui(JNIEnv *env, jclass cls,
     ScopedBytesRW paramBytes(env, param);
     jbyte* bytes = paramBytes.get();
     if (bytes == NULL) {
-        ALOGE("failed to get array");
+        ALOGE("failed to get setScanningMacOui param array");
         return false;
     }
 
@@ -1323,7 +1326,7 @@ static jintArray android_net_wifi_getValidChannels(JNIEnv *env, jclass cls,
     if (result == WIFI_SUCCESS) {
         JNIObject<jintArray> channelArray = helper.newIntArray(num_channels);
         if (channelArray == NULL) {
-            ALOGE("failed to allocate channel list");
+            ALOGE("failed to allocate channel list, num_channels=%d", num_channels);
             return NULL;
         }
 
