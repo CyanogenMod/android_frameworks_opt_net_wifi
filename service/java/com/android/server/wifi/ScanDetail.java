@@ -11,11 +11,9 @@ import com.android.server.wifi.anqp.RawByteElement;
 import com.android.server.wifi.anqp.VenueNameElement;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.PasspointMatch;
-import com.android.server.wifi.hotspot2.PasspointMatchInfo;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.hotspot2.pps.HomeSP;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -145,18 +143,6 @@ public class ScanDetail {
         mSeen = System.currentTimeMillis();
         mScanResult.seen = mSeen;
         return mSeen;
-    }
-
-    public List<PasspointMatchInfo> getMatchList() {
-        if (mMatches == null || mMatches.isEmpty()) {
-            return null;
-        }
-
-        List<PasspointMatchInfo> list = new ArrayList<>();
-        for (Map.Entry<HomeSP, PasspointMatch> entry : mMatches.entrySet()) {
-            new PasspointMatchInfo(entry.getValue(), this, entry.getKey());
-        }
-        return list;
     }
 
     @Override
