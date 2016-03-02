@@ -94,9 +94,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.zip.CRC32;
 import java.util.zip.Checksum;
@@ -1173,8 +1173,8 @@ public class WifiConfigManager {
      *
      * @return list of networks with updated priorities.
      */
-    public ArrayList<WifiNative.WifiPnoNetwork> retrieveDisconnectedWifiPnoNetworkList() {
-        return retrieveWifiPnoNetworkList(true, sDisconnectedPnoListComparator);
+    public ArrayList<WifiNative.PnoNetwork> retrieveDisconnectedPnoNetworkList() {
+        return retrievePnoNetworkList(true, sDisconnectedPnoListComparator);
     }
 
     /**
@@ -1189,9 +1189,9 @@ public class WifiConfigManager {
      * @param enablePno boolean indicating whether PNO is being enabled or disabled.
      * @return list of networks with updated priorities.
      */
-    public ArrayList<WifiNative.WifiPnoNetwork> retrieveDisconnectedWifiPnoNetworkList(
+    public ArrayList<WifiNative.PnoNetwork> retrieveDisconnectedPnoNetworkList(
             boolean enablePno) {
-        return retrieveWifiPnoNetworkList(enablePno, sDisconnectedPnoListComparator);
+        return retrievePnoNetworkList(enablePno, sDisconnectedPnoListComparator);
     }
 
     /**
@@ -1222,8 +1222,8 @@ public class WifiConfigManager {
      *
      * @return list of networks with updated priorities.
      */
-    public ArrayList<WifiNative.WifiPnoNetwork> retrieveConnectedWifiPnoNetworkList() {
-        return retrieveWifiPnoNetworkList(true, sConnectedPnoListComparator);
+    public ArrayList<WifiNative.PnoNetwork> retrieveConnectedPnoNetworkList() {
+        return retrievePnoNetworkList(true, sConnectedPnoListComparator);
     }
 
     /**
@@ -1233,10 +1233,10 @@ public class WifiConfigManager {
      * @param enablePno boolean indicating whether PNO is being enabled or disabled.
      * @return list of networks with updated priorities.
      */
-    private ArrayList<WifiNative.WifiPnoNetwork> retrieveWifiPnoNetworkList(
+    private ArrayList<WifiNative.PnoNetwork> retrievePnoNetworkList(
             boolean enablePno, PnoListComparator pnoListComparator) {
-        ArrayList<WifiNative.WifiPnoNetwork> pnoList =
-                new ArrayList<WifiNative.WifiPnoNetwork>();
+        ArrayList<WifiNative.PnoNetwork> pnoList =
+                new ArrayList<WifiNative.PnoNetwork>();
         ArrayList<WifiConfiguration> wifiConfigurations =
                 new ArrayList<WifiConfiguration>(mConfiguredNetworks.valuesForCurrentUser());
         if (enablePno) {
@@ -1247,20 +1247,15 @@ public class WifiConfigManager {
             if (DBG) {
                 Log.d(TAG, "Retrieve network priorities before PNO. Max priority: " + priority);
             }
-            // Initialize the RSSI threshold with sane value:
-            // Use the 2.4GHz threshold since most WifiConfigurations are dual bands
-            // There is very little penalty with triggering too soon, i.e. if PNO finds a network
-            // that has an RSSI too low for us to attempt joining it.
-            int threshold = thresholdMinimumRssi24.get();
             for (WifiConfiguration config : wifiConfigurations) {
-                pnoList.add(new WifiNative.WifiPnoNetwork(config, threshold, priority));
+                pnoList.add(new WifiNative.PnoNetwork(config, priority));
                 priority--;
             }
         } else {
             // Revert the priorities back to the saved config values after PNO.
             if (DBG) Log.d(TAG, "Retrieve network priorities after PNO.");
             for (WifiConfiguration config : wifiConfigurations) {
-                pnoList.add(new WifiNative.WifiPnoNetwork(config, 0, config.priority));
+                pnoList.add(new WifiNative.PnoNetwork(config, config.priority));
             }
         }
         return pnoList;
