@@ -1122,7 +1122,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
     private static final int sFrameworkMinScanIntervalSaneValue = 10000;
 
     private boolean mPnoEnabled;
-    private boolean mLazyRoamEnabled;
     private long mGScanStartTimeMilli;
     private long mGScanPeriodMilli;
 
@@ -3409,49 +3408,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
     }
 
-    // In associated more, lazy roam will be looking for 5GHz roam candidate
-    //Fixme: This is for network selection offload , whole function need to be re-written according
-    // to the new design
-    private boolean configureLazyRoam() {
-        /*boolean status;
-        if (!useHalBasedAutoJoinOffload()) return false;
-
-        WifiNative.WifiLazyRoamParams params = new WifiNative.WifiLazyRoamParams();
-        //params.A_band_boost_threshold = mWifiConfigManager.bandPreferenceBoostThreshold5.get();
-        //params.A_band_penalty_threshold =
-            mWifiConfigManager.bandPreferencePenaltyThreshold5.get();
-        params.A_band_boost_factor = mWifiConfigManager.bandPreferenceBoostFactor5;
-        params.A_band_penalty_factor = mWifiConfigManager.bandPreferencePenaltyFactor5;
-        params.A_band_max_boost = 65;
-        params.lazy_roam_hysteresis = 25;
-        params.alert_roam_rssi_trigger = -75;
-
-        if (DBG) {
-            Log.e(TAG, "configureLazyRoam " + params.toString());
-        }
-
-        if (!mWifiNative.setLazyRoam(true, params)) {
-
-            Log.e(TAG, "configureLazyRoam couldnt program params");
-
-            return false;
-        }
-        if (DBG) {
-            Log.e(TAG, "configureLazyRoam success");
-        }*/
-        return true;
-    }
-
-    // In associated more, lazy roam will be looking for 5GHz roam candidate
-    private boolean stopLazyRoam() {
-        boolean status;
-        if (!useHalBasedAutoJoinOffload()) return false;
-        if (DBG) {
-            Log.e(TAG, "stopLazyRoam");
-        }
-        return mWifiNative.setLazyRoam(false, null);
-    }
-
     private boolean startGScanConnectedModeOffload(String reason) {
         if (DBG) {
             if (reason == null) {
@@ -3467,13 +3423,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         }
         mPnoEnabled = configurePno();
         if (mPnoEnabled == false) {
-            if (USE_PAUSE_SCANS) {
-                mWifiNative.restartScan();
-            }
-            return false;
-        }
-        mLazyRoamEnabled = configureLazyRoam();
-        if (mLazyRoamEnabled == false) {
             if (USE_PAUSE_SCANS) {
                 mWifiNative.restartScan();
             }
@@ -3574,7 +3523,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         // We do this only if screen is on
         WifiScanner.ScanSettings settings;
 
-        if (mPnoEnabled || mLazyRoamEnabled) {
+        if (mPnoEnabled) {
             settings = new WifiScanner.ScanSettings();
             settings.band = WifiScanner.WIFI_BAND_BOTH;
             long now = System.currentTimeMillis();
@@ -3619,7 +3568,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             return false;
         }
 
-        if (mPnoEnabled || mLazyRoamEnabled) {
+        if (mPnoEnabled) {
             settings = new WifiScanner.ScanSettings();
             settings.band = WifiScanner.WIFI_BAND_BOTH;
             long now = System.currentTimeMillis();
@@ -8125,7 +8074,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
 
             mLastDriverRoamAttempt = 0;
             mTargetNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
-            //startLazyRoam();
         }
         @Override
         public boolean processMessage(Message message) {
@@ -8410,9 +8358,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
             logd("WifiStateMachine: Leaving Connected state");
             setScanAlarm(false);
             mLastDriverRoamAttempt = 0;
-
-            stopLazyRoam();
-
             mWhiteListedSsids = null;
         }
     }
