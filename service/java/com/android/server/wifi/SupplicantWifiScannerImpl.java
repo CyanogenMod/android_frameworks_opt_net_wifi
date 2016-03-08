@@ -418,6 +418,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
 
             if (!allFreqs.isEmpty()) {
+                mWifiNative.pauseBackgroundScan();
                 Set<Integer> freqs = allFreqs.getSupplicantScanFreqs();
                 boolean success = mWifiNative.scan(freqs, hiddenNetworkIdSet);
                 if (success) {
@@ -440,6 +441,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                         });
                     // TODO if scans fail enough background scans should be failed as well
                 }
+            } else {
+                mWifiNative.resumeBackgroundScan();
             }
         }
     }

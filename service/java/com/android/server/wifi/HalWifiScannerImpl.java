@@ -78,6 +78,7 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
                 pollLatestSingleScanData();
+                mWifiNative.resumeBackgroundScan();
                 break;
             default:
                 Log.e(TAG, "Received unknown message: type=" + msg.what);
@@ -120,6 +121,7 @@ public class HalWifiScannerImpl extends WifiScannerImpl implements Handler.Callb
             }
         }
 
+        mWifiNative.pauseBackgroundScan();
         mSingleScanStartTime = SystemClock.elapsedRealtime();
         if (!mWifiNative.scan(freqs, hiddenNetworkIdSet)) {
             Log.e(TAG, "Failed to start scan, freqs=" + freqs);
