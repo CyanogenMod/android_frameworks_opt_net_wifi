@@ -645,6 +645,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         private final StartedState mStartedState = new StartedState();
         private final PausedState  mPausedState  = new PausedState();
 
+        private final ClientHandlerMap<PnoSettings> mActivePnoScans = new ClientHandlerMap<>();
+
         WifiBackgroundScanStateMachine(Looper looper) {
             super(TAG, looper);
 
@@ -724,6 +726,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             @Override
             public void enter() {
                 if (DBG) localLog("DefaultState");
+                mActivePnoScans.clear();
             }
             @Override
             public boolean processMessage(Message msg) {
@@ -795,6 +798,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
 
             @Override
+            public void exit() {
+                sendPnoScanFailedToAllAndClear(
+                        WifiScanner.REASON_UNSPECIFIED, "Scan was interrupted");
+            }
+
+            @Override
             public boolean processMessage(Message msg) {
                 ClientInfo ci = mClients.get(msg.replyTo);
 
@@ -820,6 +829,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         ScanSettings scanSettings =
                                 pnoParams.getParcelable(WifiScanner.PNO_PARAMS_SCAN_SETTINGS_KEY);
                         if (addScanRequestForPno(ci, msg.arg2, scanSettings, pnoSettings)) {
+                            mActivePnoScans.put(ci, msg.arg2, pnoSettings);
                             replySucceeded(msg);
                         } else {
                             replyFailed(msg, WifiScanner.REASON_INVALID_REQUEST, "bad request");
@@ -827,6 +837,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         break;
                     case WifiScanner.CMD_STOP_PNO_SCAN:
                         removeScanRequestForPno(ci, msg.arg2, (PnoSettings) msg.obj);
+                        mActivePnoScans.remove(ci, msg.arg2);
                         break;
                     case WifiScanner.CMD_GET_SCAN_RESULTS:
                         reportScanResults(mScannerImpl.getLatestBatchedScanResults(true));
@@ -925,6 +936,28 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 return HANDLED;
             }
 
+        }
+
+        void sendPnoScanFailedToAllAndClear(int reason, String description) {
+            for (Pair<ClientInfo, Integer> key : mActivePnoScans.keySet()) {
+                ClientInfo ci = key.first;
+                int handler = key.second;
+                ci.sendMessage(WifiScanner.CMD_OP_FAILED, 0, handler,
+                        new WifiScanner.OperationResult(reason, description));
+            }
+            mActivePnoScans.clear();
+        }
+
+        void reportPnoNetworkFound(ScanResult[] results) {
+            WifiScanner.ParcelableScanResults parcelableScanResults =
+                    new WifiScanner.ParcelableScanResults(results);
+            for (Map.Entry<Pair<ClientInfo, Integer>, PnoSettings> entry
+                    : mActivePnoScans.entrySet()) {
+                ClientInfo ci = entry.getKey().first;
+                int handler = entry.getKey().second;
+                ci.sendMessage(WifiScanner.CMD_PNO_NETWORK_FOUND, 0, handler,
+                        parcelableScanResults);
+            }
         }
     }
 
@@ -1191,17 +1224,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 int handler = it.next();
                 mChannel.sendMessage(WifiScanner.CMD_WIFI_CHANGES_STABILIZED,
                         0, handler, parcelableScanResults);
-            }
-        }
-
-        void reportPnoNetworkFound(ScanResult[] results) {
-            WifiScanner.ParcelableScanResults parcelableScanResults =
-                    new WifiScanner.ParcelableScanResults(results);
-            Iterator<Integer> it = mSignificantWifiHandlers.iterator();
-            while (it.hasNext()) {
-                int handler = it.next();
-                mChannel.sendMessage(WifiScanner.CMD_PNO_NETWORK_FOUND, 0, handler,
-                        parcelableScanResults);
             }
         }
 
@@ -1537,13 +1559,6 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci : clients) {
             ci.reportWifiStabilized(results);
-        }
-    }
-
-    void reportPnoNetworkFound(ScanResult[] results) {
-        Collection<ClientInfo> clients = mClients.values();
-        for (ClientInfo ci : clients) {
-            ci.reportPnoNetworkFound(results);
         }
     }
 
