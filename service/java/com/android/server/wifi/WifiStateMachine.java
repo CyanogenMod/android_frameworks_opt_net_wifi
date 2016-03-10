@@ -111,7 +111,6 @@ import com.android.server.wifi.hotspot2.IconEvent;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.Utils;
 import com.android.server.wifi.p2p.WifiP2pServiceImpl;
-import com.android.server.wifi.util.ScanDetailUtil;
 
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -244,6 +243,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
             }
         }
         sendMessage(CMD_PNO_NETWORK_FOUND, results.length, 0, results);
+    }
+
+    /**
+     * Ignore Pno scan failed events. This is needed for WifiScanner
+     * TODO(rpius): Remove this once PNO scan logic is removed from WifiStateMachine.
+     */
+    @Override
+    public void onPnoScanFailed() {
+        return;
     }
 
     public void processPnoNetworkFound(ScanResult results[]) {
