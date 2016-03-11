@@ -151,6 +151,8 @@ public class WifiServiceImpl extends IWifiManager.Stub {
     final WifiSettingsStore mSettingsStore;
     /* Logs connection events and some general router and scan stats */
     private final WifiMetrics mWifiMetrics;
+
+    private final WifiInjector mWifiInjector;
     /**
      * Asynchronous channel to WifiStateMachine
      */
@@ -307,17 +309,18 @@ public class WifiServiceImpl extends IWifiManager.Stub {
 
     public WifiServiceImpl(Context context) {
         mContext = context;
+        mWifiInjector = WifiInjector.getInstance();
         FrameworkFacade facade = new FrameworkFacade();
         HandlerThread wifiThread = new HandlerThread("WifiService");
         wifiThread.start();
-        mWifiMetrics = new WifiMetrics();
+        mWifiMetrics = mWifiInjector.getWifiMetrics();
         mTrafficPoller = new WifiTrafficPoller(mContext, wifiThread.getLooper(),
                 WifiNative.getWlanNativeInterface().getInterfaceName());
         mUserManager = UserManager.get(mContext);
         HandlerThread wifiStateMachineThread = new HandlerThread("WifiStateMachine");
         wifiStateMachineThread.start();
         mWifiStateMachine = new WifiStateMachine(mContext, facade,
-            wifiStateMachineThread.getLooper(), mUserManager, mWifiMetrics,
+            wifiStateMachineThread.getLooper(), mUserManager, mWifiInjector,
             new BackupManagerProxy());
         mSettingsStore = new WifiSettingsStore(mContext);
         mWifiStateMachine.enableRssiPolling(true);
