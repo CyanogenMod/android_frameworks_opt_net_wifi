@@ -100,19 +100,23 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
         };
 
-    public SupplicantWifiScannerImpl(Context context, WifiNative wifiNative, Looper looper) {
+    public SupplicantWifiScannerImpl(Context context, WifiNative wifiNative,
+            ChannelHelper channelHelper, Looper looper) {
         mContext = context;
         mWifiNative = wifiNative;
+        mChannelHelper = channelHelper;
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mEventHandler = new Handler(looper, this);
-
-        // TODO figure out how to get channel information from supplicant
-        mChannelHelper = new NoBandChannelHelper();
 
         WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
                 WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
         WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
                 WifiMonitor.SCAN_RESULTS_EVENT, mEventHandler);
+    }
+
+    public SupplicantWifiScannerImpl(Context context, WifiNative wifiNative, Looper looper) {
+        // TODO figure out how to get channel information from supplicant
+        this(context, wifiNative, new NoBandChannelHelper(), looper);
     }
 
     @Override
@@ -125,6 +129,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             resetHotlist();
             untrackSignificantWifiChange();
             mLastScanSettings = null; // finally clear any active scan
+            // TODO(b/27677054): Remove this once all PNO scans are started via Scanner
+            mWifiNative.resumeBackgroundScan();
         }
     }
 
@@ -266,92 +272,6 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         }
     }
 
-    private boolean setNetworkPriorities(WifiNative.PnoNetwork[] networkList) {
-        if (networkList != null) {
-            if (DBG) Log.i(TAG, "Enable network and Set priorities for PNO.");
-            for (WifiNative.PnoNetwork network : networkList) {
-                if (!mWifiNative.setNetworkVariable(network.networkId,
-                        WifiConfiguration.priorityVarName,
-                        Integer.toString(network.priority))) {
-                    Log.e(TAG, "Set priority failed for: " + network.networkId);
-                    return false;
-                }
-                if (!mWifiNative.enableNetwork(network.networkId)) {
-                    Log.e(TAG, "Enable network failed for: " + network.networkId);
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    private boolean startPnoScan() {
-        if (!mWifiNative.enableBackgroundScan(true, null)) {
-            return false;
-        }
-        mPnoRunning = true;
-        return true;
-    }
-
-    private boolean stopPnoScan() {
-        if (!mWifiNative.enableBackgroundScan(false, null)) {
-            return false;
-        }
-        mPnoRunning = false;
-        return true;
-    }
-
-    private boolean resumePnoScan() {
-        if (!mPnoRunning) {
-            return startPnoScan();
-        }
-        return true;
-    }
-
-    private boolean pausePnoScan() {
-        if (mPnoRunning) {
-            return stopPnoScan();
-        }
-        return true;
-    }
-
-    @Override
-    public boolean setPnoList(WifiNative.PnoSettings settings,
-            WifiNative.PnoEventHandler eventHandler) {
-        synchronized (mSettingsLock) {
-            if (mPnoSettings != null) {
-                Log.w(TAG, "Already running a PNO scan");
-                return false;
-            }
-            mPnoEventHandler = eventHandler;
-            mPnoSettings = settings;
-            boolean isSuccess = setNetworkPriorities(settings.networkList);
-            if (!isSuccess) return false;
-            // For supplicant based PNO, we start the scan immediately when we set pno list.
-            processPendingScans();
-            return true;
-        }
-    }
-
-    @Override
-    public boolean resetPnoList(WifiNative.PnoSettings settings) {
-        synchronized (mSettingsLock) {
-            if (mPnoSettings == null) {
-                Log.w(TAG, "No PNO scan running");
-                return false;
-            }
-            mPnoEventHandler = null;
-            mPnoSettings = null;
-            // For supplicant based PNO, we stop the scan immediately when we reset pno list.
-            return stopPnoScan();
-        }
-    }
-
-    @Override
-    public boolean shouldScheduleBackgroundScanForPno() {
-        return false;
-    }
-
     private void unscheduleScansLocked() {
         mAlarmManager.cancel(mScanPeriodListener);
         if (mLastScanSettings != null) {
@@ -463,6 +383,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
 
             if (!allFreqs.isEmpty()) {
                 pausePnoScan();
+                // TODO(b/27677054): Remove this once all PNO scans are started via Scanner
+                mWifiNative.pauseBackgroundScan();
                 Set<Integer> freqs = allFreqs.getSupplicantScanFreqs();
                 boolean success = mWifiNative.scan(freqs, hiddenNetworkIdSet);
                 if (success) {
@@ -506,6 +428,9 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                         }
                     });
                 }
+            } else {
+                // TODO(b/27677054): Remove this once all PNO scans are started via Scanner
+                mWifiNative.resumeBackgroundScan();
             }
         }
     }
@@ -655,6 +580,92 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         }
     }
 
+    private boolean setNetworkPriorities(WifiNative.PnoNetwork[] networkList) {
+        if (networkList != null) {
+            if (DBG) Log.i(TAG, "Enable network and Set priorities for PNO.");
+            for (WifiNative.PnoNetwork network : networkList) {
+                if (!mWifiNative.setNetworkVariable(network.networkId,
+                        WifiConfiguration.priorityVarName,
+                        Integer.toString(network.priority))) {
+                    Log.e(TAG, "Set priority failed for: " + network.networkId);
+                    return false;
+                }
+                if (!mWifiNative.enableNetwork(network.networkId)) {
+                    Log.e(TAG, "Enable network failed for: " + network.networkId);
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean startPnoScan() {
+        if (!mWifiNative.enableBackgroundScan(true, null)) {
+            return false;
+        }
+        mPnoRunning = true;
+        return true;
+    }
+
+    private boolean stopPnoScan() {
+        if (!mWifiNative.enableBackgroundScan(false, null)) {
+            return false;
+        }
+        mPnoRunning = false;
+        return true;
+    }
+
+    private boolean resumePnoScan() {
+        if (!mPnoRunning) {
+            return startPnoScan();
+        }
+        return true;
+    }
+
+    private boolean pausePnoScan() {
+        if (mPnoRunning) {
+            return stopPnoScan();
+        }
+        return true;
+    }
+
+    @Override
+    public boolean setPnoList(WifiNative.PnoSettings settings,
+            WifiNative.PnoEventHandler eventHandler) {
+        synchronized (mSettingsLock) {
+            if (mPnoSettings != null) {
+                Log.w(TAG, "Already running a PNO scan");
+                return false;
+            }
+            mPnoEventHandler = eventHandler;
+            mPnoSettings = settings;
+            boolean isSuccess = setNetworkPriorities(settings.networkList);
+            if (!isSuccess) return false;
+            // For supplicant based PNO, we start the scan immediately when we set pno list.
+            processPendingScans();
+            return true;
+        }
+    }
+
+    @Override
+    public boolean resetPnoList(WifiNative.PnoSettings settings) {
+        synchronized (mSettingsLock) {
+            if (mPnoSettings == null) {
+                Log.w(TAG, "No PNO scan running");
+                return false;
+            }
+            mPnoEventHandler = null;
+            mPnoSettings = null;
+            // For supplicant based PNO, we stop the scan immediately when we reset pno list.
+            return stopPnoScan();
+        }
+    }
+
+    @Override
+    public boolean shouldScheduleBackgroundScanForPno() {
+        return false;
+    }
+
     @Override
     public boolean setHotlist(WifiScanner.HotlistSettings settings,
             WifiNative.HotlistEventHandler eventHandler) {
@@ -675,7 +686,6 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             mHotlistHandler = null;
         }
     }
-
 
     /*
      * Significant Wifi Change API is not implemented
