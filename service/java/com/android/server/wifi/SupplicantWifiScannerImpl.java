@@ -27,6 +27,7 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.util.Log;
 
+import com.android.internal.R;
 import com.android.server.wifi.scanner.ChannelHelper;
 import com.android.server.wifi.scanner.ChannelHelper.ChannelCollection;
 import com.android.server.wifi.scanner.NoBandChannelHelper;
@@ -89,8 +90,9 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
 
     // Pno related info.
     private WifiNative.PnoSettings mPnoSettings = null;
-    private boolean mPnoRunning = false;
     private WifiNative.PnoEventHandler mPnoEventHandler;
+    private boolean mHwPnoRunning = false;
+    private final boolean mHwPnoScanSupported;
 
     AlarmManager.OnAlarmListener mScanPeriodListener = new AlarmManager.OnAlarmListener() {
             public void onAlarm() {
@@ -108,6 +110,10 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mEventHandler = new Handler(looper, this);
 
+        // Check if the device supports HW PNO scans.
+        mHwPnoScanSupported = mContext.getResources().getBoolean(
+                R.bool.config_wifi_background_scan_support);
+
         WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
                 WifiMonitor.SCAN_FAILED_EVENT, mEventHandler);
         WifiMonitor.getInstance().registerHandler(mWifiNative.getInterfaceName(),
@@ -124,7 +130,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         synchronized (mSettingsLock) {
             mPendingSingleScanSettings = null;
             mPendingSingleScanEventHandler = null;
-            stopPnoScan();
+            stopHwPnoScan();
             stopBatchedScan();
             resetHotlist();
             untrackSignificantWifiChange();
@@ -288,7 +294,10 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
 
     private void processPendingScans() {
         synchronized (mSettingsLock) {
-            if (mLastScanSettings != null) {
+            // Wait for the active scan result to come back to reschedule other scans,
+            // unless if HW pno scan is running. Hw PNO scans are paused it if there
+            // are other pending scans,
+            if (mLastScanSettings != null && !mLastScanSettings.hwPnoScanActive) {
                 return;
             }
 
@@ -338,7 +347,13 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                                     mBackgroundScanSettings.max_ap_per_scan, reportEvents,
                                     mBackgroundScanSettings.report_threshold_num_scans,
                                     mBackgroundScanSettings.report_threshold_percent);
+                            // When PNO scan is enabled and HW does not support PNO scans,
+                            // tag SwPno as enabled for each background scan
+                            if (mPnoSettings != null && !mHwPnoScanSupported) {
+                                newScanSettings.setSwPnoScan(mPnoEventHandler);
+                            }
                         }
+
                         int[] hiddenNetworkIds = mBackgroundScanSettings.hiddenNetworkIds;
                         if (hiddenNetworkIds != null) {
                             for (int i = 0; i < hiddenNetworkIds.length; i++) {
@@ -381,8 +396,9 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 mPendingSingleScanEventHandler = null;
             }
 
-            if (!allFreqs.isEmpty()) {
-                pausePnoScan();
+            if ((newScanSettings.backgroundScanActive || newScanSettings.singleScanActive)
+                    && !allFreqs.isEmpty()) {
+                pauseHwPnoScan();
                 // TODO(b/27677054): Remove this once all PNO scans are started via Scanner
                 mWifiNative.pauseBackgroundScan();
                 Set<Integer> freqs = allFreqs.getSupplicantScanFreqs();
@@ -407,10 +423,9 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                         });
                     // TODO if scans fail enough background scans should be failed as well
                 }
-            } else if (mPnoSettings != null) {
-                // Set pno active scan as active
-                newScanSettings.setPnoScan(mPnoEventHandler);
-                boolean success = resumePnoScan();
+            } else if (mPnoSettings != null && mHwPnoScanSupported) {
+                newScanSettings.setHwPnoScan(mPnoEventHandler);
+                boolean success = resumeHwPnoScan();
                 if (success) {
                     Log.d(TAG, "Starting wifi PNO scan");
                     mLastScanSettings = newScanSettings;
@@ -467,7 +482,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             ArrayList<ScanDetail> nativeResults = mWifiNative.getScanResults();
             List<ScanResult> singleScanResults = new ArrayList<>();
             List<ScanResult> backgroundScanResults = new ArrayList<>();
-            List<ScanResult> pnoScanResults = new ArrayList<>();
+            List<ScanResult> hwPnoScanResults = new ArrayList<>();
             for (int i = 0; i < nativeResults.size(); ++i) {
                 ScanResult result = nativeResults.get(i).getScanResult();
                 long timestamp_ms = result.timestamp / 1000; // convert us -> ms
@@ -480,8 +495,8 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                                     result.frequency)) {
                         singleScanResults.add(result);
                     }
-                    if (mLastScanSettings.pnoScanActive) {
-                        pnoScanResults.add(result);
+                    if (mLastScanSettings.hwPnoScanActive) {
+                        hwPnoScanResults.add(result);
                     }
                 } else {
                     // was a cached result in wpa_supplicant
@@ -539,6 +554,12 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                                 mHotlistChangeBuffer.getLastResults(ChangeBuffer.EVENT_LOST));
                     }
                 }
+                // All background scan results when SW PNO scan is active will be reported to the
+                // PNO listener
+                if (mLastScanSettings.swPnoScanActive
+                        && mLastScanSettings.pnoScanEventHandler != null) {
+                   mLastScanSettings.pnoScanEventHandler.onPnoNetworkFound(scanResultsArray);
+                }
             }
 
             if (mLastScanSettings.singleScanActive
@@ -555,11 +576,11 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                         .onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
             }
 
-            if (mLastScanSettings.pnoScanActive
+            if (mLastScanSettings.hwPnoScanActive
                     && mLastScanSettings.pnoScanEventHandler != null) {
-                ScanResult[] pnoScanResultsArray = new ScanResult[pnoScanResults.size()];
+                ScanResult[] pnoScanResultsArray = new ScanResult[hwPnoScanResults.size()];
                 for (int i = 0; i < pnoScanResultsArray.length; ++i) {
-                    pnoScanResultsArray[i] = pnoScanResults.get(i);
+                    pnoScanResultsArray[i] = hwPnoScanResults.get(i);
                 }
                 mLastScanSettings.pnoScanEventHandler.onPnoNetworkFound(pnoScanResultsArray);
             }
@@ -590,7 +611,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                     Log.e(TAG, "Set priority failed for: " + network.networkId);
                     return false;
                 }
-                if (!mWifiNative.enableNetwork(network.networkId)) {
+                if (!mWifiNative.enableNetworkWithoutConnect(network.networkId)) {
                     Log.e(TAG, "Enable network failed for: " + network.networkId);
                     return false;
                 }
@@ -599,32 +620,32 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         return true;
     }
 
-    private boolean startPnoScan() {
+    private boolean startHwPnoScan() {
         if (!mWifiNative.enableBackgroundScan(true, null)) {
             return false;
         }
-        mPnoRunning = true;
+        mHwPnoRunning = true;
         return true;
     }
 
-    private boolean stopPnoScan() {
+    private boolean stopHwPnoScan() {
         if (!mWifiNative.enableBackgroundScan(false, null)) {
             return false;
         }
-        mPnoRunning = false;
+        mHwPnoRunning = false;
         return true;
     }
 
-    private boolean resumePnoScan() {
-        if (!mPnoRunning) {
-            return startPnoScan();
+    private boolean resumeHwPnoScan() {
+        if (!mHwPnoRunning) {
+            return startHwPnoScan();
         }
         return true;
     }
 
-    private boolean pausePnoScan() {
-        if (mPnoRunning) {
-            return stopPnoScan();
+    private boolean pauseHwPnoScan() {
+        if (mHwPnoRunning) {
+            return stopHwPnoScan();
         }
         return true;
     }
@@ -639,10 +660,11 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
             mPnoEventHandler = eventHandler;
             mPnoSettings = settings;
-            boolean isSuccess = setNetworkPriorities(settings.networkList);
-            if (!isSuccess) return false;
-            // For supplicant based PNO, we start the scan immediately when we set pno list.
-            processPendingScans();
+            if (mHwPnoScanSupported) {
+                if (!setNetworkPriorities(settings.networkList)) return false;
+                // For supplicant based PNO, we start the scan immediately when we set pno list.
+                processPendingScans();
+            }
             return true;
         }
     }
@@ -656,14 +678,20 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             }
             mPnoEventHandler = null;
             mPnoSettings = null;
-            // For supplicant based PNO, we stop the scan immediately when we reset pno list.
-            return stopPnoScan();
+            if (mHwPnoScanSupported) {
+                // For supplicant based PNO, we stop the scan immediately when we reset pno list.
+                return stopHwPnoScan();
+            } else {
+                return true;
+            }
         }
     }
 
     @Override
     public boolean shouldScheduleBackgroundScanForPno() {
-        return false;
+        // If PNO scan is not supported by the HW, revert to using a normal periodic background
+        // scan.
+        return !mHwPnoScanSupported;
     }
 
     @Override
@@ -739,11 +767,18 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
             this.singleScanEventHandler = singleScanEventHandler;
         }
 
-        public boolean pnoScanActive = false;
+        public boolean hwPnoScanActive = false;
+        public boolean swPnoScanActive = false;
         public WifiNative.PnoEventHandler pnoScanEventHandler;
 
-        public void setPnoScan(WifiNative.PnoEventHandler pnoScanEventHandler) {
-            pnoScanActive = true;
+
+        public void setHwPnoScan(WifiNative.PnoEventHandler pnoScanEventHandler) {
+            hwPnoScanActive = true;
+            this.pnoScanEventHandler = pnoScanEventHandler;
+        }
+
+        public void setSwPnoScan(WifiNative.PnoEventHandler pnoScanEventHandler) {
+            swPnoScanActive = true;
             this.pnoScanEventHandler = pnoScanEventHandler;
         }
     }
