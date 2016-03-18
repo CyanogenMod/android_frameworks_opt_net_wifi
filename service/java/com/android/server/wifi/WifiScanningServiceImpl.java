@@ -1118,9 +1118,16 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 ScanData[] resultsToDeliver =
                         mScheduler.filterResultsForSettings(results, settings);
                 if (resultsToDeliver != null) {
-                    logCallback("backgroundScanResults", ci, handler);
-                    // TODO(b/27727025) This indirection is needed for WifiChangeStateMachine
-                    ci.deliverScanResults(handler, resultsToDeliver);
+                    // If this background scan was started for PNO scan, the last scan data should
+                    // be reported as a PNO network found event.
+                    if (settings.isPnoScan) {
+                        ScanData lastScanData = resultsToDeliver[resultsToDeliver.length - 1];
+                        reportPnoNetworkFound(lastScanData.getResults());
+                    } else {
+                        logCallback("backgroundScanResults", ci, handler);
+                        // TODO(b/27727025) This indirection is needed for WifiChangeStateMachine
+                        ci.deliverScanResults(handler, resultsToDeliver);
+                    }
                 }
             }
         }
@@ -1159,19 +1166,38 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return nativePnoSetting;
         }
 
-        private boolean addScanRequestForPno(ClientInfo ci, int handler, ScanSettings settings,
+        private boolean addScanRequestForPno(ClientInfo ci, int handler, ScanSettings scanSettings,
                 PnoSettings pnoSettings) {
-            logScanRequest("addPnoScanRequest", ci, handler, settings, pnoSettings);
-            if (!mScannerImpl.setPnoList(convertPnoSettingsToNative(pnoSettings),
-                    mBackgroundScanStateMachine)) {
+            if (ci == null) {
+                Log.d(TAG, "Failing scan request ClientInfo not found " + handler);
                 return false;
             }
-            if (!mScannerImpl.shouldScheduleBackgroundScanForPno(pnoSettings.isConnected)) {
-                return true;
+
+            boolean shouldScheduleBackgroundScan;
+            if (mScannerImpl.isHwPnoSupported(pnoSettings.isConnected)) {
+                WifiNative.PnoSettings nativePnoSettings = convertPnoSettingsToNative(pnoSettings);
+                if (!mScannerImpl.setHwPnoList(nativePnoSettings, mBackgroundScanStateMachine)) {
+                    return false;
+                }
+                // HW PNO is supported, check if we need a background scan running for this.
+                shouldScheduleBackgroundScan = mScannerImpl.shouldScheduleBackgroundScanForHwPno();
+
+            } else {
+                // HW PNO is not supported, we need to revert to normal background scans and
+                // report events after each scan.
+                scanSettings.reportEvents = WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
+                shouldScheduleBackgroundScan = true;
             }
-            if (!addBackgroundScanRequest(ci, handler, settings)) {
-                return false;
+            // We need to schedule a background scan either because HW PNO requires background
+            // scan or if there is no HW PNO scan support.
+            if (shouldScheduleBackgroundScan) {
+                if(!addBackgroundScanRequest(ci, handler, scanSettings)) {
+                    loge("Background scan request for PNO failed.");
+                    return false;
+                }
             }
+
+            logScanRequest("addPnoScanRequest", ci, handler, scanSettings, pnoSettings);
             mActivePnoScans.put(ci, handler, pnoSettings);
             return true;
         }
@@ -1180,11 +1206,18 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             if (ci != null) {
                 PnoSettings pnoSettings = mActivePnoScans.remove(ci, handler);
                 logScanRequest("removePnoScanRequest", ci, handler, null, pnoSettings);
-                mScannerImpl.resetPnoList(convertPnoSettingsToNative(pnoSettings));
-                if (!mScannerImpl.shouldScheduleBackgroundScanForPno(pnoSettings.isConnected)) {
-                    return;
+
+                boolean wasBackgroundScanScheduled;
+                if (mScannerImpl.isHwPnoSupported(pnoSettings.isConnected)) {
+                    mScannerImpl.resetHwPnoList(convertPnoSettingsToNative(pnoSettings));
+                    wasBackgroundScanScheduled =
+                            mScannerImpl.shouldScheduleBackgroundScanForHwPno();
+                } else {
+                    wasBackgroundScanScheduled = true;
                 }
-                removeBackgroundScanRequest(ci, handler);
+                if (wasBackgroundScanScheduled) {
+                    removeBackgroundScanRequest(ci, handler);
+                }
             }
         }
 
