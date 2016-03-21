@@ -48,6 +48,9 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     private static final String TAG = "SupplicantWifiScannerImpl";
     private static final boolean DBG = false;
 
+    public static final String BACKGROUND_PERIOD_ALARM_TAG = TAG + " Background Scan Period";
+    public static final String TIMEOUT_ALARM_TAG = TAG + " Scan Timeout";
+
     private static final int SCAN_BUFFER_CAPACITY = 10;
     private static final int MAX_APS_PER_SCAN = 32;
     private static final int MAX_SCAN_BUCKETS = 16;
@@ -94,10 +97,26 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     private boolean mHwPnoRunning = false;
     private final boolean mHwPnoScanSupported;
 
+    /**
+     * Duration to wait before timing out a scan.
+     *
+     * The expected behavior is that the hardware will return a failed scan if it does not
+     * complete, but timeout just in case it does not.
+     */
+    private static final long SCAN_TIMEOUT_MS = 10000;
+
     AlarmManager.OnAlarmListener mScanPeriodListener = new AlarmManager.OnAlarmListener() {
             public void onAlarm() {
                 synchronized (mSettingsLock) {
                     handleScanPeriod();
+                }
+            }
+        };
+
+    AlarmManager.OnAlarmListener mScanTimeoutListener = new AlarmManager.OnAlarmListener() {
+            public void onAlarm() {
+                synchronized (mSettingsLock) {
+                    handleScanTimeout();
                 }
             }
         };
@@ -292,6 +311,12 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
         }
     }
 
+    private void handleScanTimeout() {
+        Log.e(TAG, "Timed out waiting for scan result from supplicant");
+        reportScanFailure();
+        processPendingScans();
+    }
+
     private void processPendingScans() {
         synchronized (mSettingsLock) {
             // Wait for the active scan result to come back to reschedule other scans,
@@ -366,8 +391,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                     mBackgroundScanPeriodPending = false;
                     mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                             System.currentTimeMillis() + mBackgroundScanSettings.base_period_ms,
-                            "SupplicantWifiScannerImpl Period",
-                            mScanPeriodListener, mEventHandler);
+                            BACKGROUND_PERIOD_ALARM_TAG, mScanPeriodListener, mEventHandler);
                 }
             }
 
@@ -409,6 +433,9 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                             + ", background=" + newScanSettings.backgroundScanActive
                             + ", single=" + newScanSettings.singleScanActive);
                     mLastScanSettings = newScanSettings;
+                    mAlarmManager.set(AlarmManager.RTC_WAKEUP,
+                            System.currentTimeMillis() + SCAN_TIMEOUT_MS,
+                            TIMEOUT_ALARM_TAG, mScanTimeoutListener, mEventHandler);
                 } else {
                     Log.e(TAG, "Failed to start scan, freqs=" + freqs);
                     // indicate scan failure async
@@ -421,7 +448,7 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                                 }
                             }
                         });
-                    // TODO if scans fail enough background scans should be failed as well
+                    // TODO(b/27769665) background scans should be failed too if scans fail enough
                 }
             } else if (isHwPnoScanRequired()) {
                 newScanSettings.setHwPnoScan(mPnoEventHandler);
@@ -454,14 +481,13 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
     public boolean handleMessage(Message msg) {
         switch(msg.what) {
             case WifiMonitor.SCAN_FAILED_EVENT:
-                // TODO indicate failure to caller
                 Log.w(TAG, "Scan failed");
-                synchronized (mSettingsLock) {
-                    mLastScanSettings = null;
-                }
+                mAlarmManager.cancel(mScanTimeoutListener);
+                reportScanFailure();
                 processPendingScans();
                 break;
             case WifiMonitor.SCAN_RESULTS_EVENT:
+                mAlarmManager.cancel(mScanTimeoutListener);
                 pollLatestScanData();
                 processPendingScans();
                 break;
@@ -469,6 +495,19 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                 // ignore unknown event
         }
         return true;
+    }
+
+    private void reportScanFailure() {
+        synchronized (mSettingsLock) {
+            if (mLastScanSettings != null) {
+                if (mLastScanSettings.singleScanEventHandler != null) {
+                    mLastScanSettings.singleScanEventHandler
+                            .onScanStatus(WifiNative.WIFI_SCAN_FAILED);
+                }
+                // TODO(b/27769665) background scans should be failed too if scans fail enough
+                mLastScanSettings = null;
+            }
+        }
     }
 
     private void pollLatestScanData() {
