@@ -134,7 +134,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case AsyncChannel.CMD_CHANNEL_FULL_CONNECTION: {
-                    ClientInfo client = mClients.get(msg.replyTo);
+                    ExternalClientInfo client = (ExternalClientInfo) mClients.get(msg.replyTo);
                     if (client != null) {
                         logw("duplicate client connection: " + msg.sendingUid);
                         client.mChannel.replyToMessage(msg, AsyncChannel.CMD_CHANNEL_FULLY_CONNECTED,
@@ -145,8 +145,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     AsyncChannel ac = new AsyncChannel();
                     ac.connected(mContext, this, msg.replyTo);
 
-                    client = new ClientInfo(msg.sendingUid, ac);
-                    mClients.put(msg.replyTo, client);
+                    client = new ExternalClientInfo(msg.sendingUid, msg.replyTo, ac);
+                    client.register();
 
                     ac.replyToMessage(msg, AsyncChannel.CMD_CHANNEL_FULLY_CONNECTED,
                             AsyncChannel.STATUS_SUCCESSFUL);
@@ -155,18 +155,19 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     return;
                 }
                 case AsyncChannel.CMD_CHANNEL_DISCONNECT: {
-                    ClientInfo client = mClients.get(msg.replyTo);
+                    ExternalClientInfo client = (ExternalClientInfo) mClients.get(msg.replyTo);
                     if (client != null) {
                         client.mChannel.disconnect();
                     }
                     return;
                 }
                 case AsyncChannel.CMD_CHANNEL_DISCONNECTED: {
-                    ClientInfo ci = mClients.remove(msg.replyTo);
-                    if (ci != null) {
-                        if (DBG) Log.d(TAG, "client disconnected: " + ci
-                                + ", reason: " + msg.arg1);
-                        ci.cleanup();
+                    ExternalClientInfo client = (ExternalClientInfo) mClients.get(msg.replyTo);
+                    if (client != null) {
+                        if (DBG) {
+                            Log.d(TAG, "client disconnected: " + client + ", reason: " + msg.arg1);
+                        }
+                        client.cleanup();
                     }
                     return;
                 }
@@ -180,10 +181,13 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 return;
             }
 
+            // Since this message is sent from WifiScanner using |sendMessageSynchronously| which
+            // doesn't set the correct |msg.replyTo| field.
             if (msg.what == WifiScanner.CMD_GET_SCAN_RESULTS) {
                 mBackgroundScanStateMachine.sendMessage(Message.obtain(msg));
                 return;
             }
+
             ClientInfo ci = mClients.get(msg.replyTo);
             if (ci == null) {
                 loge("Could not find client info for message " + msg.replyTo);
@@ -223,15 +227,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     private static final int CMD_HOTLIST_AP_FOUND                    = BASE + 2;
     private static final int CMD_HOTLIST_AP_LOST                     = BASE + 3;
     private static final int CMD_WIFI_CHANGE_DETECTED                = BASE + 4;
-    private static final int CMD_WIFI_CHANGE_NEW_SCAN_RESULTS        = BASE + 5;
-    private static final int CMD_WIFI_CHANGE_TIMEOUT                 = BASE + 6;
-    private static final int CMD_DRIVER_LOADED                       = BASE + 7;
-    private static final int CMD_DRIVER_UNLOADED                     = BASE + 8;
-    private static final int CMD_SCAN_PAUSED                         = BASE + 9;
-    private static final int CMD_SCAN_RESTARTED                      = BASE + 10;
-    private static final int CMD_SCAN_FAILED                         = BASE + 11;
-    private static final int CMD_PNO_NETWORK_FOUND                   = BASE + 12;
-    private static final int CMD_PNO_SCAN_FAILED                     = BASE + 13;
+    private static final int CMD_WIFI_CHANGE_TIMEOUT                 = BASE + 5;
+    private static final int CMD_DRIVER_LOADED                       = BASE + 6;
+    private static final int CMD_DRIVER_UNLOADED                     = BASE + 7;
+    private static final int CMD_SCAN_PAUSED                         = BASE + 8;
+    private static final int CMD_SCAN_RESTARTED                      = BASE + 9;
+    private static final int CMD_SCAN_FAILED                         = BASE + 10;
+    private static final int CMD_PNO_NETWORK_FOUND                   = BASE + 11;
+    private static final int CMD_PNO_SCAN_FAILED                     = BASE + 12;
 
     private final Context mContext;
     private final Looper mLooper;
@@ -638,7 +641,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             for (Pair<ClientInfo, Integer> key : clientHandlers.keySet()) {
                 ClientInfo ci = key.first;
                 int handler = key.second;
-                ci.sendMessage(WifiScanner.CMD_OP_FAILED, 0, handler,
+                ci.reportEvent(WifiScanner.CMD_OP_FAILED, 0, handler,
                         new WifiScanner.OperationResult(reason, description));
             }
             clientHandlers.clear();
@@ -652,7 +655,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 ScanSettings settings = entry.getValue();
                 if (ScanScheduleUtil.shouldReportFullScanResultForSettings(mChannelHelper,
                                 result, bucketsScanned, settings, -1)) {
-                    ci.sendMessage(WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, result);
+                    ci.reportEvent(WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, result);
                 }
             }
         }
@@ -676,9 +679,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 WifiScanner.ParcelableScanData parcelableScanData =
                         new WifiScanner.ParcelableScanData(resultsToDeliver);
                 logCallback("singleScanResults",  ci, handler);
-                ci.sendMessage(WifiScanner.CMD_SCAN_RESULT, 0, handler, parcelableScanData);
+                ci.reportEvent(WifiScanner.CMD_SCAN_RESULT, 0, handler, parcelableScanData);
                 // make sure the handler is removed
-                ci.sendMessage(WifiScanner.CMD_SINGLE_SCAN_COMPLETED, 0, handler);
+                ci.reportEvent(WifiScanner.CMD_SINGLE_SCAN_COMPLETED, 0, handler);
             }
         }
     }
@@ -811,7 +814,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 if (DBG) localLog("DefaultState");
                 mActivePnoScans.clear();
                 mActiveBackgroundScans.clear();
+                mActiveHotlistSettings.clear();
             }
+
             @Override
             public boolean processMessage(Message msg) {
                 switch (msg.what) {
@@ -884,6 +889,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 sendPnoScanFailedToAllAndClear(
                         WifiScanner.REASON_UNSPECIFIED, "Scan was interrupted");
                 sendBackgroundScanFailedToAllAndClear(
+                        WifiScanner.REASON_UNSPECIFIED, "Scan was interrupted");
+                sendHotlistFailedToAllAndClear(
                         WifiScanner.REASON_UNSPECIFIED, "Scan was interrupted");
                 mScannerImpl.cleanup();
             }
@@ -1139,7 +1146,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     else {
                         newResult.informationElements = null;
                     }
-                    ci.sendMessage(WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, newResult);
+                    ci.reportEvent(WifiScanner.CMD_FULL_SCAN_RESULT, 0, handler, newResult);
                 }
             }
         }
@@ -1169,8 +1176,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         reportPnoNetworkFound(lastScanData.getResults());
                     } else {
                         logCallback("backgroundScanResults", ci, handler);
-                        // TODO(b/27727025) This indirection is needed for WifiChangeStateMachine
-                        ci.deliverScanResults(handler, resultsToDeliver);
+                        WifiScanner.ParcelableScanData parcelableScanData =
+                                new WifiScanner.ParcelableScanData(resultsToDeliver);
+                        ci.reportEvent(WifiScanner.CMD_SCAN_RESULT, 0, handler, parcelableScanData);
                     }
                 }
             }
@@ -1180,7 +1188,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             for (Pair<ClientInfo, Integer> key : mActiveBackgroundScans.keySet()) {
                 ClientInfo ci = key.first;
                 int handler = key.second;
-                ci.sendMessage(WifiScanner.CMD_OP_FAILED, 0, handler,
+                ci.reportEvent(WifiScanner.CMD_OP_FAILED, 0, handler,
                         new WifiScanner.OperationResult(reason, description));
             }
             mActiveBackgroundScans.clear();
@@ -1273,7 +1281,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 ClientInfo ci = entry.getKey().first;
                 int handler = entry.getKey().second;
                 logCallback("pnoNetworkFound", ci, handler);
-                ci.sendMessage(
+                ci.reportEvent(
                         WifiScanner.CMD_PNO_NETWORK_FOUND, 0, handler, parcelableScanResults);
             }
         }
@@ -1282,7 +1290,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             for (Pair<ClientInfo, Integer> key : mActivePnoScans.keySet()) {
                 ClientInfo ci = key.first;
                 int handler = key.second;
-                ci.sendMessage(WifiScanner.CMD_OP_FAILED, 0, handler,
+                ci.reportEvent(WifiScanner.CMD_OP_FAILED, 0, handler,
                         new WifiScanner.OperationResult(reason, description));
             }
             mActivePnoScans.clear();
@@ -1361,43 +1369,66 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 WifiScanner.ParcelableScanResults parcelableScanResults =
                         new WifiScanner.ParcelableScanResults(results2);
 
-                ci.sendMessage(what, 0, handler, parcelableScanResults);
+                ci.reportEvent(what, 0, handler, parcelableScanResults);
             }
+        }
+
+        private void sendHotlistFailedToAllAndClear(int reason, String description) {
+            for (Pair<ClientInfo, Integer> key : mActiveHotlistSettings.keySet()) {
+                ClientInfo ci = key.first;
+                int handler = key.second;
+                ci.reportEvent(WifiScanner.CMD_OP_FAILED, 0, handler,
+                        new WifiScanner.OperationResult(reason, description));
+            }
+            mActiveHotlistSettings.clear();
         }
     }
 
-    private class ClientInfo {
-        private final AsyncChannel mChannel;
-        /**
-         * Indicates if the client is still connected
-         * If the client is no longer connected then messages to it will be silently dropped
-         */
-        private boolean mDisconnected = false;
+    private abstract class ClientInfo {
         private final int mUid;
         private final WorkSource mWorkSource;
-
         private boolean mScanWorkReported = false;
+        protected final Messenger mMessenger;
 
-        ClientInfo(int uid, AsyncChannel c) {
-            mChannel = c;
+        ClientInfo(int uid, Messenger messenger) {
             mUid = uid;
+            mMessenger = messenger;
             mWorkSource = new WorkSource(uid);
-            if (DBG) localLog("New client, channel: " + c);
         }
 
-        void sendMessage(int what, int arg1, int arg2) {
-            if (!mDisconnected) {
-                mChannel.sendMessage(what, arg1, arg2);
-            }
+        /**
+         * Register this client to main client map.
+         */
+        public void register() {
+            mClients.put(mMessenger, this);
         }
 
-        void sendMessage(int what, int arg1, int arg2, Object obj) {
-            if (!mDisconnected) {
-                mChannel.sendMessage(what, arg1, arg2, obj);
-            }
+        /**
+         * Unregister this client from main client map.
+         */
+        private void unregister() {
+            mClients.remove(mMessenger);
         }
 
-        void reportBatchedScanStart() {
+        public void cleanup() {
+            mBackgroundScanStateMachine.removeBackgroundScanSettings(this);
+            mBackgroundScanStateMachine.removeHotlistSettings(this);
+            unregister();
+            localLog("Successfully stopped all requests for client " + this);
+        }
+
+        public int getUid() {
+            return mUid;
+        }
+
+        public void reportEvent(int what, int arg1, int arg2) {
+            reportEvent(what, arg1, arg2, null);
+        }
+
+        // This has to be implemented by subclasses to report events back to clients.
+        public abstract void reportEvent(int what, int arg1, int arg2, Object obj);
+
+        private void reportBatchedScanStart() {
             if (mUid == 0)
                 return;
 
@@ -1410,7 +1441,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             }
         }
 
-        void reportBatchedScanStop() {
+        private void reportBatchedScanStop() {
             if (mUid == 0)
                 return;
 
@@ -1422,7 +1453,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
 
         // TODO migrate batterystats to accept scan duration per hour instead of csph
-        int getCsph() {
+        private int getCsph() {
             int totalScanDurationPerHour = 0;
             Collection<ScanSettings> settingsList =
                     mBackgroundScanStateMachine.getBackgroundScanSettings(this);
@@ -1436,7 +1467,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return totalScanDurationPerHour / ChannelHelper.SCAN_PERIOD_PER_CHANNEL_MS;
         }
 
-        void reportScanWorkUpdate() {
+        public void reportScanWorkUpdate() {
             if (mScanWorkReported) {
                 reportBatchedScanStop();
                 mScanWorkReported = false;
@@ -1452,7 +1483,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             return "ClientInfo[uid=" + mUid + "]";
         }
 
-        void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
+        public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
             StringBuilder sb = new StringBuilder();
             sb.append(toString());
 
@@ -1470,20 +1501,96 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
             pw.println(sb.toString());
         }
+    }
 
-        void deliverScanResults(int handler, ScanData results[]) {
-            WifiScanner.ParcelableScanData parcelableScanData =
-                    new WifiScanner.ParcelableScanData(results);
-            mChannel.sendMessage(WifiScanner.CMD_SCAN_RESULT, 0, handler, parcelableScanData);
+    /**
+     * This class is used to represent external clients to the WifiScanning Service.
+     */
+    private class ExternalClientInfo extends ClientInfo {
+        private final AsyncChannel mChannel;
+        /**
+         * Indicates if the client is still connected
+         * If the client is no longer connected then messages to it will be silently dropped
+         */
+        private boolean mDisconnected = false;
+
+        ExternalClientInfo(int uid, Messenger messenger, AsyncChannel c) {
+            super(uid, messenger);
+            mChannel = c;
+            if (DBG) localLog("New client, channel: " + c);
         }
 
-        void cleanup() {
-            mDisconnected = true;
-            mBackgroundScanStateMachine.removeBackgroundScanSettings(this);
-            mBackgroundScanStateMachine.removeHotlistSettings(this);
-            mWifiChangeStateMachine.removeWifiChangeHandler(this);
+        @Override
+        public void reportEvent(int what, int arg1, int arg2, Object obj) {
+            if (!mDisconnected) {
+                mChannel.sendMessage(what, arg1, arg2, obj);
+            }
+        }
 
-            localLog("Successfully stopped all requests for client " + this);
+        @Override
+        public void cleanup() {
+            mDisconnected = true;
+            // Internal clients should not have any wifi change requests. So, keeping this cleanup
+            // only for external client because this will otherwise cause an infinite recursion
+            // when the internal client in WifiChangeStateMachine is cleaned up.
+            mWifiChangeStateMachine.removeWifiChangeHandler(this);
+            super.cleanup();
+        }
+    }
+
+    /**
+     * This class is used to represent internal clients to the WifiScanning Service. This is needed
+     * for communicating between State Machines.
+     * This leaves the onReportEvent method unimplemented, so that the clients have the freedom
+     * to handle the events as they need.
+     */
+    private class InternalClientInfo extends ClientInfo {
+        private static final int INTERNAL_CLIENT_HANDLER = 0;
+
+        /**
+         * The UID here is used to proxy the original external requester UID.
+         */
+        InternalClientInfo(int requesterUid, Messenger messenger) {
+            super(requesterUid, messenger);
+        }
+
+        @Override
+        public void reportEvent(int what, int arg1, int arg2, Object obj) {
+            Message message = Message.obtain();
+            message.what = what;
+            message.arg1 = arg1;
+            message.arg2 = arg2;
+            message.obj = obj;
+            try {
+                mMessenger.send(message);
+            } catch (RemoteException e) {
+                loge("Failed to send message: " + what);
+            }
+        }
+
+        /**
+         * Send a message to the client handler which should reroute the message to the appropriate
+         * state machine.
+         */
+        public void sendScanRequestToClientHandler(int what, ScanSettings settings) {
+            Message msg = Message.obtain();
+            msg.what = what;
+            msg.arg2 = INTERNAL_CLIENT_HANDLER;
+            if (settings != null) {
+                Bundle bundle = new Bundle();
+                bundle.putParcelable(WifiScanner.SCAN_PARAMS_SCAN_SETTINGS_KEY, settings);
+                msg.obj = bundle;
+            }
+            msg.replyTo = mMessenger;
+            mClientHandler.sendMessage(msg);
+        }
+
+        /**
+         * Send a message to the client handler which should reroute the message to the appropriate
+         * state machine.
+         */
+        public void sendScanRequestToClientHandler(int what) {
+            sendScanRequestToClientHandler(what, null);
         }
     }
 
@@ -1518,10 +1625,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
         }
     }
 
+    /**
+     * Wifi Change state machine is used to handle any wifi change tracking requests.
+     * TODO: This state machine doesn't handle driver loading/unloading yet.
+     */
     class WifiChangeStateMachine extends StateMachine
             implements WifiNative.SignificantWifiChangeEventHandler {
-
-        private static final String TAG = "WifiChangeStateMachine";
 
         private static final int MAX_APS_TO_TRACK = 3;
         private static final int MOVING_SCAN_PERIOD_MS      = 10000;
@@ -1534,15 +1643,14 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         private static final String ACTION_TIMEOUT =
                 "com.android.server.WifiScanningServiceImpl.action.TIMEOUT";
-        PendingIntent mTimeoutIntent;
-        ScanResult    mCurrentBssids[];
+        private PendingIntent mTimeoutIntent;
+        private ScanResult[] mCurrentBssids;
+        private InternalClientInfo mInternalClientInfo;
 
         private final Set<Pair<ClientInfo, Integer>> mActiveWifiChangeHandlers = new HashSet<>();
 
         WifiChangeStateMachine(Looper looper) {
             super("SignificantChangeStateMachine", looper);
-
-            mClients.put(null, mClientInfo);
 
             // CHECKSTYLE:OFF IndentationCheck
             addState(mDefaultState);
@@ -1587,7 +1695,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         /* save configuration till we transition to moving state */
                         deferMessage(msg);
                         break;
-                    case CMD_WIFI_CHANGE_NEW_SCAN_RESULTS:
+                    case WifiScanner.CMD_SCAN_RESULT:
                         // nothing to do
                         break;
                     default:
@@ -1624,6 +1732,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                         if (DBG) localLog("Got wifi change detected");
                         reportWifiChanged((ScanResult[]) msg.obj);
                         transitionTo(mMovingState);
+                        break;
+                    case WifiScanner.CMD_SCAN_RESULT:
+                        // nothing to do
                         break;
                     default:
                         return NOT_HANDLED;
@@ -1678,7 +1789,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                                 System.currentTimeMillis() + unchangedDelay,
                                 mTimeoutIntent);
                         break;
-                    case CMD_WIFI_CHANGE_NEW_SCAN_RESULTS:
+                    case WifiScanner.CMD_SCAN_RESULT:
                         if (DBG) localLog("Got scan results");
                         if (mScanResultsPending) {
                             if (DBG) localLog("reconfiguring scan");
@@ -1852,40 +1963,26 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             trackSignificantWifiChange(settings);
         }
 
-        class WifiChangeClientInfo extends ClientInfo {
-            WifiChangeClientInfo() {
-                super(0, null); // TODO figure out how to charge apps for power correctly
-            }
-            @Override
-            void deliverScanResults(int handler, ScanData results[]) {
-                if (DBG) localLog("Delivering messages directly");
-                sendMessage(CMD_WIFI_CHANGE_NEW_SCAN_RESULTS, 0, 0, results);
-            }
-        }
 
         @Override
         public void onChangesFound(ScanResult results[]) {
             sendMessage(CMD_WIFI_CHANGE_DETECTED, 0, 0, results);
         }
 
-        ClientInfo mClientInfo = new WifiChangeClientInfo();
-        private static final int SCAN_COMMAND_ID = 1;
-
         private void addScanRequest(ScanSettings settings) {
             if (DBG) localLog("Starting scans");
-            Message msg = Message.obtain();
-            msg.what = WifiScanner.CMD_START_BACKGROUND_SCAN;
-            msg.arg2 = SCAN_COMMAND_ID;
-            msg.getData().putParcelable(WifiScanner.SCAN_PARAMS_SCAN_SETTINGS_KEY, settings);
-            mClientHandler.sendMessage(msg);
+            if (mInternalClientInfo != null) {
+                mInternalClientInfo.sendScanRequestToClientHandler(
+                        WifiScanner.CMD_START_BACKGROUND_SCAN, settings);
+            }
         }
 
         private void removeScanRequest() {
             if (DBG) localLog("Stopping scans");
-            Message msg = Message.obtain();
-            msg.what = WifiScanner.CMD_STOP_BACKGROUND_SCAN;
-            msg.arg2 = SCAN_COMMAND_ID;
-            mClientHandler.sendMessage(msg);
+            if (mInternalClientInfo != null) {
+                mInternalClientInfo.sendScanRequestToClientHandler(
+                        WifiScanner.CMD_STOP_BACKGROUND_SCAN);
+            }
         }
 
         private void trackSignificantWifiChange(WifiScanner.WifiChangeSettings settings) {
@@ -1899,6 +1996,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
         private void addWifiChangeHandler(ClientInfo ci, int handler) {
             mActiveWifiChangeHandlers.add(Pair.create(ci, handler));
+            // Add an internal client to make background scan requests.
+            if (mInternalClientInfo == null) {
+                mInternalClientInfo =
+                        new InternalClientInfo(ci.getUid(), new Messenger(this.getHandler()));
+                mInternalClientInfo.register();
+            }
         }
 
         private void removeWifiChangeHandler(ClientInfo ci, int handler) {
@@ -1910,8 +2013,12 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
             if (mActiveWifiChangeHandlers.isEmpty()) {
                 if (DBG) localLog("Got Disable Wifi Change");
                 mCurrentBssids = null;
-                removeScanRequest();
                 untrackSignificantWifiChange();
+                // Remove the internal client when there are no more external clients.
+                if (mInternalClientInfo != null) {
+                    mInternalClientInfo.cleanup();
+                    mInternalClientInfo = null;
+                }
                 transitionTo(mDefaultState);
             }
         }
@@ -1924,7 +2031,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 Pair<ClientInfo, Integer> entry = it.next();
                 ClientInfo ci = entry.first;
                 int handler = entry.second;
-                ci.sendMessage(WifiScanner.CMD_WIFI_CHANGE_DETECTED, 0, handler,
+                ci.reportEvent(WifiScanner.CMD_WIFI_CHANGE_DETECTED, 0, handler,
                         parcelableScanResults);
             }
         }
@@ -1937,7 +2044,7 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                 Pair<ClientInfo, Integer> entry = it.next();
                 ClientInfo ci = entry.first;
                 int handler = entry.second;
-                ci.sendMessage(WifiScanner.CMD_WIFI_CHANGES_STABILIZED, 0, handler,
+                ci.reportEvent(WifiScanner.CMD_WIFI_CHANGES_STABILIZED, 0, handler,
                         parcelableScanResults);
             }
         }
