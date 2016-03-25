@@ -599,9 +599,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
     /* Tracks current frequency mode */
     private AtomicInteger mFrequencyBand = new AtomicInteger(WifiManager.WIFI_FREQUENCY_BAND_AUTO);
 
-    /* Tracks if we are filtering Multicast v4 packets. Default is to filter. */
-    private AtomicBoolean mFilteringMulticastV4Packets = new AtomicBoolean(true);
-
     // Channel for sending replies.
     private AsyncChannel mReplyChannel = new AsyncChannel();
 
@@ -719,10 +716,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
     static final int CMD_ENABLE_RSSI_POLL                               = BASE + 82;
     /* RSSI poll */
     static final int CMD_RSSI_POLL                                      = BASE + 83;
-    /* Set up packet filtering */
-    static final int CMD_START_PACKET_FILTERING                         = BASE + 84;
-    /* Clear packet filter */
-    static final int CMD_STOP_PACKET_FILTERING                          = BASE + 85;
     /* Enable suspend mode optimizations in the driver */
     static final int CMD_SET_SUSPEND_OPT_ENABLED                        = BASE + 86;
     /* Delayed NETWORK_DISCONNECT */
@@ -734,10 +727,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
     static final int CMD_TEST_NETWORK_DISCONNECT                        = BASE + 89;
 
     private int testNetworkDisconnectCounter = 0;
-
-    /* arg1 values to CMD_STOP_PACKET_FILTERING and CMD_START_PACKET_FILTERING */
-    static final int MULTICAST_V6 = 1;
-    static final int MULTICAST_V4 = 0;
 
     /* Set the frequency band */
     static final int CMD_SET_FREQUENCY_BAND                             = BASE + 90;
@@ -891,6 +880,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
 
     /* Push a new APF program to the HAL */
     static final int CMD_INSTALL_PACKET_FILTER                          = BASE + 202;
+
+    /* Enable/disable fallback packet filtering */
+    static final int CMD_SET_FALLBACK_PACKET_FILTERING                  = BASE + 203;
 
     // For message logging.
     private static final Class[] sMessageClasses = {
@@ -1176,6 +1168,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
         mLastSignalLevel = -1;
 
         mIpManager = mFacade.makeIpManager(mContext, mInterfaceName, new IpManagerCallback());
+        mIpManager.setMulticastFilter(true);
 
         mAlarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
         mScanIntent = getPrivateBroadcast(ACTION_START_SCAN, SCAN_REQUEST);
@@ -1403,6 +1396,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
         @Override
         public void installPacketFilter(byte[] filter) {
             sendMessage(CMD_INSTALL_PACKET_FILTER, filter);
+        }
+
+        @Override
+        public void setFallbackMulticastFilter(boolean enabled) {
+            sendMessage(CMD_SET_FALLBACK_PACKET_FILTERING, enabled);
         }
     }
 
@@ -2546,31 +2544,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
     /**
      * Start filtering Multicast v4 packets
      */
-    public void startFilteringMulticastV4Packets() {
-        mFilteringMulticastV4Packets.set(true);
-        sendMessage(CMD_START_PACKET_FILTERING, MULTICAST_V4, 0);
+    public void startFilteringMulticastPackets() {
+        mIpManager.setMulticastFilter(true);
     }
 
     /**
      * Stop filtering Multicast v4 packets
      */
-    public void stopFilteringMulticastV4Packets() {
-        mFilteringMulticastV4Packets.set(false);
-        sendMessage(CMD_STOP_PACKET_FILTERING, MULTICAST_V4, 0);
-    }
-
-    /**
-     * Start filtering Multicast v4 packets
-     */
-    public void startFilteringMulticastV6Packets() {
-        sendMessage(CMD_START_PACKET_FILTERING, MULTICAST_V6, 0);
-    }
-
-    /**
-     * Stop filtering Multicast v4 packets
-     */
-    public void stopFilteringMulticastV6Packets() {
-        sendMessage(CMD_STOP_PACKET_FILTERING, MULTICAST_V6, 0);
+    public void stopFilteringMulticastPackets() {
+        mIpManager.setMulticastFilter(false);
     }
 
     /**
@@ -3324,6 +3306,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                 break;
             case CMD_INSTALL_PACKET_FILTER:
                 sb.append(" len=" + ((byte[])msg.obj).length);
+                break;
+            case CMD_SET_FALLBACK_PACKET_FILTERING:
+                sb.append(" enabled=" + (boolean)msg.obj);
                 break;
             case CMD_ROAM_WATCHDOG_TIMER:
                 sb.append(" ");
@@ -5022,6 +5007,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                 case CMD_INSTALL_PACKET_FILTER:
                     mWifiNative.installPacketFilter((byte[]) message.obj);
                     break;
+                case CMD_SET_FALLBACK_PACKET_FILTERING:
+                    if ((boolean) message.obj) {
+                        mWifiNative.startFilteringMulticastV4Packets();
+                    } else {
+                        mWifiNative.stopFilteringMulticastV4Packets();
+                    }
+                    break;
                 default:
                     loge("Error! unhandled message" + message);
                     break;
@@ -5216,8 +5208,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                 case CMD_STOP_DRIVER:
                 case CMD_SET_OPERATIONAL_MODE:
                 case CMD_SET_FREQUENCY_BAND:
-                case CMD_START_PACKET_FILTERING:
-                case CMD_STOP_PACKET_FILTERING:
                     messageHandlingStatus = MESSAGE_HANDLING_STATUS_DEFERRED;
                     deferMessage(message);
                     break;
@@ -5394,8 +5384,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                 case CMD_STOP_DRIVER:
                 case CMD_SET_OPERATIONAL_MODE:
                 case CMD_SET_FREQUENCY_BAND:
-                case CMD_START_PACKET_FILTERING:
-                case CMD_STOP_PACKET_FILTERING:
                     deferMessage(message);
                     break;
                 default:
@@ -5457,8 +5445,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                 case WifiMonitor.ASSOCIATION_REJECTION_EVENT:
                 case WifiMonitor.WPS_OVERLAP_EVENT:
                 case CMD_SET_FREQUENCY_BAND:
-                case CMD_START_PACKET_FILTERING:
-                case CMD_STOP_PACKET_FILTERING:
                 case CMD_START_SCAN:
                 case CMD_DISCONNECT:
                 case CMD_REASSOCIATE:
@@ -5504,15 +5490,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
             /* initialize network state */
             setNetworkDetailedState(DetailedState.DISCONNECTED);
 
-            /* Remove any filtering on Multicast v6 at start */
+            // Disable legacy multicast filtering, which on some chipsets defaults to enabled.
+            // Legacy IPv6 multicast filtering blocks ICMPv6 router advertisements which breaks IPv6
+            // provisioning. Legacy IPv4 multicast filtering may be re-enabled later via
+            // IpManager.Callback.setFallbackMulticastFilter()
+            mWifiNative.stopFilteringMulticastV4Packets();
             mWifiNative.stopFilteringMulticastV6Packets();
-
-            /* Reset Multicast v4 filtering state */
-            if (mFilteringMulticastV4Packets.get()) {
-                mWifiNative.startFilteringMulticastV4Packets();
-            } else {
-                mWifiNative.stopFilteringMulticastV4Packets();
-            }
 
             if (mOperationalMode != CONNECT_MODE) {
                 mWifiNative.disconnect();
@@ -5630,24 +5613,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                         mWifiConfigManager.enableAllNetworks();
                     }
                     break;
-                case CMD_START_PACKET_FILTERING:
-                    if (message.arg1 == MULTICAST_V6) {
-                        mWifiNative.startFilteringMulticastV6Packets();
-                    } else if (message.arg1 == MULTICAST_V4) {
-                        mWifiNative.startFilteringMulticastV4Packets();
-                    } else {
-                        loge("Illegal arugments to CMD_START_PACKET_FILTERING");
-                    }
-                    break;
-                case CMD_STOP_PACKET_FILTERING:
-                    if (message.arg1 == MULTICAST_V6) {
-                        mWifiNative.stopFilteringMulticastV6Packets();
-                    } else if (message.arg1 == MULTICAST_V4) {
-                        mWifiNative.stopFilteringMulticastV4Packets();
-                    } else {
-                        loge("Illegal arugments to CMD_STOP_PACKET_FILTERING");
-                    }
-                    break;
                 case CMD_SET_SUSPEND_OPT_ENABLED:
                     if (message.arg1 == 1) {
                         setSuspendOptimizationsNative(SUSPEND_DUE_TO_SCREEN, true);
@@ -5748,8 +5713,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                 case CMD_STOP_DRIVER:
                 case CMD_SET_OPERATIONAL_MODE:
                 case CMD_SET_FREQUENCY_BAND:
-                case CMD_START_PACKET_FILTERING:
-                case CMD_STOP_PACKET_FILTERING:
                 case CMD_START_SCAN:
                 case CMD_DISCONNECT:
                 case CMD_REASSOCIATE:
@@ -5780,8 +5743,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.PnoEven
                 case CMD_START_DRIVER:
                 case CMD_STOP_DRIVER:
                 case CMD_SET_FREQUENCY_BAND:
-                case CMD_START_PACKET_FILTERING:
-                case CMD_STOP_PACKET_FILTERING:
                 case CMD_START_SCAN:
                 case CMD_DISCONNECT:
                 case CMD_REASSOCIATE:
