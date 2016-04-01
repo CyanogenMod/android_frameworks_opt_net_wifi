@@ -91,7 +91,6 @@ public class WifiNative {
 
     // Must match wifi_hal.h
     public static final int WIFI_SUCCESS = 0;
-    public static final int WIFI_ERROR_UNINITIALIZED = -2;
 
     /**
      * Hold this lock before calling supplicant or HAL methods
