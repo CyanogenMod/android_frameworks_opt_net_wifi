@@ -16,6 +16,7 @@
 
 package com.android.server.wifi;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.anyInt;
@@ -80,5 +81,43 @@ public class WifiNativeTest {
         final Map<String, String> actualValues =
                 mWifiNative.getNetworkExtra(NETWORK_ID, NETWORK_EXTRAS_VARIABLE);
         assertEquals(NETWORK_EXTRAS_VALUES, actualValues);
+    }
+
+    /**
+     * Verifies that TxFateReport's constructor sets all of the TxFateReport fields.
+     */
+    @Test
+    public void testTxFateReportCtorSetsFields() {
+        long driverTimestampUSec = 12345;
+        byte[] frameBytes = new byte[] {'a', 'b', 0, 'c'};
+        WifiNative.TxFateReport fateReport = new WifiNative.TxFateReport(
+                WifiLoggerHal.TX_PKT_FATE_SENT,  // non-zero value
+                driverTimestampUSec,
+                WifiLoggerHal.FRAME_TYPE_ETHERNET_II,  // non-zero value
+                frameBytes
+        );
+        assertEquals(WifiLoggerHal.TX_PKT_FATE_SENT, fateReport.mFate);
+        assertEquals(driverTimestampUSec, fateReport.mDriverTimestampUSec);
+        assertEquals(WifiLoggerHal.FRAME_TYPE_ETHERNET_II, fateReport.mFrameType);
+        assertArrayEquals(frameBytes, fateReport.mFrameBytes);
+    }
+
+    /**
+     * Verifies that RxFateReport's constructor sets all of the RxFateReport fields.
+     */
+    @Test
+    public void testRxFateReportCtorSetsFields() {
+        long driverTimestampUSec = 12345;
+        byte[] frameBytes = new byte[] {'a', 'b', 0, 'c'};
+        WifiNative.RxFateReport fateReport = new WifiNative.RxFateReport(
+                WifiLoggerHal.RX_PKT_FATE_FW_DROP_INVALID,  // non-zero value
+                driverTimestampUSec,
+                WifiLoggerHal.FRAME_TYPE_ETHERNET_II,  // non-zero value
+                frameBytes
+        );
+        assertEquals(WifiLoggerHal.RX_PKT_FATE_FW_DROP_INVALID, fateReport.mFate);
+        assertEquals(driverTimestampUSec, fateReport.mDriverTimestampUSec);
+        assertEquals(WifiLoggerHal.FRAME_TYPE_ETHERNET_II, fateReport.mFrameType);
+        assertArrayEquals(frameBytes, fateReport.mFrameBytes);
     }
 }

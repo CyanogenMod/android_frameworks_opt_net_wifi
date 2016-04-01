@@ -44,6 +44,7 @@ import android.text.TextUtils;
 import android.util.LocalLog;
 import android.util.Log;
 
+import com.android.internal.annotations.Immutable;
 import com.android.server.connectivity.KeepalivePacketData;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.hotspot2.SupplicantBridge;
@@ -2770,6 +2771,48 @@ public class WifiNative {
             return null;
         }
     }
+
+    //---------------------------------------------------------------------------------
+    /* Packet fate API */
+
+    @Immutable
+    abstract static class FateReport {
+        final byte mFate;
+        final long mDriverTimestampUSec;
+        final byte mFrameType;
+        final byte[] mFrameBytes;
+
+        FateReport(byte fate, long driverTimestampUSec, byte frameType, byte[] frameBytes) {
+            mFate = fate;
+            mDriverTimestampUSec = driverTimestampUSec;
+            mFrameType = frameType;
+            mFrameBytes = frameBytes;
+        }
+    }
+
+    /**
+     * Represents the fate information for one outbound packet.
+     */
+    @Immutable
+    public static final class TxFateReport extends FateReport {
+        TxFateReport(byte fate, long driverTimestampUSec, byte frameType, byte[] frameBytes) {
+            super(fate, driverTimestampUSec, frameType, frameBytes);
+        }
+    }
+
+    /**
+     * Represents the fate information for one inbound packet.
+     */
+    @Immutable
+    public static final class RxFateReport extends FateReport {
+        RxFateReport(byte fate, long driverTimestampUSec, byte frameType, byte[] frameBytes) {
+            super(fate, driverTimestampUSec, frameType, frameBytes);
+        }
+    }
+
+    private static native int startPktFateMonitoringNative(int iface);
+    private static native int getTxPktFatesNative(int iface, TxFateReport[] reportBufs);
+    private static native int getRxPktFatesNative(int iface, RxFateReport[] reportBufs);
 
     //---------------------------------------------------------------------------------
     /* Configure ePNO/PNO */
