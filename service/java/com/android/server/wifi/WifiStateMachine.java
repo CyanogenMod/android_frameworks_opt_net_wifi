@@ -10511,14 +10511,15 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     sb.append(":" + kc + ":" + sres);
                     logv("kc:" + kc + " sres:" + sres);
 
-                    String response = sb.toString();
-                    logv("Supplicant Response -" + response);
-                    mWifiNative.simAuthResponse(requestData.networkId, "GSM-AUTH", response);
                 } else {
                     loge("bad response - " + tmResponse);
                     mWifiNative.simAuthFailedResponse(requestData.networkId);
                 }
             }
+
+            String response = sb.toString();
+            logv("Supplicant Response -" + response);
+            mWifiNative.simAuthResponse(requestData.networkId, "GSM-AUTH", response);
 
         } else {
             loge("could not get telephony manager");
