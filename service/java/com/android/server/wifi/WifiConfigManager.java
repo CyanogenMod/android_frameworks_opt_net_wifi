@@ -25,6 +25,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.UserInfo;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
@@ -300,6 +301,7 @@ public class WifiConfigManager {
     private final PasspointManagementObjectManager mMOManager;
     private final boolean mEnableOsuQueries;
     private final SIMAccessor mSIMAccessor;
+    private final UserManager mUserManager;
 
     private WifiStateMachine mWifiStateMachine;
     private FrameworkFacade mFacade;
@@ -307,6 +309,7 @@ public class WifiConfigManager {
     private boolean mOnlyLinkSameCredentialConfigurations;
     private IpConfigStore mIpconfigStore;
     private DelayedDiskWrite mWriter;
+    private int mCurrentUserId = UserHandle.USER_SYSTEM;
 
     /* A network id is a unique identifier for a network configured in the
      * supplicant. Network ids are generated when the supplicant reads
@@ -348,7 +351,6 @@ public class WifiConfigManager {
      */
     private HashSet<String> mLostConfigsDbg = new HashSet<String>();
 
-
     private class SupplicantBridgeCallbacks implements SupplicantBridge.SupplicantBridgeCallbacks {
         @Override
         public void notifyANQPResponse(ScanDetail scanDetail,
@@ -382,6 +384,7 @@ public class WifiConfigManager {
         mClock = clock;
         mWifiStateMachine = wifiStateMachine;
         mKeyStore = keyStore;
+        mUserManager = userManager;
 
         if (mShowNetworks) {
             mLocalLog = wifiNative.getLocalLog();
@@ -777,7 +780,7 @@ public class WifiConfigManager {
         if (sVDBG) localLogNetwork("selectNetwork", config.networkId);
         if (config.networkId == INVALID_NETWORK_ID) return false;
         if (!WifiConfigurationUtil.isVisibleToAnyProfile(config,
-                mWifiStateMachine.getCurrentUserProfiles())) {
+                mUserManager.getProfiles(mCurrentUserId))) {
             loge("selectNetwork " + Integer.toString(config.networkId) + ": Network config is not "
                     + "visible to current user.");
             return false;
@@ -849,7 +852,7 @@ public class WifiConfigManager {
         }
 
         if (!WifiConfigurationUtil.isVisibleToAnyProfile(config,
-                mWifiStateMachine.getCurrentUserProfiles())) {
+                mUserManager.getProfiles(mCurrentUserId))) {
             return new NetworkUpdateResult(INVALID_NETWORK_ID);
         }
 
@@ -1000,7 +1003,7 @@ public class WifiConfigManager {
      */
     int addOrUpdateNetwork(WifiConfiguration config, int uid) {
         if (config == null || !WifiConfigurationUtil.isVisibleToAnyProfile(config,
-                mWifiStateMachine.getCurrentUserProfiles())) {
+                mUserManager.getProfiles(mCurrentUserId))) {
             return WifiConfiguration.INVALID_NETWORK_ID;
         }
 
@@ -2271,7 +2274,7 @@ public class WifiConfigManager {
      */
     public void linkConfiguration(WifiConfiguration config) {
         if (!WifiConfigurationUtil.isVisibleToAnyProfile(config,
-                mWifiStateMachine.getCurrentUserProfiles())) {
+                mUserManager.getProfiles(mCurrentUserId))) {
             loge("linkConfiguration: Attempting to link config " + config.configKey()
                     + " that is not visible to the current user.");
             return;
@@ -2795,10 +2798,13 @@ public class WifiConfigManager {
      * - Disables private network configurations belonging to the previous foreground user
      * - Enables private network configurations belonging to the new foreground user
      *
+     * @param userId The identifier of the new foreground user, after the switch.
+     *
      * TODO(b/26785736): Terminate background users if the new foreground user has one or more
      * private network configurations.
      */
-    public void handleUserSwitch() {
+    public void handleUserSwitch(int userId) {
+        mCurrentUserId = userId;
         Set<WifiConfiguration> ephemeralConfigs = new HashSet<>();
         for (WifiConfiguration config : mConfiguredNetworks.valuesForCurrentUser()) {
             if (config.ephemeral) {
@@ -2814,7 +2820,7 @@ public class WifiConfigManager {
         }
 
         final List<WifiConfiguration> hiddenConfigurations =
-                mConfiguredNetworks.handleUserSwitch(mWifiStateMachine.getCurrentUserId());
+                mConfiguredNetworks.handleUserSwitch(mCurrentUserId);
         for (WifiConfiguration network : hiddenConfigurations) {
             disableNetworkNative(network);
         }
@@ -2825,6 +2831,18 @@ public class WifiConfigManager {
         // * The user switch revealed additional networks that were temporarily disabled and got
         //   re-enabled now (because enableAllNetworks() sent the same broadcast already).
         sendConfiguredNetworksChangedBroadcast();
+    }
+
+    public int getCurrentUserId() {
+        return mCurrentUserId;
+    }
+
+    public boolean isCurrentUserProfile(int userId) {
+        if (userId == mCurrentUserId) {
+            return true;
+        }
+        final UserInfo parent = mUserManager.getProfileParent(userId);
+        return parent != null && parent.id == mCurrentUserId;
     }
 
     /* Compare current and new configuration and write to file on change */

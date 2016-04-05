@@ -920,12 +920,12 @@ public class WifiStateMachineTest {
 
     @Test
     public void handleUserSwitch() throws Exception {
-        assertEquals(UserHandle.USER_SYSTEM, mWsm.getCurrentUserId());
+        assertEquals(UserHandle.USER_SYSTEM, mWifiConfigManager.getCurrentUserId());
 
         mWsm.handleUserSwitch(10);
         mLooper.dispatchAll();
 
-        assertEquals(10, mWsm.getCurrentUserId());
+        assertEquals(10, mWifiConfigManager.getCurrentUserId());
     }
 
     @Test

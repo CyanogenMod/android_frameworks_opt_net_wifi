@@ -156,8 +156,7 @@ public class WifiConfigManagerTest {
         when(mContext.getResources()).thenReturn(realContext.getResources());
         when(mContext.getPackageManager()).thenReturn(realContext.getPackageManager());
 
-        when(mWifiStateMachine.getCurrentUserId()).thenReturn(UserHandle.USER_SYSTEM);
-        when(mWifiStateMachine.getCurrentUserProfiles())
+        when(mUserManager.getProfiles(UserHandle.USER_SYSTEM))
                 .thenReturn(USER_PROFILES.get(UserHandle.USER_SYSTEM));
 
         for (int userId : USER_IDS) {
@@ -203,10 +202,9 @@ public class WifiConfigManagerTest {
     }
 
     private void switchUser(int newUserId) {
-        when(mWifiStateMachine.getCurrentUserId()).thenReturn(newUserId);
-        when(mWifiStateMachine.getCurrentUserProfiles())
+        when(mUserManager.getProfiles(newUserId))
                 .thenReturn(USER_PROFILES.get(newUserId));
-        mWifiConfigManager.handleUserSwitch();
+        mWifiConfigManager.handleUserSwitch(newUserId);
     }
 
     private void switchUserToCreatorOrParentOf(WifiConfiguration config) {
@@ -219,7 +217,7 @@ public class WifiConfigManagerTest {
     }
 
     private void addNetworks() throws Exception {
-        final int originalUserId = mWifiStateMachine.getCurrentUserId();
+        final int originalUserId = mWifiConfigManager.getCurrentUserId();
 
         when(mWifiNative.setNetworkVariable(anyInt(), anyString(), anyString())).thenReturn(true);
         when(mWifiNative.setNetworkExtra(anyInt(), anyString(), (Map<String, String>) anyObject()))
