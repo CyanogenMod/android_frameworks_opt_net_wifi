@@ -25,6 +25,7 @@ import static android.net.wifi.WifiManager.WIFI_STATE_DISABLED;
 import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
 import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
 import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
+
 /**
  * TODO:
  * Deprecate WIFI_STATE_UNKNOWN
@@ -99,6 +100,7 @@ import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.WorkSource;
 import android.provider.Settings;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -7725,11 +7727,21 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                         TelephonyManager tm = (TelephonyManager)
                                 mContext.getSystemService(Context.TELEPHONY_SERVICE);
                         if (tm != null) {
-                            String imsi = tm.getSubscriberId();
+                            int subId = SubscriptionManager.getDefaultSubId();
+
+                            if (targetWificonfiguration != null && targetWificonfiguration.SIMNum > 0 &&
+                                    tm.getDefault().getPhoneCount() >= 2) {
+                                int[] subIds = SubscriptionManager.getSubId(targetWificonfiguration.SIMNum - 1);
+                                if (subIds != null) {
+                                    subId = subIds[0];
+                                }
+                            }
+
+                            String imsi = tm.getSubscriberId(subId);
                             String mccMnc = "";
 
-                            if (tm.getSimState() == TelephonyManager.SIM_STATE_READY)
-                                 mccMnc = tm.getSimOperator();
+                            if (tm.getSimState(subId) == TelephonyManager.SIM_STATE_READY)
+                                 mccMnc = tm.getSimOperator(subId);
 
                             String identity = buildIdentity(eapMethod, imsi, mccMnc);
 
@@ -10489,13 +10501,13 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                  * com.android.internal.telephony.PhoneConstants#APPTYPE_xxx
                  */
                 int appType = 2;
-                String tmResponse = tm.getIccSimChallengeResponse(appType, base64Challenge);
+                String tmResponse = getIccSimChallengeResponse(appType, base64Challenge, tm);
                 if (tmResponse == null) {
                     /* Then, in case of failure, issue may be due to sim type, retry as a simple sim
                      * appType = 1 => SIM
                      */
                     appType = 1;
-                    tmResponse = tm.getIccSimChallengeResponse(appType, base64Challenge);
+                    tmResponse = getIccSimChallengeResponse(appType, base64Challenge, tm);
                 }
                 logv("Raw Response - " + tmResponse);
 
@@ -10560,7 +10572,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                     mContext.getSystemService(Context.TELEPHONY_SERVICE);
             if (tm != null) {
                 int appType = 2; // 2 => USIM
-                tmResponse = tm.getIccSimChallengeResponse(appType, base64Challenge);
+                tmResponse = getIccSimChallengeResponse(appType, base64Challenge, tm);
                 logv("Raw Response - " + tmResponse);
             } else {
                 loge("could not get telephony manager");
@@ -10606,6 +10618,30 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
         } else {
             mWifiNative.umtsAuthFailedResponse(requestData.networkId);
         }
+    }
+
+    private String getIccSimChallengeResponse(
+            int appType, String base64Challenge, TelephonyManager tm) {
+        String tmResponse = null;
+        int subId = SubscriptionManager.getDefaultSubId();
+
+        if (targetWificonfiguration != null && targetWificonfiguration.SIMNum > 0 &&
+                     tm.getDefault().getPhoneCount() >= 2) {
+            int[] subIds = SubscriptionManager.getSubId(targetWificonfiguration.SIMNum - 1);
+            if (subIds != null) {
+                subId = subIds[0];
+            }
+        }
+
+
+        if (subId >= 0) {
+            log("Requesting SIM challenge response from sub " + subId);
+            tmResponse = tm.getIccSimChallengeResponse(subId, appType, base64Challenge);
+        } else {
+            log("Requesting SIM challenge response");
+            tmResponse = tm.getIccSimChallengeResponse(appType, base64Challenge);
+        }
+        return tmResponse;
     }
 
     /**
