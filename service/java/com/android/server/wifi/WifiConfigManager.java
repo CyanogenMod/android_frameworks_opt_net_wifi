@@ -2575,30 +2575,6 @@ public class WifiConfigManager {
 
     }
 
-    public void wnmFrameReceived(WnmData event) {
-        // %012x HS20-SUBSCRIPTION-REMEDIATION "%u %s", osu_method, url
-        // %012x HS20-DEAUTH-IMMINENT-NOTICE "%u %u %s", code, reauth_delay, url
-
-        Intent intent = new Intent(WifiManager.PASSPOINT_WNM_FRAME_RECEIVED_ACTION);
-        intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
-
-        intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_BSSID, event.getBssid());
-        intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_URL, event.getUrl());
-
-        if (event.isDeauthEvent()) {
-            intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_ESS, event.isEss());
-            intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_DELAY, event.getDelay());
-        } else {
-            intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_METHOD, event.getMethod());
-            WifiConfiguration config = mWifiStateMachine.getCurrentWifiConfiguration();
-            if (config != null && config.FQDN != null) {
-                intent.putExtra(WifiManager.EXTRA_PASSPOINT_WNM_PPOINT_MATCH,
-                        matchProviderWithCurrentNetwork(config.FQDN));
-            }
-        }
-        mContext.sendBroadcastAsUser(intent, UserHandle.ALL);
-    }
-
     private void updateAnqpCache(ScanDetail scanDetail,
                                  Map<Constants.ANQPElementType, ANQPElement> anqpElements) {
         NetworkDetail networkDetail = scanDetail.getNetworkDetail();
