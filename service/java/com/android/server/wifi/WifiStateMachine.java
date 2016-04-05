@@ -217,7 +217,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
     private int mLastSignalLevel = -1;
     private String mLastBssid;
     private int mLastNetworkId; // The network Id we successfully joined
-    private ScanDetail mActiveScanDetail;   // ScanDetail associated with active network
     private boolean linkDebouncing = false;
 
     @Override
@@ -3351,7 +3350,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                     }
                 }
             }
-            mActiveScanDetail = activeScanDetail;
+            mWifiConfigManager.setActiveScanDetail(activeScanDetail);
         }
 
         if (linkDebouncing) {
@@ -3361,12 +3360,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
             // just try to reconnect to the same SSID by triggering a roam
             // The third parameter 1 means roam not from network selection but debouncing
             sendMessage(CMD_AUTO_ROAM, mLastNetworkId, 1, null);
-        }
-    }
-
-    public ScanDetail getActiveScanDetail() {
-        synchronized (mScanResultsLock) {
-            return mActiveScanDetail;
         }
     }
 

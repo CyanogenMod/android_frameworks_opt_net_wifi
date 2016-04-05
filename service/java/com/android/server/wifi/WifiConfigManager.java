@@ -351,6 +351,9 @@ public class WifiConfigManager {
      */
     private HashSet<String> mLostConfigsDbg = new HashSet<String>();
 
+    private ScanDetail mActiveScanDetail;   // ScanDetail associated with active network
+    private final Object mActiveScanDetailLock = new Object();
+
     private class SupplicantBridgeCallbacks implements SupplicantBridge.SupplicantBridgeCallbacks {
         @Override
         public void notifyANQPResponse(ScanDetail scanDetail,
@@ -1052,7 +1055,10 @@ public class WifiConfigManager {
     }
 
     public int matchProviderWithCurrentNetwork(String fqdn) {
-        ScanDetail scanDetail = mWifiStateMachine.getActiveScanDetail();
+        ScanDetail scanDetail = null;
+        synchronized (mActiveScanDetailLock) {
+            scanDetail = mActiveScanDetail;
+        }
         if (scanDetail == null) {
             return PasspointMatch.None.ordinal();
         }
@@ -3308,5 +3314,11 @@ public class WifiConfigManager {
 
     public void enableAutoJoinWhenAssociated(boolean enabled) {
         mEnableAutoJoinWhenAssociated.set(enabled);
+    }
+
+    public void setActiveScanDetail(ScanDetail activeScanDetail) {
+        synchronized (mActiveScanDetailLock) {
+            mActiveScanDetail = activeScanDetail;
+        }
     }
 }
