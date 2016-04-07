@@ -303,7 +303,6 @@ public class WifiConfigManager {
     private final SIMAccessor mSIMAccessor;
     private final UserManager mUserManager;
 
-    private WifiStateMachine mWifiStateMachine;
     private FrameworkFacade mFacade;
     private Clock mClock;
     private boolean mOnlyLinkSameCredentialConfigurations;
@@ -380,12 +379,11 @@ public class WifiConfigManager {
 
     }
 
-    WifiConfigManager(Context context,  WifiStateMachine wifiStateMachine, WifiNative wifiNative,
-            FrameworkFacade facade, Clock clock, UserManager userManager, KeyStore keyStore) {
+    WifiConfigManager(Context context, WifiNative wifiNative, FrameworkFacade facade, Clock clock,
+            UserManager userManager, KeyStore keyStore) {
         mContext = context;
         mFacade = facade;
         mClock = clock;
-        mWifiStateMachine = wifiStateMachine;
         mKeyStore = keyStore;
         mUserManager = userManager;
 
