@@ -20,6 +20,7 @@ import android.test.suitebuilder.annotation.SmallTest;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyObject;
@@ -400,5 +401,78 @@ public class WifiLoggerTest {
                 mFakeRbs, new byte[WifiLogger.RING_BUFFER_BYTE_LIMIT_SMALL + 1]);
         mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_NONE);
         assertEquals(0, getLoggerRingBufferData().length);
+    }
+
+    /** Verifies that we skip the firmware and driver dumps if verbose is not enabled. */
+    @Test
+    public void captureBugReportSkipsFirmwareAndDriverDumpsByDefault() {
+        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_NONE);
+        verify(mWifiNative, never()).getFwMemoryDump();
+        verify(mWifiNative, never()).getDriverStateDump();
+    }
+
+    /** Verifies that we capture the firmware and driver dumps if verbose is enabled. */
+    @Test
+    public void captureBugReportTakesFirmwareAndDriverDumpsInVerboseMode() {
+        mWifiLogger.startLogging(true  /* verbose enabled */);
+        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_NONE);
+        verify(mWifiNative).getFwMemoryDump();
+        verify(mWifiNative).getDriverStateDump();
+    }
+
+    /** Verifies that the dump includes driver state, if driver state was provided by HAL. */
+    @Test
+    public void dumpIncludesDriverStateDumpIfAvailable() {
+        when(mWifiNative.getDriverStateDump()).thenReturn(new byte[]{0, 1, 2});
+
+        mWifiLogger.startLogging(true  /* verbose enabled */);
+        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_NONE);
+        verify(mWifiNative).getDriverStateDump();
+
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        mWifiLogger.dump(new FileDescriptor(), pw, new String[]{});
+        assertTrue(sw.toString().contains(WifiLogger.DRIVER_DUMP_SECTION_HEADER));
+    }
+
+    /** Verifies that the dump skips driver state, if driver state was not provided by HAL. */
+    @Test
+    public void dumpOmitsDriverStateDumpIfUnavailable() {
+        mWifiLogger.startLogging(true  /* verbose enabled */);
+        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_NONE);
+        verify(mWifiNative).getDriverStateDump();
+
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        mWifiLogger.dump(new FileDescriptor(), pw, new String[]{});
+        assertFalse(sw.toString().contains(WifiLogger.DRIVER_DUMP_SECTION_HEADER));
+    }
+
+    /** Verifies that the dump includes firmware memory, if firmware memory was provided by HAL. */
+    @Test
+    public void dumpIncludesFirmwareMemoryDumpIfAvailable() {
+        when(mWifiNative.getFwMemoryDump()).thenReturn(new byte[]{0, 1, 2});
+
+        mWifiLogger.startLogging(true  /* verbose enabled */);
+        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_NONE);
+        verify(mWifiNative).getFwMemoryDump();
+
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        mWifiLogger.dump(new FileDescriptor(), pw, new String[]{});
+        assertTrue(sw.toString().contains(WifiLogger.FIRMWARE_DUMP_SECTION_HEADER));
+    }
+
+    /** Verifies that the dump skips firmware memory, if firmware memory was not provided by HAL. */
+    @Test
+    public void dumpOmitsFirmwareMemoryDumpIfUnavailable() {
+        mWifiLogger.startLogging(true  /* verbose enabled */);
+        mWifiLogger.captureBugReportData(WifiLogger.REPORT_REASON_NONE);
+        verify(mWifiNative).getFwMemoryDump();
+
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        mWifiLogger.dump(new FileDescriptor(), pw, new String[]{});
+        assertFalse(sw.toString().contains(WifiLogger.FIRMWARE_DUMP_SECTION_HEADER));
     }
 }

@@ -21,6 +21,7 @@ import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.server.wifi.util.ByteArrayRingBuffer;
+import com.android.server.wifi.util.StringUtil;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -28,6 +29,7 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -88,6 +90,10 @@ class WifiLogger extends BaseWifiLogger {
 
     @VisibleForTesting public static final int RING_BUFFER_BYTE_LIMIT_SMALL = 32 * 1024;
     @VisibleForTesting public static final int RING_BUFFER_BYTE_LIMIT_LARGE = 1024 * 1024;
+    @VisibleForTesting public static final String FIRMWARE_DUMP_SECTION_HEADER =
+            "FW Memory dump";
+    @VisibleForTesting public static final String DRIVER_DUMP_SECTION_HEADER =
+            "Driver state dump";
 
     private int mLogLevel = VERBOSE_NO_LOG;
     private WifiNative.RingBufferStatus[] mRingBuffers;
@@ -221,6 +227,7 @@ class WifiLogger extends BaseWifiLogger {
         int errorCode;
         HashMap<String, byte[][]> ringBuffers = new HashMap();
         byte[] fwMemoryDump;
+        byte[] mDriverStateDump;
         byte[] alertData;
         LimitedCircularArray<String> kernelLogLines;
         LimitedCircularArray<String> logcatLines;
@@ -283,8 +290,22 @@ class WifiLogger extends BaseWifiLogger {
             }
 
             if (fwMemoryDump != null) {
-                builder.append("FW Memory dump \n");
+                builder.append(FIRMWARE_DUMP_SECTION_HEADER);
+                builder.append("\n");
                 builder.append(compressToBase64(fwMemoryDump));
+                builder.append("\n");
+            }
+
+            if (mDriverStateDump != null) {
+                builder.append(DRIVER_DUMP_SECTION_HEADER);
+                if (StringUtil.isAsciiPrintable(mDriverStateDump)) {
+                    builder.append(" (ascii)\n");
+                    builder.append(new String(mDriverStateDump, Charset.forName("US-ASCII")));
+                    builder.append("\n");
+                } else {
+                    builder.append(" (base64)\n");
+                    builder.append(compressToBase64(mDriverStateDump));
+                }
             }
 
             return builder.toString();
@@ -472,6 +493,7 @@ class WifiLogger extends BaseWifiLogger {
 
         if (captureFWDump) {
             report.fwMemoryDump = mWifiNative.getFwMemoryDump();
+            report.mDriverStateDump = mWifiNative.getDriverStateDump();
         }
         return report;
     }
