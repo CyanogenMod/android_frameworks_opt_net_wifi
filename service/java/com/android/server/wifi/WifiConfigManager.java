@@ -3288,7 +3288,7 @@ public class WifiConfigManager {
         return mEnableAutoJoinWhenAssociated.get();
     }
 
-    public void enableAutoJoinWhenAssociated(boolean enabled) {
+    public void setEnableAutoJoinWhenAssociated(boolean enabled) {
         mEnableAutoJoinWhenAssociated.set(enabled);
     }
 }
