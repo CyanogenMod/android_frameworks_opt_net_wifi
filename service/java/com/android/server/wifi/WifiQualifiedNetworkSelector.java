@@ -309,30 +309,6 @@ public class WifiQualifiedNetworkSelector {
                 return false;
             }
 
-            if (mCurrentConnectedNetwork != null
-                    && mCurrentConnectedNetwork.networkId != currentNetwork.networkId) {
-                //If this happens, supplicant switch the connection silently. This is a bug
-                // FIXME: 11/10/15
-                localLoge("supplicant switched the network silently" + " last Qualified Network"
-                        + " Selection:" + getNetworkString(mCurrentConnectedNetwork)
-                        + " current network:" + getNetworkString(currentNetwork));
-                mCurrentConnectedNetwork = currentNetwork;
-                mCurrentBssid = mWifiInfo.getBSSID();
-                //We do not believe lower layer choice
-                return true;
-            }
-
-            String bssid = mWifiInfo.getBSSID();
-            if (mCurrentBssid != null && !mCurrentBssid.equals(bssid)) {
-                //If this happens, supplicant roamed silently. This is a bug
-                // FIXME: 11/10/15
-                localLoge("supplicant roamed silently. Last selected BSSID:" + mCurrentBssid
-                        + " current BSSID:" + bssid);
-                mCurrentBssid = mWifiInfo.getBSSID();
-                //We do not believe lower layer choice
-                return true;
-            }
-
             if (!isNetworkQualified(mCurrentConnectedNetwork)) {
                 //need not trigger Qualified Network Selection if current network is qualified
                 localLog("Current network is not qualified");
