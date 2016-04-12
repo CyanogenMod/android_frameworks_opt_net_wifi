@@ -81,25 +81,11 @@ public class WifiConfigStore {
     public static final String ID_STRING_KEY_FQDN = "fqdn";
     public static final String ID_STRING_KEY_CREATOR_UID = "creatorUid";
     public static final String ID_STRING_KEY_CONFIG_KEY = "configKey";
+    public static final String SUPPLICANT_CONFIG_FILE = "/data/misc/wifi/wpa_supplicant.conf";
+    public static final String SUPPLICANT_CONFIG_FILE_BACKUP = SUPPLICANT_CONFIG_FILE + ".tmp";
 
     // Value stored by supplicant to requirePMF
     public static final int STORED_VALUE_FOR_REQUIRE_PMF = 2;
-
-    /**
-     * In old configurations, the "private_key" field was used. However, newer
-     * configurations use the key_id field with the engine_id set to "keystore".
-     * If this field is found in the configuration, the migration code is
-     * triggered.
-     */
-    public static final String OLD_PRIVATE_KEY_NAME = "private_key";
-    /**
-     * This represents an empty value of an enterprise field.
-     * NULL is used at wpa_supplicant to indicate an empty value
-     */
-    public static final String EMPTY_VALUE = "NULL";
-
-    public static final String SUPPLICANT_CONFIG_FILE = "/data/misc/wifi/wpa_supplicant.conf";
-    public static final String SUPPLICANT_CONFIG_FILE_BACKUP = SUPPLICANT_CONFIG_FILE + ".tmp";
 
     private static final boolean DBG = true;
     private static boolean VDBG = false;
@@ -225,62 +211,6 @@ public class WifiConfigStore {
                 }
             }
         }
-    }
-
-    /**
-     * Migrates the old style TLS config to the new config style. This should only be used
-     * when restoring an old wpa_supplicant.conf or upgrading from a previous
-     * platform version.
-     *
-     * @return true if the config was updated
-     * @hide
-     */
-    private boolean migrateOldEapTlsNative(WifiEnterpriseConfig config, int netId) {
-        String oldPrivateKey = mWifiNative.getNetworkVariable(netId, OLD_PRIVATE_KEY_NAME);
-        /*
-         * If the old configuration value is not present, then there is nothing
-         * to do.
-         */
-        if (TextUtils.isEmpty(oldPrivateKey)) {
-            return false;
-        } else {
-            // Also ignore it if it's empty quotes.
-            oldPrivateKey = removeDoubleQuotes(oldPrivateKey);
-            if (TextUtils.isEmpty(oldPrivateKey)) {
-                return false;
-            }
-        }
-
-        config.setFieldValue(WifiEnterpriseConfig.ENGINE_KEY, WifiEnterpriseConfig.ENGINE_ENABLE);
-        config.setFieldValue(WifiEnterpriseConfig.ENGINE_ID_KEY,
-                WifiEnterpriseConfig.ENGINE_ID_KEYSTORE);
-
-        /*
-        * The old key started with the keystore:// URI prefix, but we don't
-        * need that anymore. Trim it off if it exists.
-        */
-        final String keyName;
-        if (oldPrivateKey.startsWith(WifiEnterpriseConfig.KEYSTORE_URI)) {
-            keyName = new String(
-                    oldPrivateKey.substring(WifiEnterpriseConfig.KEYSTORE_URI.length()));
-        } else {
-            keyName = oldPrivateKey;
-        }
-        config.setFieldValue(WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY, keyName);
-
-        mWifiNative.setNetworkVariable(netId, WifiEnterpriseConfig.ENGINE_KEY,
-                config.getFieldValue(WifiEnterpriseConfig.ENGINE_KEY, ""));
-
-        mWifiNative.setNetworkVariable(netId, WifiEnterpriseConfig.ENGINE_ID_KEY,
-                config.getFieldValue(WifiEnterpriseConfig.ENGINE_ID_KEY, ""));
-
-        mWifiNative.setNetworkVariable(netId, WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY,
-                config.getFieldValue(WifiEnterpriseConfig.PRIVATE_KEY_ID_KEY, ""));
-
-        // Remove old private_key string so we don't run this again.
-        mWifiNative.setNetworkVariable(netId, OLD_PRIVATE_KEY_NAME, EMPTY_VALUE);
-
-        return true;
     }
 
     /**
@@ -425,10 +355,6 @@ public class WifiConfigStore {
             config.enterpriseConfig = new WifiEnterpriseConfig();
         }
         config.enterpriseConfig.loadFromSupplicant(new SupplicantLoader(netId));
-
-        if (migrateOldEapTlsNative(config.enterpriseConfig, netId)) {
-            saveConfig();
-        }
 
         migrateCerts(config.enterpriseConfig);
     }
