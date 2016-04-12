@@ -298,12 +298,6 @@ public class WifiConfigManager {
     /* Stores a map of NetworkId to ScanCache */
     private ConcurrentHashMap<Integer, ScanDetailCache> mScanDetailCaches;
 
-    /**
-     * Framework keeps a list of (the CRC32 hashes of) all SSIDs that where deleted by user,
-     * so as, framework knows not to re-add those SSIDs automatically to the Saved networks
-     */
-    private Set<Long> mDeletedSSIDs = new HashSet<Long>();
-
     /* Tracks the highest priority of configured networks */
     private int mLastPriority = -1;
 
@@ -1265,24 +1259,6 @@ public class WifiConfigManager {
         if (sVDBG) {
             logd("removeNetwork " + " key=" + key + " config.id=" + config.networkId);
         }
-        if (config.selfAdded || config.linkedConfigurations != null
-                || config.allowedKeyManagement.get(KeyMgmt.WPA_PSK)) {
-            if (!TextUtils.isEmpty(config.SSID)) {
-                    /* Remember that we deleted this PSK SSID */
-                if (config.SSID != null) {
-                    Long csum = getChecksum(config.SSID);
-                    mDeletedSSIDs.add(csum);
-                    logd("removeNetwork "
-                            + " key=" + key
-                            + " config.id=" + config.networkId
-                            + "  crc=" + csum);
-                } else {
-                    logd("removeNetwork "
-                            + " key=" + key
-                            + " config.id=" + config.networkId);
-                }
-            }
-        }
         writeIpAndProxyConfigurations();
         sendConfiguredNetworksChangedBroadcast(config, WifiManager.CHANGE_REASON_REMOVED);
         if (!config.ephemeral) {
@@ -1919,7 +1895,6 @@ public class WifiConfigManager {
     private void readNetworkHistory(Map<String, WifiConfiguration> configs) {
         mWifiNetworkHistory.readNetworkHistory(configs,
                 mScanDetailCaches,
-                mDeletedSSIDs,
                 mDeletedEphemeralSSIDs);
     }
 
@@ -1933,7 +1908,6 @@ public class WifiConfigManager {
         }
         mWifiNetworkHistory.writeKnownNetworkHistory(networks,
                 mScanDetailCaches,
-                mDeletedSSIDs,
                 mDeletedEphemeralSSIDs);
     }
 
