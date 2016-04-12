@@ -180,13 +180,13 @@ class WifiLogger extends BaseWifiLogger {
 
     @Override
     public synchronized void captureBugReportData(int reason) {
-        BugReport report = captureBugreport(reason, true);
+        BugReport report = captureBugreport(reason, isVerboseLoggingEnabled());
         mLastBugReports.addLast(report);
     }
 
     @Override
     public synchronized void captureAlertData(int errorCode, byte[] alertData) {
-        BugReport report = captureBugreport(errorCode, /* captureFWDump = */ true);
+        BugReport report = captureBugreport(errorCode, isVerboseLoggingEnabled());
         report.alertData = alertData;
         mLastAlerts.addLast(report);
     }
@@ -345,6 +345,10 @@ class WifiLogger extends BaseWifiLogger {
             mWifiStateMachine.sendMessage(
                     WifiStateMachine.CMD_FIRMWARE_ALERT, errorCode, 0, buffer);
         }
+    }
+
+    private boolean isVerboseLoggingEnabled() {
+        return mLogLevel > VERBOSE_NORMAL_LOG;
     }
 
     private boolean fetchRingBuffers() {
