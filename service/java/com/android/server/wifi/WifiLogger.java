@@ -123,6 +123,7 @@ class WifiLogger extends BaseWifiLogger {
         } else {
             mLogLevel = VERBOSE_NORMAL_LOG;
             mMaxRingBufferSizeBytes = RING_BUFFER_BYTE_LIMIT_SMALL;
+            clearVerboseLogs();
         }
 
         if (mRingBuffers == null) {
@@ -177,7 +178,7 @@ class WifiLogger extends BaseWifiLogger {
 
     @Override
     synchronized void reportConnectionFailure() {
-        if (mLogLevel <= VERBOSE_NORMAL_LOG) {
+        if (!isVerboseLoggingEnabled()) {
             return;
         }
 
@@ -231,6 +232,11 @@ class WifiLogger extends BaseWifiLogger {
         byte[] alertData;
         LimitedCircularArray<String> kernelLogLines;
         LimitedCircularArray<String> logcatLines;
+
+        void clearVerboseLogs() {
+            fwMemoryDump = null;
+            mDriverStateDump = null;
+        }
 
         public String toString() {
             StringBuilder builder = new StringBuilder();
@@ -370,6 +376,18 @@ class WifiLogger extends BaseWifiLogger {
 
     private boolean isVerboseLoggingEnabled() {
         return mLogLevel > VERBOSE_NORMAL_LOG;
+    }
+
+    private void clearVerboseLogs() {
+        mPacketFatesForLastFailure = null;
+
+        for (int i = 0; i < mLastAlerts.size(); i++) {
+            mLastAlerts.get(i).clearVerboseLogs();
+        }
+
+        for (int i = 0; i < mLastBugReports.size(); i++) {
+            mLastBugReports.get(i).clearVerboseLogs();
+        }
     }
 
     private boolean fetchRingBuffers() {
