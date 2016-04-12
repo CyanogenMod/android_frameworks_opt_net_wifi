@@ -214,34 +214,6 @@ public class WifiConfigStore {
     }
 
     /**
-     * Migrate certs from global pool to wifi UID if not already done
-     */
-    private void migrateCerts(WifiEnterpriseConfig config) {
-        String client = config.getClientCertificateAlias();
-        // a valid client certificate is configured
-        if (!TextUtils.isEmpty(client)) {
-            if (!mKeyStore.contains(Credentials.USER_PRIVATE_KEY + client, Process.WIFI_UID)) {
-                mKeyStore.duplicate(Credentials.USER_PRIVATE_KEY + client, -1,
-                        Credentials.USER_PRIVATE_KEY + client, Process.WIFI_UID);
-                mKeyStore.duplicate(Credentials.USER_CERTIFICATE + client, -1,
-                        Credentials.USER_CERTIFICATE + client, Process.WIFI_UID);
-            }
-        }
-
-        String[] aliases = config.getCaCertificateAliases();
-        // a valid ca certificate is configured
-        if (aliases != null) {
-            for (String ca : aliases) {
-                if (!TextUtils.isEmpty(ca)
-                        && !mKeyStore.contains(Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID)) {
-                    mKeyStore.duplicate(Credentials.CA_CERTIFICATE + ca, -1,
-                            Credentials.CA_CERTIFICATE + ca, Process.WIFI_UID);
-                }
-            }
-        }
-    }
-
-    /**
      * Read the variables from the supplicant daemon that are needed to
      * fill in the WifiConfiguration object.
      *
@@ -355,8 +327,6 @@ public class WifiConfigStore {
             config.enterpriseConfig = new WifiEnterpriseConfig();
         }
         config.enterpriseConfig.loadFromSupplicant(new SupplicantLoader(netId));
-
-        migrateCerts(config.enterpriseConfig);
     }
 
     /**
