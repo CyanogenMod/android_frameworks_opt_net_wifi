@@ -39,6 +39,16 @@ import java.util.List;
 public class WifiLastResortWatchdogTest {
     WifiLastResortWatchdog mLastResortWatchdog;
 
+    private String[] mSsids = {"\"test1\"", "\"test2\"", "\"test3\"", "\"test4\""};
+    private String[] mBssids = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4", "de:ad:ba:b1:e5:55",
+            "c0:ff:ee:ee:e3:ee"};
+    private int[] mFrequencies = {2437, 5180, 5180, 2437};
+    private String[] mCaps = {"[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]",
+            "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]"};
+    private int[] mLevels = {-60, -86, -50, -62};
+    private boolean[] mIsEphemeral = {false, false, false, false};
+    private boolean[] mHasEverConnected = {false, false, false, false};
+
     @Before
     public void setUp() throws Exception {
         mLastResortWatchdog = new WifiLastResortWatchdog();
@@ -50,8 +60,10 @@ public class WifiLastResortWatchdogTest {
         List<Pair<ScanDetail, WifiConfiguration>> candidates = new ArrayList<>();
         long timeStamp = System.currentTimeMillis();
         for (int index = 0; index < ssids.length; index++) {
-            ScanDetail scanDetail = new ScanDetail(WifiSsid.createFromAsciiEncoded(ssids[index]),
-                    bssids[index], caps[index], levels[index], frequencies[index], timeStamp, 0);
+            String ssid = ssids[index].replaceAll("^\"+", "").replaceAll("\"+$", "");
+            ScanDetail scanDetail = new ScanDetail(WifiSsid.createFromAsciiEncoded(ssid),
+                    bssids[index], caps[index], levels[index], frequencies[index], timeStamp,
+                    0);
             WifiConfiguration config = null;
             if (!isEphemeral[index]) {
                 config = mock(WifiConfiguration.class);
@@ -65,6 +77,41 @@ public class WifiLastResortWatchdogTest {
         return candidates;
     }
 
+    private List<Pair<ScanDetail, WifiConfiguration>> createFilteredQnsCandidates(String[] ssids,
+            String[] bssids, int[] frequencies, String[] caps, int[] levels,
+            boolean[] isEphemeral, boolean[] hasEverConnected) {
+        List<Pair<ScanDetail, WifiConfiguration>> candidates =
+                new ArrayList<Pair<ScanDetail, WifiConfiguration>>();
+        long timeStamp = System.currentTimeMillis();
+        for (int index = 0; index < ssids.length; index++) {
+            String ssid = ssids[index].replaceAll("^\"+", "").replaceAll("\"+$", "");
+            ScanDetail scanDetail = new ScanDetail(WifiSsid.createFromAsciiEncoded(ssid),
+                    bssids[index], caps[index], levels[index], frequencies[index], timeStamp,
+                    0);
+            WifiConfiguration config = null;
+            if (!isEphemeral[index]) {
+                config = mock(WifiConfiguration.class);
+                WifiConfiguration.NetworkSelectionStatus networkSelectionStatus =
+                        mock(WifiConfiguration.NetworkSelectionStatus.class);
+                when(config.getNetworkSelectionStatus()).thenReturn(networkSelectionStatus);
+                when(networkSelectionStatus.getHasEverConnected())
+                        .thenReturn(hasEverConnected[index]);
+            }
+            candidates.add(Pair.create(scanDetail, config));
+        }
+        return candidates;
+    }
+
+    private void assertFailureCountEquals(
+            String bssid, int associationRejections, int authenticationFailures, int dhcpFailures) {
+        assertEquals(associationRejections, mLastResortWatchdog.getFailureCount(bssid,
+                WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION));
+        assertEquals(authenticationFailures, mLastResortWatchdog.getFailureCount(bssid,
+                WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION));
+        assertEquals(dhcpFailures, mLastResortWatchdog.getFailureCount(bssid,
+                WifiLastResortWatchdog.FAILURE_CODE_DHCP));
+    }
+
     /**
      * Case #1: Test aging works in available network buffering
      * This test simulates 4 networks appearing in a scan result, and then only the first 2
@@ -74,34 +121,27 @@ public class WifiLastResortWatchdogTest {
      */
     @Test
     public void testAvailableNetworkBuffering_ageCullingWorks() throws Exception {
-        String[] ssids = {"\"test1\"", "\"test2\"", "\"test3\"", "\"test4\""};
-        String[] bssids = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4", "de:ad:ba:b1:e5:55",
-                "c0:ff:ee:ee:e3:ee"};
-        int[] frequencies = {2437, 5180, 5180, 2437};
-        String[] caps = {"[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]",
-                "[WPA2-EAP-CCMP][ESS]"};
-        int[] levels = {-60, -86, -50, -62};
-        boolean[] isEphemeral = {false, false, false, false};
-
         // Buffer potential candidates 1,2,3 & 4
-        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(ssids,
-                bssids, frequencies, caps, levels, isEphemeral);
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral);
         mLastResortWatchdog.updateAvailableNetworks(candidates);
         assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().size(), 4);
 
         // Repeatedly buffer candidates 1 & 2, MAX_BSSID_AGE - 1 times
-        candidates = createFilteredQnsCandidates(Arrays.copyOfRange(ssids, 0, 2),
-                Arrays.copyOfRange(bssids, 0, 2),
-                Arrays.copyOfRange(frequencies, 0, 2),
-                Arrays.copyOfRange(caps, 0, 2),
-                Arrays.copyOfRange(levels, 0, 2),
-                Arrays.copyOfRange(isEphemeral, 0, 2));
+        candidates = createFilteredQnsCandidates(Arrays.copyOfRange(mSsids, 0, 2),
+                Arrays.copyOfRange(mBssids, 0, 2),
+                Arrays.copyOfRange(mFrequencies, 0, 2),
+                Arrays.copyOfRange(mCaps, 0, 2),
+                Arrays.copyOfRange(mLevels, 0, 2),
+                Arrays.copyOfRange(mIsEphemeral, 0, 2));
         for (int i = 0; i < WifiLastResortWatchdog.MAX_BSSID_AGE - 1; i++) {
             mLastResortWatchdog.updateAvailableNetworks(candidates);
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[0]).age, 0);
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[1]).age, 0);
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[2]).age, i+1);
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[3]).age, i+1);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[0]).age, 0);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[1]).age, 0);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[2]).age,
+                    i + 1);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[3]).age,
+                    i + 1);
         }
         assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().size(), 4);
 
@@ -121,28 +161,19 @@ public class WifiLastResortWatchdogTest {
      */
     @Test
     public void testAvailableNetworkBuffering_emptyBufferWithEmptyScanResults() throws Exception {
-        String[] ssids = {"\"test1\"", "\"test2\"", "\"test3\"", "\"test4\""};
-        String[] bssids = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4", "de:ad:ba:b1:e5:55",
-                "c0:ff:ee:ee:e3:ee"};
-        int[] frequencies = {2437, 5180, 5180, 2437};
-        String[] caps = {"[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]",
-                "[WPA2-EAP-CCMP][ESS]"};
-        int[] levels = {-60, -86, -50, -62};
-        boolean[] isEphemeral = {false, false, false, false};
-
         // Buffer potential candidates 1,2,3 & 4
-        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(ssids,
-                bssids, frequencies, caps, levels, isEphemeral);
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral);
         mLastResortWatchdog.updateAvailableNetworks(candidates);
         assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().size(), 4);
 
         // Repeatedly buffer with no candidates
-        candidates = createFilteredQnsCandidates(Arrays.copyOfRange(ssids, 0, 0),
-                Arrays.copyOfRange(bssids, 0, 0),
-                Arrays.copyOfRange(frequencies, 0, 0),
-                Arrays.copyOfRange(caps, 0, 0),
-                Arrays.copyOfRange(levels, 0, 0),
-                Arrays.copyOfRange(isEphemeral, 0, 0));
+        candidates = createFilteredQnsCandidates(Arrays.copyOfRange(mSsids, 0, 0),
+                Arrays.copyOfRange(mBssids, 0, 0),
+                Arrays.copyOfRange(mFrequencies, 0, 0),
+                Arrays.copyOfRange(mCaps, 0, 0),
+                Arrays.copyOfRange(mLevels, 0, 0),
+                Arrays.copyOfRange(mIsEphemeral, 0, 0));
         for (int i = 0; i < WifiLastResortWatchdog.MAX_BSSID_AGE; i++) {
             mLastResortWatchdog.updateAvailableNetworks(candidates);
         }
@@ -154,34 +185,26 @@ public class WifiLastResortWatchdogTest {
     };
 
     /**
-     *  Case 3: Adding more networks over time
-     *  In this test, each successive (4 total) scan result buffers one more network.
-     *  Expected behavior: recentAvailableNetworks grows with number of scan results
+     * Case 3: Adding more networks over time
+     * In this test, each successive (4 total) scan result buffers one more network.
+     * Expected behavior: recentAvailableNetworks grows with number of scan results
      */
     @Test
     public void testAvailableNetworkBuffering_addNewNetworksOverTime() throws Exception {
-        String[] ssids = {"\"test1\"", "\"test2\"", "\"test3\"", "\"test4\""};
-        String[] bssids = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4", "de:ad:ba:b1:e5:55",
-                "c0:ff:ee:ee:e3:ee"};
-        int[] frequencies = {2437, 5180, 5180, 2437};
-        String[] caps = {"[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]",
-                "[WPA2-EAP-CCMP][ESS]"};
-        int[] levels = {-60, -86, -50, -62};
-        boolean[] isEphemeral = {false, false, false, false};
         List<Pair<ScanDetail, WifiConfiguration>> candidates;
         // Buffer (i) scan results with each successive scan result
-        for (int i = 1; i <= ssids.length; i++) {
-            candidates = createFilteredQnsCandidates(Arrays.copyOfRange(ssids, 0, i),
-                    Arrays.copyOfRange(bssids, 0, i),
-                    Arrays.copyOfRange(frequencies, 0, i),
-                    Arrays.copyOfRange(caps, 0, i),
-                    Arrays.copyOfRange(levels, 0, i),
-                    Arrays.copyOfRange(isEphemeral, 0, i));
+        for (int i = 1; i <= mSsids.length; i++) {
+            candidates = createFilteredQnsCandidates(Arrays.copyOfRange(mSsids, 0, i),
+                    Arrays.copyOfRange(mBssids, 0, i),
+                    Arrays.copyOfRange(mFrequencies, 0, i),
+                    Arrays.copyOfRange(mCaps, 0, i),
+                    Arrays.copyOfRange(mLevels, 0, i),
+                    Arrays.copyOfRange(mIsEphemeral, 0, i));
             mLastResortWatchdog.updateAvailableNetworks(candidates);
             assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().size(), i);
             for (int j = 0; j < i; j++) {
                 assertEquals(
-                        mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[j]).age, 0);
+                        mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[j]).age, 0);
             }
         }
     };
@@ -196,35 +219,30 @@ public class WifiLastResortWatchdogTest {
      */
     @Test
     public void testAvailableNetworkBuffering_multipleNetworksSomeEphemeral() throws Exception {
-        String[] ssids = {"\"test1\"", "\"test2\"", "\"test3\"", "\"test4\""};
-        String[] bssids = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4", "de:ad:ba:b1:e5:55",
-                "c0:ff:ee:ee:e3:ee"};
-        int[] frequencies = {2437, 5180, 5180, 2437};
-        String[] caps = {"[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]",
-                "[WPA2-EAP-CCMP][ESS]"};
-        int[] levels = {-60, -86, -50, -62};
         boolean[] isEphemeral = {true, false, true, false};
 
         // Buffer potential candidates 1,2,3 & 4
-        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(ssids,
-                bssids, frequencies, caps, levels, isEphemeral);
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, isEphemeral);
         mLastResortWatchdog.updateAvailableNetworks(candidates);
         assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().size(), 4);
 
         // Repeatedly buffer candidates 1 & 2, MAX_BSSID_AGE - 1 times
-        candidates = createFilteredQnsCandidates(Arrays.copyOfRange(ssids, 0, 2),
-                Arrays.copyOfRange(bssids, 0, 2),
-                Arrays.copyOfRange(frequencies, 0, 2),
-                Arrays.copyOfRange(caps, 0, 2),
-                Arrays.copyOfRange(levels, 0, 2),
+        candidates = createFilteredQnsCandidates(Arrays.copyOfRange(mSsids, 0, 2),
+                Arrays.copyOfRange(mBssids, 0, 2),
+                Arrays.copyOfRange(mFrequencies, 0, 2),
+                Arrays.copyOfRange(mCaps, 0, 2),
+                Arrays.copyOfRange(mLevels, 0, 2),
                 Arrays.copyOfRange(isEphemeral, 0, 2));
         for (int i = 0; i < WifiLastResortWatchdog.MAX_BSSID_AGE - 1; i++) {
             mLastResortWatchdog.updateAvailableNetworks(candidates);
             mLastResortWatchdog.toString();
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[0]).age, 0);
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[1]).age, 0);
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[2]).age, i+1);
-            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(bssids[3]).age, i+1);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[0]).age, 0);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[1]).age, 0);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[2]).age,
+                    i + 1);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().get(mBssids[3]).age,
+                    i + 1);
         }
         assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().size(), 4);
 
@@ -233,4 +251,627 @@ public class WifiLastResortWatchdogTest {
         assertEquals(mLastResortWatchdog.getRecentAvailableNetworks().size(), 2);
         mLastResortWatchdog.toString();
     };
+
+    /**
+     * Case 5: Test failure counting, incrementing a specific BSSID
+     * Test has 4 networks buffered, increment each different failure type on one of them
+     * Expected behaviour: See failure counts for the specific failures rise to the appropriate
+     * level for the specific network
+     */
+    @Test
+    public void testFailureCounting_countFailuresForSingleBssid() throws Exception {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).associationRejection);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).authenticationFailure);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).dhcpFailure);
+        }
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+    }
+
+    /**
+     * Case 6: Test failure counting, incrementing a specific BSSID, with some ephemeral networks
+     * Almost identical to test case 5.
+     * Test has 4 networks buffered (two are ephemeral), increment each different failure type on
+     * one of them.
+     * Expected behavior: See failure counts for the specific failures rise to the appropriate
+     * level for the specific network
+     */
+    @Test
+    public void testFailureCounting_countFailuresForSingleBssidWithEphemeral() throws Exception {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        boolean[] mIsEphemeral = {false, true, false, true};
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).associationRejection, i + 1);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).authenticationFailure, i + 1);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).dhcpFailure, i + 1);
+        }
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+    }
+
+    /**
+     * Case 7: Test failure counting, incrementing a specific BSSID but with the wrong SSID given
+     * Test has 4 networks buffered, increment each different failure type on one of them but using
+     * the wrong ssid.
+     * Expected behavior: Failure counts will remain at zero for all networks
+     */
+    @Test
+    public void testFailureCounting_countFailuresForSingleBssidWrongSsid() throws Exception {
+        String badSsid = "ItHertzWhenIP";
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(badSsid, mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(badSsid, mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(badSsid, mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+
+        // Ensure all networks still have zero failure count
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+    }
+
+    /**
+     * Case 8: Test failure counting, increment a bssid that does not exist
+     * Test has 4 networks buffered, increment each failure type, but using the wrong bssid
+     * Expected behavior: Failure counts will remain at zero for all networks
+     */
+    @Test
+    public void testFailureCounting_countFailuresForNonexistentBssid() throws Exception {
+        String badBssid = "de:ad:be:ee:e3:ef";
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], badBssid,
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], badBssid,
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], badBssid,
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+
+        // Ensure all networks still have zero failure count
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+    }
+
+    /**
+     * Case 9: Test Failure Counting, using the "Any" BSSID
+     * Test has 4 buffered networks, two of which share the same SSID (different bssids)
+     * Each failure type is incremented for the shared SSID, but with BSSID "any"
+     * Expected Behavior: Both networks increment their counts in tandem
+     */
+    @Test
+    public void testFailureCounting_countFailuresForAnyBssid() throws Exception {
+        String[] ssids = {"\"test1\"", "\"test2\"", "\"test1\"", "\"test4\""};
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(ssids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < ssids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[0], WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[0], WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[0], WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+        assertFailureCountEquals(mBssids[0], associationRejections, authenticationFailures,
+                dhcpFailures);
+        assertFailureCountEquals(mBssids[1], 0, 0, 0);
+        assertFailureCountEquals(mBssids[2], associationRejections, authenticationFailures,
+                dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+    }
+
+    /**
+     * Case 10: Test Failure Counting, using the "Any" BSSID for nonexistent SSID
+     * Test has 4 buffered networks, two of which share the same SSID (different mBssids)
+     * Each failure type is incremented for a bad SSID (doesn't exist), but with BSSID "any"
+     * Expected Behavior: No Failures counted
+     */
+    @Test
+    public void testFailureCounting_countFailuresForAnyBssidNonexistentSsid() throws Exception {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        String badSsid = "DropItLikeIt'sHotSpot";
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    badSsid, WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    badSsid, WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    badSsid, WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+        // Check that all network failure counts are still zero
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+    }
+
+    /**
+     * Case 11: Test Failure Counting, over failure Threshold check
+     * Test has 4 buffered networks, cause FAILURE_THRESHOLD failures for each failure type to one
+     * of each network (leaving one unfailed).
+     * Expected Behavior: 3 of the Available Networks report OverFailureThreshold
+     */
+    @Test
+    public void testFailureCounting_failureOverThresholdCheck() throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+        assertEquals(true, mLastResortWatchdog.isOverFailureThreshold(mBssids[0]));
+        assertEquals(true, mLastResortWatchdog.isOverFailureThreshold(mBssids[1]));
+        assertEquals(true, mLastResortWatchdog.isOverFailureThreshold(mBssids[2]));
+        assertEquals(false, mLastResortWatchdog.isOverFailureThreshold(mBssids[3]));
+    }
+
+    /**
+     * Case 12: Test Failure Counting, under failure Threshold check
+     * Test has 4 buffered networks, cause FAILURE_THRESHOLD - 1 failures for each failure type to
+     * one of each network (leaving one unfailed).
+     * Expected Behavior: 0 of the Available Networks report OverFailureThreshold
+     */
+    @Test
+    public void testFailureCounting_failureUnderThresholdCheck() throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD - 1;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD - 1;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD - 1;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+        assertEquals(false, mLastResortWatchdog.isOverFailureThreshold(mBssids[0]));
+        assertEquals(false, mLastResortWatchdog.isOverFailureThreshold(mBssids[1]));
+        assertEquals(false, mLastResortWatchdog.isOverFailureThreshold(mBssids[2]));
+        assertEquals(false, mLastResortWatchdog.isOverFailureThreshold(mBssids[3]));
+    }
+
+    /**
+     * Case 13: Test Failure Counting, available network buffering does not affect counts
+     * In this test:
+     *   4 networks are buffered
+     *   Some number of failures are counted
+     *   networks are buffered again
+     * Expected Behavior: Failure counts are not modified by buffering
+     */
+    @Test
+    public void testAvailableNetworkBuffering_doesNotAffectFailureCounts() {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).associationRejection);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).authenticationFailure);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).dhcpFailure);
+        }
+        // Check Each Network has appropriate failure count
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+
+        // Re-buffer all networks
+        for (int i = 0; i < WifiLastResortWatchdog.MAX_BSSID_AGE; i++) {
+            mLastResortWatchdog.updateAvailableNetworks(candidates);
+        }
+
+        // Check Each Network still has appropriate failure count
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+    }
+
+    /**
+     * Case 14: Test Failure Counting, culling of an old network will remove its failure counts
+     * In this test:
+     *   4 networks are buffered
+     *   Some number of failures are counted for all networks
+     *   3 of the networks are buffered until the 4th dies of old age
+     *   The 4th network is re-buffered
+     * Expected Behavior: Failure counts for the 4th network are cleared after re-buffering
+     */
+    @Test
+    public void testAvailableNetworkBuffering_rebufferWipesCounts() {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).associationRejection);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).authenticationFailure);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).dhcpFailure);
+        }
+        // Check Each Network has appropriate failure count
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+
+        // Re-buffer all networks except 'test1' until it dies of old age
+        candidates = createFilteredQnsCandidates(Arrays.copyOfRange(mSsids, 1, 4),
+                Arrays.copyOfRange(mBssids, 1, 4),
+                Arrays.copyOfRange(mFrequencies, 1, 4),
+                Arrays.copyOfRange(mCaps, 1, 4),
+                Arrays.copyOfRange(mLevels, 1, 4),
+                Arrays.copyOfRange(mIsEphemeral, 1, 4));
+        for (int i = 0; i < WifiLastResortWatchdog.MAX_BSSID_AGE; i++) {
+            mLastResortWatchdog.updateAvailableNetworks(candidates);
+        }
+        assertEquals(3, mLastResortWatchdog.getRecentAvailableNetworks().size());
+        // Re-buffer All networks, with 'test1' again
+        candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Check Each Network has appropriate failure count (network 1 should be zero'd)
+        assertFailureCountEquals(mBssids[0], 0, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+    }
+
+    /**
+     * Case 26: Test Failure Counting, null failure incrementation
+     * In this test:
+     *   4 networks are buffered
+     *   Attempt to increment failures with null BSSID & SSID
+     * Expected behavior: Nothing breaks, no counts incremented
+     */
+    @Test
+    public void testFailureCounting_nullInputsNoBreaky() {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(null, mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], null,
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(null, null,
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+    }
+
+    /**
+     * Case 27: Test Failure Counting, test all failures are counted across SSID
+     * In this test there are 8 networks,
+     * the first 4 networks have unique SSIDs amongst themselves,
+     * the last 4 networks share these SSIDs respectively, so there are 2 networks per SSID
+     * In this test we increment failure counts for the 'test1' ssid for a specific BSSID, and for
+     * the 'test2' ssid for BSSID_ANY.
+     * Expected behaviour: Failure counts for both networks on the same SSID are mirrored via both
+     * incrementation methods
+     */
+    @Test
+    public void testFailureCounting_countFailuresAcrossSsids() throws Exception {
+        String[] ssids = {"\"test1\"", "\"test2\"", "\"test3\"", "\"test4\"",
+                "\"test1\"", "\"test2\"", "\"test3\"", "\"test4\""};
+        String[] bssids = {"6c:f3:7f:ae:8c:f3", "6c:f3:7f:ae:8c:f4", "de:ad:ba:b1:e5:55",
+                "c0:ff:ee:ee:e3:ee", "6c:f3:7f:ae:3c:f3", "6c:f3:7f:ae:3c:f4", "d3:ad:ba:b1:35:55",
+                "c0:ff:ee:ee:33:ee"};
+        int[] frequencies = {2437, 5180, 5180, 2437, 2437, 5180, 5180, 2437};
+        String[] caps = {"[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]",
+                "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]",
+                "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]", "[WPA2-EAP-CCMP][ESS]"};
+        int[] levels = {-60, -86, -50, -62, -60, -86, -50, -62};
+        boolean[] isEphemeral = {false, false, false, false, false, false, false, false};
+        boolean[] hasEverConnected = {false, false, false, false, false, false, false,
+                false};
+        int firstNetFails = 13;
+        int secondNetFails = 8;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(ssids,
+                bssids, frequencies, caps, levels, isEphemeral, hasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < ssids.length; i++) {
+            assertFailureCountEquals(bssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for the first test network ssid & bssid
+        for (int i = 0; i < firstNetFails; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[0], bssids[0], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[0], bssids[0], WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[0], bssids[0], WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+        //Increment failure count for the first test network ssid & BSSID_ANY
+        for (int i = 0; i < secondNetFails; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[1], WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[1], WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[1], WifiLastResortWatchdog.BSSID_ANY,
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+        assertFailureCountEquals(bssids[0], firstNetFails, firstNetFails, firstNetFails);
+        assertFailureCountEquals(bssids[1], secondNetFails, secondNetFails, secondNetFails);
+        assertFailureCountEquals(bssids[2], 0, 0, 0);
+        assertFailureCountEquals(bssids[3], 0, 0, 0);
+        assertFailureCountEquals(bssids[4], firstNetFails, firstNetFails, firstNetFails);
+        assertFailureCountEquals(bssids[5], secondNetFails, secondNetFails, secondNetFails);
+        assertFailureCountEquals(bssids[6], 0, 0, 0);
+        assertFailureCountEquals(bssids[7], 0, 0, 0);
+    }
 }
