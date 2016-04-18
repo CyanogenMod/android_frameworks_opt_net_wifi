@@ -656,8 +656,47 @@ public class WifiNative {
             return doBooleanCommand("DRIVER COUNTRY");
     }
 
-    public boolean enableBackgroundScan(boolean enable) {
+    /**
+     * Object holding the network ID and the corresponding priority to be set before enabling/
+     * disabling PNO.
+     */
+    public static class PnoNetworkPriority {
+        public int networkId;
+        public int priority;
+
+        PnoNetworkPriority(int networkId, int priority) {
+            this.networkId = networkId;
+            this.priority = priority;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sbuf = new StringBuilder();
+            sbuf.append(" Network ID=").append(this.networkId);
+            sbuf.append(" Priority=").append(this.priority);
+            return sbuf.toString();
+        }
+    }
+
+    public boolean enableBackgroundScan(
+            boolean enable,
+            List<PnoNetworkPriority> pnoNetworkList) {
         boolean ret;
+        // TODO: Couple of cases yet to be handled:
+        // 1. What if the network priority update fails, should we bail out of PNO setting?
+        // 2. If PNO setting fails below, should we go back and revert this priority change?
+        if (pnoNetworkList != null) {
+            if (DBG) Log.i(mTAG, "Update priorities for PNO. Enable: " + enable);
+            for (PnoNetworkPriority pnoNetwork : pnoNetworkList) {
+                // What if this fails? Should we bail out?
+                boolean isSuccess = setNetworkVariable(pnoNetwork.networkId,
+                        WifiConfiguration.priorityVarName,
+                        Integer.toString(pnoNetwork.priority));
+                if (!isSuccess) {
+                    Log.e(mTAG, "Update priority failed for :" + pnoNetwork.networkId);
+                }
+            }
+        }
         if (enable) {
             ret = doBooleanCommand("SET pno 1");
         } else {
