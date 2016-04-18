@@ -38,6 +38,8 @@ import com.android.server.wifi.util.ScanDetailUtil;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -53,22 +55,27 @@ public class WifiConnectivityManager {
 
     // Periodic scan interval in milli-seconds. This is the scan
     // performed when screen is on.
-    private static final int PERIODIC_SCAN_INTERVAL_MS = 20000; // 20 seconds
+    private static final int PERIODIC_SCAN_INTERVAL_MS = 20 * 1000; // 20 seconds
     // PNO scan interval in milli-seconds. This is the scan
     // performed when screen is off and disconnected.
-    private static final int DISCONNECTED_PNO_SCAN_INTERVAL_MS = 20000; // 20 seconds
+    private static final int DISCONNECTED_PNO_SCAN_INTERVAL_MS = 20 * 1000; // 20 seconds
     // PNO scan interval in milli-seconds. This is the scan
     // performed when screen is off and connected.
-    private static final int CONNECTED_PNO_SCAN_INTERVAL_MS = 160000; // 160 seconds
+    private static final int CONNECTED_PNO_SCAN_INTERVAL_MS = 160 * 1000; // 160 seconds
     // Maximum number of retries when starting a scan failed
     private static final int MAX_SCAN_RESTART_ALLOWED = 5;
     // Number of milli-seconds to delay before retry starting
     // a previously failed scan
-    private static final int RESTART_SCAN_DELAY_MS = 2000; // 2 seconds
+    private static final int RESTART_SCAN_DELAY_MS = 2 * 1000; // 2 seconds
     // When in disconnected mode, a watchdog timer will be fired
     // every WATCHDOG_INTERVAL_MS to start a single scan. This is
     // to prevent caveat from things like PNO scan.
-    private static final int WATCHDOG_INTERVAL_MS = 1200000; // 20 minutes
+    private static final int WATCHDOG_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
+    // This is the time interval for the connection attempt rate calculation. Connection attempt
+    // timestamps beyond this interval is evicted from the list.
+    private static final int MAX_CONNECTION_ATTEMPTS_TIME_INTERVAL_MS = 4 * 60 * 1000; // 4 mins
+    // Max number of connection attempts in the above time interval.
+    private static final int MAX_CONNECTION_ATTEMPTS_RATE = 6;
 
     // WifiStateMachine has a bunch of states. From the
     // WifiConnectivityManager's perspective it only cares
@@ -94,6 +101,7 @@ public class WifiConnectivityManager {
     private final LocalLog mLocalLog = new LocalLog(ActivityManager.isLowRamDeviceStatic()
                                                         ? 1024 : 16384);
     private final WifiLastResortWatchdog mWifiLastResortWatchdog;
+    private final LinkedList<Long> mConnectionAttemptTimeStamps;
     private boolean mDbg = false;
     private boolean mWifiEnabled = false;
     private boolean mWifiConnectivityManagerEnabled = true;
@@ -375,6 +383,7 @@ public class WifiConnectivityManager {
         mQualifiedNetworkSelector =  qualifiedNetworkSelector;
         mAlarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         mWifiLastResortWatchdog = wifiInjector.getWifiLastResortWatchdog();
+        mConnectionAttemptTimeStamps = new LinkedList<>();
 
         mMin5GHzRssi = WifiQualifiedNetworkSelector.MINIMUM_5G_ACCEPT_RSSI;
         mMin24GHzRssi = WifiQualifiedNetworkSelector.MINIMUM_2G_ACCEPT_RSSI;
@@ -399,6 +408,43 @@ public class WifiConnectivityManager {
     }
 
     /**
+     * This checks the connection attempt rate and recommends whether the connection attempt
+     * should be skipped or not. This attempts to rate limit the rate of connections to
+     * prevent us from flapping between networks and draining battery rapidly.
+     */
+    private boolean shouldSkipConnectionAttempt(Long currentTimeMillis) {
+        Iterator<Long> attemptIter = mConnectionAttemptTimeStamps.iterator();
+        // First evict old entries from the queue.
+        while(attemptIter.hasNext()) {
+            Long connectionAttemptTimeMillis = attemptIter.next();
+            if ((currentTimeMillis - connectionAttemptTimeMillis) >
+                    MAX_CONNECTION_ATTEMPTS_TIME_INTERVAL_MS) {
+                attemptIter.remove();
+            } else {
+                // This list is sorted by timestamps, so we can skip any more checks
+                break;
+            }
+        }
+        // If we've reached the max connection attempt rate, skip this connection attempt
+        return (mConnectionAttemptTimeStamps.size() >= MAX_CONNECTION_ATTEMPTS_RATE);
+    }
+
+    /**
+     * Add the current connection attempt timestamp to our queue of connection attempts.
+     */
+    private void noteConnectionAttempt(Long currentTimeMillis) {
+        mConnectionAttemptTimeStamps.addLast(currentTimeMillis);
+    }
+
+    /**
+     * This is used to clear the connection attempt rate limiter. This is done when the user
+     * explicitly tries to connect to a specified network.
+     */
+    private void clearConnectionAttemptTimeStamps() {
+        mConnectionAttemptTimeStamps.clear();
+    }
+
+    /**
      * Attempt to connect to a network candidate.
      *
      * Based on the currently connected network, this menthod determines whether we should
@@ -420,6 +466,13 @@ public class WifiConnectivityManager {
                     + "or is connecting to " + targetAssociationId);
             return;
         }
+
+        Long currentTimeMillis = System.currentTimeMillis();
+        if (!mScreenOn && shouldSkipConnectionAttempt(currentTimeMillis)) {
+            localLog("connectToNetwork: Too many connection attempts. Skipping this attempt!");
+            return;
+        }
+        noteConnectionAttempt(currentTimeMillis);
 
         WifiConfiguration currentConnectedNetwork = mConfigManager
                 .getWifiConfiguration(mWifiInfo.getNetworkId());
@@ -742,6 +795,8 @@ public class WifiConnectivityManager {
                    + " persist=" + persistent);
 
         mQualifiedNetworkSelector.userSelectNetwork(netId, persistent);
+
+        clearConnectionAttemptTimeStamps();
 
         // Initiate a scan which will trigger the connection to the user selected
         // network when scan result is available.
