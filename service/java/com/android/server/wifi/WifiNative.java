@@ -35,11 +35,7 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.util.LocalLog;
 import android.util.Log;
-import android.content.Context;
-import android.content.Intent;
-import android.app.PendingIntent;
-import android.content.IntentFilter;
-import android.content.BroadcastReceiver;
+
 import com.android.server.connectivity.KeepalivePacketData;
 
 import java.io.ByteArrayOutputStream;
@@ -54,7 +50,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.zip.Deflater;
 import libcore.util.HexEncoding;
-import android.app.AlarmManager;
 /**
  * Native calls for bring up/shut down of the supplicant daemon and for
  * sending requests to the supplicant daemon
@@ -128,28 +123,15 @@ public class WifiNative {
 
     private native String doStringCommandNative(String command);
 
-    private final Context mContext;
-    private final PnoMonitor mPnoMonitor;
-    public WifiNative(String interfaceName, Context context) {
+    public WifiNative(String interfaceName) {
         mInterfaceName = interfaceName;
-        mContext = context;
         mTAG = "WifiNative-" + interfaceName;
-        if (mContext != null) {
-            mPnoMonitor = new PnoMonitor();
-        } else {
-            mPnoMonitor = null;
-        }
-
         if (!interfaceName.equals("p2p0")) {
             mInterfacePrefix = "IFNAME=" + interfaceName + " ";
         } else {
             // commands for p2p0 interface don't need prefix
             mInterfacePrefix = "";
         }
-    }
-
-    public WifiNative(String interfaceName) {
-        this(interfaceName, null);
     }
 
     void enableVerboseLogging(int verbose) {
@@ -674,91 +656,14 @@ public class WifiNative {
             return doBooleanCommand("DRIVER COUNTRY");
     }
 
-    //PNO Monitor
-    private class PnoMonitor {
-        private static final int MINIMUM_PNO_GAP = 5 * 1000;
-        private static final String ACTION_TOGGLE_PNO =
-            "com.android.server.Wifi.action.TOGGLE_PNO";
-        long mLastPnoChangeTimeStamp = -1L;
-        boolean mExpectedPnoState = false;
-        boolean mCurrentPnoState = false;;
-        boolean mWaitForTimer = false;
-        final Object mPnoLock = new Object();
-        private final AlarmManager mAlarmManager =
-                (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
-        private final PendingIntent mPnoIntent;
-
-        public PnoMonitor() {
-            Intent intent = new Intent(ACTION_TOGGLE_PNO, null);
-            intent.setPackage("android");
-            mPnoIntent = PendingIntent.getBroadcast(mContext, 0, intent, 0);
-
-            mContext.registerReceiver(
-                new BroadcastReceiver() {
-                    @Override
-                    public void onReceive(Context context, Intent intent) {
-                        synchronized(mPnoLock) {
-                            if (DBG) Log.d(mTAG, "PNO timer expire, PNO should change to " +
-                                    mExpectedPnoState);
-                            if (mCurrentPnoState != mExpectedPnoState) {
-                                if (DBG) Log.d(mTAG, "change PNO from " + mCurrentPnoState + " to "
-                                        + mExpectedPnoState);
-                                boolean ret = setPno(mExpectedPnoState);
-                                if (!ret) {
-                                    Log.e(mTAG, "set PNO failure");
-                                }
-                            } else {
-                                if (DBG) Log.d(mTAG, "Do not change PNO since current is expected");
-                            }
-                            mWaitForTimer = false;
-                        }
-                    }
-                },
-                new IntentFilter(ACTION_TOGGLE_PNO));
-        }
-
-        private boolean setPno(boolean enable) {
-            String cmd = enable ? "SET pno 1" : "SET pno 0";
-            boolean ret = doBooleanCommand(cmd);
-            mLastPnoChangeTimeStamp = System.currentTimeMillis();
-            if (ret) {
-                mCurrentPnoState = enable;
-            }
-            return ret;
-        }
-
-        public boolean enableBackgroundScan(boolean enable) {
-            synchronized(mPnoLock) {
-                if (mWaitForTimer) {
-                    //already has a timer
-                    mExpectedPnoState = enable;
-                    if (DBG) Log.d(mTAG, "update expected PNO to " +  mExpectedPnoState);
-                } else {
-                    if (mCurrentPnoState == enable) {
-                        return true;
-                    }
-                    long timeDifference = System.currentTimeMillis() - mLastPnoChangeTimeStamp;
-                    if (timeDifference >= MINIMUM_PNO_GAP) {
-                        return setPno(enable);
-                    } else {
-                        mExpectedPnoState = enable;
-                        mWaitForTimer = true;
-                        if (DBG) Log.d(mTAG, "start PNO timer with delay:" + timeDifference);
-                        mAlarmManager.set(AlarmManager.RTC_WAKEUP,
-                                System.currentTimeMillis() + timeDifference, mPnoIntent);
-                    }
-                }
-                return true;
-            }
-        }
-    }
-
     public boolean enableBackgroundScan(boolean enable) {
-        if (mPnoMonitor != null) {
-            return mPnoMonitor.enableBackgroundScan(enable);
+        boolean ret;
+        if (enable) {
+            ret = doBooleanCommand("SET pno 1");
         } else {
-            return false;
+            ret = doBooleanCommand("SET pno 0");
         }
+        return ret;
     }
 
     public void enableAutoConnect(boolean enable) {
