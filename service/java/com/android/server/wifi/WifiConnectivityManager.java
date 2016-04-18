@@ -273,6 +273,7 @@ public class WifiConnectivityManager {
         @Override
         public void onResults(WifiScanner.ScanData[] results) {
             handleScanResults(mScanDetails, "SingleScanListener");
+            clearScanDetails();
         }
 
         @Override
@@ -348,6 +349,7 @@ public class WifiConnectivityManager {
                 mScanDetails.add(ScanDetailUtil.toScanDetail(result));
             }
             handleScanResults(mScanDetails, "PnoScanListener");
+            clearScanDetails();
         }
     }
 
