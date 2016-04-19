@@ -72,6 +72,11 @@ public class WifiLastResortWatchdog {
      */
     private Map<String, Pair<AvailableNetworkFailureCount, Integer>> mSsidFailureCount =
             new HashMap<>();
+    // Tracks: if WifiStateMachine is in ConnectedState
+    private boolean mWifiIsConnected = false;
+    // Is Watchdog allowed to trigger now? Set to false after triggering. Set to true after
+    // successfully connecting or a new network (SSID) becomes available to connect to.
+    private boolean mWatchdogAllowedToTrigger = true;
 
     /**
      * Refreshes recentAvailableNetworks with the latest available networks
@@ -108,6 +113,7 @@ public class WifiLastResortWatchdog {
                         // This is a new SSID, create new FailureCount for it and set AP count to 1
                         ssidFailsAndApCount = Pair.create(new AvailableNetworkFailureCount(config),
                                 1);
+                        setWatchdogTriggerEnabled(true);
                     } else {
                         final Integer numberOfAps = ssidFailsAndApCount.second;
                         // This is not a new SSID, increment the AP count for it
@@ -170,7 +176,35 @@ public class WifiLastResortWatchdog {
         }
         // Update failure count for the failing network
         updateFailureCountForNetwork(ssid, bssid, reason);
-        return false;
+
+        // Have we met conditions to trigger the Watchdog Wifi restart?
+        boolean isRestartNeeded = checkTriggerCondition();
+        if (isRestartNeeded) {
+            // Stop the watchdog from triggering until re-enabled
+            setWatchdogTriggerEnabled(false);
+            restartWifiStack();
+            // increment various watchdog trigger count stats
+            incrementWifiMetricsTriggerCounts();
+            clearAllFailureCounts();
+        }
+        return isRestartNeeded;
+    }
+
+    /**
+     * Handles transitions entering and exiting WifiStateMachine ConnectedState
+     * Used to track wifistate, and perform watchdog count reseting
+     * @param isEntering true if called from ConnectedState.enter(), false for exit()
+     */
+    public void connectedStateTransition(boolean isEntering) {
+        if (VDBG) Log.v(TAG, "connectedStateTransition: isEntering = " + isEntering);
+        mWifiIsConnected = isEntering;
+        if (isEntering) {
+            // We connected to something! Reset failure counts for everything
+            clearAllFailureCounts();
+            // If the watchdog trigger was disabled (it triggered), connecting means we did
+            // something right, re-enable it so it can fire again.
+            setWatchdogTriggerEnabled(true);
+        }
     }
 
     /**
@@ -247,6 +281,58 @@ public class WifiLastResortWatchdog {
     }
 
     /**
+     * Check trigger condition: For all available networks, have we met a failure threshold for each
+     * of them, and have previously connected to at-least one of the available networks
+     * @return is the trigger condition true
+     */
+    private boolean checkTriggerCondition() {
+        if (VDBG) Log.v(TAG, "checkTriggerCondition:");
+        // Don't check Watchdog trigger if wifi is in a connected state
+        // (This should not occur, but we want to protect against any race conditions)
+        if (mWifiIsConnected) return false;
+        // Don't check Watchdog trigger if trigger is not enabled
+        if (!mWatchdogAllowedToTrigger) return false;
+
+        boolean atleastOneNetworkHasEverConnected = false;
+        for (Map.Entry<String, AvailableNetworkFailureCount> entry
+                : mRecentAvailableNetworks.entrySet()) {
+            if (entry.getValue().config != null
+                    && entry.getValue().config.getNetworkSelectionStatus().getHasEverConnected()) {
+                atleastOneNetworkHasEverConnected = true;
+            }
+            if (!isOverFailureThreshold(entry.getKey())) {
+                // This available network is not over failure threshold, meaning we still have a
+                // network to try connecting to
+                return false;
+            }
+        }
+        // We have met the failure count for every available network & there is at-least one network
+        // we have previously connected to present.
+        if (VDBG) {
+            Log.v(TAG, "checkTriggerCondition: return = " + atleastOneNetworkHasEverConnected);
+        }
+        return atleastOneNetworkHasEverConnected;
+    }
+
+    /**
+     * Restart Supplicant, Driver & return WifiStateMachine to InitialState
+     */
+    private void restartWifiStack() {
+        if (VDBG) Log.v(TAG, "restartWifiStack.");
+        Log.i(TAG, "Triggered.");
+        if (DBG) Log.d(TAG, toString());
+        // <TODO>
+    }
+
+    /**
+     * Update WifiMetrics with various Watchdog stats (trigger counts, tracked network count)
+     */
+    private void incrementWifiMetricsTriggerCounts() {
+        if (VDBG) Log.v(TAG, "incrementWifiMetricsTriggerCounts.");
+        // <TODO>
+    }
+
+    /**
      * Clear failure counts for each network in recentAvailableNetworks
      */
     private void clearAllFailureCounts() {
@@ -270,22 +356,33 @@ public class WifiLastResortWatchdog {
     }
 
     /**
+     * Activates or deactivates the Watchdog trigger. Counting and network buffering still occurs
+     * @param enable true to enable the Watchdog trigger, false to disable it
+     */
+    private void setWatchdogTriggerEnabled(boolean enable) {
+        if (VDBG) Log.v(TAG, "setWatchdogTriggerEnabled: enable = " + enable);
+        mWatchdogAllowedToTrigger = enable;
+    }
+
+    /**
      * Prints all networks & counts within mRecentAvailableNetworks to string
      */
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("WifiLastResortWatchdog: " + mRecentAvailableNetworks.size() + " networks...");
+        sb.append("mWatchdogAllowedToTrigger: ").append(mWatchdogAllowedToTrigger);
+        sb.append("\nmWifiIsConnected: ").append(mWifiIsConnected);
+        sb.append("\nmRecentAvailableNetworks: ").append(mRecentAvailableNetworks.size());
         for (Map.Entry<String, AvailableNetworkFailureCount> entry
                 : mRecentAvailableNetworks.entrySet()) {
-            sb.append("\n " + entry.getKey() + ": " + entry.getValue());
+            sb.append("\n ").append(entry.getKey()).append(": ").append(entry.getValue());
         }
         sb.append("\nmSsidFailureCount:");
         for (Map.Entry<String, Pair<AvailableNetworkFailureCount, Integer>> entry :
                 mSsidFailureCount.entrySet()) {
             final AvailableNetworkFailureCount failureCount = entry.getValue().first;
             final Integer apCount = entry.getValue().second;
-            sb.append("\n" + entry.getKey() + ": " + apCount + ", "
-                    + failureCount.toString());
+            sb.append("\n").append(entry.getKey()).append(": ").append(apCount).append(", ")
+                    .append(failureCount.toString());
         }
         return sb.toString();
     }

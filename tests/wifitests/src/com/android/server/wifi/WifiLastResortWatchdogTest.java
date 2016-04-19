@@ -444,7 +444,7 @@ public class WifiLastResortWatchdogTest {
 
     /**
      * Case 9: Test Failure Counting, using the "Any" BSSID
-     * Test has 4 buffered networks, two of which share the same SSID (different bssids)
+     * Test has 4 buffered networks, two of which share the same SSID (different mBssids)
      * Each failure type is incremented for the shared SSID, but with BSSID "any"
      * Expected Behavior: Both networks increment their counts in tandem
      */
@@ -633,7 +633,7 @@ public class WifiLastResortWatchdogTest {
      * Expected Behavior: Failure counts are not modified by buffering
      */
     @Test
-    public void testAvailableNetworkBuffering_doesNotAffectFailureCounts() {
+    public void testAvailableNetworkBuffering_doesNotAffectFailureCounts() throws Exception {
         int associationRejections = 5;
         int authenticationFailures = 9;
         int dhcpFailures = 11;
@@ -697,7 +697,7 @@ public class WifiLastResortWatchdogTest {
      * Expected Behavior: Failure counts for the 4th network are cleared after re-buffering
      */
     @Test
-    public void testAvailableNetworkBuffering_rebufferWipesCounts() {
+    public void testAvailableNetworkBuffering_rebufferWipesCounts() throws Exception {
         int associationRejections = 5;
         int authenticationFailures = 9;
         int dhcpFailures = 11;
@@ -873,5 +873,536 @@ public class WifiLastResortWatchdogTest {
         assertFailureCountEquals(bssids[5], secondNetFails, secondNetFails, secondNetFails);
         assertFailureCountEquals(bssids[6], 0, 0, 0);
         assertFailureCountEquals(bssids[7], 0, 0, 0);
+    }
+
+    /**
+     * Case 15: Test failure counting, ensure failures still counted while connected
+     * Although failures should not occur while wifi is connected, race conditions are a thing, and
+     * I'd like the count to be incremented even while connected (Later test verifies that this
+     * can't cause a trigger though)
+     * Expected behavior: Failure counts increment like normal
+     */
+    @Test
+    public void testFailureCounting_wifiIsConnectedDoesNotAffectCounting() throws Exception {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+
+        // Set Watchdogs internal wifi state tracking to 'connected'
+        mLastResortWatchdog.connectedStateTransition(true);
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Ensure new networks have zero'ed failure counts
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).associationRejection);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).authenticationFailure);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(i + 1, mLastResortWatchdog.getRecentAvailableNetworks()
+                    .get(mBssids[net]).dhcpFailure);
+        }
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+        assertFailureCountEquals(mBssids[3], 0, 0, 0);
+    }
+
+    /**
+     * Case 16: Test Failure Counting, entering ConnectedState clears all failure counts
+     * 4 Networks are buffered, cause various failures to 3 of them. Transition to ConnectedState
+     * Expected behavior: After transitioning, failure counts are reset to 0
+     */
+    @Test
+    public void testFailureCounting_enteringWifiConnectedStateClearsCounts() throws Exception {
+        int associationRejections = 5;
+        int authenticationFailures = 9;
+        int dhcpFailures = 11;
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        //Increment failure count for each network and failure type
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(mSsids[net], mBssids[net],
+                    WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+        }
+
+        // Check that we have Failures
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+
+        // Transition to 'ConnectedState'
+        mLastResortWatchdog.connectedStateTransition(true);
+
+        // Check that we have no failures
+        for (int i = 0; i < mSsids.length; i++) {
+            assertFailureCountEquals(mBssids[i], 0, 0, 0);
+        }
+    }
+
+    /**
+     * Case 17: Test Trigger Condition, only some networks over threshold
+     * We have 4 buffered networks, increment failure counts on 3 of them, until all 3 are over
+     * threshold.
+     * Expected Behavior: Watchdog does not trigger
+     */
+    @Test
+    public void testTriggerCondition_someNetworksOverFailureThreshold_allHaveEverConnected()
+            throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+        boolean[] mHasEverConnected = {true, true, true, true};
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Increment failure count for 3 networks and failure types, asserting each time that it
+        // does not trigger, with only 3 over threshold
+        boolean watchdogTriggered = false;
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(false, watchdogTriggered);
+        }
+
+        // Check that we have Failures
+        assertFailureCountEquals(mBssids[0], associationRejections, 0, 0);
+        assertFailureCountEquals(mBssids[1], 0, authenticationFailures, 0);
+        assertFailureCountEquals(mBssids[2], 0, 0, dhcpFailures);
+
+        // Add one more failure to one of the already over threshold networks, assert that it
+        // does not trigger
+        watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[0], mBssids[0], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        assertEquals(false, watchdogTriggered);
+    }
+
+    /**
+     * Case 18: Test Trigger Condition, watchdog fires once, then deactivates
+     * In this test we have 4 networks, which we have connected to in the past. Failures are
+     * incremented until all networks but one are over failure threshold, and then a few more times.
+     *
+     * Expected behavior: The watchdog triggers once as soon as all failures are over threshold,
+     * but stops triggering for subsequent failures
+     */
+    @Test
+    public void testTriggerCondition_allNetworksOverFailureThreshold_allHaveEverConnected()
+            throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+        boolean[] mHasEverConnected = {true, true, true, true};
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Bring 3 of the 4 networks over failure Threshold without triggering watchdog
+        boolean watchdogTriggered = false;
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(false, watchdogTriggered);
+        }
+
+        // Bring the remaining unfailed network upto 1 less than the failure threshold
+        net = 3;
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD - 1; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        // Increment failure count once more, check that watchdog triggered this time
+        watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+        assertEquals(true, watchdogTriggered);
+
+        // Increment failure count 5 more times, watchdog should not trigger
+        for (int i = 0; i < 5; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                        mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+    }
+
+    /**
+     * Case 19: Test Trigger Condition, all networks over failure threshold, one has ever connected
+     * In this test we have 4 networks, only one has connected in the past. Failures are
+     * incremented until all networks but one are over failure threshold, and then a few more times.
+     *
+     * Expected behavior: The watchdog triggers once as soon as all failures are over threshold,
+     * but stops triggering for subsequent failures
+     */
+    @Test
+    public void testTriggerCondition_allNetworksOverFailureThreshold_oneHaveEverConnected()
+            throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+        boolean[] mHasEverConnected = {false, true, false, false};
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Bring 3 of the 4 networks over failure Threshold without triggering watchdog
+        boolean watchdogTriggered = false;
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(false, watchdogTriggered);
+        }
+
+        // Bring the remaining unfailed network upto 1 less than the failure threshold
+        net = 3;
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD - 1; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        // Increment failure count once more, check that watchdog triggered this time
+        watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+        assertEquals(true, watchdogTriggered);
+
+        // Increment failure count 5 more times, watchdog should not trigger
+        for (int i = 0; i < 5; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                        mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+    }
+
+    /**
+     * Case 20: Test Trigger Condition, all networks over failure threshold, 0 have ever connected
+     * In this test we have 4 networks, none have ever connected. Failures are
+     * incremented until all networks but one are over failure threshold, and then a few more times.
+     *
+     * Expected behavior: The watchdog does not trigger
+     */
+    @Test
+    public void testTriggerCondition_allNetworksOverFailureThreshold_zeroHaveEverConnected()
+            throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD + 1;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Count failures on all 4 networks until all of them are over the failure threshold
+        boolean watchdogTriggered = false;
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 3;
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD + 1; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+    }
+
+    /**
+     * Case 21: Test Trigger Condition, Conditions right to trigger, but wifi is connected
+     * In this test we have 4 networks, all have connected in the past
+     * incremented until all networks but one are over failure threshold, and then a few more times.
+     *
+     * Expected behavior: The watchdog does not trigger
+     */
+    @Test
+    public void testTriggerCondition_allNetworksOverFailureThreshold_isConnected()
+        throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD + 1;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        // Set Watchdogs internal wifi state tracking to 'connected'
+        mLastResortWatchdog.connectedStateTransition(true);
+
+        // Count failures on all 4 networks until all of them are over the failure threshold
+        boolean watchdogTriggered = false;
+        int net = 0;
+        for (int i = 0; i < associationRejections; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 1;
+        for (int i = 0; i < authenticationFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 2;
+        for (int i = 0; i < dhcpFailures; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(false, watchdogTriggered);
+        }
+        net = 3;
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD + 1; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[net], mBssids[net], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+    }
+
+    private void incrementFailuresUntilTrigger(String[] ssids, String[] bssids) {
+        // Bring 3 of the 4 networks over failure Threshold without triggering watchdog
+        boolean watchdogTriggered = false;
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD; i++) {
+            for (int j = 0; j < ssids.length - 1; j++) {
+                watchdogTriggered = mLastResortWatchdog
+                        .noteConnectionFailureAndTriggerIfNeeded(ssids[j], bssids[j],
+                        WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+                assertEquals(false, watchdogTriggered);
+            }
+        }
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD - 1; i++) {
+            watchdogTriggered = mLastResortWatchdog
+                    .noteConnectionFailureAndTriggerIfNeeded(ssids[ssids.length - 1],
+                    bssids[ssids.length - 1], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+
+        // Increment failure count once more, check that watchdog triggered this time
+        watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    ssids[ssids.length - 1], bssids[ssids.length - 1],
+                    WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        assertEquals(true, watchdogTriggered);
+    }
+
+    /**
+     * Case 22: Test enabling/disabling of Watchdog Trigger, disabled after triggering
+     * In this test, we have 4 networks. Increment failures until Watchdog triggers. Increment some
+     * more failures.
+     * Expected behavior: Watchdog trigger gets deactivated after triggering, and stops triggering
+     */
+    @Test
+    public void testTriggerEnabling_disabledAfterTriggering() throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+        boolean[] mHasEverConnected = {false, true, false, false};
+
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        incrementFailuresUntilTrigger(mSsids, mBssids);
+
+        // Increment failure count 5 more times, watchdog should not trigger
+        for (int i = 0; i < 5; i++) {
+            boolean watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                        mSsids[3], mBssids[3], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+    }
+
+    /**
+     * Case 23: Test enabling/disabling of Watchdog Trigger, trigger re-enabled after connecting
+     * In this test, we have 4 networks. Increment failures until Watchdog triggers and deactivates,
+     * transition wifi to connected state, then increment failures until all networks over threshold
+     * Expected behavior: Watchdog able to trigger again after transitioning to and from connected
+     * state
+     */
+    @Test
+    public void testTriggerEnabling_enabledAfterConnecting() throws Exception {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+        boolean[] mHasEverConnected = {false, true, false, false};
+        boolean watchdogTriggered;
+        // Buffer potential candidates 1,2,3 & 4
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(mSsids,
+                mBssids, mFrequencies, mCaps, mLevels, mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        incrementFailuresUntilTrigger(mSsids, mBssids);
+
+        // Increment failure count 5 more times, ensure trigger is deactivated
+        for (int i = 0; i < 5; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                        mSsids[3], mBssids[3], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            mLastResortWatchdog.updateAvailableNetworks(candidates);
+            assertEquals(false, watchdogTriggered);
+        }
+
+        // transition Watchdog wifi state tracking to 'connected' then back to 'disconnected'
+        mLastResortWatchdog.connectedStateTransition(true);
+        mLastResortWatchdog.connectedStateTransition(false);
+
+        // Fail 3/4 networks until they're over threshold
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD + 1; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[0], mBssids[0], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[1], mBssids[1], WifiLastResortWatchdog.FAILURE_CODE_AUTHENTICATION);
+            assertEquals(false, watchdogTriggered);
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[2], mBssids[2], WifiLastResortWatchdog.FAILURE_CODE_DHCP);
+            assertEquals(false, watchdogTriggered);
+        }
+
+        // Bring the remaining unfailed network upto 1 less than the failure threshold
+        for (int i = 0; i < WifiLastResortWatchdog.FAILURE_THRESHOLD - 1; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[3], mBssids[3], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            assertEquals(false, watchdogTriggered);
+        }
+        // Increment failure count once more, check that watchdog triggered this time
+        watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                    mSsids[3], mBssids[3], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+        assertEquals(true, watchdogTriggered);
+    }
+
+    /**
+     * Case 24: Test enabling/disabling of Watchdog Trigger, trigger re-enabled after new network
+     * In this test, we have 3 networks. Increment failures until Watchdog triggers and deactivates,
+     * we then buffer a new network (network 4), then increment failures until all networks over
+     * threshold Expected behavior: Watchdog able to trigger again after discovering a new network
+     */
+    @Test
+    public void testTriggerEnabling_enabledAfterNewNetwork() {
+        int associationRejections = WifiLastResortWatchdog.FAILURE_THRESHOLD;
+        int authenticationFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 2;
+        int dhcpFailures = WifiLastResortWatchdog.FAILURE_THRESHOLD + 3;
+        boolean[] mHasEverConnected = {false, true, false, false};
+        boolean watchdogTriggered;
+
+        // Buffer potential candidates 1,2,3
+        List<Pair<ScanDetail, WifiConfiguration>> candidates = createFilteredQnsCandidates(
+                Arrays.copyOfRange(mSsids, 0, 3),
+                Arrays.copyOfRange(mBssids, 0, 3),
+                Arrays.copyOfRange(mFrequencies, 0, 3),
+                Arrays.copyOfRange(mCaps, 0, 3),
+                Arrays.copyOfRange(mLevels, 0, 3),
+                Arrays.copyOfRange(mIsEphemeral, 0, 3));
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        incrementFailuresUntilTrigger(Arrays.copyOfRange(mSsids, 0, 3),
+                Arrays.copyOfRange(mBssids, 0, 3));
+
+        // Increment failure count 5 more times, ensure trigger is deactivated
+        for (int i = 0; i < 5; i++) {
+            watchdogTriggered = mLastResortWatchdog.noteConnectionFailureAndTriggerIfNeeded(
+                        mSsids[2], mBssids[2], WifiLastResortWatchdog.FAILURE_CODE_ASSOCIATION);
+            mLastResortWatchdog.updateAvailableNetworks(candidates);
+            assertEquals(false, watchdogTriggered);
+        }
+
+        candidates = createFilteredQnsCandidates(mSsids, mBssids, mFrequencies, mCaps, mLevels,
+                mIsEphemeral, mHasEverConnected);
+        mLastResortWatchdog.updateAvailableNetworks(candidates);
+
+        incrementFailuresUntilTrigger(mSsids, mBssids);
+
     }
 }

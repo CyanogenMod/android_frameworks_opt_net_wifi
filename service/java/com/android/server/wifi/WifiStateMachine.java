@@ -7187,6 +7187,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
 
             mLastDriverRoamAttempt = 0;
             mTargetNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
+            mWifiLastResortWatchdog.connectedStateTransition(true);
         }
         @Override
         public boolean processMessage(Message message) {
@@ -7451,6 +7452,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
 
             mLastDriverRoamAttempt = 0;
             mWhiteListedSsids = null;
+            mWifiLastResortWatchdog.connectedStateTransition(false);
         }
     }
 
