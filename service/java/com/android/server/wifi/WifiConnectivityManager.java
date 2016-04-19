@@ -73,9 +73,9 @@ public class WifiConnectivityManager {
     private static final int WATCHDOG_INTERVAL_MS = 20 * 60 * 1000; // 20 minutes
     // This is the time interval for the connection attempt rate calculation. Connection attempt
     // timestamps beyond this interval is evicted from the list.
-    private static final int MAX_CONNECTION_ATTEMPTS_TIME_INTERVAL_MS = 4 * 60 * 1000; // 4 mins
+    public static final int MAX_CONNECTION_ATTEMPTS_TIME_INTERVAL_MS = 4 * 60 * 1000; // 4 mins
     // Max number of connection attempts in the above time interval.
-    private static final int MAX_CONNECTION_ATTEMPTS_RATE = 6;
+    public static final int MAX_CONNECTION_ATTEMPTS_RATE = 6;
 
     // WifiStateMachine has a bunch of states. From the
     // WifiConnectivityManager's perspective it only cares
@@ -97,11 +97,13 @@ public class WifiConnectivityManager {
     private final WifiConfigManager mConfigManager;
     private final WifiInfo mWifiInfo;
     private final WifiQualifiedNetworkSelector mQualifiedNetworkSelector;
-    private final AlarmManager mAlarmManager;
-    private final LocalLog mLocalLog = new LocalLog(ActivityManager.isLowRamDeviceStatic()
-                                                        ? 1024 : 16384);
     private final WifiLastResortWatchdog mWifiLastResortWatchdog;
+    private final AlarmManager mAlarmManager;
+    private final Clock mClock;
+    private final LocalLog mLocalLog =
+            new LocalLog(ActivityManager.isLowRamDeviceStatic() ? 1024 : 16384);
     private final LinkedList<Long> mConnectionAttemptTimeStamps;
+
     private boolean mDbg = false;
     private boolean mWifiEnabled = false;
     private boolean mWifiConnectivityManagerEnabled = true;
@@ -380,9 +382,10 @@ public class WifiConnectivityManager {
         mScanner = scanner;
         mConfigManager = configManager;
         mWifiInfo = wifiInfo;
-        mQualifiedNetworkSelector =  qualifiedNetworkSelector;
-        mAlarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        mQualifiedNetworkSelector = qualifiedNetworkSelector;
         mWifiLastResortWatchdog = wifiInjector.getWifiLastResortWatchdog();
+        mAlarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        mClock = wifiInjector.getClock();
         mConnectionAttemptTimeStamps = new LinkedList<>();
 
         mMin5GHzRssi = WifiQualifiedNetworkSelector.MINIMUM_5G_ACCEPT_RSSI;
@@ -467,7 +470,7 @@ public class WifiConnectivityManager {
             return;
         }
 
-        Long currentTimeMillis = System.currentTimeMillis();
+        Long currentTimeMillis = mClock.currentTimeMillis();
         if (!mScreenOn && shouldSkipConnectionAttempt(currentTimeMillis)) {
             localLog("connectToNetwork: Too many connection attempts. Skipping this attempt!");
             return;
@@ -665,7 +668,7 @@ public class WifiConnectivityManager {
         Log.i(TAG, "scheduleWatchdogTimer");
 
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
-                            System.currentTimeMillis() + WATCHDOG_INTERVAL_MS,
+                            mClock.currentTimeMillis() + WATCHDOG_INTERVAL_MS,
                             "WifiConnectivityManager Schedule Watchdog Timer",
                             mWatchdogListener, null);
     }
@@ -673,7 +676,7 @@ public class WifiConnectivityManager {
     // Set up periodic scan timer
     private void schedulePeriodicScanTimer() {
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
-                            System.currentTimeMillis() + PERIODIC_SCAN_INTERVAL_MS,
+                            mClock.currentTimeMillis() + PERIODIC_SCAN_INTERVAL_MS,
                             "WifiConnectivityManager Schedule Periodic Scan Timer",
                             mPeriodicScanTimerListener, null);
     }
@@ -683,7 +686,7 @@ public class WifiConnectivityManager {
         localLog("scheduleDelayedSingleScan");
 
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
-                            System.currentTimeMillis() + RESTART_SCAN_DELAY_MS,
+                            mClock.currentTimeMillis() + RESTART_SCAN_DELAY_MS,
                             "WifiConnectivityManager Restart Single Scan",
                             mRestartSingleScanListener, null);
     }
@@ -693,7 +696,7 @@ public class WifiConnectivityManager {
         localLog("scheduleDelayedConnectivityScan");
 
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
-                            System.currentTimeMillis() + RESTART_SCAN_DELAY_MS,
+                            mClock.currentTimeMillis() + RESTART_SCAN_DELAY_MS,
                             "WifiConnectivityManager Restart Scan",
                             mRestartScanListener, null);
 
