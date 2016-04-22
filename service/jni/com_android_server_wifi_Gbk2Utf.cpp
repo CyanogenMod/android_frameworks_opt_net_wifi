@@ -514,6 +514,10 @@ jboolean setNetworkVariable(char *buf)
         ALOGD("parse SET_NETWORK command success, netId = %d, name = %s, value =%s, length=%d",
                netId, name, value, strlen(value));
 
+    if (NULL == g_pItemListMutex) {
+        /* Driver is unloaded, g_pItemList, g_pItemListMutex are NULL */
+        return JNI_TRUE;
+    }
     pthread_mutex_lock(g_pItemListMutex);
     pTmpItemNode = g_pItemList;
     if (NULL == pTmpItemNode) {
