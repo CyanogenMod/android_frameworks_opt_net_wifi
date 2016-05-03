@@ -86,7 +86,6 @@ import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
-import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.WorkSource;
@@ -199,6 +198,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
     private boolean mTemporarilyDisconnectWifi = false;
     private final String mPrimaryDeviceType;
     private final Clock mClock;
+    private final PropertyService mPropertyService;
     private final WifiCountryCode mCountryCode;
 
     /* Scan results handling */
@@ -1017,6 +1017,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
         mWifiMetrics = mWifiInjector.getWifiMetrics();
         mWifiLastResortWatchdog = wifiInjector.getWifiLastResortWatchdog();
         mClock = wifiInjector.getClock();
+        mPropertyService = wifiInjector.getPropertyService();
         mContext = context;
         mFacade = facade;
         mWifiNative = WifiNative.getWlanNativeInterface();
@@ -4322,23 +4323,23 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
     class SupplicantStartingState extends State {
         private void initializeWpsDetails() {
             String detail;
-            detail = SystemProperties.get("ro.product.name", "");
+            detail = mPropertyService.get("ro.product.name", "");
             if (!mWifiNative.setDeviceName(detail)) {
                 loge("Failed to set device name " +  detail);
             }
-            detail = SystemProperties.get("ro.product.manufacturer", "");
+            detail = mPropertyService.get("ro.product.manufacturer", "");
             if (!mWifiNative.setManufacturer(detail)) {
                 loge("Failed to set manufacturer " + detail);
             }
-            detail = SystemProperties.get("ro.product.model", "");
+            detail = mPropertyService.get("ro.product.model", "");
             if (!mWifiNative.setModelName(detail)) {
                 loge("Failed to set model name " + detail);
             }
-            detail = SystemProperties.get("ro.product.model", "");
+            detail = mPropertyService.get("ro.product.model", "");
             if (!mWifiNative.setModelNumber(detail)) {
                 loge("Failed to set model number " + detail);
             }
-            detail = SystemProperties.get("ro.serialno", "");
+            detail = mPropertyService.get("ro.serialno", "");
             if (!mWifiNative.setSerialNumber(detail)) {
                 loge("Failed to set serial number " + detail);
             }
