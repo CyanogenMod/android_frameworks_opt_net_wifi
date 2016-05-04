@@ -54,8 +54,16 @@ import java.util.Set;
  * to QNS for it to make a recommendation on which network to connect to.
  */
 public class WifiConnectivityManager {
-    private static final String TAG = "WifiConnectivityManager";
+    public static final String WATCHDOG_TIMER_TAG =
+            "WifiConnectivityManager Schedule Watchdog Timer";
+    public static final String PERIODIC_SCAN_TIMER_TAG =
+            "WifiConnectivityManager Schedule Periodic Scan Timer";
+    public static final String RESTART_SINGLE_SCAN_TIMER_TAG =
+            "WifiConnectivityManager Restart Single Scan";
+    public static final String RESTART_CONNECTIVITY_SCAN_TIMER_TAG =
+            "WifiConnectivityManager Restart Scan";
 
+    private static final String TAG = "WifiConnectivityManager";
     // Periodic scan interval in milli-seconds. This is the scan
     // performed when screen is on.
     private static final int PERIODIC_SCAN_INTERVAL_MS = 20 * 1000; // 20 seconds
@@ -756,7 +764,7 @@ public class WifiConnectivityManager {
 
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                             mClock.currentTimeMillis() + WATCHDOG_INTERVAL_MS,
-                            "WifiConnectivityManager Schedule Watchdog Timer",
+                            WATCHDOG_TIMER_TAG,
                             mWatchdogListener, mEventHandler);
     }
 
@@ -764,7 +772,7 @@ public class WifiConnectivityManager {
     private void schedulePeriodicScanTimer() {
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                             mClock.currentTimeMillis() + PERIODIC_SCAN_INTERVAL_MS,
-                            "WifiConnectivityManager Schedule Periodic Scan Timer",
+                            PERIODIC_SCAN_TIMER_TAG,
                             mPeriodicScanTimerListener, mEventHandler);
     }
 
@@ -776,7 +784,7 @@ public class WifiConnectivityManager {
                 new RestartSingleScanListener(isWatchdogTriggered);
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                             mClock.currentTimeMillis() + RESTART_SCAN_DELAY_MS,
-                            "WifiConnectivityManager Restart Single Scan",
+                            RESTART_SINGLE_SCAN_TIMER_TAG,
                             restartSingleScanListener, mEventHandler);
     }
 
@@ -786,7 +794,7 @@ public class WifiConnectivityManager {
 
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                             mClock.currentTimeMillis() + msFromNow,
-                            "WifiConnectivityManager Restart Scan",
+                            RESTART_CONNECTIVITY_SCAN_TIMER_TAG,
                             mRestartScanListener, mEventHandler);
 
     }
