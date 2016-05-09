@@ -668,7 +668,7 @@ class WifiController extends StateMachine {
          */
         private State getNextWifiState() {
             if (mSettingsStore.getWifiSavedState() == WifiSettingsStore.WIFI_ENABLED) {
-                return mStaEnabledState;
+                return mDeviceActiveState;
             }
 
             if (mSettingsStore.isScanAlwaysAvailable()) {
@@ -707,7 +707,13 @@ class WifiController extends StateMachine {
                          */
                         mPendingState = getNextWifiState();
                     }
-                    transitionTo(mPendingState);
+                    if (mPendingState == mDeviceActiveState && mDeviceIdle) {
+                        checkLocksAndTransitionWhenDeviceIdle();
+                    } else {
+                        // go ahead and transition because we are not idle or we are not going
+                        // to the active state.
+                        transitionTo(mPendingState);
+                    }
                     break;
                 case CMD_EMERGENCY_CALL_STATE_CHANGED:
                 case CMD_EMERGENCY_MODE_CHANGED:

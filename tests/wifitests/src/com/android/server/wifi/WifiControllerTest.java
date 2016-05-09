@@ -16,8 +16,10 @@
 
 package com.android.server.wifi;
 
+import static com.android.server.wifi.WifiController.CMD_AP_STOPPED;
 import static com.android.server.wifi.WifiController.CMD_EMERGENCY_CALL_STATE_CHANGED;
 import static com.android.server.wifi.WifiController.CMD_EMERGENCY_MODE_CHANGED;
+import static com.android.server.wifi.WifiController.CMD_SET_AP;
 import static com.android.server.wifi.WifiController.CMD_WIFI_TOGGLED;
 
 import static org.junit.Assert.assertEquals;
@@ -35,6 +37,7 @@ import com.android.internal.util.StateMachine;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -233,6 +236,33 @@ public class WifiControllerTest {
 
         mWifiController.sendMessage(CMD_EMERGENCY_CALL_STATE_CHANGED, 0);
         mLooper.dispatchAll();
+        assertEquals("DeviceActiveState", getCurrentState().getName());
+    }
+
+    /**
+     * When AP mode is enabled and wifi was previously in AP mode, we should return to
+     * DeviceActiveState after the AP is disabled.
+     * Enter DeviceActiveState, activate AP mode, disable AP mode.
+     * <p>
+     * Expected: AP should successfully start and exit, then return to DeviceActiveState.
+     */
+    @Test
+    public void testReturnToDeviceActiveStateAfterAPModeShutdown() throws Exception {
+        enableWifi();
+        assertEquals("DeviceActiveState", getCurrentState().getName());
+
+        mWifiController.obtainMessage(CMD_SET_AP, 1, 0).sendToTarget();
+        mLooper.dispatchAll();
+        assertEquals("ApEnabledState", getCurrentState().getName());
+
+        when(mSettingsStore.getWifiSavedState()).thenReturn(1);
+        mWifiController.obtainMessage(CMD_AP_STOPPED).sendToTarget();
+        mLooper.dispatchAll();
+
+        InOrder inOrder = inOrder(mWifiStateMachine);
+        inOrder.verify(mWifiStateMachine).setSupplicantRunning(true);
+        inOrder.verify(mWifiStateMachine).setOperationalMode(WifiStateMachine.CONNECT_MODE);
+        inOrder.verify(mWifiStateMachine).setDriverStart(true);
         assertEquals("DeviceActiveState", getCurrentState().getName());
     }
 }
