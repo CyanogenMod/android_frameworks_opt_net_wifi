@@ -676,7 +676,9 @@ public class WifiConnectivityManager {
                         > mConfigManager.MAX_TX_PACKET_FOR_FULL_SCANS
                 || mWifiInfo.rxSuccessRate
                         > mConfigManager.MAX_RX_PACKET_FOR_FULL_SCANS) {
-            localLog("No full band scan due to heavy traffic");
+            localLog("No full band scan due to heavy traffic, txSuccessRate="
+                        + mWifiInfo.txSuccessRate + " rxSuccessRate="
+                        + mWifiInfo.rxSuccessRate);
             isFullBandScan = false;
 
             if (mWifiInfo.txSuccessRate
