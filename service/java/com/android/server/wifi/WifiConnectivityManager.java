@@ -172,18 +172,15 @@ public class WifiConnectivityManager {
     private class RestartSingleScanListener implements AlarmManager.OnAlarmListener {
         private final boolean mIsWatchdogTriggered;
         private final boolean mIsFullBandScan;
-        private final boolean mIsChannelRestricted;
 
-        RestartSingleScanListener(boolean isWatchdogTriggered, boolean isFullBandScan,
-                                  boolean isChannelRestricted) {
+        RestartSingleScanListener(boolean isWatchdogTriggered, boolean isFullBandScan) {
             mIsWatchdogTriggered = isWatchdogTriggered;
             mIsFullBandScan = isFullBandScan;
-            mIsChannelRestricted = isChannelRestricted;
         }
 
         @Override
         public void onAlarm() {
-            startSingleScan(mIsWatchdogTriggered, mIsFullBandScan, mIsChannelRestricted);
+            startSingleScan(mIsWatchdogTriggered, mIsFullBandScan);
         }
     }
 
@@ -298,13 +295,10 @@ public class WifiConnectivityManager {
         private List<ScanDetail> mScanDetails = new ArrayList<ScanDetail>();
         private final boolean mIsWatchdogTriggered;
         private final boolean mIsFullBandScan;
-        private final boolean mIsChannelRestricted;
 
-        SingleScanListener(boolean isWatchdogTriggered, boolean isFullBandScan,
-                           boolean isChannelRestricted) {
+        SingleScanListener(boolean isWatchdogTriggered, boolean isFullBandScan) {
             mIsWatchdogTriggered = isWatchdogTriggered;
             mIsFullBandScan = isFullBandScan;
-            mIsChannelRestricted = isChannelRestricted;
         }
 
         public void clearScanDetails() {
@@ -327,8 +321,7 @@ public class WifiConnectivityManager {
 
             // reschedule the scan
             if (mSingleScanRestartCount++ < MAX_SCAN_RESTART_ALLOWED) {
-                scheduleDelayedSingleScan(mIsWatchdogTriggered, mIsFullBandScan,
-                                              mIsChannelRestricted);
+                scheduleDelayedSingleScan(mIsWatchdogTriggered, mIsFullBandScan);
             } else {
                 mSingleScanRestartCount = 0;
                 Log.e(TAG, "Failed to successfully start single scan for "
@@ -630,15 +623,14 @@ public class WifiConnectivityManager {
 
     // Helper for setting the channels for connectivity scan when
     // band is unspecified
-    private void setScanChannels(ScanSettings settings, boolean isChannelRestricted) {
+    private void setScanChannels(ScanSettings settings) {
         WifiConfiguration config = mStateMachine.getCurrentWifiConfiguration();
 
         if (config == null) {
             return;
         }
 
-        HashSet<Integer> freqs = mConfigManager.makeChannelList(config,
-                                        CHANNEL_LIST_AGE_MS, isChannelRestricted);
+        HashSet<Integer> freqs = mConfigManager.makeChannelList(config, CHANNEL_LIST_AGE_MS);
 
         if (freqs != null && freqs.size() != 0) {
             int index = 0;
@@ -662,14 +654,13 @@ public class WifiConnectivityManager {
             Log.i(TAG, "start a single scan from watchdogHandler");
 
             scheduleWatchdogTimer();
-            startSingleScan(true, true, false);
+            startSingleScan(true, true);
         }
     }
 
     // Start a single scan and set up the interval for next single scan.
     private void startPeriodicSingleScan() {
         boolean isFullBandScan = true;
-        boolean isChannelRestricted = false;
 
         // If the WiFi traffic is heavy, only partial scan is initiated.
         if (mWifiInfo.txSuccessRate
@@ -680,17 +671,9 @@ public class WifiConnectivityManager {
                         + mWifiInfo.txSuccessRate + " rxSuccessRate="
                         + mWifiInfo.rxSuccessRate);
             isFullBandScan = false;
-
-            if (mWifiInfo.txSuccessRate
-                            > mConfigManager.MAX_TX_PACKET_FOR_PARTIAL_SCANS
-                    || mWifiInfo.rxSuccessRate
-                            > mConfigManager.MAX_RX_PACKET_FOR_PARTIAL_SCANS) {
-                localLog("Restrict scan channel list due to heavy traffic");
-                isChannelRestricted = true;
-            }
         }
 
-        startSingleScan(false, isFullBandScan, isChannelRestricted);
+        startSingleScan(false, isFullBandScan);
         schedulePeriodicScanTimer(mPeriodicSingleScanInterval);
 
         // Set up the next scan interval in an exponential backoff fashion.
@@ -711,8 +694,7 @@ public class WifiConnectivityManager {
     }
 
     // Start a single scan
-    private void startSingleScan(boolean isWatchdogTriggered, boolean isFullBandScan,
-                                 boolean isChannelRestricted) {
+    private void startSingleScan(boolean isWatchdogTriggered, boolean isFullBandScan) {
         if (!mWifiEnabled || !mWifiConnectivityManagerEnabled) {
             return;
         }
@@ -722,7 +704,7 @@ public class WifiConnectivityManager {
         ScanSettings settings = new ScanSettings();
         settings.band = getScanBand(isFullBandScan);
         if (!isFullBandScan) {
-            setScanChannels(settings, isChannelRestricted);
+            setScanChannels(settings);
         }
         settings.reportEvents = WifiScanner.REPORT_EVENT_FULL_SCAN_RESULT
                             | WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN;
@@ -742,7 +724,7 @@ public class WifiConnectivityManager {
         // mSingleScanListener.clearScanDetails();
         // mScanner.startScan(settings, mSingleScanListener, WIFI_WORK_SOURCE);
         SingleScanListener singleScanListener =
-                new SingleScanListener(isWatchdogTriggered, isFullBandScan, isChannelRestricted);
+                new SingleScanListener(isWatchdogTriggered, isFullBandScan);
         mScanner.startScan(settings, singleScanListener, WIFI_WORK_SOURCE);
     }
 
@@ -868,13 +850,11 @@ public class WifiConnectivityManager {
     }
 
     // Set up timer to start a delayed single scan after RESTART_SCAN_DELAY_MS
-    private void scheduleDelayedSingleScan(boolean isWatchdogTriggered, boolean isFullBandScan,
-                                           boolean isChannelRestricted) {
+    private void scheduleDelayedSingleScan(boolean isWatchdogTriggered, boolean isFullBandScan) {
         localLog("scheduleDelayedSingleScan");
 
         RestartSingleScanListener restartSingleScanListener =
-                new RestartSingleScanListener(isWatchdogTriggered, isFullBandScan,
-                                              isChannelRestricted);
+                new RestartSingleScanListener(isWatchdogTriggered, isFullBandScan);
         mAlarmManager.set(AlarmManager.RTC_WAKEUP,
                             mClock.currentTimeMillis() + RESTART_SCAN_DELAY_MS,
                             RESTART_SINGLE_SCAN_TIMER_TAG,

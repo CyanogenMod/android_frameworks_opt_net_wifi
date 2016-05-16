@@ -2387,7 +2387,7 @@ public class WifiConfigManager {
         }
     }
 
-    public HashSet<Integer> makeChannelList(WifiConfiguration config, int age, boolean restrict) {
+    public HashSet<Integer> makeChannelList(WifiConfiguration config, int age) {
         if (config == null) {
             return null;
         }
@@ -2427,7 +2427,7 @@ public class WifiConfigManager {
                     logd("has " + result.BSSID + " freq=" + Integer.toString(result.frequency)
                             + " age=" + Long.toString(now_ms - result.seen) + " ?=" + test);
                 }
-                if (((now_ms - result.seen) < age)/*||(!restrict || result.is24GHz())*/) {
+                if (((now_ms - result.seen) < age)) {
                     channels.add(result.frequency);
                     numChannels++;
                 }
@@ -2454,7 +2454,7 @@ public class WifiConfigManager {
                     if (numChannels > mMaxNumActiveChannelsForPartialScans.get()) {
                         break;
                     }
-                    if (((now_ms - result.seen) < age)/*||(!restrict || result.is24GHz())*/) {
+                    if (((now_ms - result.seen) < age)) {
                         channels.add(result.frequency);
                         numChannels++;
                     }

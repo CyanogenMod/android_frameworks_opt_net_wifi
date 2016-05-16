@@ -6370,7 +6370,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
         return prefix + imsi + "@wlan.mnc" + mnc + ".mcc" + mcc + ".3gppnetwork.org";
     }
 
-    boolean startScanForConfiguration(WifiConfiguration config, boolean restrictChannelList) {
+    boolean startScanForConfiguration(WifiConfiguration config) {
         if (config == null)
             return false;
 
@@ -6387,8 +6387,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
             //return true but to not trigger the scan
             return true;
         }
-        HashSet<Integer> freqs = mWifiConfigManager.makeChannelList(config,
-                ONE_HOUR_MILLI, restrictChannelList);
+        HashSet<Integer> freqs = mWifiConfigManager.makeChannelList(config, ONE_HOUR_MILLI);
         if (freqs != null && freqs.size() != 0) {
             //if (DBG) {
             logd("starting scan for " + config.configKey() + " with " + freqs);
@@ -7133,7 +7132,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                         // to reconnect, go thru the
                         // roaming cycle and enter Obtaining IP address
                         // before signalling the disconnect to ConnectivityService and L3
-                        startScanForConfiguration(getCurrentWifiConfiguration(), false);
+                        startScanForConfiguration(getCurrentWifiConfiguration());
                         linkDebouncing = true;
 
                         sendMessageDelayed(obtainMessage(CMD_DELAYED_NETWORK_DISCONNECT,
