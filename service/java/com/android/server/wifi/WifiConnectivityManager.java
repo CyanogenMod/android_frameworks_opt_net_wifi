@@ -67,11 +67,13 @@ public class WifiConnectivityManager {
     private static final String TAG = "WifiConnectivityManager";
     // Periodic scan interval in milli-seconds. This is the scan
     // performed when screen is on.
-    private static final int PERIODIC_SCAN_INTERVAL_MS = 20 * 1000; // 20 seconds
+    @VisibleForTesting
+    public static final int PERIODIC_SCAN_INTERVAL_MS = 20 * 1000; // 20 seconds
     // When screen is on and WiFi traffic is heavy, exponential backoff
     // connectivity scans are scheduled. This constant defines the maximum
     // scan interval in this scenario.
-    private static final int MAX_PERIODIC_SCAN_INTERVAL_MS = 160 * 1000; // 160 seconds
+    @VisibleForTesting
+    public static final int MAX_PERIODIC_SCAN_INTERVAL_MS = 160 * 1000; // 160 seconds
     // PNO scan interval in milli-seconds. This is the scan
     // performed when screen is off and disconnected.
     private static final int DISCONNECTED_PNO_SCAN_INTERVAL_MS = 20 * 1000; // 20 seconds
