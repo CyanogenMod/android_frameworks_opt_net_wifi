@@ -1048,7 +1048,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                 R.bool.config_wifi_enable_wifi_firmware_debugging);
 
         if (enableFirmwareLogs) {
-            mWifiLogger = facade.makeRealLogger(this, mWifiNative);
+            mWifiLogger = facade.makeRealLogger(this, mWifiNative, mBuildProperties);
         } else {
             mWifiLogger = facade.makeBaseLogger();
         }
