@@ -38,6 +38,7 @@ import android.util.Pair;
 import com.android.internal.app.IBatteryStats;
 import com.android.internal.util.Protocol;
 import com.android.server.wifi.BidirectionalAsyncChannel;
+import com.android.server.wifi.Clock;
 import com.android.server.wifi.MockAlarmManager;
 import com.android.server.wifi.MockAnswerUtil.AnswerWithArguments;
 import com.android.server.wifi.MockLooper;
@@ -98,7 +99,8 @@ public class WifiScanningServiceTest {
                 new int[]{5600, 5650, 5660});
 
         mLooper = new MockLooper();
-        when(mWifiScannerImplFactory.create(any(Context.class), any(Looper.class)))
+        when(mWifiScannerImplFactory
+                .create(any(Context.class), any(Looper.class), any(Clock.class)))
                 .thenReturn(mWifiScannerImpl);
         when(mWifiScannerImpl.getChannelHelper()).thenReturn(channelHelper);
         when(mWifiInjector.getWifiMetrics()).thenReturn(mWifiMetrics);
@@ -329,7 +331,8 @@ public class WifiScanningServiceTest {
     @Test
     public void loadDriver() throws Exception {
         startServiceAndLoadDriver();
-        verify(mWifiScannerImplFactory, times(1)).create(any(Context.class), any(Looper.class));
+        verify(mWifiScannerImplFactory, times(1))
+                .create(any(Context.class), any(Looper.class), any(Clock.class));
 
         Handler handler = mock(Handler.class);
         BidirectionalAsyncChannel controlChannel = connectChannel(handler);
