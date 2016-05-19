@@ -49,7 +49,7 @@ import java.io.PrintWriter;
 
 class WifiController extends StateMachine {
     private static final String TAG = "WifiController";
-    private static final boolean DBG = false;
+    private static boolean DBG = false;
     private Context mContext;
     private boolean mScreenOff;
     private boolean mDeviceIdle;
@@ -58,6 +58,7 @@ class WifiController extends StateMachine {
     private long mIdleMillis;
     private int mSleepPolicy;
     private boolean mFirstUserSignOnSeen = false;
+    private boolean mStaAndApConcurrency = false;
 
     private AlarmManager mAlarmManager;
     private PendingIntent mIdleIntent;
@@ -90,6 +91,7 @@ class WifiController extends StateMachine {
 
     /* References to values tracked in WifiService */
     final WifiStateMachine mWifiStateMachine;
+    private SoftApStateMachine mSoftApStateMachine = null;
     final WifiSettingsStore mSettingsStore;
     final LockList mLocks;
 
@@ -127,6 +129,7 @@ class WifiController extends StateMachine {
     private ApStaDisabledState mApStaDisabledState = new ApStaDisabledState();
     private StaDisabledWithScanState mStaDisabledWithScanState = new StaDisabledWithScanState();
     private ApEnabledState mApEnabledState = new ApEnabledState();
+    private ApStaEnabledState mApStaEnabledState = new ApStaEnabledState();
     private DeviceActiveState mDeviceActiveState = new DeviceActiveState();
     private DeviceInactiveState mDeviceInactiveState = new DeviceInactiveState();
     private ScanOnlyLockHeldState mScanOnlyLockHeldState = new ScanOnlyLockHeldState();
@@ -151,6 +154,7 @@ class WifiController extends StateMachine {
         addState(mDefaultState);
             addState(mApStaDisabledState, mDefaultState);
             addState(mStaEnabledState, mDefaultState);
+            addState(mApStaEnabledState, mDefaultState);
                 addState(mDeviceActiveState, mStaEnabledState);
                 addState(mDeviceInactiveState, mStaEnabledState);
                     addState(mScanOnlyLockHeldState, mDeviceInactiveState);
@@ -341,6 +345,20 @@ class WifiController extends StateMachine {
         mWifiStateMachine.updateBatteryWorkSource(mTmpWorkSource);
     }
 
+    public void setSoftApStateMachine(SoftApStateMachine machine) {
+        mSoftApStateMachine = machine;
+        mStaAndApConcurrency = true;
+        Slog.d(TAG, "mStaAndApConcurrency="+mStaAndApConcurrency);
+    }
+
+    void enableVerboseLogging(int verbose) {
+        if (verbose > 0) {
+            DBG = true;
+        } else {
+            DBG = false;
+        }
+    }
+
     class DefaultState extends State {
         @Override
         public boolean processMessage(Message msg) {
@@ -466,8 +484,13 @@ class WifiController extends StateMachine {
                         if (msg.arg2 == 0) { // previous wifi state has not been saved yet
                             mSettingsStore.setWifiSavedState(WifiSettingsStore.WIFI_DISABLED);
                         }
-                        mWifiStateMachine.setHostApRunning((WifiConfiguration) msg.obj,
-                                true);
+                        if (mStaAndApConcurrency) {
+                            mSoftApStateMachine.setHostApRunning((WifiConfiguration) msg.obj,
+                                    true);
+                        } else {
+                            mWifiStateMachine.setHostApRunning((WifiConfiguration) msg.obj,
+                                    true);
+                        }
                         transitionTo(mApEnabledState);
                     }
                     break;
@@ -486,6 +509,90 @@ class WifiController extends StateMachine {
         }
 
         private boolean doDeferEnable(Message msg) {
+            long delaySoFar = SystemClock.elapsedRealtime() - mDisabledTimestamp;
+            if (delaySoFar >= mReEnableDelayMillis) {
+                return false;
+            }
+
+            log("WifiController msg " + msg + " deferred for " +
+                    (mReEnableDelayMillis - delaySoFar) + "ms");
+
+            // need to defer this action.
+            Message deferredMsg = obtainMessage(CMD_DEFERRED_TOGGLE);
+            deferredMsg.obj = Message.obtain(msg);
+            deferredMsg.arg1 = ++mDeferredEnableSerialNumber;
+            sendMessageDelayed(deferredMsg, mReEnableDelayMillis - delaySoFar + DEFER_MARGIN_MS);
+            return true;
+        }
+
+    }
+
+    class ApStaEnabledState extends State {
+        private State mPendingState = null;
+        private int mDeferredEnableSerialNumber = 0;
+        private boolean mHaveDeferredEnable = false;
+        private long mDisabledTimestamp;
+
+        @Override
+        public void enter() {
+           if (DBG) {
+               Slog.d(TAG,"ApStaEnabledState enter");
+           }
+        }
+
+        @Override
+        public boolean processMessage(Message msg) {
+           switch (msg.what) {
+            case CMD_SET_AP:
+                if (msg.arg1 == 1) {
+                    if (DBG) {
+                        Slog.d(TAG,"ApStaEnabledState CMD_SET_AP setHostApRunning true");
+                    }
+                    mSoftApStateMachine.setHostApRunning((WifiConfiguration) msg.obj,
+                                true);
+                } else {
+                    if (DBG) {
+                        Slog.d(TAG,"ApStaEnabledState CMD_SET_AP setHostApRunning false");
+                    }
+                    mSoftApStateMachine.setHostApRunning(null, false);
+                    transitionTo(mStaEnabledState);
+                }
+                    break;
+            case CMD_WIFI_TOGGLED:
+                if (mSettingsStore.isWifiToggleEnabled()) {
+                    if (doDeferEnable(msg)) {
+                        if (mHaveDeferredEnable) {
+                            //  have 2 toggles now, inc serial number an ignore both
+                            mDeferredEnableSerialNumber++;
+                        }
+                        mHaveDeferredEnable = !mHaveDeferredEnable;
+                        break;
+                    }
+                    if (DBG) {
+                        Slog.d(TAG,"ApStaEnabledState CMD_WIFI_TOGGLED setSupplicantRunning true");
+                    }
+                    mWifiStateMachine.setSupplicantRunning(true);
+                } else {
+                    if (DBG) {
+                        Slog.d(TAG,"ApStaEnabledState CMD_WIFI_TOGGLED setSupplicantRunning false");
+                    }
+                    mWifiStateMachine.setSupplicantRunning(false);
+                    transitionTo(mApEnabledState);
+                }
+                break;
+           case CMD_AIRPLANE_TOGGLED:
+                mSoftApStateMachine.setHostApRunning(null, false);
+                mPendingState = mApStaDisabledState;
+                break;
+           case CMD_AP_STOPPED:
+                if(mPendingState != null) {
+                   transitionTo(mPendingState);
+                }
+           }
+           return HANDLED;
+      }
+
+       private boolean doDeferEnable(Message msg) {
             long delaySoFar = SystemClock.elapsedRealtime() - mDisabledTimestamp;
             if (delaySoFar >= mReEnableDelayMillis) {
                 return false;
@@ -550,7 +657,11 @@ class WifiController extends StateMachine {
                         // remeber that we were enabled
                         mSettingsStore.setWifiSavedState(WifiSettingsStore.WIFI_ENABLED);
                         deferMessage(obtainMessage(msg.what, msg.arg1, 1, msg.obj));
-                        transitionTo(mApStaDisabledState);
+                        if (mStaAndApConcurrency) {
+                            transitionTo(mApStaEnabledState);
+                        } else {
+                            transitionTo(mApStaDisabledState);
+                        }
                     }
                     break;
                 default:
@@ -689,14 +800,26 @@ class WifiController extends StateMachine {
                     break;
                 case CMD_WIFI_TOGGLED:
                     if (mSettingsStore.isWifiToggleEnabled()) {
-                        mWifiStateMachine.setHostApRunning(null, false);
-                        mPendingState = mStaEnabledState;
+                        if (mStaAndApConcurrency) {
+                            deferMessage(obtainMessage(msg.what, msg.arg1,  1, msg.obj));
+                            if (DBG) {
+                                Slog.d(TAG,"ApEnabledState CMD_WIFI_TOGGLED transition To ApStaEnabledState");
+                            }
+                            transitionTo(mApStaEnabledState);
+                        } else {
+                            mWifiStateMachine.setHostApRunning(null, false);
+                            mPendingState = mStaEnabledState;
+                        }
                     }
                     break;
                 case CMD_SET_AP:
                     if (msg.arg1 == 0) {
-                        mWifiStateMachine.setHostApRunning(null, false);
-                        mPendingState = getNextWifiState();
+                        if (mStaAndApConcurrency) {
+                            mSoftApStateMachine.setHostApRunning(null, false);
+                        } else {
+                            mWifiStateMachine.setHostApRunning(null, false);
+                            mPendingState = getNextWifiState();
+                        }
                     }
                     break;
                 case CMD_AP_STOPPED:
@@ -718,7 +841,11 @@ class WifiController extends StateMachine {
                 case CMD_EMERGENCY_CALL_STATE_CHANGED:
                 case CMD_EMERGENCY_MODE_CHANGED:
                     if (msg.arg1 == 1) {
-                        mWifiStateMachine.setHostApRunning(null, false);
+                        if (mStaAndApConcurrency) {
+                            mSoftApStateMachine.setHostApRunning(null, false);
+                        } else {
+                            mWifiStateMachine.setHostApRunning(null, false);
+                        }
                         mPendingState = mEcmState;
                     }
                     break;

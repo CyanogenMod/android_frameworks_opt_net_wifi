@@ -58,7 +58,9 @@ public class SoftApManager {
 
     private final String mCountryCode;
 
-    private final String mInterfaceName;
+    private  String mInterfaceName;
+    private boolean mCreateNewInterface = false;
+    private int mSoftApChannel = 0;
     private String mTetherInterfaceName;
 
     private final SoftApStateMachine mStateMachine;
@@ -150,6 +152,23 @@ public class SoftApManager {
     }
 
     /**
+     * Set SoftAp channel
+     * @param channel is channel number
+     */
+    public void setSapChannel(int channel) {
+        mSoftApChannel = channel;
+    }
+
+    /**
+     * Set SoftAp interfcae name
+     * @param name name of the interface
+     */
+    public void setSapInterfaceName(String name) {
+        mInterfaceName = name;
+        mCreateNewInterface = true;
+    }
+
+    /**
      * Start a soft AP instance with the given configuration.
      * @param config AP configuration
      * @return integer result code
@@ -185,6 +204,14 @@ public class SoftApManager {
         }
 
         try {
+            if (mCreateNewInterface) {
+                mNmService.createSoftApInterface(mInterfaceName);
+                if ((localConfig.apBand != WifiConfiguration.AP_BAND_5GHZ)
+                       && (mSoftApChannel != 0)) {
+                    localConfig.apBand = WifiConfiguration.AP_BAND_2GHZ;
+                    localConfig.apChannel = mSoftApChannel;
+                }
+            }
             mNmService.startAccessPoint(localConfig, mInterfaceName);
         } catch (Exception e) {
             Log.e(TAG, "Exception in starting soft AP: " + e);
@@ -202,6 +229,9 @@ public class SoftApManager {
     private void stopSoftAp() {
         try {
             mNmService.stopAccessPoint(mInterfaceName);
+            if (mCreateNewInterface) {
+                mNmService.deleteSoftApInterface(mInterfaceName);
+            }
         } catch (Exception e) {
             Log.e(TAG, "Exception in stopping soft AP: " + e);
             return;
@@ -215,6 +245,18 @@ public class SoftApManager {
         for (String intf : available) {
             for (String regex : wifiRegexs) {
                 if (intf.matches(regex)) {
+                    if (mCreateNewInterface) {
+                        /**
+                         *  If we turn on SoftAp follwed by Wifi, sometimes TetherState
+                         *  Machine still advertise the list of interface as Up. But in
+                         *  concurrency case our interfcae for softap is softap0,
+                         *  hence start tethering only on softap0.
+                         */
+                        if (!intf.matches(mInterfaceName)) {
+                            Log.e(TAG,"For STA + SoftAp concurrency skip tethering on " + intf);
+                            continue;
+                        }
+                    }
                     try {
                         InterfaceConfiguration ifcg =
                                 mNmService.getInterfaceConfig(intf);
