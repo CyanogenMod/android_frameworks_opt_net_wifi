@@ -503,6 +503,8 @@ public class WifiScanningServiceTest {
         mLooper.dispatchAll();
         verifyFailedResponse(order, handler, requestId,
                 WifiScanner.REASON_UNSPECIFIED, "Scan failed");
+        assertDumpContainsCallbackLog("singleScanFailed", requestId,
+                "reason=" + WifiScanner.REASON_UNSPECIFIED + ", Scan failed");
         assertEquals(mWifiMetrics.getOneshotScanCount(), 1);
         assertEquals(mWifiMetrics.getScanReturnEntry(WifiMetricsProto.WifiLog.SCAN_UNKNOWN), 1);
     }
