@@ -762,11 +762,17 @@ public class WifiMonitor {
             int space = eventStr.indexOf(' ');
             if (space != -1) {
                 iface = eventStr.substring(7, space);
-                if (!mHandlerMap.containsKey(iface) && iface.startsWith("p2p-")) {
-                    // p2p interfaces are created dynamically, but we have
-                    // only one P2p state machine monitoring all of them; look
-                    // for it explicitly, and send messages there ..
-                    iface = "p2p0";
+                if (!mHandlerMap.containsKey(iface)) {
+                        if (iface.startsWith("p2p-")) {
+                            // p2p interfaces are created dynamically, but we have
+                            // only one P2p state machine monitoring all of them; look
+                            // for it explicitly, and send messages there ..
+                            iface = "p2p0";
+                        } else {
+                            Log.i(TAG, "Ignoring event from unexpected interface: "
+                                  + eventStr);
+                            return false;
+                        }
                 }
                 eventStr = eventStr.substring(space + 1);
             } else {
