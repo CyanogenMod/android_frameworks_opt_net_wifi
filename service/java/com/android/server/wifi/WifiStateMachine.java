@@ -9197,6 +9197,18 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiPno
                        if (DBG) log("roaming and Network connection established");
                        mLastNetworkId = message.arg1;
                        mLastBssid = (String) message.obj;
+                       /*
+                        * We used to do DHCP RENEW after framework roam succeeds.
+                        * But if connected network changed, which means previous IPv4
+                        * address is not valid.
+                        * Hence reset the roam flag to do full DHCP in such case.
+                        */
+                       if (mLastNetworkId != mWifiInfo.getNetworkId()) {
+                           log("Connected network changed ->"
+                                  + " new nid=" + mLastNetworkId
+                                  + " old nid=" + mWifiInfo.getNetworkId());
+                           mAutoRoaming = WifiAutoJoinController.AUTO_JOIN_IDLE;
+                       }
                        mWifiInfo.setBSSID(mLastBssid);
                        mWifiInfo.setNetworkId(mLastNetworkId);
                        mWifiConfigStore.handleBSSIDBlackList(mLastNetworkId, mLastBssid, true);
