@@ -7688,8 +7688,11 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                     sendMessage(CMD_AP_STOPPED);
                 } else if (state == WIFI_AP_STATE_FAILED) {
                     sendMessage(CMD_START_AP_FAILURE);
+                } else if (state == WifiManager.WIFI_AP_STATE_RESTART) {
+                    sendMessage(CMD_AP_STOPPED);
+                    sendMessage(CMD_START_AP, null);
+                    return;
                 }
-
                 setWifiApState(state, reason);
             }
         }

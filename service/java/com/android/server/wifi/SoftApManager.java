@@ -48,6 +48,7 @@ import java.util.Locale;
  */
 public class SoftApManager {
     private static final String TAG = "SoftApManager";
+    private boolean restartSap = false;
 
     private final Context mContext;
     private final INetworkManagementService mNmService;
@@ -345,9 +346,15 @@ public class SoftApManager {
                         /* Already started, ignore this command. */
                         break;
                     case CMD_STOP:
-                        updateApState(WifiManager.WIFI_AP_STATE_DISABLING, 0);
-                        stopSoftAp();
-                        updateApState(WifiManager.WIFI_AP_STATE_DISABLED, 0);
+                        if (restartSap) {
+                            stopSoftAp();
+                            updateApState(WifiManager.WIFI_AP_STATE_RESTART, 0);
+                            restartSap = false;
+                        } else {
+                            updateApState(WifiManager.WIFI_AP_STATE_DISABLING, 0);
+                            stopSoftAp();
+                            updateApState(WifiManager.WIFI_AP_STATE_DISABLED, 0);
+                        }
                         transitionTo(mIdleState);
                         break;
                     case CMD_TETHER_STATE_CHANGE:
@@ -409,8 +416,8 @@ public class SoftApManager {
                     case CMD_TETHER_STATE_CHANGE:
                         TetherStateChange stateChange = (TetherStateChange) message.obj;
                         if (!isWifiTethered(stateChange.active)) {
-                            Log.e(TAG, "Tethering reports wifi as untethered!, "
-                                    + "shut down soft Ap");
+                            Log.e(TAG, "Tether State Change : Restart (Stop and Start) Soft AP");
+                            restartSap = true;
                             sendMessage(CMD_STOP);
                         }
                         break;
