@@ -790,7 +790,9 @@ public class WifiConfigStore extends IpConfigStore {
      * Find matching network for this scanResult
      */
     WifiConfiguration getMatchingConfig(ScanResult scanResult) {
-
+        if (scanResult == null) {
+            return null;
+        }
         for (Map.Entry entry : mScanDetailCaches.entrySet()) {
             Integer netId = (Integer) entry.getKey();
             ScanDetailCache cache = (ScanDetailCache) entry.getValue();
