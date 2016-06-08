@@ -6142,7 +6142,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                                 log("Reconfiguring IP on connection");
                                 // TODO: clear addresses and disable IPv6
                                 // to simplify obtainingIpState.
-                                transitionTo(mObtainingIpState);
+                                mWifiNative.disconnect();
+                                handleNetworkDisconnect();
+                                transitionTo(mDisconnectedState);
                             }
                             if (result.hasProxyChanged()) {
                                 log("Reconfiguring proxy on connection");
