@@ -30,6 +30,7 @@ import static com.android.server.wifi.WifiController.CMD_WIFI_TOGGLED;
 
 import android.Manifest;
 import android.app.ActivityManager;
+import android.content.pm.PackageManager.NameNotFoundException;
 import android.app.AppOpsManager;
 import android.bluetooth.BluetoothAdapter;
 import android.content.BroadcastReceiver;
@@ -112,6 +113,8 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import android.app.AppOpsManager;
+import android.os.SystemProperties;
 
 /**
  * WifiService handles remote WiFi operation requests by implementing
@@ -543,6 +546,10 @@ public class WifiServiceImpl extends IWifiManager.Stub {
                 "ConnectivityService");
     }
 
+    private boolean isStrictOpEnable() {
+        return SystemProperties.getBoolean("persist.sys.strict_op_enable", false);
+    }
+
     /**
      * see {@link android.net.wifi.WifiManager#setWifiEnabled(boolean)}
      * @param enable {@code true} to enable, {@code false} to disable.
@@ -553,7 +560,16 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         enforceChangePermission();
         Slog.d(TAG, "setWifiEnabled: " + enable + " pid=" + Binder.getCallingPid()
                     + ", uid=" + Binder.getCallingUid());
-
+        if(isStrictOpEnable()){
+            String packageName = mContext.getPackageManager().getNameForUid(Binder.getCallingUid());
+            if((Binder.getCallingUid() > 10000) && (packageName.indexOf("android.uid.systemui") !=0)  && (packageName.indexOf("android.uid.system") != 0)) {
+                AppOpsManager mAppOpsManager  = mContext.getSystemService(AppOpsManager.class);
+                int result = mAppOpsManager.noteOp(AppOpsManager.OP_CHANGE_WIFI_STATE,Binder.getCallingUid(),packageName);
+                if(result == AppOpsManager.MODE_IGNORED){
+                    return false;
+                }
+            }
+        }
         /*
         * Caller might not have WRITE_SECURE_SETTINGS,
         * only CHANGE_WIFI_STATE is enforced
