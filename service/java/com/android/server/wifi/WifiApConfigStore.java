@@ -19,6 +19,7 @@ package com.android.server.wifi;
 import android.content.Context;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiConfiguration.KeyMgmt;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
@@ -240,6 +241,9 @@ class WifiApConfigStore extends StateMachine {
                 org.cyanogenmod.platform.internal.R.string.config_wifiHotSpotSsid);
         if (TextUtils.isEmpty(config.SSID)) {
             config.SSID = mContext.getString(R.string.wifi_tether_configure_ssid_default);
+        }
+        if (TextUtils.isEmpty(config.SSID)) {
+            config.SSID = Build.MODEL;
         }
 
         boolean set_security_none = mContext.getResources().getBoolean(
