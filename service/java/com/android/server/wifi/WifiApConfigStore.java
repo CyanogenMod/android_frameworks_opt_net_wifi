@@ -54,6 +54,8 @@ public class WifiApConfigStore {
     private final String mApConfigFile;
     private final BackupManagerProxy mBackupManagerProxy;
 
+    private static boolean mEnableRegionalHotspotCheckbox = false;
+
     WifiApConfigStore(Context context, BackupManagerProxy backupManagerProxy) {
         this(context, backupManagerProxy, DEFAULT_AP_CONFIG_FILE);
     }
@@ -86,6 +88,11 @@ public class WifiApConfigStore {
 
             /* Save the default configuration to persistent storage. */
             writeApConfiguration(mApConfigFile, mWifiApConfig);
+        }
+        if (mContext.getResources().getBoolean(
+                    com.android.internal.R.bool.config_regional_hotspot_show_broadcast_ssid_checkbox
+        )) {
+            mEnableRegionalHotspotCheckbox = true;
         }
     }
 
@@ -135,6 +142,9 @@ public class WifiApConfigStore {
                 return null;
             }
             config.SSID = in.readUTF();
+            if (mEnableRegionalHotspotCheckbox) {
+                config.hiddenSSID = (in.readInt() != 0);
+            }
 
             if (version >= 2) {
                 config.apBand = in.readInt();
@@ -170,6 +180,9 @@ public class WifiApConfigStore {
                         new FileOutputStream(filename)))) {
             out.writeInt(AP_CONFIG_FILE_VERSION);
             out.writeUTF(config.SSID);
+            if (mEnableRegionalHotspotCheckbox) {
+                out.writeInt(config.hiddenSSID ? 1 : 0);
+            }
             out.writeInt(config.apBand);
             out.writeInt(config.apChannel);
             int authType = config.getAuthType();
