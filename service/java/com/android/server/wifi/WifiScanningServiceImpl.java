@@ -443,17 +443,8 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
                     case WifiScanner.CMD_CONFIGURE_WIFI_CHANGE:
                         configureWifiChange((WifiScanner.WifiChangeSettings) msg.obj);
                         break;
-                    case CMD_SCAN_RESULTS_AVAILABLE: {
-                            ScanData[] results = WifiNative.getScanResults(/* flush = */ true);
-                            if (results == null) {
-                                loge("Wifi HAL SCAN results NULL");
-                                break;
-                            }
-                            Collection<ClientInfo> clients = mClients.values();
-                            for (ClientInfo ci2 : clients) {
-                                ci2.reportScanResults(results);
-                            }
-                        }
+                    case CMD_SCAN_RESULTS_AVAILABLE:
+                        reportScanResults();
                         break;
                     case CMD_FULL_SCAN_RESULTS: {
                             ScanResult result = (ScanResult) msg.obj;
@@ -1318,6 +1309,10 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
 
     boolean reportScanResults() {
         ScanData results[] = WifiNative.getScanResults(/* flush = */ true);
+        if (results == null) {
+            loge("No SCAN results received");
+            return false;
+        }
         Collection<ClientInfo> clients = mClients.values();
         for (ClientInfo ci2 : clients) {
             ci2.reportScanResults(results);
