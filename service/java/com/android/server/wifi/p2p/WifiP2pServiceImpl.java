@@ -48,6 +48,7 @@ import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
 import android.net.wifi.p2p.nsd.WifiP2pServiceRequest;
 import android.net.wifi.p2p.nsd.WifiP2pServiceResponse;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -2807,6 +2808,9 @@ public final class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
             String name = mContext.getResources().getString(
                     org.cyanogenmod.platform.internal.R.string.config_wifiDirectName);
             if (!TextUtils.isEmpty(name)) {
+                if (name.equals("%m")) {
+                    return Build.MODEL;
+                }
                 return name;
             }
             /* We use the 4 digits of the ANDROID_ID to have a friendly
