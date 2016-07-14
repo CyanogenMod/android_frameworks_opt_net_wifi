@@ -25,6 +25,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
+import android.provider.Settings;
 
 import com.android.internal.R;
 import com.android.server.wifi.Clock;
@@ -665,6 +666,14 @@ public class SupplicantWifiScannerImpl extends WifiScannerImpl implements Handle
                     Log.e(TAG, "Set priority failed for: " + network.networkId);
                     return false;
                 }
+                 int autoConnectPolicy = Settings.Global.getInt(
+                                             mContext.getContentResolver(),
+                                             Settings.Global.WIFI_AUTO_CONNECT_TYPE,0);
+                if (autoConnectPolicy == 1) {
+                    Log.d(TAG,"Do not enable network,since auto connect disabled");
+                    return true;
+                }
+
                 if (!mWifiNative.enableNetworkWithoutConnect(network.networkId)) {
                     Log.e(TAG, "Enable network failed for: " + network.networkId);
                     return false;
