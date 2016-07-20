@@ -526,7 +526,8 @@ jboolean setNetworkVariable(char *buf)
     pthread_mutex_lock(g_pItemListMutex);
     pTmpItemNode = g_pItemList;
     if (NULL == pTmpItemNode) {
-        ALOGE("g_pItemList is NULL");
+        if (DBG)
+            ALOGD("g_pItemList is NULL");
     }
     while (pTmpItemNode) {
         if (pTmpItemNode->ssid_utf8) {
