@@ -5667,12 +5667,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                     replyToMessage(message, message.what,
                             mWifiConfigManager.getMatchingConfig((ScanResult)message.obj));
                     break;
-                /* Do a redundant disconnect without transition */
-                case CMD_DISCONNECT:
-                    mWifiConfigManager.setAndEnableLastSelectedConfiguration
-                            (WifiConfiguration.INVALID_NETWORK_ID);
-                    mWifiNative.disconnect();
-                    break;
                 case CMD_RECONNECT:
                     if (mWifiConnectivityManager != null) {
                         mWifiConnectivityManager.forceConnectivityScan();
@@ -7354,6 +7348,9 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                 case CMD_START_SCAN:
                     deferMessage(message);
                     return HANDLED;
+                case CMD_DISCONNECT:
+                    if (DBG) log("Ignore CMD_DISCONNECT when already disconnecting.");
+                    break;
                 case CMD_DISCONNECTING_WATCHDOG_TIMER:
                     if (disconnectingWatchdogCount == message.arg1) {
                         if (DBG) log("disconnecting watchdog! -> disconnect");
@@ -7454,7 +7451,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                             setAndEnableLastSelectedConfiguration(
                                     WifiConfiguration.INVALID_NETWORK_ID);
                     break;
-                    /* Ignore network disconnect */
+                case CMD_DISCONNECT:
+                    if (DBG) log("Ignore CMD_DISCONNECT when already disconnected.");
+                    break;
+                /* Ignore network disconnect */
                 case WifiMonitor.NETWORK_DISCONNECTION_EVENT:
                     // Interpret this as an L2 connection failure
                     break;
