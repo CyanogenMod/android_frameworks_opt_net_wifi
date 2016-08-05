@@ -1759,7 +1759,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         /*
                          * update cache information and set network id to mGroup.
                          */
-                        updatePersistentNetworks(NO_RELOAD);
+                        updatePersistentNetworks(RELOAD);
                         String devAddr = mGroup.getOwner().deviceAddress;
                         mGroup.setNetworkId(mGroups.getNetworkId(devAddr,
                                 mGroup.getNetworkName()));
