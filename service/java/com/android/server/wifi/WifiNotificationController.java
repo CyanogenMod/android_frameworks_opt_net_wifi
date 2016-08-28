@@ -174,7 +174,8 @@ final class WifiNotificationController {
                     //A capability of [ESS] represents an open access point
                     //that is available for an STA to connect
                     if (scanResult.capabilities != null &&
-                            scanResult.capabilities.equals("[ESS]")) {
+                            (scanResult.capabilities.equals("[ESS]") ||
+                             scanResult.capabilities.equals("[WPS][ESS]"))) {
                         numOpenNetworks++;
                     }
                 }
