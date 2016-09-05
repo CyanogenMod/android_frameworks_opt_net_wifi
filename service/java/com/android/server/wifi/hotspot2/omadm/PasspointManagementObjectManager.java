@@ -233,12 +233,16 @@ public class PasspointManagementObjectManager {
         if (!mEnabled) {
             throw new IOException("HS2.0 not enabled on this device");
         }
-        if (mSPs.containsKey(homeSP.getFQDN())) {
+        if (mSPs.containsKey(homeSP.getFQDN())
+                && getHomeSP(homeSP.getFQDN()).getCredential() != null
+                && getHomeSP(homeSP.getFQDN()).getCredential().getImsi() != null
+                && getHomeSP(homeSP.getFQDN()).getCredential().getImsi()
+                .equals(homeSP.getCredential().getImsi())) {
             Log.d(Utils.hs2LogTag(getClass()), "HS20 profile for "
                     + homeSP.getFQDN() + " already exists");
             return;
         }
-        Log.d(Utils.hs2LogTag(getClass()), "Adding new HS20 profile for " + homeSP.getFQDN());
+        Log.d(Utils.hs2LogTag(getClass()), "Adding or updating HS20 profile for " + homeSP.getFQDN());
 
         OMAConstructed dummyRoot = new OMAConstructed(null, TAG_PerProviderSubscription, null);
         buildHomeSPTree(homeSP, dummyRoot, mSPs.size() + 1);
