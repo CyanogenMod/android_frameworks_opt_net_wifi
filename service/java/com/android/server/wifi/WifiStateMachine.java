@@ -1150,7 +1150,7 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                         sendMessage(CMD_BOOT_COMPLETED);
                     }
                 },
-                new IntentFilter(Intent.ACTION_BOOT_COMPLETED));
+                new IntentFilter(Intent.ACTION_LOCKED_BOOT_COMPLETED));
 
          mContext.getContentResolver().registerContentObserver(Settings.Global.getUriFor(
                 Settings.Global.WIFI_AUTO_CONNECT_TYPE), false,
