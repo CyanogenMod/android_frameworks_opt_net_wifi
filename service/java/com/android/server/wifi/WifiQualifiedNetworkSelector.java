@@ -123,6 +123,7 @@ public class WifiQualifiedNetworkSelector {
 
     private void localLog(String log) {
         if (mDbg) {
+            Log.d(TAG, log);
             mLocalLog.log(log);
         }
     }
