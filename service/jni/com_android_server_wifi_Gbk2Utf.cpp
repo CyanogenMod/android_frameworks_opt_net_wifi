@@ -226,7 +226,7 @@ static void ssid_encode(char *txt, size_t maxlen, const char *data, unsigned int
             *txt++ = 't';
             break;
         default:
-            if (data[i] >= 32 && data[i] <= 127) {
+            if (data[i] >= 32 && data[i] < 127) {
                 *txt++ = data[i];
             } else {
                 txt += snprintf(txt, end - txt, "\\x%02x",
