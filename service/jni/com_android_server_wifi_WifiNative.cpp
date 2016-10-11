@@ -892,7 +892,7 @@ static jboolean android_net_wifi_setHotlist(
         return false;
     }
 
-    if (params.num_ap >
+    if (params.num_bssid >
             static_cast<int>(sizeof(params.ap) / sizeof(params.ap[0]))) {
         ALOGE("setHotlist array length is too long");
         android_errorWriteLog(0x534e4554, "31856351");
