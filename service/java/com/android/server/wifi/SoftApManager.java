@@ -190,7 +190,7 @@ public class SoftApManager {
         }
 
         /* Setup country code if it is provide. */
-        if (mCountryCode != null) {
+        if (mCountryCode != null && (mCountryCode.length() != 0)) {
             /**
              * Country code is mandatory for 5GHz band, return an error if failed to set
              * country code when AP is configured for 5GHz band.

@@ -160,6 +160,9 @@ public class WifiConnectivityManager {
     // A helper to log debugging information in the local log buffer, which can
     // be retrieved in bugreport.
     private void localLog(String log) {
+        if (mDbg) {
+            Log.d(TAG, log);
+        }
         mLocalLog.log(log);
     }
 

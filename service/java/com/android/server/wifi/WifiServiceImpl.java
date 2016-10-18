@@ -189,6 +189,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
     private final WifiCertManager mCertManager;
 
     private final WifiInjector mWifiInjector;
+    private boolean mIsControllerStarted = false;
     /**
      * Asynchronous channel to WifiStateMachine
      */
@@ -446,6 +447,7 @@ public class WifiServiceImpl extends IWifiManager.Stub {
         mInIdleMode = mPowerManager.isDeviceIdleMode();
 
         mWifiController.start();
+        mIsControllerStarted = true;
 
         // If we are already disabled (could be due to airplane mode), avoid changing persist
         // state here
@@ -621,6 +623,10 @@ public class WifiServiceImpl extends IWifiManager.Stub {
             Binder.restoreCallingIdentity(ident);
         }
 
+        if (!mIsControllerStarted) {
+            Slog.e(TAG,"WifiController is not yet started, abort setWifiEnabled");
+            return false;
+        }
         mWifiController.sendMessage(CMD_WIFI_TOGGLED);
         return true;
     }
