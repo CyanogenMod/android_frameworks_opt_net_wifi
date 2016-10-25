@@ -202,8 +202,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
     private final PropertyService mPropertyService;
     private final BuildProperties mBuildProperties;
     private final WifiCountryCode mCountryCode;
-    private boolean mStaAndAPConcurrency = false;
-    private SoftApStateMachine mSoftApStateMachine = null;
 
     /* Scan results handling */
     private List<ScanDetail> mScanResults = new ArrayList<>();
@@ -535,20 +533,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
     }
 
     private IpManager mIpManager;
-    public SoftApStateMachine getSoftApStateMachine() {
-        return mSoftApStateMachine;
-    }
-
-    public void setStaSoftApConcurrency() {
-       mStaAndAPConcurrency = true;
-       mSoftApStateMachine =
-               new SoftApStateMachine(mContext, this, mFacade, mInterfaceName,
-                                      mWifiConfigManager,  mWifiMonitor,
-                                      mBackupManagerProxy,
-                                      mNwService, mBatteryStats, mCountryCode);
-      logd("mSoftApStateMachine is created");
-    }
-
 
     private AlarmManager mAlarmManager;
     private PendingIntent mScanIntent;
@@ -1359,16 +1343,12 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
         mCountryCode.enableVerboseLogging(mVerboseLoggingLevel);
         mWifiLogger.startLogging(DBG);
         mWifiMonitor.enableVerboseLogging(mVerboseLoggingLevel);
-        mWifiP2pServiceImpl.enableVerboseLogging(mVerboseLoggingLevel);
         mWifiNative.enableVerboseLogging(mVerboseLoggingLevel);
         mWifiConfigManager.enableVerboseLogging(mVerboseLoggingLevel);
         mSupplicantStateTracker.enableVerboseLogging(mVerboseLoggingLevel);
         mWifiQualifiedNetworkSelector.enableVerboseLogging(mVerboseLoggingLevel);
         if (mWifiConnectivityManager != null) {
             mWifiConnectivityManager.enableVerboseLogging(mVerboseLoggingLevel);
-        }
-        if (mStaAndAPConcurrency) {
-            mSoftApStateMachine.enableVerboseLogging(mVerboseLoggingLevel);
         }
     }
 
@@ -1827,17 +1807,10 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
     }
 
     public void setWifiApConfiguration(WifiConfiguration config) {
-        if (mStaAndAPConcurrency) {
-            mSoftApStateMachine.setWifiApConfiguration(config);
-            return ;
-        }
         mWifiApConfigStore.setApConfiguration(config);
     }
 
     public WifiConfiguration syncGetWifiApConfiguration() {
-        if (mStaAndAPConcurrency) {
-            return mSoftApStateMachine.syncGetWifiApConfiguration();
-        }
         return mWifiApConfigStore.getApConfiguration();
     }
 
@@ -1872,9 +1845,6 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
      * TODO: doc
      */
     public int syncGetWifiApState() {
-        if (mStaAndAPConcurrency) {
-            return mSoftApStateMachine.syncGetWifiApState();
-        }
         return mWifiApState.get();
     }
 
@@ -4314,19 +4284,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
     class InitialState extends State {
         @Override
         public void enter() {
-            boolean skipUnload = false;
-            if (mStaAndAPConcurrency) {
-                int wifiApState = mSoftApStateMachine.syncGetWifiApState();
-                if ((wifiApState ==  WifiManager.WIFI_AP_STATE_ENABLING) ||
-                       (wifiApState == WifiManager.WIFI_AP_STATE_ENABLED)) {
-                    log("Avoid unloading driver, AP_STATE is enabled/enabling");
-                    skipUnload = true;
-                }
-            }
-            if (!skipUnload) {
-                mWifiNative.stopHal();
-                mWifiNative.unloadDriver();
-            }
+            mWifiNative.stopHal();
+            mWifiNative.unloadDriver();
             if (mWifiP2pChannel == null) {
                 mWifiP2pChannel = new AsyncChannel();
                 mWifiP2pChannel.connect(mContext, getHandler(),
@@ -7833,11 +7792,8 @@ public class WifiStateMachine extends StateMachine implements WifiNative.WifiRss
                     sendMessage(CMD_AP_STOPPED);
                 } else if (state == WIFI_AP_STATE_FAILED) {
                     sendMessage(CMD_START_AP_FAILURE);
-                } else if (state == WifiManager.WIFI_AP_STATE_RESTART) {
-                    sendMessage(CMD_AP_STOPPED);
-                    sendMessage(CMD_START_AP, null);
-                    return;
                 }
+
                 setWifiApState(state, reason);
             }
         }

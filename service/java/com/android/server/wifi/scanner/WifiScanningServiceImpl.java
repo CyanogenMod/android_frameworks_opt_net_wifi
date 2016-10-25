@@ -2540,11 +2540,9 @@ public class WifiScanningServiceImpl extends IWifiScanner.Stub {
     void logCallback(String callback, ClientInfo ci, int id, String extra) {
         StringBuilder sb = new StringBuilder();
         sb.append(callback)
-                .append(": ");
-        if (ci != null) {
-            sb.append(ci.toString());
-        }
-        sb .append(",Id=")
+                .append(": ")
+                .append(ci.toString())
+                .append(",Id=")
                 .append(id);
         if (extra != null) {
             sb.append(",").append(extra);

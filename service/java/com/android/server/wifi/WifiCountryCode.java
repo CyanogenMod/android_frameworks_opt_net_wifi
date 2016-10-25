@@ -152,7 +152,6 @@ public class WifiCountryCode {
      * @return Get the current country code, returns null if no country code is set.
      */
     public synchronized String getCurrentCountryCode() {
-        mCurrentCountryCode = pickCountryCode();
         return mCurrentCountryCode;
     }
 

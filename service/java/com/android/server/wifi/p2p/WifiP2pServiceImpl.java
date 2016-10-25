@@ -101,7 +101,7 @@ import java.util.List;
  */
 public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     private static final String TAG = "WifiP2pService";
-    private static boolean DBG = false;
+    private static final boolean DBG = false;
     private static final String NETWORKTYPE = "WIFI_P2P";
 
     private Context mContext;
@@ -482,14 +482,6 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         enforceAccessPermission();
         enforceChangePermission();
         return new Messenger(mP2pStateMachine.getHandler());
-    }
-
-    public void enableVerboseLogging(int verbose) {
-        if (verbose > 0 ) {
-            DBG = true;
-        } else {
-            DBG = false;
-        }
     }
 
     /** This is used to provide information to drivers to optimize performance depending
@@ -884,7 +876,6 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
     class P2pNotSupportedState extends State {
         @Override
         public boolean processMessage(Message message) {
-            if (DBG) logd(getName() + message.toString());
             switch (message.what) {
                case WifiP2pManager.DISCOVER_PEERS:
                     replyToMessage(message, WifiP2pManager.DISCOVER_PEERS_FAILED,
