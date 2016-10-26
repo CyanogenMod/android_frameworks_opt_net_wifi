@@ -914,7 +914,7 @@ public class WifiController extends StateMachine {
     }
 
     private void checkLocksAndTransitionWhenDeviceActive() {
-        if (mLocks.hasLocks() && mLocks.getStrongestLockMode() == WIFI_MODE_FULL_HIGH_PERF) {
+        if (mWifiLockManager.getStrongestLockMode() == WIFI_MODE_FULL_HIGH_PERF) {
             // It is possible for the screen to be off while the device is
             // is active (mIdleMillis), so we need the high-perf mode
             // otherwise powersaving mode will be turned on.
