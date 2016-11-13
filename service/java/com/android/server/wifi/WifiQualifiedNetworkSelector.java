@@ -56,7 +56,7 @@ public class WifiQualifiedNetworkSelector {
     private static final String TAG = "WifiQualifiedNetworkSelector:";
     private boolean skipQualifiedNetworkSelectionForAutoConnect = false;
     // Always enable debugging logs for now since QNS is still a new feature.
-    private static final boolean FORCE_DEBUG = true;
+    private static final boolean FORCE_DEBUG = false;
     private boolean mDbg = FORCE_DEBUG;
     private WifiConfiguration mCurrentConnectedNetwork = null;
     private String mCurrentBssid = null;
