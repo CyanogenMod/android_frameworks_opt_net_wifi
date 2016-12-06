@@ -78,6 +78,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TimeZone;
 
@@ -1716,6 +1717,19 @@ public class WifiNative {
         public int priority;
         public byte flags;
         public byte auth_bit_field;
+
+        @Override
+        public boolean equals(Object otherObj) {
+            if (this == otherObj) {
+                return true;
+            } else if (otherObj == null || getClass() != otherObj.getClass()) {
+                return false;
+            }
+            PnoNetwork other = (PnoNetwork) otherObj;
+            return ((Objects.equals(ssid, other.ssid)) && (networkId == other.networkId)
+                    && (priority == other.priority) && (flags == other.flags)
+                    && (auth_bit_field == other.auth_bit_field));
+        }
     }
 
     /**
@@ -2193,13 +2207,12 @@ public class WifiNative {
         synchronized (sLock) {
             if (isHalStarted()) {
                 if (sRttCmdId != 0) {
-                    Log.v("TAG", "Last one is still under measurement!");
+                    Log.w(TAG, "Last one is still under measurement!");
                     return false;
                 } else {
                     sRttCmdId = getNewCmdIdLocked();
                 }
                 sRttEventHandler = handler;
-                Log.v(TAG, "native issue RTT request");
                 return requestRangeNative(sWlan0Index, sRttCmdId, params);
             } else {
                 return false;
@@ -2218,7 +2231,6 @@ public class WifiNative {
 
                 if (cancelRangeRequestNative(sWlan0Index, sRttCmdId, params)) {
                     sRttEventHandler = null;
-                    Log.v(TAG, "RTT cancel Request Successfully");
                     return true;
                 } else {
                     Log.e(TAG, "RTT cancel Request failed");

@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (C) 2016 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -371,7 +371,7 @@ public class WifiScanningServiceTest {
         assertTrue("dump did not contain log with type=" + type + ", id=" + id +
                 ": " + serviceDump + "\n",
                 logLineRegex.matcher(serviceDump).find());
-   }
+    }
 
     private void assertDumpContainsCallbackLog(String callback, int id, String extra) {
         String serviceDump = dumpService();
@@ -382,7 +382,7 @@ public class WifiScanningServiceTest {
         assertTrue("dump did not contain callback log with callback=" + callback + ", id=" + id +
                 ", extra=" + extra + ": " + serviceDump + "\n",
                 logLineRegex.matcher(serviceDump).find());
-   }
+    }
 
     @Test
     public void construct() throws Exception {
@@ -507,10 +507,10 @@ public class WifiScanningServiceTest {
      */
     @Test
     public void sendSingleScanBandRequest() throws Exception {
-        WifiScanner.ScanSettings requestSettings = createRequest(WifiScanner.WIFI_BAND_BOTH, 0,
-                0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+        WifiScanner.ScanSettings requestSettings = createRequest(WifiScanner.WIFI_BAND_BOTH_WITH_DFS,
+                0, 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
         doSuccessfulSingleScan(requestSettings, computeSingleScanNativeSettings(requestSettings),
-                ScanResults.create(0, 2400, 5150, 5175));
+                ScanResults.create(0, true, 2400, 5150, 5175));
     }
 
     /**
@@ -518,10 +518,22 @@ public class WifiScanningServiceTest {
      */
     @Test
     public void sendSingleScanChannelsRequest() throws Exception {
-        WifiScanner.ScanSettings requestSettings = createRequest(WifiScanner.WIFI_BAND_BOTH, 0,
-                0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+        WifiScanner.ScanSettings requestSettings = createRequest(channelsToSpec(2400, 5150, 5175),
+                0, 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
         doSuccessfulSingleScan(requestSettings, computeSingleScanNativeSettings(requestSettings),
                 ScanResults.create(0, 2400, 5150, 5175));
+    }
+
+    /**
+     * Do a single scan for a list of all channels and verify that it is successful.
+     */
+    @Test
+    public void sendSingleScanAllChannelsRequest() throws Exception {
+        WifiScanner.ScanSettings requestSettings = createRequest(
+                channelsToSpec(2400, 2450, 5150, 5175, 5600, 5650, 5660),
+                0, 0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+        doSuccessfulSingleScan(requestSettings, computeSingleScanNativeSettings(requestSettings),
+                ScanResults.create(0, true, 2400, 5150, 5175));
     }
 
     /**
@@ -1655,8 +1667,8 @@ public class WifiScanningServiceTest {
         sendSingleScanRequest(controlChannel, requestId, requestSettings, null);
         // Can't call |disconnect| here because that sends |CMD_CHANNEL_DISCONNECT| followed by
         // |CMD_CHANNEL_DISCONNECTED|.
-        controlChannel.sendMessage(Message.obtain(null, AsyncChannel.CMD_CHANNEL_DISCONNECTED, 0,
-                0, null));
+        controlChannel.sendMessage(Message.obtain(null, AsyncChannel.CMD_CHANNEL_DISCONNECTED,
+                        AsyncChannel.STATUS_REMOTE_DISCONNECTION, 0, null));
 
         // Now process the above 2 actions. This should result in first processing the single scan
         // request (which forwards the request to SingleScanStateMachine) and then processing the
@@ -1671,4 +1683,55 @@ public class WifiScanningServiceTest {
                 logLineRegex.matcher(serviceDump).find());
     }
 
+    /**
+     * Tries to simulate the race scenario where a client is disconnected immediately after single
+     * scan request is sent to |SingleScanStateMachine|.
+     */
+    @Test
+    public void sendScanRequestAfterUnsuccessfulSend() throws Exception {
+        WifiScanner.ScanSettings requestSettings = createRequest(WifiScanner.WIFI_BAND_BOTH, 0,
+                0, 20, WifiScanner.REPORT_EVENT_AFTER_EACH_SCAN);
+        int requestId = 9;
+
+        startServiceAndLoadDriver();
+        Handler handler = mock(Handler.class);
+        BidirectionalAsyncChannel controlChannel = connectChannel(handler);
+        mLooper.dispatchAll();
+
+        when(mWifiScannerImpl.startSingleScan(any(WifiNative.ScanSettings.class),
+                        any(WifiNative.ScanEventHandler.class))).thenReturn(true);
+        ScanResults results = ScanResults.create(0, 2400);
+        when(mWifiScannerImpl.getLatestSingleScanResults())
+                .thenReturn(results.getRawScanData());
+
+        InOrder order = inOrder(mWifiScannerImpl, handler);
+
+        sendSingleScanRequest(controlChannel, requestId, requestSettings, null);
+        mLooper.dispatchAll();
+        WifiNative.ScanEventHandler eventHandler1 = verifyStartSingleScan(order,
+                computeSingleScanNativeSettings(requestSettings));
+        verifySuccessfulResponse(order, handler, requestId);
+
+        eventHandler1.onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
+        mLooper.dispatchAll();
+        verifyScanResultsRecieved(order, handler, requestId, results.getScanData());
+        verifySingleScanCompletedRecieved(order, handler, requestId);
+        verifyNoMoreInteractions(handler);
+
+        controlChannel.sendMessage(Message.obtain(null, AsyncChannel.CMD_CHANNEL_DISCONNECTED,
+                        AsyncChannel.STATUS_SEND_UNSUCCESSFUL, 0, null));
+        mLooper.dispatchAll();
+
+        sendSingleScanRequest(controlChannel, requestId, requestSettings, null);
+        mLooper.dispatchAll();
+        WifiNative.ScanEventHandler eventHandler2 = verifyStartSingleScan(order,
+                computeSingleScanNativeSettings(requestSettings));
+        verifySuccessfulResponse(order, handler, requestId);
+
+        eventHandler2.onScanStatus(WifiNative.WIFI_SCAN_RESULTS_AVAILABLE);
+        mLooper.dispatchAll();
+        verifyScanResultsRecieved(order, handler, requestId, results.getScanData());
+        verifySingleScanCompletedRecieved(order, handler, requestId);
+        verifyNoMoreInteractions(handler);
+    }
 }
